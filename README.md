@@ -14,5 +14,8 @@ cargo fmt --all --check
 cargo check --workspace --all-targets
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --all-targets
+cargo check -p ely_servo_host --features servo-engine --all-targets
+cargo clippy -p ely_servo_host --features servo-engine --all-targets -- -D warnings
+cargo test -p ely_servo_host --features servo-engine --test software_host
 cargo run -p ely_app
 ```

@@ -32,5 +32,14 @@ jobs:
       - name: Test workspace
         run: cargo test --workspace --all-targets
 
+      - name: Check Servo engine host
+        run: cargo check -p ely_servo_host --features servo-engine --all-targets
+
+      - name: Lint Servo engine host
+        run: cargo clippy -p ely_servo_host --features servo-engine --all-targets -- -D warnings
+
+      - name: Test Servo engine host
+        run: cargo test -p ely_servo_host --features servo-engine --test software_host
+
       - name: Audit source file size
         run: scripts/audit_source_lines.sh

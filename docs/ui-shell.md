@@ -12,7 +12,7 @@
 │ Tabs                         │  │ Space and Profile.                      │  │
 │   ● New Tab                  │  └─────────────────────────────────────────┘  │
 │                              │                                               │
-│ Profile                      │  Servo host boundary owns webpage rendering.  │
+│ Profile                      │  Ready                                        │
 │   Default                    │                                               │
 └──────────────────────────────┴───────────────────────────────────────────────┘
 ```

@@ -6,6 +6,18 @@ pub enum ServoHostError {
     #[error("webview not found: {id}")]
     WebViewNotFound { id: WebViewId },
 
+    #[error("invalid navigation url: {value}")]
+    InvalidNavigationUrl { value: String },
+
     #[error("permission request missing profile context")]
     MissingProfileContext,
+
+    #[error("servo runtime is already started in this process")]
+    RuntimeAlreadyStarted,
+
+    #[error("servo rendering context is unavailable")]
+    RenderingContextUnavailable,
+
+    #[error("servo rendering context could not be made current")]
+    RenderingContextNotCurrent,
 }
