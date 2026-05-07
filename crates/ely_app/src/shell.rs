@@ -62,20 +62,35 @@ impl ElyShell {
         }
     }
 
-    fn open_new_tab(&mut self, cx: &mut Context<Self>) {
+    fn open_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state
             && let Ok(url) = UrlText::parse("ely://new-tab")
         {
             core.open_tab(url);
+            self.sync_address_input(window, cx);
             cx.notify();
         }
     }
 
-    fn select_tab(&mut self, tab_id: &TabId, cx: &mut Context<Self>) {
+    fn select_tab(&mut self, tab_id: &TabId, window: &mut Window, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state
             && core.select_tab(tab_id).is_ok()
         {
+            self.sync_address_input(window, cx);
             cx.notify();
+        }
+    }
+
+    fn sync_address_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let ShellState::Ready(core) = &mut self.state else {
+            return;
+        };
+
+        if let Ok(active_tab) = core.active_tab() {
+            let value = active_tab.url().as_str().to_string();
+            self.command_input.update(cx, |input, cx| {
+                input.set_value(value, window, cx);
+            });
         }
     }
 }
@@ -161,7 +176,7 @@ impl ElyShell {
                     .small()
                     .label("+")
                     .tooltip("New Tab")
-                    .on_click(cx.listener(|shell, _, _, cx| shell.open_new_tab(cx))),
+                    .on_click(cx.listener(|shell, _, window, cx| shell.open_new_tab(window, cx))),
             )
             .into_any_element()
     }
@@ -178,7 +193,7 @@ impl ElyShell {
             .border_color(rgb(colors::HAIRLINE))
             .bg(rgb(colors::CANVAS))
             .child(section_label("Favorites"))
-            .child(empty_line("Pinned cross-space tabs appear here"))
+            .child(empty_line())
             .child(section_label("Space"))
             .child(
                 div()
@@ -232,7 +247,9 @@ impl ElyShell {
             .cursor_pointer()
             .hover(|style| style.bg(rgb(colors::SURFACE_CARD)))
             .active(|style| style.opacity(0.82))
-            .on_click(cx.listener(move |shell, _, _, cx| shell.select_tab(&tab_id, cx)))
+            .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.select_tab(&tab_id, window, cx);
+            }))
             .child(
                 div()
                     .text_sm()
@@ -274,17 +291,7 @@ fn render_web_canvas(tab: &BrowserTab) -> AnyElement {
                         .child(tab.title().to_string()),
                 )
                 .child(
-                    div()
-                        .text_sm()
-                        .text_color(rgb(colors::MUTED))
-                        .child(tab.url().as_str().to_string()),
-                )
-                .child(
-                    div()
-                        .mt_4()
-                        .text_sm()
-                        .text_color(rgb(colors::BODY))
-                        .child("Servo host boundary owns webpage rendering, input, permissions, downloads, and recovery."),
+                    div().text_sm().text_color(rgb(colors::MUTED)).child(render_tab_status(tab)),
                 ),
         )
         .into_any_element()
@@ -306,6 +313,13 @@ fn section_label(label: &'static str) -> impl IntoElement {
     div().text_xs().font_semibold().text_color(rgb(colors::MUTED)).child(label)
 }
 
-fn empty_line(text: &'static str) -> impl IntoElement {
-    div().text_xs().text_color(rgb(colors::MUTED_SOFT)).child(text)
+fn render_tab_status(tab: &BrowserTab) -> String {
+    match tab.url().as_str() {
+        "ely://new-tab" => "Ready".to_string(),
+        url => url.to_string(),
+    }
+}
+
+fn empty_line() -> impl IntoElement {
+    div().h(px(34.0)).rounded_md().border_1().border_color(rgb(colors::HAIRLINE))
 }
