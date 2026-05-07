@@ -156,6 +156,38 @@ fn toggles_active_tab_favorite() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn toggles_active_tab_pinned() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    let pinned = core.toggle_active_tab_pinned()?;
+    let snapshot = core.snapshot()?;
+
+    assert!(pinned);
+    assert_eq!(snapshot.pinned_tabs.len(), 1);
+    assert_eq!(snapshot.pinned_tabs[0].id(), &snapshot.active_tab_id);
+
+    let pinned = core.toggle_active_tab_pinned()?;
+    let snapshot = core.snapshot()?;
+
+    assert!(!pinned);
+    assert!(snapshot.pinned_tabs.is_empty());
+    Ok(())
+}
+
+#[test]
+fn favorite_tabs_are_omitted_from_pinned_section() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.toggle_active_tab_pinned()?;
+    core.toggle_active_tab_favorite()?;
+
+    let snapshot = core.snapshot()?;
+    assert_eq!(snapshot.favorites.len(), 1);
+    assert!(snapshot.pinned_tabs.is_empty());
+    Ok(())
+}
+
+#[test]
 fn enforces_default_favorite_limit() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
 

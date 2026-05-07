@@ -19,6 +19,21 @@ fn favorite_command_toggles_active_tab() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn pin_command_toggles_active_tab() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query(">pin");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("pin".to_string())));
+    assert_eq!(snapshot.pinned_tabs.len(), 1);
+    assert_eq!(snapshot.pinned_tabs[0].id(), &snapshot.active_tab_id);
+    assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
 fn new_tab_command_opens_new_tab() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
 

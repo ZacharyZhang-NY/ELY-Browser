@@ -7,7 +7,7 @@ use gpui_component::input::{InputEvent, InputState, SelectAll};
 
 use crate::{
     CloseCurrentTab, FocusAddressBar, OpenNewTab, SelectNextTab, SelectPreviousTab,
-    ToggleFavoriteTab,
+    ToggleFavoriteTab, TogglePinnedTab,
 };
 
 enum ShellState {
@@ -141,6 +141,14 @@ impl ElyShell {
         }
     }
 
+    fn toggle_active_tab_pinned(&mut self, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.toggle_active_tab_pinned().is_ok()
+        {
+            cx.notify();
+        }
+    }
+
     fn on_close_current_tab(
         &mut self,
         _: &CloseCurrentTab,
@@ -188,6 +196,15 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) {
         self.toggle_active_tab_favorite(cx);
+    }
+
+    fn on_toggle_pinned_tab(
+        &mut self,
+        _: &TogglePinnedTab,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.toggle_active_tab_pinned(cx);
     }
 
     fn sync_address_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {

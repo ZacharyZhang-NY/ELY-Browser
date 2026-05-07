@@ -41,6 +41,7 @@ impl ElyShell {
             .on_action(cx.listener(Self::on_select_next_tab))
             .on_action(cx.listener(Self::on_select_previous_tab))
             .on_action(cx.listener(Self::on_toggle_favorite_tab))
+            .on_action(cx.listener(Self::on_toggle_pinned_tab))
             .bg(rgb(ELY_THEME.canvas))
             .text_color(rgb(ELY_THEME.ink))
             .flex()
@@ -67,6 +68,7 @@ impl ElyShell {
             if active_tab.flags().favorite { IconName::Star } else { IconName::StarOff };
         let favorite_tooltip =
             if active_tab.flags().favorite { "Remove Favorite" } else { "Add Favorite" };
+        let pinned_tooltip = if active_tab.flags().pinned { "Unpin Tab" } else { "Pin Tab" };
 
         div()
             .h(px(spacing::COMMAND_BAR_HEIGHT))
@@ -100,6 +102,15 @@ impl ElyShell {
                     .bg(rgb(colors::SURFACE_CARD))
                     .px_3()
                     .child(Input::new(&self.command_input).appearance(false).cleanable(true)),
+            )
+            .child(
+                Button::new("toggle-pinned-tab")
+                    .ghost()
+                    .small()
+                    .selected(active_tab.flags().pinned)
+                    .icon(IconName::Asterisk)
+                    .tooltip(pinned_tooltip)
+                    .on_click(cx.listener(|shell, _, _, cx| shell.toggle_active_tab_pinned(cx))),
             )
             .child(
                 Button::new("toggle-favorite-tab")
@@ -138,6 +149,12 @@ impl ElyShell {
                     self.render_favorite_row(tab, tab.id() == &snapshot.active_tab_id, cx)
                 }),
             )
+            .child(section_label("Pinned"))
+            .children(
+                snapshot.pinned_tabs.iter().map(|tab| {
+                    self.render_pinned_row(tab, tab.id() == &snapshot.active_tab_id, cx)
+                }),
+            )
             .child(section_label("Space"))
             .child(
                 div()
@@ -155,6 +172,7 @@ impl ElyShell {
                     .tabs
                     .iter()
                     .filter(|tab| !tab.flags().favorite)
+                    .filter(|tab| !tab.flags().pinned)
                     .map(|tab| self.render_tab_row(tab, tab.id() == &snapshot.active_tab_id, cx)),
             )
             .child(div().flex_1())
@@ -196,6 +214,52 @@ impl ElyShell {
                 shell.select_tab(&tab_id, window, cx);
             }))
             .child(div().text_color(rgb(colors::PRIMARY)).child(IconName::Star))
+            .child(
+                div()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_semibold()
+                            .text_color(rgb(colors::INK))
+                            .child(tab.title().to_string()),
+                    )
+                    .child(div().text_xs().text_color(rgb(colors::MUTED)).child(tab.display_url())),
+            )
+            .into_any_element()
+    }
+
+    fn render_pinned_row(
+        &mut self,
+        tab: &BrowserTab,
+        active: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let tab_id = tab.id().clone();
+        let background = if active { colors::SURFACE_CARD } else { colors::CANVAS };
+        let border = if active { colors::HAIRLINE_STRONG } else { colors::HAIRLINE };
+
+        div()
+            .id(SharedString::from(format!("pinned-{}", tab.id().as_str())))
+            .rounded_md()
+            .border_1()
+            .border_color(rgb(border))
+            .bg(rgb(background))
+            .px_3()
+            .py_2()
+            .gap_2()
+            .flex()
+            .items_center()
+            .cursor_pointer()
+            .hover(|style| style.bg(rgb(colors::SURFACE_CARD)))
+            .active(|style| style.opacity(0.82))
+            .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.select_tab(&tab_id, window, cx);
+            }))
+            .child(div().text_color(rgb(colors::MUTED)).child(IconName::Asterisk))
             .child(
                 div()
                     .min_w_0()

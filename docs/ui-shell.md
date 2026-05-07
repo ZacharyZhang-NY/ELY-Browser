@@ -2,10 +2,12 @@
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ ELY Browser   [ Search or enter address......................... ] [*] [+] │
+│ ELY Browser   [ Search or enter address.................... ] [pin] [*] [+] │
 ├──────────────────────────────┬───────────────────────────────────────────────┤
 │ Favorites                    │  ely://new-tab                                │
 │   [*] New Tab                │                                               │
+│ Pinned                       │                                               │
+│   [pin] New Tab              │                                               │
 │ Space                        │  ┌─────────────────────────────────────────┐  │
 │   Work                       │  │ New Tab                                 │  │
 │                              │  │ Clean browser surface for the current   │  │

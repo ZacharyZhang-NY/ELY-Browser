@@ -32,6 +32,7 @@ impl InitialBrowserConfig {
 pub struct BrowserSnapshot {
     pub tabs: Vec<BrowserTab>,
     pub favorites: Vec<BrowserTab>,
+    pub pinned_tabs: Vec<BrowserTab>,
     pub active_tab_id: TabId,
     pub active_space_name: String,
     pub active_profile_name: String,
@@ -155,6 +156,14 @@ impl BrowserCore {
         Ok(next_favorite)
     }
 
+    pub fn toggle_active_tab_pinned(&mut self) -> Result<bool, CoreError> {
+        let active_index = self.active_tab_index()?;
+        let active_tab = self.tabs.get_mut(active_index).ok_or(CoreError::MissingActiveTab)?;
+        let next_pinned = !active_tab.flags().pinned;
+        active_tab.set_pinned(next_pinned);
+        Ok(next_pinned)
+    }
+
     pub fn set_command_query(&mut self, query: impl Into<String>) {
         self.command_query = query.into();
     }
@@ -211,6 +220,7 @@ impl BrowserCore {
 
         Ok(BrowserSnapshot {
             favorites: self.favorites(),
+            pinned_tabs: self.pinned_tabs(),
             tabs: self.tabs.clone(),
             active_tab_id: self.active_tab_id.clone(),
             active_space_name: active_space.name().to_string(),
@@ -249,6 +259,10 @@ impl BrowserCore {
                 self.toggle_active_tab_favorite()?;
                 Ok(true)
             }
+            "pin" | "pin-tab" | "toggle-pin" => {
+                self.toggle_active_tab_pinned()?;
+                Ok(true)
+            }
             _ => Ok(false),
         }
     }
@@ -262,6 +276,14 @@ impl BrowserCore {
 
     fn favorites(&self) -> Vec<BrowserTab> {
         self.tabs.iter().filter(|tab| tab.flags().favorite).cloned().collect()
+    }
+
+    fn pinned_tabs(&self) -> Vec<BrowserTab> {
+        self.tabs
+            .iter()
+            .filter(|tab| tab.flags().pinned && !tab.flags().favorite)
+            .cloned()
+            .collect()
     }
 
     fn find_tab_match(&self, query: &str) -> Option<TabId> {
