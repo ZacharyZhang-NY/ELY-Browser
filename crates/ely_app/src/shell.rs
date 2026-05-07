@@ -2,16 +2,17 @@ use ely_browser_core::{BrowserCore, BrowserSnapshot, InitialBrowserConfig};
 use ely_design_system::{ELY_THEME, colors, spacing};
 use ely_domain::{BrowserTab, CommandIntent, TabId, UrlText};
 use gpui::{
-    AnyElement, AppContext, Context, Entity, InteractiveElement, IntoElement, ParentElement,
-    Render, SharedString, StatefulInteractiveElement, Styled, Subscription, Window, div, px, rgb,
+    AnyElement, App, AppContext, Context, Entity, FocusHandle, Focusable, InteractiveElement,
+    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
+    Subscription, Window, div, px, rgb,
 };
 use gpui_component::{
     Sizable, StyledExt,
     button::{Button, ButtonVariants},
-    input::{Input, InputEvent, InputState},
+    input::{Input, InputEvent, InputState, SelectAll},
 };
 
-use crate::CloseCurrentTab;
+use crate::{CloseCurrentTab, FocusAddressBar, OpenNewTab};
 
 enum ShellState {
     Ready(BrowserCore),
@@ -20,6 +21,7 @@ enum ShellState {
 
 pub struct ElyShell {
     state: ShellState,
+    focus_handle: FocusHandle,
     command_input: Entity<InputState>,
     last_intent: Option<CommandIntent>,
     _command_subscription: Subscription,
@@ -58,6 +60,7 @@ impl ElyShell {
 
         Self {
             state,
+            focus_handle: cx.focus_handle(),
             command_input,
             last_intent: None,
             _command_subscription: command_subscription,
@@ -70,8 +73,16 @@ impl ElyShell {
         {
             core.open_tab(url);
             self.sync_address_input(window, cx);
+            self.focus_address_bar(window, cx);
             cx.notify();
         }
+    }
+
+    fn focus_address_bar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.command_input.update(cx, |input, cx| {
+            input.focus(window, cx);
+        });
+        window.dispatch_action(Box::new(SelectAll), cx);
     }
 
     fn select_tab(&mut self, tab_id: &TabId, window: &mut Window, cx: &mut Context<Self>) {
@@ -101,6 +112,19 @@ impl ElyShell {
         self.close_active_tab(window, cx);
     }
 
+    fn on_focus_address_bar(
+        &mut self,
+        _: &FocusAddressBar,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.focus_address_bar(window, cx);
+    }
+
+    fn on_open_new_tab(&mut self, _: &OpenNewTab, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_new_tab(window, cx);
+    }
+
     fn sync_address_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let ShellState::Ready(core) = &mut self.state else {
             return;
@@ -112,6 +136,12 @@ impl ElyShell {
                 input.set_value(value, window, cx);
             });
         }
+    }
+}
+
+impl Focusable for ElyShell {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus_handle.clone()
     }
 }
 
@@ -136,7 +166,10 @@ impl ElyShell {
     ) -> AnyElement {
         div()
             .size_full()
+            .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::on_close_current_tab))
+            .on_action(cx.listener(Self::on_focus_address_bar))
+            .on_action(cx.listener(Self::on_open_new_tab))
             .bg(rgb(ELY_THEME.canvas))
             .text_color(rgb(ELY_THEME.ink))
             .flex()

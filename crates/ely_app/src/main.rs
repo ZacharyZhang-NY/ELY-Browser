@@ -1,18 +1,22 @@
 mod shell;
 
 use gpui::{
-    App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, SystemMenuType, WindowBounds,
-    WindowOptions, actions, px, size,
+    App, AppContext, Application, Bounds, Focusable, KeyBinding, Menu, MenuItem, SystemMenuType,
+    WindowBounds, WindowOptions, actions, px, size,
 };
 use shell::ElyShell;
 
-actions!(ely_app, [CloseCurrentTab, Quit]);
+actions!(ely_app, [CloseCurrentTab, FocusAddressBar, OpenNewTab, Quit]);
 
 fn main() {
     Application::new().run(|cx: &mut App| {
         gpui_component::init(cx);
         cx.on_action(quit);
         cx.bind_keys([
+            KeyBinding::new("cmd-t", OpenNewTab, None),
+            KeyBinding::new("ctrl-t", OpenNewTab, None),
+            KeyBinding::new("cmd-l", FocusAddressBar, None),
+            KeyBinding::new("ctrl-l", FocusAddressBar, None),
             KeyBinding::new("cmd-w", CloseCurrentTab, None),
             KeyBinding::new("ctrl-w", CloseCurrentTab, None),
             KeyBinding::new("cmd-q", Quit, None),
@@ -28,7 +32,11 @@ fn main() {
             },
             Menu {
                 name: "File".into(),
-                items: vec![MenuItem::action("Close Tab", CloseCurrentTab)],
+                items: vec![
+                    MenuItem::action("New Tab", OpenNewTab),
+                    MenuItem::separator(),
+                    MenuItem::action("Close Tab", CloseCurrentTab),
+                ],
             },
         ]);
 
@@ -41,6 +49,12 @@ fn main() {
             },
             |window, cx| {
                 let shell = cx.new(|cx| ElyShell::new(window, cx));
+                let focus_handle = shell.focus_handle(cx);
+                window.defer(cx, move |window, cx| {
+                    if window.focused(cx).is_none() {
+                        focus_handle.focus(window);
+                    }
+                });
                 cx.new(|cx| gpui_component::Root::new(shell, window, cx))
             },
         );
