@@ -6,7 +6,10 @@ use gpui::{
 };
 use shell::ElyShell;
 
-actions!(ely_app, [CloseCurrentTab, FocusAddressBar, OpenNewTab, Quit]);
+actions!(
+    ely_app,
+    [CloseCurrentTab, FocusAddressBar, OpenNewTab, Quit, SelectNextTab, SelectPreviousTab,]
+);
 
 fn main() {
     Application::new().run(|cx: &mut App| {
@@ -19,6 +22,10 @@ fn main() {
             KeyBinding::new("ctrl-l", FocusAddressBar, None),
             KeyBinding::new("cmd-w", CloseCurrentTab, None),
             KeyBinding::new("ctrl-w", CloseCurrentTab, None),
+            KeyBinding::new("cmd-shift-]", SelectNextTab, None),
+            KeyBinding::new("ctrl-tab", SelectNextTab, None),
+            KeyBinding::new("cmd-shift-[", SelectPreviousTab, None),
+            KeyBinding::new("ctrl-shift-tab", SelectPreviousTab, None),
             KeyBinding::new("cmd-q", Quit, None),
         ]);
         cx.set_menus(vec![

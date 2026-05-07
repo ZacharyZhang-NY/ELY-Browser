@@ -128,6 +128,14 @@ impl BrowserCore {
         Ok(())
     }
 
+    pub fn select_next_tab(&mut self) -> Result<TabId, CoreError> {
+        self.select_tab_by_offset(1)
+    }
+
+    pub fn select_previous_tab(&mut self) -> Result<TabId, CoreError> {
+        self.select_tab_by_offset(-1)
+    }
+
     pub fn set_command_query(&mut self, query: impl Into<String>) {
         self.command_query = query.into();
     }
@@ -172,6 +180,22 @@ impl BrowserCore {
         self.tabs
             .iter()
             .find(|tab| tab.id() == &self.active_tab_id)
+            .ok_or(CoreError::MissingActiveTab)
+    }
+
+    fn select_tab_by_offset(&mut self, offset: isize) -> Result<TabId, CoreError> {
+        let active_index = self.active_tab_index()?;
+        let tab_count = self.tabs.len() as isize;
+        let next_index = (active_index as isize + offset).rem_euclid(tab_count) as usize;
+        let next_tab_id = self.tabs[next_index].id().clone();
+        self.select_tab(&next_tab_id)?;
+        Ok(next_tab_id)
+    }
+
+    fn active_tab_index(&self) -> Result<usize, CoreError> {
+        self.tabs
+            .iter()
+            .position(|tab| tab.id() == &self.active_tab_id)
             .ok_or(CoreError::MissingActiveTab)
     }
 
@@ -252,6 +276,39 @@ mod tests {
         assert_eq!(snapshot.active_tab_id, active_tab_id);
         let replacement_tab = snapshot.tabs.first().ok_or(CoreError::MissingActiveTab)?;
         assert_eq!(replacement_tab.url().as_str(), "ely://new-tab");
+        Ok(())
+    }
+
+    #[test]
+    fn selects_next_tab_with_wraparound() -> Result<(), Box<dyn Error>> {
+        let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+        let first_tab_id = core.active_tab()?.id().clone();
+        let second_tab_id = core.open_tab(UrlText::parse("https://example.com")?);
+        let third_tab_id = core.open_tab(UrlText::parse("https://servo.org")?);
+
+        core.select_tab(&first_tab_id)?;
+        let next_tab_id = core.select_next_tab()?;
+        assert_eq!(next_tab_id, second_tab_id);
+
+        core.select_tab(&third_tab_id)?;
+        let wrapped_tab_id = core.select_next_tab()?;
+        assert_eq!(wrapped_tab_id, first_tab_id);
+        Ok(())
+    }
+
+    #[test]
+    fn selects_previous_tab_with_wraparound() -> Result<(), Box<dyn Error>> {
+        let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+        let first_tab_id = core.active_tab()?.id().clone();
+        let second_tab_id = core.open_tab(UrlText::parse("https://example.com")?);
+        let third_tab_id = core.open_tab(UrlText::parse("https://servo.org")?);
+
+        let previous_tab_id = core.select_previous_tab()?;
+        assert_eq!(previous_tab_id, second_tab_id);
+
+        core.select_tab(&first_tab_id)?;
+        let wrapped_tab_id = core.select_previous_tab()?;
+        assert_eq!(wrapped_tab_id, third_tab_id);
         Ok(())
     }
 }

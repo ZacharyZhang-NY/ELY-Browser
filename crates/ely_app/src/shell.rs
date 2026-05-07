@@ -12,7 +12,7 @@ use gpui_component::{
     input::{Input, InputEvent, InputState, SelectAll},
 };
 
-use crate::{CloseCurrentTab, FocusAddressBar, OpenNewTab};
+use crate::{CloseCurrentTab, FocusAddressBar, OpenNewTab, SelectNextTab, SelectPreviousTab};
 
 enum ShellState {
     Ready(BrowserCore),
@@ -94,6 +94,24 @@ impl ElyShell {
         }
     }
 
+    fn select_next_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.select_next_tab().is_ok()
+        {
+            self.sync_address_input(window, cx);
+            cx.notify();
+        }
+    }
+
+    fn select_previous_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.select_previous_tab().is_ok()
+        {
+            self.sync_address_input(window, cx);
+            cx.notify();
+        }
+    }
+
     fn close_active_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state
             && core.close_active_tab().is_ok()
@@ -123,6 +141,24 @@ impl ElyShell {
 
     fn on_open_new_tab(&mut self, _: &OpenNewTab, window: &mut Window, cx: &mut Context<Self>) {
         self.open_new_tab(window, cx);
+    }
+
+    fn on_select_next_tab(
+        &mut self,
+        _: &SelectNextTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.select_next_tab(window, cx);
+    }
+
+    fn on_select_previous_tab(
+        &mut self,
+        _: &SelectPreviousTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.select_previous_tab(window, cx);
     }
 
     fn sync_address_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -170,6 +206,8 @@ impl ElyShell {
             .on_action(cx.listener(Self::on_close_current_tab))
             .on_action(cx.listener(Self::on_focus_address_bar))
             .on_action(cx.listener(Self::on_open_new_tab))
+            .on_action(cx.listener(Self::on_select_next_tab))
+            .on_action(cx.listener(Self::on_select_previous_tab))
             .bg(rgb(ELY_THEME.canvas))
             .text_color(rgb(ELY_THEME.ink))
             .flex()
