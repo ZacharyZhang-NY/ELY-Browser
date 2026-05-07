@@ -76,6 +76,11 @@ impl BrowserTab {
     }
 
     #[must_use]
+    pub fn display_url(&self) -> String {
+        self.url.display_url()
+    }
+
+    #[must_use]
     pub fn state(&self) -> &TabState {
         &self.state
     }

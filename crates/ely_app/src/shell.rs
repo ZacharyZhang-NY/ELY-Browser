@@ -257,12 +257,7 @@ impl ElyShell {
                     .text_color(rgb(colors::INK))
                     .child(tab.title().to_string()),
             )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(rgb(colors::MUTED))
-                    .child(tab.url().as_str().to_string()),
-            )
+            .child(div().text_xs().text_color(rgb(colors::MUTED)).child(tab.display_url()))
             .into_any_element()
     }
 }

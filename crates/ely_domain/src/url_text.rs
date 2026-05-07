@@ -51,6 +51,19 @@ impl UrlText {
             .and_then(|url| url.host_str().map(str::to_string))
             .unwrap_or_else(|| self.value.clone())
     }
+
+    #[must_use]
+    pub fn display_url(&self) -> String {
+        let Ok(url) = Url::parse(&self.value) else {
+            return self.value.clone();
+        };
+
+        if url.scheme() == "ely" {
+            return self.value.clone();
+        }
+
+        url.host_str().map(str::to_string).unwrap_or_else(|| self.value.clone())
+    }
 }
 
 impl fmt::Display for UrlText {

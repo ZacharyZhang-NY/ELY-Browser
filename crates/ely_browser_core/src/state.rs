@@ -77,18 +77,27 @@ impl BrowserCore {
             url,
         );
         let tab_id = tab.id().clone();
-        self.tabs.push(tab);
+        let insert_index = self
+            .tabs
+            .iter()
+            .position(|existing| existing.id() == &self.active_tab_id)
+            .map_or(self.tabs.len(), |index| index + 1);
+        self.tabs.insert(insert_index, tab);
         self.active_tab_id = tab_id.clone();
         tab_id
     }
 
     pub fn select_tab(&mut self, tab_id: &TabId) -> Result<(), CoreError> {
-        if self.tabs.iter().any(|tab| tab.id() == tab_id) {
-            self.active_tab_id = tab_id.clone();
-            return Ok(());
-        }
+        let tab = self
+            .tabs
+            .iter()
+            .find(|tab| tab.id() == tab_id)
+            .ok_or_else(|| CoreError::TabNotFound { id: tab_id.clone() })?;
 
-        Err(CoreError::TabNotFound { id: tab_id.clone() })
+        self.active_tab_id = tab.id().clone();
+        self.active_space_id = tab.space_id().clone();
+        self.active_profile_id = tab.profile_id().clone();
+        Ok(())
     }
 
     pub fn set_command_query(&mut self, query: impl Into<String>) {
@@ -145,4 +154,30 @@ fn tab_title(url: &UrlText) -> String {
     }
 
     url.display_host()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use ely_domain::UrlText;
+
+    use super::{BrowserCore, InitialBrowserConfig};
+
+    #[test]
+    fn opens_new_tab_below_active_tab() -> Result<(), Box<dyn Error>> {
+        let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+        let first_tab_id = core.active_tab()?.id().clone();
+        let second_tab_id = core.open_tab(UrlText::parse("https://example.com")?);
+
+        core.select_tab(&first_tab_id)?;
+        let third_tab_id = core.open_tab(UrlText::parse("https://servo.org")?);
+
+        let snapshot = core.snapshot()?;
+        let ordered_ids = snapshot.tabs.iter().map(|tab| tab.id().clone()).collect::<Vec<_>>();
+
+        assert_eq!(ordered_ids, vec![first_tab_id, third_tab_id.clone(), second_tab_id]);
+        assert_eq!(snapshot.active_tab_id, third_tab_id);
+        Ok(())
+    }
 }
