@@ -1,6 +1,6 @@
 use ely_domain::{
-    BrowserTab, CommandIntent, DomainError, Profile, ProfileId, ProfileKind, Space, SpaceId, TabId,
-    UrlText,
+    BrowserTab, CommandIntent, CommandScope, DomainError, Profile, ProfileId, ProfileKind, Space,
+    SpaceId, TabId, UrlText,
 };
 
 use crate::CoreError;
@@ -140,6 +140,11 @@ impl BrowserCore {
         self.command_query = query.into();
     }
 
+    #[must_use]
+    pub fn command_query(&self) -> &str {
+        &self.command_query
+    }
+
     pub fn submit_command(&mut self) -> Result<Option<CommandIntent>, CoreError> {
         let query = self.command_query.trim();
         if query.is_empty() {
@@ -147,9 +152,18 @@ impl BrowserCore {
         }
 
         let intent = CommandIntent::parse(query)?;
-        if let CommandIntent::Navigate(url) = &intent {
-            self.open_tab(url.clone());
-            self.command_query.clear();
+        match &intent {
+            CommandIntent::Navigate(url) => {
+                self.open_tab(url.clone());
+                self.command_query.clear();
+            }
+            CommandIntent::ScopedSearch { scope: CommandScope::Tabs, query } => {
+                if let Some(tab_id) = self.find_tab_match(query) {
+                    self.select_tab(&tab_id)?;
+                    self.command_query.clear();
+                }
+            }
+            _ => {}
         }
 
         Ok(Some(intent))
@@ -199,6 +213,14 @@ impl BrowserCore {
             .ok_or(CoreError::MissingActiveTab)
     }
 
+    fn find_tab_match(&self, query: &str) -> Option<TabId> {
+        let normalized_query = query.trim().to_lowercase();
+        self.tabs
+            .iter()
+            .find(|tab| tab_matches_query(tab, &normalized_query))
+            .map(|tab| tab.id().clone())
+    }
+
     fn build_tab(&self, url: UrlText) -> BrowserTab {
         let title = tab_title(&url);
         BrowserTab::new(
@@ -219,11 +241,17 @@ fn tab_title(url: &UrlText) -> String {
     url.display_host()
 }
 
+fn tab_matches_query(tab: &BrowserTab, normalized_query: &str) -> bool {
+    tab.title().to_lowercase().contains(normalized_query)
+        || tab.url().as_str().to_lowercase().contains(normalized_query)
+        || tab.display_url().to_lowercase().contains(normalized_query)
+}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;
 
-    use ely_domain::UrlText;
+    use ely_domain::{CommandIntent, CommandScope, UrlText};
 
     use super::{BrowserCore, InitialBrowserConfig};
     use crate::CoreError;
@@ -309,6 +337,41 @@ mod tests {
         core.select_tab(&first_tab_id)?;
         let wrapped_tab_id = core.select_previous_tab()?;
         assert_eq!(wrapped_tab_id, third_tab_id);
+        Ok(())
+    }
+
+    #[test]
+    fn tab_scoped_search_selects_matching_open_tab() -> Result<(), Box<dyn Error>> {
+        let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+        let first_tab_id = core.active_tab()?.id().clone();
+        core.open_tab(UrlText::parse("https://example.com")?);
+        let servo_tab_id = core.open_tab(UrlText::parse("https://servo.org")?);
+
+        core.select_tab(&first_tab_id)?;
+        core.set_command_query("@tabs servo");
+        let intent = core.submit_command()?;
+
+        let snapshot = core.snapshot()?;
+        assert!(matches!(
+            intent,
+            Some(CommandIntent::ScopedSearch { scope: CommandScope::Tabs, query }) if query == "servo"
+        ));
+        assert_eq!(snapshot.active_tab_id, servo_tab_id);
+        assert_eq!(snapshot.command_query, "");
+        Ok(())
+    }
+
+    #[test]
+    fn tab_scoped_search_preserves_query_without_match() -> Result<(), Box<dyn Error>> {
+        let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+        let active_tab_id = core.active_tab()?.id().clone();
+
+        core.set_command_query("@tabs absent");
+        core.submit_command()?;
+
+        let snapshot = core.snapshot()?;
+        assert_eq!(snapshot.active_tab_id, active_tab_id);
+        assert_eq!(snapshot.command_query, "@tabs absent");
         Ok(())
     }
 }

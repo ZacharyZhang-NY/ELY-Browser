@@ -32,8 +32,14 @@ impl ElyShell {
         let command_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Search or enter address"));
 
-        let command_subscription =
-            cx.subscribe(&command_input, |shell: &mut Self, input, event: &InputEvent, cx| {
+        let command_subscription = cx.subscribe_in(
+            &command_input,
+            window,
+            |shell: &mut Self, input, event: &InputEvent, window, cx| {
+                let mut submitted_intent = None;
+                let mut sync_address = false;
+                let submitted = matches!(event, InputEvent::PressEnter { .. });
+
                 let ShellState::Ready(core) = &mut shell.state else {
                     return;
                 };
@@ -41,12 +47,22 @@ impl ElyShell {
                 let value = input.read(cx).value().to_string();
                 core.set_command_query(value);
 
-                if matches!(event, InputEvent::PressEnter { .. }) {
-                    shell.last_intent = core.submit_command().ok().flatten();
+                if submitted {
+                    submitted_intent = core.submit_command().ok().flatten();
+                    sync_address = core.command_query().is_empty();
+                }
+
+                if submitted {
+                    shell.last_intent = submitted_intent;
+                }
+
+                if sync_address {
+                    shell.sync_address_input(window, cx);
                 }
 
                 cx.notify();
-            });
+            },
+        );
 
         let state = match InitialBrowserConfig::ely_defaults().and_then(|config| {
             BrowserCore::new(config).map_err(|error| match error {
