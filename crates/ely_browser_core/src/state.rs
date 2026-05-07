@@ -7,6 +7,7 @@ use url::Url;
 use crate::CoreError;
 
 const DEFAULT_SEARCH_URL: &str = "https://duckduckgo.com/";
+const DEFAULT_FAVORITE_LIMIT: usize = 12;
 
 #[derive(Clone, Debug)]
 pub struct InitialBrowserConfig {
@@ -30,6 +31,7 @@ impl InitialBrowserConfig {
 #[derive(Clone, Debug)]
 pub struct BrowserSnapshot {
     pub tabs: Vec<BrowserTab>,
+    pub favorites: Vec<BrowserTab>,
     pub active_tab_id: TabId,
     pub active_space_name: String,
     pub active_profile_name: String,
@@ -139,6 +141,20 @@ impl BrowserCore {
         self.select_tab_by_offset(-1)
     }
 
+    pub fn toggle_active_tab_favorite(&mut self) -> Result<bool, CoreError> {
+        let active_index = self.active_tab_index()?;
+        let favorite_count = self.tabs.iter().filter(|tab| tab.flags().favorite).count();
+        let active_tab = self.tabs.get_mut(active_index).ok_or(CoreError::MissingActiveTab)?;
+        let next_favorite = !active_tab.flags().favorite;
+
+        if next_favorite && favorite_count >= DEFAULT_FAVORITE_LIMIT {
+            return Err(CoreError::FavoriteLimitReached { limit: DEFAULT_FAVORITE_LIMIT });
+        }
+
+        active_tab.set_favorite(next_favorite);
+        Ok(next_favorite)
+    }
+
     pub fn set_command_query(&mut self, query: impl Into<String>) {
         self.command_query = query.into();
     }
@@ -190,6 +206,7 @@ impl BrowserCore {
             .ok_or(CoreError::MissingActiveTab)?;
 
         Ok(BrowserSnapshot {
+            favorites: self.favorites(),
             tabs: self.tabs.clone(),
             active_tab_id: self.active_tab_id.clone(),
             active_space_name: active_space.name().to_string(),
@@ -219,6 +236,10 @@ impl BrowserCore {
             .iter()
             .position(|tab| tab.id() == &self.active_tab_id)
             .ok_or(CoreError::MissingActiveTab)
+    }
+
+    fn favorites(&self) -> Vec<BrowserTab> {
+        self.tabs.iter().filter(|tab| tab.flags().favorite).cloned().collect()
     }
 
     fn find_tab_match(&self, query: &str) -> Option<TabId> {
@@ -401,6 +422,46 @@ mod tests {
         assert_eq!(intent, Some(CommandIntent::Search("rust async book".to_string())));
         assert_eq!(active_tab.url().as_str(), "https://duckduckgo.com/?q=rust+async+book");
         assert_eq!(core.command_query(), "");
+        Ok(())
+    }
+
+    #[test]
+    fn toggles_active_tab_favorite() -> Result<(), Box<dyn Error>> {
+        let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+        let favorite = core.toggle_active_tab_favorite()?;
+        let snapshot = core.snapshot()?;
+
+        assert!(favorite);
+        assert_eq!(snapshot.favorites.len(), 1);
+        assert_eq!(snapshot.favorites[0].id(), &snapshot.active_tab_id);
+
+        let favorite = core.toggle_active_tab_favorite()?;
+        let snapshot = core.snapshot()?;
+
+        assert!(!favorite);
+        assert!(snapshot.favorites.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn enforces_default_favorite_limit() -> Result<(), Box<dyn Error>> {
+        let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+        core.toggle_active_tab_favorite()?;
+        for index in 1..12 {
+            core.open_tab(UrlText::parse(format!("https://example.com/{index}"))?);
+            core.toggle_active_tab_favorite()?;
+        }
+
+        core.open_tab(UrlText::parse("https://example.com/overflow")?);
+        let error = match core.toggle_active_tab_favorite() {
+            Err(error) => error,
+            Ok(_) => return Err("favorite limit should apply".into()),
+        };
+
+        assert_eq!(error, CoreError::FavoriteLimitReached { limit: 12 });
+        assert_eq!(core.snapshot()?.favorites.len(), 12);
         Ok(())
     }
 }

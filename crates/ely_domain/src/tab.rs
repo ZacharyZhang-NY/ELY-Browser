@@ -90,6 +90,10 @@ impl BrowserTab {
         &self.flags
     }
 
+    pub fn set_favorite(&mut self, favorite: bool) {
+        self.flags.favorite = favorite;
+    }
+
     #[must_use]
     pub fn split_id(&self) -> Option<&SplitId> {
         self.split_id.as_ref()

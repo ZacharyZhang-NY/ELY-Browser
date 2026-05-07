@@ -11,6 +11,7 @@ ely_design_system = { path = "../ely_design_system" }
 ely_domain = { path = "../ely_domain" }
 gpui.workspace = true
 gpui-component.workspace = true
+gpui-component-assets.workspace = true
 
 [lints]
 workspace = true

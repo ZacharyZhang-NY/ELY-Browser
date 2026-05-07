@@ -6,7 +6,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window, div, px, rgb,
 };
 use gpui_component::{
-    Sizable, StyledExt,
+    IconName, Selectable, Sizable, StyledExt,
     button::{Button, ButtonVariants},
     input::Input,
 };
@@ -40,11 +40,12 @@ impl ElyShell {
             .on_action(cx.listener(Self::on_open_new_tab))
             .on_action(cx.listener(Self::on_select_next_tab))
             .on_action(cx.listener(Self::on_select_previous_tab))
+            .on_action(cx.listener(Self::on_toggle_favorite_tab))
             .bg(rgb(ELY_THEME.canvas))
             .text_color(rgb(ELY_THEME.ink))
             .flex()
             .flex_col()
-            .child(self.render_command_bar(&snapshot, cx))
+            .child(self.render_command_bar(&snapshot, &active_tab, cx))
             .child(
                 div()
                     .flex()
@@ -59,8 +60,14 @@ impl ElyShell {
     fn render_command_bar(
         &mut self,
         snapshot: &BrowserSnapshot,
+        active_tab: &BrowserTab,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let favorite_icon =
+            if active_tab.flags().favorite { IconName::Star } else { IconName::StarOff };
+        let favorite_tooltip =
+            if active_tab.flags().favorite { "Remove Favorite" } else { "Add Favorite" };
+
         div()
             .h(px(spacing::COMMAND_BAR_HEIGHT))
             .px_4()
@@ -95,10 +102,19 @@ impl ElyShell {
                     .child(Input::new(&self.command_input).appearance(false).cleanable(true)),
             )
             .child(
+                Button::new("toggle-favorite-tab")
+                    .ghost()
+                    .small()
+                    .selected(active_tab.flags().favorite)
+                    .icon(favorite_icon)
+                    .tooltip(favorite_tooltip)
+                    .on_click(cx.listener(|shell, _, _, cx| shell.toggle_active_tab_favorite(cx))),
+            )
+            .child(
                 Button::new("new-tab")
                     .primary()
                     .small()
-                    .label("+")
+                    .icon(IconName::Plus)
                     .tooltip("New Tab")
                     .on_click(cx.listener(|shell, _, window, cx| shell.open_new_tab(window, cx))),
             )
@@ -117,7 +133,11 @@ impl ElyShell {
             .border_color(rgb(colors::HAIRLINE))
             .bg(rgb(colors::CANVAS))
             .child(section_label("Favorites"))
-            .child(empty_line())
+            .children(
+                snapshot.favorites.iter().map(|tab| {
+                    self.render_favorite_row(tab, tab.id() == &snapshot.active_tab_id, cx)
+                }),
+            )
             .child(section_label("Space"))
             .child(
                 div()
@@ -134,6 +154,7 @@ impl ElyShell {
                 snapshot
                     .tabs
                     .iter()
+                    .filter(|tab| !tab.flags().favorite)
                     .map(|tab| self.render_tab_row(tab, tab.id() == &snapshot.active_tab_id, cx)),
             )
             .child(div().flex_1())
@@ -143,6 +164,52 @@ impl ElyShell {
                     .text_sm()
                     .text_color(rgb(colors::BODY))
                     .child(snapshot.active_profile_name.clone()),
+            )
+            .into_any_element()
+    }
+
+    fn render_favorite_row(
+        &mut self,
+        tab: &BrowserTab,
+        active: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let tab_id = tab.id().clone();
+        let background = if active { colors::SURFACE_CARD } else { colors::CANVAS };
+        let border = if active { colors::HAIRLINE_STRONG } else { colors::HAIRLINE };
+
+        div()
+            .id(SharedString::from(format!("favorite-{}", tab.id().as_str())))
+            .rounded_md()
+            .border_1()
+            .border_color(rgb(border))
+            .bg(rgb(background))
+            .px_3()
+            .py_2()
+            .gap_2()
+            .flex()
+            .items_center()
+            .cursor_pointer()
+            .hover(|style| style.bg(rgb(colors::SURFACE_CARD)))
+            .active(|style| style.opacity(0.82))
+            .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.select_tab(&tab_id, window, cx);
+            }))
+            .child(div().text_color(rgb(colors::PRIMARY)).child(IconName::Star))
+            .child(
+                div()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_semibold()
+                            .text_color(rgb(colors::INK))
+                            .child(tab.title().to_string()),
+                    )
+                    .child(div().text_xs().text_color(rgb(colors::MUTED)).child(tab.display_url())),
             )
             .into_any_element()
     }
@@ -237,8 +304,4 @@ fn render_tab_status(tab: &BrowserTab) -> String {
         "ely://new-tab" => "Ready".to_string(),
         url => url.to_string(),
     }
-}
-
-fn empty_line() -> impl IntoElement {
-    div().h(px(34.0)).rounded_md().border_1().border_color(rgb(colors::HAIRLINE))
 }

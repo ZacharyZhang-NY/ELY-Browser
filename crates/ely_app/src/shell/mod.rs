@@ -5,7 +5,10 @@ use ely_domain::{CommandIntent, TabId, UrlText};
 use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscription, Window};
 use gpui_component::input::{InputEvent, InputState, SelectAll};
 
-use crate::{CloseCurrentTab, FocusAddressBar, OpenNewTab, SelectNextTab, SelectPreviousTab};
+use crate::{
+    CloseCurrentTab, FocusAddressBar, OpenNewTab, SelectNextTab, SelectPreviousTab,
+    ToggleFavoriteTab,
+};
 
 enum ShellState {
     Ready(BrowserCore),
@@ -130,6 +133,14 @@ impl ElyShell {
         }
     }
 
+    fn toggle_active_tab_favorite(&mut self, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.toggle_active_tab_favorite().is_ok()
+        {
+            cx.notify();
+        }
+    }
+
     fn on_close_current_tab(
         &mut self,
         _: &CloseCurrentTab,
@@ -168,6 +179,15 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) {
         self.select_previous_tab(window, cx);
+    }
+
+    fn on_toggle_favorite_tab(
+        &mut self,
+        _: &ToggleFavoriteTab,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.toggle_active_tab_favorite(cx);
     }
 
     fn sync_address_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {

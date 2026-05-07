@@ -4,15 +4,24 @@ use gpui::{
     App, AppContext, Application, Bounds, Focusable, KeyBinding, Menu, MenuItem, SystemMenuType,
     WindowBounds, WindowOptions, actions, px, size,
 };
+use gpui_component_assets::Assets;
 use shell::ElyShell;
 
 actions!(
     ely_app,
-    [CloseCurrentTab, FocusAddressBar, OpenNewTab, Quit, SelectNextTab, SelectPreviousTab,]
+    [
+        CloseCurrentTab,
+        FocusAddressBar,
+        OpenNewTab,
+        Quit,
+        SelectNextTab,
+        SelectPreviousTab,
+        ToggleFavoriteTab,
+    ]
 );
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
+    Application::new().with_assets(Assets).run(|cx: &mut App| {
         gpui_component::init(cx);
         cx.on_action(quit);
         cx.bind_keys([
@@ -22,6 +31,8 @@ fn main() {
             KeyBinding::new("ctrl-l", FocusAddressBar, None),
             KeyBinding::new("cmd-w", CloseCurrentTab, None),
             KeyBinding::new("ctrl-w", CloseCurrentTab, None),
+            KeyBinding::new("cmd-shift-f", ToggleFavoriteTab, None),
+            KeyBinding::new("ctrl-shift-f", ToggleFavoriteTab, None),
             KeyBinding::new("cmd-shift-]", SelectNextTab, None),
             KeyBinding::new("ctrl-tab", SelectNextTab, None),
             KeyBinding::new("cmd-shift-[", SelectPreviousTab, None),
@@ -44,6 +55,10 @@ fn main() {
                     MenuItem::separator(),
                     MenuItem::action("Close Tab", CloseCurrentTab),
                 ],
+            },
+            Menu {
+                name: "Bookmarks".into(),
+                items: vec![MenuItem::action("Toggle Favorite", ToggleFavoriteTab)],
             },
         ]);
 

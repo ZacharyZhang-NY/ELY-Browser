@@ -9,6 +9,9 @@ pub enum CoreError {
     #[error("tab not found: {id}")]
     TabNotFound { id: TabId },
 
+    #[error("favorite limit reached: {limit}")]
+    FavoriteLimitReached { limit: usize },
+
     #[error("browser state has no active tab")]
     MissingActiveTab,
 }
