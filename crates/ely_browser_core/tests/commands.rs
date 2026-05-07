@@ -68,6 +68,23 @@ fn close_tab_command_closes_active_tab() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn restore_tab_command_reopens_last_archived_tab() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let closed_tab_id = core.open_tab(UrlText::parse("https://example.com")?);
+    core.close_active_tab()?;
+
+    core.set_command_query(">restore-tab");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("restore-tab".to_string())));
+    assert_eq!(snapshot.active_tab_id, closed_tab_id);
+    assert!(snapshot.archived_tabs.is_empty());
+    assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
 fn unknown_command_preserves_query() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let active_tab_id = core.active_tab()?.id().clone();

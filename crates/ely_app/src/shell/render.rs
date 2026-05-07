@@ -38,6 +38,7 @@ impl ElyShell {
             .on_action(cx.listener(Self::on_close_current_tab))
             .on_action(cx.listener(Self::on_focus_address_bar))
             .on_action(cx.listener(Self::on_open_new_tab))
+            .on_action(cx.listener(Self::on_restore_closed_tab))
             .on_action(cx.listener(Self::on_select_next_tab))
             .on_action(cx.listener(Self::on_select_previous_tab))
             .on_action(cx.listener(Self::on_toggle_favorite_tab))

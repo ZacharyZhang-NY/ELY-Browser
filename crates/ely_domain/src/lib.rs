@@ -1,3 +1,4 @@
+mod archive;
 mod command;
 mod error;
 mod identifiers;
@@ -7,6 +8,7 @@ mod split;
 mod tab;
 mod url_text;
 
+pub use archive::{ArchiveSource, ArchivedTab};
 pub use command::{CommandIntent, CommandScope};
 pub use error::DomainError;
 pub use identifiers::{ProfileId, SpaceId, SplitId, TabId, WebViewId};

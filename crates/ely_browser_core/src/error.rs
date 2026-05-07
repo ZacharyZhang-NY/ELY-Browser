@@ -12,6 +12,9 @@ pub enum CoreError {
     #[error("favorite limit reached: {limit}")]
     FavoriteLimitReached { limit: usize },
 
+    #[error("browser state has no archived tabs")]
+    NoArchivedTabs,
+
     #[error("browser state has no active tab")]
     MissingActiveTab,
 }

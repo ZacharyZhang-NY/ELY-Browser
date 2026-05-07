@@ -6,8 +6,8 @@ use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscriptio
 use gpui_component::input::{InputEvent, InputState, SelectAll};
 
 use crate::{
-    CloseCurrentTab, FocusAddressBar, OpenNewTab, SelectNextTab, SelectPreviousTab,
-    ToggleFavoriteTab, TogglePinnedTab,
+    CloseCurrentTab, FocusAddressBar, OpenNewTab, RestoreClosedTab, SelectNextTab,
+    SelectPreviousTab, ToggleFavoriteTab, TogglePinnedTab,
 };
 
 enum ShellState {
@@ -133,6 +133,15 @@ impl ElyShell {
         }
     }
 
+    fn restore_closed_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.restore_last_archived_tab().is_ok()
+        {
+            self.sync_address_input(window, cx);
+            cx.notify();
+        }
+    }
+
     fn toggle_active_tab_favorite(&mut self, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state
             && core.toggle_active_tab_favorite().is_ok()
@@ -169,6 +178,15 @@ impl ElyShell {
 
     fn on_open_new_tab(&mut self, _: &OpenNewTab, window: &mut Window, cx: &mut Context<Self>) {
         self.open_new_tab(window, cx);
+    }
+
+    fn on_restore_closed_tab(
+        &mut self,
+        _: &RestoreClosedTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.restore_closed_tab(window, cx);
     }
 
     fn on_select_next_tab(

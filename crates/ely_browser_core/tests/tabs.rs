@@ -36,6 +36,8 @@ fn closes_active_tab_and_selects_next_neighbor() -> Result<(), Box<dyn Error>> {
     assert_eq!(active_tab_id, third_tab_id);
     assert_eq!(ordered_ids, vec![first_tab_id, active_tab_id.clone()]);
     assert_eq!(snapshot.active_tab_id, active_tab_id);
+    assert_eq!(snapshot.archived_tabs.len(), 1);
+    assert_eq!(snapshot.archived_tabs[0].tab().id(), &second_tab_id);
     Ok(())
 }
 
@@ -49,8 +51,38 @@ fn closing_last_tab_replaces_it_with_new_tab() -> Result<(), Box<dyn Error>> {
     let snapshot = core.snapshot()?;
     assert_eq!(snapshot.tabs.len(), 1);
     assert_eq!(snapshot.active_tab_id, active_tab_id);
+    assert_eq!(snapshot.archived_tabs.len(), 1);
     let replacement_tab = snapshot.tabs.first().ok_or(CoreError::MissingActiveTab)?;
     assert_eq!(replacement_tab.url().as_str(), "ely://new-tab");
+    Ok(())
+}
+
+#[test]
+fn restores_last_archived_tab() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let closed_tab_id = core.open_tab(UrlText::parse("https://example.com")?);
+    core.close_active_tab()?;
+
+    let restored_tab_id = core.restore_last_archived_tab()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(restored_tab_id, closed_tab_id);
+    assert_eq!(snapshot.active_tab_id, closed_tab_id);
+    assert!(snapshot.archived_tabs.is_empty());
+    assert!(snapshot.tabs.iter().any(|tab| tab.id() == &closed_tab_id));
+    Ok(())
+}
+
+#[test]
+fn restore_without_archived_tabs_returns_error() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    let error = match core.restore_last_archived_tab() {
+        Err(error) => error,
+        Ok(_) => return Err("restore should require an archived tab".into()),
+    };
+
+    assert_eq!(error, CoreError::NoArchivedTabs);
     Ok(())
 }
 

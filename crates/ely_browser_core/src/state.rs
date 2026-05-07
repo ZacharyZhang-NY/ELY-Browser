@@ -1,6 +1,6 @@
 use ely_domain::{
-    BrowserTab, CommandIntent, CommandScope, DomainError, Profile, ProfileId, ProfileKind, Space,
-    SpaceId, TabId, UrlText,
+    ArchiveSource, ArchivedTab, BrowserTab, CommandIntent, CommandScope, DomainError, Profile,
+    ProfileId, ProfileKind, Space, SpaceId, TabId, UrlText,
 };
 use url::Url;
 
@@ -33,6 +33,7 @@ pub struct BrowserSnapshot {
     pub tabs: Vec<BrowserTab>,
     pub favorites: Vec<BrowserTab>,
     pub pinned_tabs: Vec<BrowserTab>,
+    pub archived_tabs: Vec<ArchivedTab>,
     pub active_tab_id: TabId,
     pub active_space_name: String,
     pub active_profile_name: String,
@@ -44,6 +45,7 @@ pub struct BrowserCore {
     spaces: Vec<Space>,
     profiles: Vec<Profile>,
     tabs: Vec<BrowserTab>,
+    archived_tabs: Vec<ArchivedTab>,
     active_space_id: SpaceId,
     active_profile_id: ProfileId,
     active_tab_id: TabId,
@@ -71,6 +73,7 @@ impl BrowserCore {
             spaces: vec![space],
             profiles: vec![profile],
             tabs: vec![tab],
+            archived_tabs: Vec::new(),
             command_query: String::new(),
             new_tab_url,
         })
@@ -102,7 +105,8 @@ impl BrowserCore {
             .ok_or_else(|| CoreError::TabNotFound { id: tab_id.clone() })?;
         let was_active = &self.active_tab_id == tab_id;
 
-        self.tabs.remove(close_index);
+        let closed_tab = self.tabs.remove(close_index);
+        self.archived_tabs.push(ArchivedTab::new(closed_tab, ArchiveSource::ManualClose));
 
         if self.tabs.is_empty() {
             let tab = self.build_tab(self.new_tab_url.clone());
@@ -119,6 +123,21 @@ impl BrowserCore {
         }
 
         Ok(self.active_tab_id.clone())
+    }
+
+    pub fn restore_last_archived_tab(&mut self) -> Result<TabId, CoreError> {
+        let archived_tab = self.archived_tabs.pop().ok_or(CoreError::NoArchivedTabs)?;
+        let tab = archived_tab.into_tab();
+        let tab_id = tab.id().clone();
+        let insert_index = self
+            .tabs
+            .iter()
+            .position(|existing| existing.id() == &self.active_tab_id)
+            .map_or(self.tabs.len(), |index| index + 1);
+
+        self.tabs.insert(insert_index, tab);
+        self.select_tab(&tab_id)?;
+        Ok(tab_id)
     }
 
     pub fn select_tab(&mut self, tab_id: &TabId) -> Result<(), CoreError> {
@@ -221,6 +240,7 @@ impl BrowserCore {
         Ok(BrowserSnapshot {
             favorites: self.favorites(),
             pinned_tabs: self.pinned_tabs(),
+            archived_tabs: self.archived_tabs.clone(),
             tabs: self.tabs.clone(),
             active_tab_id: self.active_tab_id.clone(),
             active_space_name: active_space.name().to_string(),
@@ -261,6 +281,10 @@ impl BrowserCore {
             }
             "pin" | "pin-tab" | "toggle-pin" => {
                 self.toggle_active_tab_pinned()?;
+                Ok(true)
+            }
+            "restore-tab" | "reopen-tab" => {
+                self.restore_last_archived_tab()?;
                 Ok(true)
             }
             _ => Ok(false),
