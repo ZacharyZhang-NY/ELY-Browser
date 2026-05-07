@@ -1,0 +1,7 @@
+/target/
+/references/
+.agents/
+.claude/
+.DS_Store
+*.log
+*.tmp

@@ -1,0 +1,16 @@
+[package]
+name = "ely_app"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ely_browser_core = { path = "../ely_browser_core" }
+ely_design_system = { path = "../ely_design_system" }
+ely_domain = { path = "../ely_domain" }
+gpui.workspace = true
+gpui-component.workspace = true
+
+[lints]
+workspace = true

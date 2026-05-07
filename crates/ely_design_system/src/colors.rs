@@ -1,0 +1,14 @@
+pub const PRIMARY: u32 = 0xf54e00;
+pub const PRIMARY_ACTIVE: u32 = 0xd04200;
+pub const INK: u32 = 0x26251e;
+pub const BODY: u32 = 0x5a5852;
+pub const MUTED: u32 = 0x807d72;
+pub const MUTED_SOFT: u32 = 0xa09c92;
+pub const HAIRLINE: u32 = 0xe6e5e0;
+pub const HAIRLINE_STRONG: u32 = 0xcfcdc4;
+pub const CANVAS: u32 = 0xf7f7f4;
+pub const CANVAS_SOFT: u32 = 0xfafaf7;
+pub const SURFACE_CARD: u32 = 0xffffff;
+pub const SURFACE_STRONG: u32 = 0xe6e5e0;
+pub const SUCCESS: u32 = 0x1f8a65;
+pub const ERROR: u32 = 0xcf2d56;
