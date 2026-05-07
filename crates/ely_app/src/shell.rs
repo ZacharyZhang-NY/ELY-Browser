@@ -11,6 +11,8 @@ use gpui_component::{
     input::{Input, InputEvent, InputState},
 };
 
+use crate::CloseCurrentTab;
+
 enum ShellState {
     Ready(BrowserCore),
     StartupError(String),
@@ -81,6 +83,24 @@ impl ElyShell {
         }
     }
 
+    fn close_active_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.close_active_tab().is_ok()
+        {
+            self.sync_address_input(window, cx);
+            cx.notify();
+        }
+    }
+
+    fn on_close_current_tab(
+        &mut self,
+        _: &CloseCurrentTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.close_active_tab(window, cx);
+    }
+
     fn sync_address_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let ShellState::Ready(core) = &mut self.state else {
             return;
@@ -116,6 +136,7 @@ impl ElyShell {
     ) -> AnyElement {
         div()
             .size_full()
+            .on_action(cx.listener(Self::on_close_current_tab))
             .bg(rgb(ELY_THEME.canvas))
             .text_color(rgb(ELY_THEME.ink))
             .flex()
