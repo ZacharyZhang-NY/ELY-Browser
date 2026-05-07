@@ -181,6 +181,10 @@ impl BrowserCore {
                 self.open_tab(url);
                 self.command_query.clear();
             }
+            CommandIntent::Command(command) if self.submit_named_command(command)? => {
+                self.command_query.clear();
+            }
+            CommandIntent::Command(_) => {}
             CommandIntent::ScopedSearch { scope: CommandScope::Tabs, query } => {
                 if let Some(tab_id) = self.find_tab_match(query) {
                     self.select_tab(&tab_id)?;
@@ -229,6 +233,24 @@ impl BrowserCore {
         let next_tab_id = self.tabs[next_index].id().clone();
         self.select_tab(&next_tab_id)?;
         Ok(next_tab_id)
+    }
+
+    fn submit_named_command(&mut self, command: &str) -> Result<bool, CoreError> {
+        match command.trim().to_ascii_lowercase().as_str() {
+            "new-tab" => {
+                self.open_tab(self.new_tab_url.clone());
+                Ok(true)
+            }
+            "close-tab" => {
+                self.close_active_tab()?;
+                Ok(true)
+            }
+            "favorite" | "toggle-favorite" => {
+                self.toggle_active_tab_favorite()?;
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
     }
 
     fn active_tab_index(&self) -> Result<usize, CoreError> {
