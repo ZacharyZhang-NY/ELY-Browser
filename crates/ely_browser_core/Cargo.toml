@@ -8,6 +8,7 @@ rust-version.workspace = true
 [dependencies]
 ely_domain = { path = "../ely_domain" }
 thiserror.workspace = true
+url.workspace = true
 
 [lints]
 workspace = true

@@ -2,8 +2,11 @@ use ely_domain::{
     BrowserTab, CommandIntent, CommandScope, DomainError, Profile, ProfileId, ProfileKind, Space,
     SpaceId, TabId, UrlText,
 };
+use url::Url;
 
 use crate::CoreError;
+
+const DEFAULT_SEARCH_URL: &str = "https://duckduckgo.com/";
 
 #[derive(Clone, Debug)]
 pub struct InitialBrowserConfig {
@@ -157,6 +160,11 @@ impl BrowserCore {
                 self.open_tab(url.clone());
                 self.command_query.clear();
             }
+            CommandIntent::Search(query) => {
+                let url = search_url(query)?;
+                self.open_tab(url);
+                self.command_query.clear();
+            }
             CommandIntent::ScopedSearch { scope: CommandScope::Tabs, query } => {
                 if let Some(tab_id) = self.find_tab_match(query) {
                     self.select_tab(&tab_id)?;
@@ -245,6 +253,13 @@ fn tab_matches_query(tab: &BrowserTab, normalized_query: &str) -> bool {
     tab.title().to_lowercase().contains(normalized_query)
         || tab.url().as_str().to_lowercase().contains(normalized_query)
         || tab.display_url().to_lowercase().contains(normalized_query)
+}
+
+fn search_url(query: &str) -> Result<UrlText, CoreError> {
+    let mut url = Url::parse(DEFAULT_SEARCH_URL)
+        .map_err(|_| DomainError::InvalidUrl { value: DEFAULT_SEARCH_URL.to_string() })?;
+    url.query_pairs_mut().append_pair("q", query);
+    UrlText::parse(url.to_string()).map_err(CoreError::from)
 }
 
 #[cfg(test)]
@@ -372,6 +387,20 @@ mod tests {
         let snapshot = core.snapshot()?;
         assert_eq!(snapshot.active_tab_id, active_tab_id);
         assert_eq!(snapshot.command_query, "@tabs absent");
+        Ok(())
+    }
+
+    #[test]
+    fn search_command_opens_default_search_url() -> Result<(), Box<dyn Error>> {
+        let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+        core.set_command_query("? rust async book");
+        let intent = core.submit_command()?;
+
+        let active_tab = core.active_tab()?;
+        assert_eq!(intent, Some(CommandIntent::Search("rust async book".to_string())));
+        assert_eq!(active_tab.url().as_str(), "https://duckduckgo.com/?q=rust+async+book");
+        assert_eq!(core.command_query(), "");
         Ok(())
     }
 }
