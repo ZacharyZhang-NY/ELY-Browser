@@ -128,6 +128,29 @@ impl BrowserCore {
     pub fn restore_last_archived_tab(&mut self) -> Result<TabId, CoreError> {
         let archived_tab = self.archived_tabs.pop().ok_or(CoreError::NoArchivedTabs)?;
         let tab = archived_tab.into_tab();
+        self.restore_tab(tab)
+    }
+
+    pub fn restore_archived_tab_match(&mut self, query: &str) -> Result<Option<TabId>, CoreError> {
+        let normalized_query = query.trim().to_lowercase();
+        if normalized_query.is_empty() {
+            return Ok(None);
+        }
+
+        let Some(index) = self
+            .archived_tabs
+            .iter()
+            .rposition(|archived| tab_matches_query(archived.tab(), &normalized_query))
+        else {
+            return Ok(None);
+        };
+
+        let archived_tab = self.archived_tabs.remove(index);
+        let tab = archived_tab.into_tab();
+        self.restore_tab(tab).map(Some)
+    }
+
+    fn restore_tab(&mut self, tab: BrowserTab) -> Result<TabId, CoreError> {
         let tab_id = tab.id().clone();
         let insert_index = self
             .tabs
@@ -218,6 +241,11 @@ impl BrowserCore {
                     self.select_tab(&tab_id)?;
                     self.command_query.clear();
                 }
+            }
+            CommandIntent::ScopedSearch { scope: CommandScope::Archive, query }
+                if self.restore_archived_tab_match(query)?.is_some() =>
+            {
+                self.command_query.clear();
             }
             _ => {}
         }

@@ -85,6 +85,47 @@ fn restore_tab_command_reopens_last_archived_tab() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
+fn archive_scoped_search_restores_matching_archived_tab() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com")?);
+    let servo_tab_id = core.open_tab(UrlText::parse("https://servo.org")?);
+    core.close_active_tab()?;
+
+    core.set_command_query("@archive servo");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(
+        intent,
+        Some(CommandIntent::ScopedSearch {
+            scope: ely_domain::CommandScope::Archive,
+            query: "servo".to_string()
+        })
+    );
+    assert_eq!(snapshot.active_tab_id, servo_tab_id);
+    assert!(snapshot.archived_tabs.is_empty());
+    assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn archive_scoped_search_preserves_query_without_match() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com")?);
+    core.close_active_tab()?;
+    let active_tab_id = core.active_tab()?.id().clone();
+
+    core.set_command_query("@archive absent");
+    core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(snapshot.active_tab_id, active_tab_id);
+    assert_eq!(snapshot.archived_tabs.len(), 1);
+    assert_eq!(snapshot.command_query, "@archive absent");
+    Ok(())
+}
+
+#[test]
 fn unknown_command_preserves_query() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let active_tab_id = core.active_tab()?.id().clone();

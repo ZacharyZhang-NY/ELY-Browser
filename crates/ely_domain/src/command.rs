@@ -2,6 +2,7 @@ use crate::{DomainError, UrlText};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CommandScope {
+    Archive,
     Tabs,
     Bookmarks,
     History,
@@ -43,6 +44,7 @@ impl CommandIntent {
 fn parse_scope(value: &str) -> Option<(CommandScope, &str)> {
     let (scope, query) = value.split_once(' ')?;
     let scope = match scope {
+        "@archive" => CommandScope::Archive,
         "@tabs" => CommandScope::Tabs,
         "@bookmarks" => CommandScope::Bookmarks,
         "@history" => CommandScope::History,

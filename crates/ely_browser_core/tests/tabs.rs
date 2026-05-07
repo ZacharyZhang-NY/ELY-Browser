@@ -74,6 +74,42 @@ fn restores_last_archived_tab() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn restores_matching_archived_tab() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let example_tab_id = core.open_tab(UrlText::parse("https://example.com")?);
+    let servo_tab_id = core.open_tab(UrlText::parse("https://servo.org")?);
+
+    core.close_active_tab()?;
+    core.select_tab(&example_tab_id)?;
+    core.close_active_tab()?;
+
+    let restored_tab_id = core.restore_archived_tab_match("servo")?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(restored_tab_id, Some(servo_tab_id.clone()));
+    assert_eq!(snapshot.active_tab_id, servo_tab_id);
+    assert_eq!(snapshot.archived_tabs.len(), 1);
+    assert_eq!(snapshot.archived_tabs[0].tab().id(), &example_tab_id);
+    Ok(())
+}
+
+#[test]
+fn ignores_empty_archived_tab_match_query() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com")?);
+    core.close_active_tab()?;
+    let active_tab_id = core.active_tab()?.id().clone();
+
+    let restored_tab_id = core.restore_archived_tab_match(" ")?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(restored_tab_id, None);
+    assert_eq!(snapshot.active_tab_id, active_tab_id);
+    assert_eq!(snapshot.archived_tabs.len(), 1);
+    Ok(())
+}
+
+#[test]
 fn restore_without_archived_tabs_returns_error() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
 
