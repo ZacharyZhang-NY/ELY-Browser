@@ -71,6 +71,32 @@ fn missing_reading_list_progress_update_returns_error() -> Result<(), Box<dyn Er
 }
 
 #[test]
+fn remove_reading_list_entry_removes_saved_entry() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com/long-read")?);
+    let entry_id = core.save_active_tab_to_reading_list()?;
+
+    core.remove_reading_list_entry(&entry_id)?;
+    let snapshot = core.snapshot()?;
+
+    assert!(snapshot.reading_list.is_empty());
+    Ok(())
+}
+
+#[test]
+fn missing_reading_list_remove_returns_error() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let missing_id = ReadingListId::new();
+
+    let Err(error) = core.remove_reading_list_entry(&missing_id) else {
+        return Err("expected missing reading list entry error".into());
+    };
+
+    assert_eq!(error, ely_browser_core::CoreError::ReadingListEntryNotFound { id: missing_id });
+    Ok(())
+}
+
+#[test]
 fn reading_list_scoped_search_opens_matching_entry() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     core.open_tab(UrlText::parse("https://example.com/long-read")?);

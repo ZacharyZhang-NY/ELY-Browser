@@ -16,4 +16,16 @@ impl ElyShell {
             cx.notify();
         }
     }
+
+    pub(super) fn remove_reading_list_entry(
+        &mut self,
+        entry_id: &ReadingListId,
+        cx: &mut Context<Self>,
+    ) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.remove_reading_list_entry(entry_id).is_ok()
+        {
+            cx.notify();
+        }
+    }
 }

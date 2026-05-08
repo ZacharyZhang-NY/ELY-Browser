@@ -143,6 +143,7 @@ impl ElyShell {
                     .child(progress_label(entry.progress())),
             )
             .child(render_progress_action(index, entry_id, progress, cx))
+            .child(render_remove_action(index, entry.id().clone(), cx))
             .into_any_element()
     }
 }
@@ -206,6 +207,23 @@ fn render_progress_action(
         .tooltip(progress.action_label())
         .on_click(cx.listener(move |shell, _, _, cx| {
             shell.set_reading_list_progress(&entry_id, next_progress, cx);
+        }))
+        .into_any_element()
+}
+
+fn render_remove_action(
+    index: usize,
+    entry_id: ReadingListId,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    Button::new(("remove-reading-list", index))
+        .danger()
+        .xsmall()
+        .icon(IconName::Delete)
+        .label("Remove")
+        .tooltip("Remove From Reading List")
+        .on_click(cx.listener(move |shell, _, _, cx| {
+            shell.remove_reading_list_entry(&entry_id, cx);
         }))
         .into_any_element()
 }

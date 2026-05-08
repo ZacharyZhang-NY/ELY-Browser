@@ -36,6 +36,12 @@ impl BrowserCore {
         Ok(())
     }
 
+    pub fn remove_reading_list_entry(&mut self, entry_id: &ReadingListId) -> Result<(), CoreError> {
+        let index = self.reading_list_entry_index(entry_id)?;
+        self.reading_list.remove(index);
+        Ok(())
+    }
+
     pub(super) fn find_reading_list_match(&self, query: &str) -> Option<UrlText> {
         let normalized_query = query.trim().to_lowercase();
         if normalized_query.is_empty() {
@@ -62,9 +68,14 @@ impl BrowserCore {
         &mut self,
         entry_id: &ReadingListId,
     ) -> Result<&mut ReadingListEntry, CoreError> {
+        let index = self.reading_list_entry_index(entry_id)?;
+        Ok(&mut self.reading_list[index])
+    }
+
+    fn reading_list_entry_index(&self, entry_id: &ReadingListId) -> Result<usize, CoreError> {
         self.reading_list
-            .iter_mut()
-            .find(|entry| entry.id() == entry_id)
+            .iter()
+            .position(|entry| entry.id() == entry_id)
             .ok_or_else(|| CoreError::ReadingListEntryNotFound { id: entry_id.clone() })
     }
 }
