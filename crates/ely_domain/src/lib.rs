@@ -7,6 +7,7 @@ mod history;
 mod identifiers;
 mod new_tab;
 mod plugin;
+mod privacy;
 mod profile;
 mod reading_list;
 mod search;
@@ -34,6 +35,7 @@ pub use plugin::{
     PluginContributionPoint, PluginId, PluginManifest, PluginPermission, PluginPermissionRisk,
     PluginSignature, PluginSignatureAlgorithm,
 };
+pub use privacy::HistoryRecordingPolicy;
 pub use profile::{Profile, ProfileKind};
 pub use reading_list::{ReadingListEntry, ReadingProgress};
 pub use search::SearchEngine;

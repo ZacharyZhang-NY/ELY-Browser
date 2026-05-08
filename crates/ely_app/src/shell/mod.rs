@@ -7,8 +7,8 @@ mod splits;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
 use ely_domain::{
-    ArchivePolicy, CommandIntent, NewTabDestination, ProfileId, SearchEngine, SpaceId, TabId,
-    UrlText,
+    ArchivePolicy, CommandIntent, HistoryRecordingPolicy, NewTabDestination, ProfileId,
+    SearchEngine, SpaceId, TabId, UrlText,
 };
 use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscription, Window};
 use gpui_component::input::{InputEvent, InputState, SelectAll};
@@ -283,6 +283,17 @@ impl ElyShell {
     fn set_new_tab_destination(&mut self, destination: NewTabDestination, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state {
             core.set_new_tab_destination(destination);
+            cx.notify();
+        }
+    }
+
+    fn set_history_recording_policy(
+        &mut self,
+        policy: HistoryRecordingPolicy,
+        cx: &mut Context<Self>,
+    ) {
+        if let ShellState::Ready(core) = &mut self.state {
+            core.set_history_recording_policy(policy);
             cx.notify();
         }
     }

@@ -7,6 +7,7 @@ mod general;
 mod plugin_catalog;
 mod plugin_details;
 mod plugins;
+mod privacy_security;
 mod profiles;
 mod reading_list;
 mod search;
@@ -55,6 +56,7 @@ impl ElyShell {
             "ely://settings/general" => self.render_general_page(snapshot, cx),
             "ely://settings/sidebar-tabs" => self.render_sidebar_tabs_page(snapshot, cx),
             "ely://settings/search" => self.render_search_page(snapshot, cx),
+            "ely://settings/privacy-security" => self.render_privacy_security_page(snapshot, cx),
             "ely://settings/spaces" => self.render_spaces_page(snapshot, cx),
             "ely://settings/shortcuts" => self.render_shortcuts_page(snapshot),
             "ely://settings/plugins" => self.render_plugins_page(snapshot, cx),

@@ -2,9 +2,9 @@ use std::{collections::BTreeMap, time::SystemTime};
 
 use ely_domain::{
     ArchivePolicy, ArchivedTab, BookmarkEntry, BrowserTab, DomainError, DownloadEntry,
-    DownloadPolicy, HistoryEntry, NewTabDestination, Profile, ProfileId, ProfileKind,
-    ReadingListEntry, SearchEngine, SitePermissionAuditEvent, SitePermissionEntry, Space, SpaceId,
-    SplitLayout, SyncStatus, TabId, UrlText,
+    DownloadPolicy, HistoryEntry, HistoryRecordingPolicy, NewTabDestination, Profile, ProfileId,
+    ProfileKind, ReadingListEntry, SearchEngine, SitePermissionAuditEvent, SitePermissionEntry,
+    Space, SpaceId, SplitLayout, SyncStatus, TabId, UrlText,
 };
 
 use crate::{CoreError, navigation::tab_title};
@@ -68,6 +68,7 @@ pub struct BrowserSnapshot {
     pub active_download_policy: DownloadPolicy,
     pub search_engine: SearchEngine,
     pub new_tab_destination: NewTabDestination,
+    pub history_recording_policy: HistoryRecordingPolicy,
     pub command_query: String,
 }
 
@@ -94,6 +95,7 @@ pub struct BrowserCore {
     active_tabs_by_space_profile: BTreeMap<(SpaceId, ProfileId), TabId>,
     search_engine: SearchEngine,
     new_tab_destination: NewTabDestination,
+    history_recording_policy: HistoryRecordingPolicy,
     command_query: String,
 }
 
@@ -128,6 +130,7 @@ impl BrowserCore {
             active_tabs_by_space_profile,
             search_engine: SearchEngine::default(),
             new_tab_destination,
+            history_recording_policy: HistoryRecordingPolicy::default(),
             spaces: vec![space],
             profiles: vec![profile],
             tabs: vec![tab],
@@ -241,6 +244,15 @@ impl BrowserCore {
         self.new_tab_destination
     }
 
+    pub fn set_history_recording_policy(&mut self, policy: HistoryRecordingPolicy) {
+        self.history_recording_policy = policy;
+    }
+
+    #[must_use]
+    pub fn history_recording_policy(&self) -> HistoryRecordingPolicy {
+        self.history_recording_policy
+    }
+
     pub fn set_command_query(&mut self, query: impl Into<String>) {
         self.command_query = query.into();
     }
@@ -279,6 +291,7 @@ impl BrowserCore {
             active_download_policy: active_profile.download_policy().clone(),
             search_engine: self.search_engine,
             new_tab_destination: self.new_tab_destination,
+            history_recording_policy: self.history_recording_policy,
             command_query: self.command_query.clone(),
         })
     }

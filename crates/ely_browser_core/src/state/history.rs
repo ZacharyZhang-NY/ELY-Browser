@@ -8,7 +8,10 @@ use super::BrowserCore;
 
 impl BrowserCore {
     pub(super) fn record_history_entry(&mut self, tab: &BrowserTab) {
-        if !records_history(tab.url()) || !self.profile_records_history(tab.profile_id()) {
+        if !self.history_recording_policy.records_history()
+            || !records_history(tab.url())
+            || !self.profile_records_history(tab.profile_id())
+        {
             return;
         }
 

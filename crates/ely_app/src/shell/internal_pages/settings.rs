@@ -43,6 +43,12 @@ const SETTINGS_ROUTES: &[SettingsRoute] = &[
         route: "ely://settings/search",
     },
     SettingsRoute {
+        icon: IconName::Eye,
+        title: "Privacy & Security",
+        detail: "History recording and profile-scoped privacy controls.",
+        route: "ely://settings/privacy-security",
+    },
+    SettingsRoute {
         icon: IconName::CircleUser,
         title: "Profiles",
         detail: "Profile identity, color, and download policy.",

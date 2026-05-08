@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{CommandIntent, CommandScope, ProfileKind, UrlText};
+use ely_domain::{CommandIntent, CommandScope, HistoryRecordingPolicy, ProfileKind, UrlText};
 
 #[test]
 fn navigation_records_profile_and_space_history() -> Result<(), Box<dyn Error>> {
@@ -27,6 +27,21 @@ fn internal_pages_are_omitted_from_history() -> Result<(), Box<dyn Error>> {
     core.open_tab(UrlText::parse("ely://history")?);
 
     assert!(core.snapshot()?.history_entries.is_empty());
+    Ok(())
+}
+
+#[test]
+fn paused_history_recording_skips_new_history_entries() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.open_tab(UrlText::parse("https://example.com/recorded")?);
+    core.set_history_recording_policy(HistoryRecordingPolicy::Pause);
+    core.open_tab(UrlText::parse("https://example.com/private")?);
+
+    let snapshot = core.snapshot()?;
+    assert_eq!(snapshot.history_recording_policy, HistoryRecordingPolicy::Pause);
+    assert_eq!(snapshot.history_entries.len(), 1);
+    assert_eq!(snapshot.history_entries[0].url().as_str(), "https://example.com/recorded");
     Ok(())
 }
 
