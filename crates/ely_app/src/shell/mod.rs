@@ -1,5 +1,6 @@
 mod archive_labels;
 mod bookmarks;
+mod crashes;
 mod downloads;
 mod history;
 mod internal_pages;

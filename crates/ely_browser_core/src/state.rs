@@ -13,6 +13,7 @@ use sync::SyncObjectPolicies;
 
 mod bookmarks;
 mod commands;
+mod crashes;
 mod downloads;
 mod history;
 mod notes;

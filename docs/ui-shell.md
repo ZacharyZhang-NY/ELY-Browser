@@ -26,3 +26,24 @@
 Motion register: productive. Command, space, tab, and archive restore interactions use immediate
 state changes with hover/press feedback through GPUI styles; future pane transitions should use
 transform/opacity and respect reduced-motion settings.
+
+Crash recovery uses the same productive register:
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ELY Browser   [ https://example.com/crash-loop.............. ] [pin] [*] [+] │
+├──────────────────────────────┬───────────────────────────────────────────────┤
+│ Tabs                         │  ┌─────────────────────────────────────────┐  │
+│   * example.com              │  │ ! Tab Recovery                [Restore] │  │
+│     https://example.com/...  │  │ Recovering example.com                 │  │
+│                              │  ├─────────────────────────────────────────┤  │
+│ Profile                      │  │ URL        https://example.com/...      │  │
+│   Default                    │  │ Title      example.com                  │  │
+│                              │  │ Favicon    Saved: favicons/example.ico  │  │
+│                              │  │ Space      Work                         │  │
+│                              │  │ Profile    Default                      │  │
+│                              │  │ Form restore prompt  Session data kept  │  │
+│                              │  │ [Restore]                               │  │
+│                              │  └─────────────────────────────────────────┘  │
+└──────────────────────────────┴───────────────────────────────────────────────┘
+```

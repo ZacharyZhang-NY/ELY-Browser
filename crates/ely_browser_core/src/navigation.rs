@@ -24,6 +24,7 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
         "ely://archive" => Some("Archived Tabs"),
         "ely://task-manager" => Some("Task Manager"),
         "ely://plugins" => Some("Plugin Marketplace"),
+        url if crash_route_tab_id(url).is_some() => Some("Tab Recovery"),
         url if plugin_detail_route_id(url).is_some() => Some("Plugin Details"),
         url if SiteOrigin::from_site_route(url).ok().flatten().is_some() => Some("Site Settings"),
         "ely://about" => Some("About ELY Browser"),
@@ -247,4 +248,9 @@ fn internal_page_url(value: &str) -> Result<UrlText, CoreError> {
 fn plugin_detail_route_id(url: &str) -> Option<&str> {
     let plugin_id = url.strip_prefix("ely://plugin/")?;
     (!plugin_id.is_empty() && !plugin_id.contains('/')).then_some(plugin_id)
+}
+
+pub(crate) fn crash_route_tab_id(url: &str) -> Option<&str> {
+    let tab_id = url.strip_prefix("ely://crash/")?;
+    (!tab_id.is_empty() && !tab_id.contains('/')).then_some(tab_id)
 }

@@ -1,5 +1,6 @@
 mod about;
 mod bookmarks;
+mod crash;
 mod download_actions;
 mod download_labels;
 mod download_settings;
@@ -26,7 +27,7 @@ mod task_manager;
 
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
-use ely_domain::{ArchivedTab, BrowserTab};
+use ely_domain::{ArchivedTab, BrowserTab, TabState};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, div, px, rgb,
@@ -43,6 +44,10 @@ impl ElyShell {
         snapshot: &BrowserSnapshot,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        if tab.state() == &TabState::Crashed {
+            return self.render_crash_page(tab, snapshot, cx);
+        }
+
         match tab.url().as_str() {
             "ely://bookmarks" => self.render_bookmarks_page(snapshot, cx),
             "ely://notes" => self.render_notes_page(snapshot, cx),
@@ -52,6 +57,7 @@ impl ElyShell {
             "ely://archive" => self.render_archive_page(snapshot, cx),
             "ely://task-manager" => self.render_task_manager_page(snapshot),
             "ely://plugins" => self.render_plugin_catalog_page(snapshot, cx),
+            url if url.starts_with("ely://crash/") => self.render_crash_route(snapshot, url, cx),
             url if url.starts_with("ely://plugin/") => {
                 self.render_plugin_detail_page(snapshot, url, cx)
             }

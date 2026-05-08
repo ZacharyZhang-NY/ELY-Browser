@@ -273,6 +273,15 @@ impl BrowserCore {
                 self.close_active_tab()?;
                 Ok(true)
             }
+            "crash-tab" | "crash tab" => {
+                self.crash_active_tab()?;
+                Ok(true)
+            }
+            "recover-tab" | "recover tab" | "recover-crashed-tab" | "recover crashed tab" => {
+                let tab_id = self.active_tab()?.id().clone();
+                self.recover_crashed_tab(&tab_id)?;
+                Ok(true)
+            }
             "close-split-view" | "close split view" => {
                 Ok(self.close_active_saved_split_view()?.is_some())
             }
