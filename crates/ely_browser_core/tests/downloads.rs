@@ -111,6 +111,36 @@ fn returns_visible_download_target_file_path() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn clears_downloads_for_active_profile() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let default_profile_id = core.active_tab()?.profile_id().clone();
+    core.record_download_started(
+        UrlText::parse("https://example.com/report.pdf")?,
+        "report.pdf",
+        Some(2048),
+    )?;
+
+    core.create_profile("Personal", 0xf54e00, ProfileKind::Standard)?;
+    core.record_download_started(
+        UrlText::parse("https://example.com/archive.zip")?,
+        "archive.zip",
+        Some(4096),
+    )?;
+
+    assert_eq!(core.clear_downloads_for_active_profile(), 1);
+    assert!(core.snapshot()?.download_entries.is_empty());
+
+    core.select_profile(&default_profile_id)?;
+    let default_snapshot = core.snapshot()?;
+    assert_eq!(default_snapshot.download_entries.len(), 1);
+    assert_eq!(default_snapshot.download_entries[0].file_name(), "report.pdf");
+    assert_eq!(core.clear_downloads_for_active_profile(), 1);
+    assert!(core.snapshot()?.download_entries.is_empty());
+    assert_eq!(core.clear_downloads_for_active_profile(), 0);
+    Ok(())
+}
+
+#[test]
 fn rejects_target_path_for_ask_every_time_download() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let download_id = core.record_download_started(

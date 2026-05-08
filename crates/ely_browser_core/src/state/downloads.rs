@@ -81,6 +81,13 @@ impl BrowserCore {
             .ok_or_else(|| CoreError::DownloadTargetPathUnavailable { id: download_id.clone() })
     }
 
+    pub fn clear_downloads_for_active_profile(&mut self) -> usize {
+        let active_profile_id = self.active_profile_id.clone();
+        let before_count = self.download_entries.len();
+        self.download_entries.retain(|entry| entry.profile_id() != &active_profile_id);
+        before_count - self.download_entries.len()
+    }
+
     pub(super) fn visible_downloads(&self) -> Vec<DownloadEntry> {
         self.download_entries
             .iter()
