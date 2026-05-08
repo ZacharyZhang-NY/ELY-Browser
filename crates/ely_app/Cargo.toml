@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+live-site-smoke = []
+
 [dependencies]
 directories.workspace = true
 ed25519-dalek.workspace = true

@@ -13,6 +13,9 @@ use thiserror::Error;
 const SIDECAR_BINARY_TIMEOUT: Duration = Duration::from_secs(35);
 const SIDECAR_CARGO_TIMEOUT: Duration = Duration::from_secs(180);
 const SIDECAR_POLL_INTERVAL: Duration = Duration::from_millis(20);
+const SIDECAR_RETRY_INTERVAL: Duration = Duration::from_millis(250);
+const SIDECAR_NAVIGATION_ATTEMPTS: usize = 3;
+const SIDECAR_INTERACTION_ATTEMPTS: usize = 1;
 const SIDECAR_PATH_ENV: &str = "ELY_SERVO_SIDECAR";
 
 #[derive(Clone, Debug)]
@@ -33,8 +36,27 @@ impl ServoSidecarClient {
             return Err(ServoSidecarError::SidecarBinaryUnavailable { path: path.to_path_buf() });
         }
 
+        let mut attempt = 0;
+        loop {
+            match self.snapshot_once(&request) {
+                Ok(snapshot) => return Ok(snapshot),
+                Err(error) => {
+                    attempt += 1;
+                    if attempt >= request.max_attempts() {
+                        return Err(error);
+                    }
+                    thread::sleep(SIDECAR_RETRY_INTERVAL);
+                }
+            }
+        }
+    }
+
+    fn snapshot_once(
+        &self,
+        request: &SidecarSnapshotRequest,
+    ) -> Result<SidecarSnapshot, ServoSidecarError> {
         let rgba_path = temporary_rgba_path()?;
-        let output = match self.run_snapshot_command(&request, &rgba_path) {
+        let output = match self.run_snapshot_command(request, &rgba_path) {
             Ok(output) => output,
             Err(error) => {
                 remove_temporary_file(&rgba_path)?;
@@ -203,6 +225,14 @@ impl SidecarSnapshotRequest {
     #[cfg(test)]
     pub(crate) fn typed_text_for_test(&self) -> Option<&str> {
         self.typed_text.as_deref()
+    }
+
+    fn max_attempts(&self) -> usize {
+        if self.click_point.is_some() || self.typed_text.is_some() {
+            return SIDECAR_INTERACTION_ATTEMPTS;
+        }
+
+        SIDECAR_NAVIGATION_ATTEMPTS
     }
 }
 
@@ -437,44 +467,5 @@ fn expected_rgba_byte_count(width: u32, height: u32) -> Result<usize, ServoSidec
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn accepts_loading_report_with_visible_content() -> Result<(), ServoSidecarError> {
-        let snapshot = SidecarSnapshot::from_report(report_with_state("loading"), visible_frame())?;
-
-        assert_eq!(snapshot.loaded_url(), Some("https://example.com/"));
-        assert_eq!(snapshot.title(), Some("Example Domain"));
-        assert_eq!(snapshot.width(), 2);
-        assert_eq!(snapshot.height(), 1);
-        Ok(())
-    }
-
-    #[test]
-    fn rejects_created_report_with_visible_content() {
-        let result = SidecarSnapshot::from_report(report_with_state("created"), visible_frame());
-
-        assert!(
-            matches!(result, Err(ServoSidecarError::IncompleteRender { state }) if state == "created")
-        );
-    }
-
-    fn report_with_state(state: &str) -> SidecarReport {
-        SidecarReport {
-            requested_url: "https://example.com".to_string(),
-            loaded_url: Some("https://example.com/".to_string()),
-            title: Some("Example Domain".to_string()),
-            state: state.to_string(),
-            width: 2,
-            height: 1,
-            rgba_byte_count: 8,
-            non_white_pixel_count: 1,
-            content_pixel_count: 1,
-        }
-    }
-
-    fn visible_frame() -> Vec<u8> {
-        vec![0, 0, 0, 255, 255, 255, 255, 255]
-    }
-}
+#[path = "servo_sidecar_tests.rs"]
+mod tests;

@@ -1,4 +1,5 @@
 use std::{
+    io::Write,
     thread,
     time::{Duration, Instant},
 };
@@ -75,8 +76,9 @@ fn run_snapshot(args: SnapshotArgs) -> Result<(), SidecarError> {
     let frame = host.last_rendered_frame()?;
     std::fs::write(&args.rgba_out, frame.rgba_bytes())?;
 
+    let mut stdout = std::io::stdout().lock();
     serde_json::to_writer(
-        std::io::stdout().lock(),
+        &mut stdout,
         &SnapshotReport::new(
             &args,
             &snapshot,
@@ -90,7 +92,9 @@ fn run_snapshot(args: SnapshotArgs) -> Result<(), SidecarError> {
             },
         ),
     )?;
-    Ok(())
+    stdout.write_all(b"\n")?;
+    stdout.flush()?;
+    std::process::exit(0);
 }
 
 fn apply_scroll_if_requested(
