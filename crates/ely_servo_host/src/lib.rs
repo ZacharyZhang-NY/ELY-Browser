@@ -5,8 +5,8 @@ mod runtime;
 
 pub use error::ServoHostError;
 pub use host::{
-    NavigationRequest, PermissionDecision, PermissionRequest, ServoHost, WebViewSnapshot,
-    WebViewState,
+    NavigationRequest, PermissionDecision, PermissionRequest, RenderedFrame, RenderedFrameSummary,
+    ServoHost, WebViewSnapshot, WebViewState,
 };
 #[cfg(feature = "servo-engine")]
 pub use runtime::{ServoSurfaceSize, SoftwareServoHost};

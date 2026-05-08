@@ -20,4 +20,7 @@ pub enum ServoHostError {
 
     #[error("servo rendering context could not be made current")]
     RenderingContextNotCurrent,
+
+    #[error("servo rendered frame is unavailable")]
+    RenderedFrameUnavailable,
 }

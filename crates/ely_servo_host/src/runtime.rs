@@ -11,14 +11,14 @@ use std::{
 use dpi::PhysicalSize;
 use ely_domain::{ProfileId, TabId, WebViewId};
 use servo::{
-    EventLoopWaker, LoadStatus, RenderingContext, Servo, ServoBuilder, WebView, WebViewBuilder,
-    WebViewDelegate,
+    DeviceIntPoint, DeviceIntRect, DeviceIntSize, EventLoopWaker, LoadStatus, RenderingContext,
+    Servo, ServoBuilder, WebView, WebViewBuilder, WebViewDelegate,
 };
 use url::Url;
 
 use crate::{
-    NavigationRequest, PermissionDecision, PermissionRequest, ServoHost, ServoHostError,
-    WebViewSnapshot, WebViewState,
+    NavigationRequest, PermissionDecision, PermissionRequest, RenderedFrame, ServoHost,
+    ServoHostError, WebViewSnapshot, WebViewState,
 };
 
 static SERVO_RUNTIME_STARTED: AtomicBool = AtomicBool::new(false);
@@ -46,6 +46,7 @@ pub struct SoftwareServoHost {
     webviews: HashMap<WebViewId, HostWebView>,
     permissions: PermissionStore,
     wake_requested: Arc<AtomicBool>,
+    last_rendered_frame: Option<RenderedFrame>,
 }
 
 impl SoftwareServoHost {
@@ -82,6 +83,7 @@ impl SoftwareServoHost {
             webviews: HashMap::new(),
             permissions: Rc::new(RefCell::new(HashMap::new())),
             wake_requested,
+            last_rendered_frame: None,
         })
     }
 }
@@ -171,15 +173,23 @@ impl ServoHost for SoftwareServoHost {
     }
 
     fn paint(&mut self, webview_id: &WebViewId) -> Result<(), ServoHostError> {
-        let webview = self.webview(webview_id)?;
         self.rendering_context
             .make_current()
             .map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
         self.rendering_context.prepare_for_rendering();
-        webview.webview.paint();
+        {
+            let webview = self.webview(webview_id)?;
+            webview.webview.paint();
+        }
+        let rendered_frame = self.read_rendered_frame()?;
         self.rendering_context.present();
-        webview.delegate.mark_frame_presented();
+        self.webview(webview_id)?.delegate.mark_frame_presented();
+        self.last_rendered_frame = Some(rendered_frame);
         Ok(())
+    }
+
+    fn last_rendered_frame(&self) -> Result<RenderedFrame, ServoHostError> {
+        self.last_rendered_frame.clone().ok_or(ServoHostError::RenderedFrameUnavailable)
     }
 }
 
@@ -188,6 +198,24 @@ impl SoftwareServoHost {
         self.webviews
             .get(webview_id)
             .ok_or_else(|| ServoHostError::WebViewNotFound { id: webview_id.clone() })
+    }
+
+    fn read_rendered_frame(&self) -> Result<RenderedFrame, ServoHostError> {
+        let size = self.rendering_context.size();
+        let width =
+            i32::try_from(size.width).map_err(|_| ServoHostError::RenderedFrameUnavailable)?;
+        let height =
+            i32::try_from(size.height).map_err(|_| ServoHostError::RenderedFrameUnavailable)?;
+        let frame_rect = DeviceIntRect::from_origin_and_size(
+            DeviceIntPoint::new(0, 0),
+            DeviceIntSize::new(width, height),
+        );
+        let image = self
+            .rendering_context
+            .read_to_image(frame_rect)
+            .ok_or(ServoHostError::RenderedFrameUnavailable)?;
+
+        Ok(RenderedFrame::from_rgba_bytes(size.width, size.height, image.into_raw()))
     }
 }
 

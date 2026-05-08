@@ -7,9 +7,11 @@ use ely_servo_host::{
     NavigationRequest, ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, WebViewState,
 };
 
+const PRD_SITE_COMPATIBILITY_URLS: &[&str] = &["https://example.com", "https://servo.org"];
+
 #[test]
 fn manages_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
-    let mut host = SoftwareServoHost::new(ServoSurfaceSize::new(320, 240))?;
+    let mut host = SoftwareServoHost::new(ServoSurfaceSize::new(640, 480))?;
     let tab_id = TabId::new();
     let profile_id = ProfileId::new();
 
@@ -27,24 +29,80 @@ fn manages_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
 
     host.navigate(NavigationRequest { webview_id: webview_id.clone(), tab_id, url })?;
 
-    for _ in 0..1_000 {
-        host.tick();
-        if host.state(&webview_id)? == WebViewState::Complete {
-            break;
-        }
-        thread::sleep(Duration::from_millis(1));
-    }
-
-    let snapshot = host.snapshot(&webview_id)?;
+    let snapshot = wait_for_rendered_webview(&mut host, &webview_id, None)?;
     assert_eq!(snapshot.state(), &WebViewState::Complete, "snapshot: {snapshot:?}");
     assert!(
         snapshot.url().is_some_and(|value| value.starts_with("data:text/html,")),
         "snapshot: {snapshot:?}"
     );
+    assert_rendered_frame_has_content(&host, "data:text/html")?;
+
+    let mut previous_frame_hash = Some(host.last_rendered_frame()?.sample_hash());
+    for site_url in PRD_SITE_COMPATIBILITY_URLS {
+        let tab_id = TabId::new();
+        let url = UrlText::parse(*site_url)?;
+
+        host.navigate(NavigationRequest { webview_id: webview_id.clone(), tab_id, url })?;
+        let snapshot = wait_for_rendered_webview(&mut host, &webview_id, previous_frame_hash)?;
+
+        assert_eq!(snapshot.state(), &WebViewState::Complete, "{site_url}: {snapshot:?}");
+        assert!(
+            snapshot.url().is_some_and(|value| value.starts_with(site_url)),
+            "{site_url}: {snapshot:?}"
+        );
+        assert_rendered_frame_has_content(&host, site_url)?;
+        previous_frame_hash = Some(host.last_rendered_frame()?.sample_hash());
+    }
 
     assert!(matches!(
-        SoftwareServoHost::new(ServoSurfaceSize::new(320, 240)),
+        SoftwareServoHost::new(ServoSurfaceSize::new(640, 480)),
         Err(ServoHostError::RuntimeAlreadyStarted)
     ));
+    Ok(())
+}
+
+fn wait_for_rendered_webview(
+    host: &mut SoftwareServoHost,
+    webview_id: &ely_domain::WebViewId,
+    previous_frame_hash: Option<u64>,
+) -> Result<ely_servo_host::WebViewSnapshot, Box<dyn Error>> {
+    let mut painted_since_request = false;
+
+    for _ in 0..5_000 {
+        host.tick();
+        let snapshot = host.snapshot(webview_id)?;
+        if snapshot.has_pending_frame() {
+            host.paint(webview_id)?;
+            painted_since_request = true;
+        }
+
+        let snapshot = host.snapshot(webview_id)?;
+        let has_rendered_current_request = host.last_rendered_frame().is_ok_and(|frame| {
+            painted_since_request
+                && Some(frame.sample_hash()) != previous_frame_hash
+                && frame.non_white_pixel_count() > 0
+        });
+
+        if snapshot.state() == &WebViewState::Complete && has_rendered_current_request {
+            return Ok(snapshot);
+        }
+
+        thread::sleep(Duration::from_millis(2));
+    }
+
+    Err(format!("timed out waiting for rendered webview: {:?}", host.snapshot(webview_id)?).into())
+}
+
+fn assert_rendered_frame_has_content(
+    host: &SoftwareServoHost,
+    label: &str,
+) -> Result<(), Box<dyn Error>> {
+    let frame = host.last_rendered_frame()?;
+
+    assert_eq!(frame.width(), 640, "{label}: {frame:?}");
+    assert_eq!(frame.height(), 480, "{label}: {frame:?}");
+    assert!(frame.opaque_pixel_count() > 0, "{label}: {frame:?}");
+    assert!(frame.non_white_pixel_count() > 0, "{label}: {frame:?}");
+    assert_ne!(frame.sample_hash(), 0, "{label}: {frame:?}");
     Ok(())
 }
