@@ -112,6 +112,14 @@ pub(crate) fn rename_tab_group_name(command: &str) -> Option<&str> {
     )
 }
 
+pub(crate) fn tab_group_color_hex(command: &str) -> Option<u32> {
+    let value = command_argument(
+        command,
+        &["set-tab-group-color ", "set tab group color ", "tab-group-color ", "tab group color "],
+    )?;
+    parse_color_hex(value)
+}
+
 pub(crate) fn split_group_name(command: &str) -> Option<&str> {
     command_argument(
         command,
@@ -140,6 +148,15 @@ fn command_argument<'a>(command: &'a str, prefixes: &[&str]) -> Option<&'a str> 
         }
     }
     None
+}
+
+fn parse_color_hex(value: &str) -> Option<u32> {
+    let value = value.trim().strip_prefix('#').unwrap_or(value.trim());
+    if value.len() != 6 || !value.as_bytes().iter().all(u8::is_ascii_hexdigit) {
+        return None;
+    }
+
+    u32::from_str_radix(value, 16).ok()
 }
 
 pub(crate) fn space_icon(name: &str) -> String {

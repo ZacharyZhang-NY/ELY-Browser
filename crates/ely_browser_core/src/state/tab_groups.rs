@@ -100,6 +100,24 @@ impl BrowserCore {
         group.rename(name).map_err(CoreError::from)
     }
 
+    pub fn set_active_tab_group_color(&mut self, color_hex: u32) -> Result<Option<()>, CoreError> {
+        let Some(group_id) = self.active_tab_group_id()? else {
+            return Ok(None);
+        };
+        self.set_tab_group_color(&group_id, color_hex)?;
+        Ok(Some(()))
+    }
+
+    pub fn set_tab_group_color(
+        &mut self,
+        group_id: &TabGroupId,
+        color_hex: u32,
+    ) -> Result<(), CoreError> {
+        let group = self.tab_group_mut(group_id)?;
+        group.set_color_hex(color_hex);
+        Ok(())
+    }
+
     pub fn discard_active_tab_group(&mut self) -> Result<Option<usize>, CoreError> {
         let Some(group_id) = self.active_tab_group_id()? else {
             return Ok(None);

@@ -11,8 +11,8 @@ use crate::{
         move_tab_space_name, new_private_profile_name, new_profile_name, new_space_name, note_body,
         notes_url, plugin_detail_url, plugins_url, reading_list_url, reading_progress_percent,
         rename_tab_group_name, search_url, settings_page_url, settings_url, shortcut_settings_url,
-        space_icon, split_group_name, switch_profile_name, sync_status_url, tab_group_name,
-        tab_note_body, task_manager_url,
+        space_icon, split_group_name, switch_profile_name, sync_status_url, tab_group_color_hex,
+        tab_group_name, tab_note_body, task_manager_url,
     },
 };
 
@@ -148,6 +148,9 @@ impl BrowserCore {
         }
         if let Some(name) = rename_tab_group_name(command) {
             return Ok(self.rename_active_tab_group(name)?.is_some());
+        }
+        if let Some(color_hex) = tab_group_color_hex(command) {
+            return Ok(self.set_active_tab_group_color(color_hex)?.is_some());
         }
         if let Some(body) = tab_note_body(command) {
             self.save_active_tab_note(body)?;

@@ -103,6 +103,21 @@ Group rename updates the active group row in place:
 └──────────────────────────────┴───────────────────────────────────────────────┘
 ```
 
+Group color updates the active group accent:
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ELY Browser   [ >tab-group-color #9FC9A2.................. ] [pin] [*] [+] │
+├──────────────────────────────┬───────────────────────────────────────────────┤
+│ Tabs                         │  example.com                                  │
+│   [folder] Docs              │  https://example.com/b                        │
+│     2 tabs - Expanded        │                                               │
+│     color #9FC9A2            │  Group    Docs                                │
+│     example.com              │                                               │
+│       example.com            │                                               │
+└──────────────────────────────┴───────────────────────────────────────────────┘
+```
+
 Group sleep applies the sleeping state to every tab in the active group:
 
 ```text
