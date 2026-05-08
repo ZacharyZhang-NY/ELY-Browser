@@ -29,7 +29,7 @@ impl BrowserCore {
                 self.command_query.clear();
             }
             CommandIntent::Search(query) => {
-                let url = search_url(query)?;
+                let url = search_url(query, self.search_engine)?;
                 self.open_tab(url);
                 self.command_query.clear();
             }

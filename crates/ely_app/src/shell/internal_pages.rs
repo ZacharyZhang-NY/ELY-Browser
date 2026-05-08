@@ -8,6 +8,7 @@ mod plugin_details;
 mod plugins;
 mod profiles;
 mod reading_list;
+mod search;
 mod settings;
 mod shortcuts;
 mod sidebar_tabs;
@@ -51,6 +52,7 @@ impl ElyShell {
             "ely://about" => self.render_about_page(snapshot),
             "ely://settings" => self.render_settings_page(snapshot, cx),
             "ely://settings/sidebar-tabs" => self.render_sidebar_tabs_page(snapshot, cx),
+            "ely://settings/search" => self.render_search_page(snapshot, cx),
             "ely://settings/spaces" => self.render_spaces_page(snapshot, cx),
             "ely://settings/shortcuts" => self.render_shortcuts_page(snapshot),
             "ely://settings/plugins" => self.render_plugins_page(snapshot, cx),

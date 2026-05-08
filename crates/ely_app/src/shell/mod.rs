@@ -6,7 +6,7 @@ mod site_permissions;
 mod splits;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{ArchivePolicy, CommandIntent, ProfileId, SpaceId, TabId, UrlText};
+use ely_domain::{ArchivePolicy, CommandIntent, ProfileId, SearchEngine, SpaceId, TabId, UrlText};
 use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscription, Window};
 use gpui_component::input::{InputEvent, InputState, SelectAll};
 
@@ -260,6 +260,13 @@ impl ElyShell {
         if let ShellState::Ready(core) = &mut self.state
             && core.set_active_space_archive_policy(archive_policy).is_ok()
         {
+            cx.notify();
+        }
+    }
+
+    fn set_search_engine(&mut self, search_engine: SearchEngine, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state {
+            core.set_search_engine(search_engine);
             cx.notify();
         }
     }

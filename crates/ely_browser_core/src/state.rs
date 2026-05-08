@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, time::SystemTime};
 
 use ely_domain::{
     ArchivePolicy, ArchivedTab, BookmarkEntry, BrowserTab, DomainError, DownloadEntry,
-    DownloadPolicy, HistoryEntry, Profile, ProfileId, ProfileKind, ReadingListEntry,
+    DownloadPolicy, HistoryEntry, Profile, ProfileId, ProfileKind, ReadingListEntry, SearchEngine,
     SitePermissionAuditEvent, SitePermissionEntry, Space, SpaceId, SplitLayout, SyncStatus, TabId,
     UrlText,
 };
@@ -66,6 +66,7 @@ pub struct BrowserSnapshot {
     pub active_space_name: String,
     pub active_profile_name: String,
     pub active_download_policy: DownloadPolicy,
+    pub search_engine: SearchEngine,
     pub command_query: String,
 }
 
@@ -90,6 +91,7 @@ pub struct BrowserCore {
     active_tab_id: TabId,
     active_tabs_by_space: BTreeMap<SpaceId, TabId>,
     active_tabs_by_space_profile: BTreeMap<(SpaceId, ProfileId), TabId>,
+    search_engine: SearchEngine,
     command_query: String,
     new_tab_url: UrlText,
 }
@@ -121,6 +123,7 @@ impl BrowserCore {
             active_tab_id,
             active_tabs_by_space,
             active_tabs_by_space_profile,
+            search_engine: SearchEngine::default(),
             spaces: vec![space],
             profiles: vec![profile],
             tabs: vec![tab],
@@ -217,6 +220,15 @@ impl BrowserCore {
         Ok(())
     }
 
+    pub fn set_search_engine(&mut self, search_engine: SearchEngine) {
+        self.search_engine = search_engine;
+    }
+
+    #[must_use]
+    pub fn search_engine(&self) -> SearchEngine {
+        self.search_engine
+    }
+
     pub fn set_command_query(&mut self, query: impl Into<String>) {
         self.command_query = query.into();
     }
@@ -253,6 +265,7 @@ impl BrowserCore {
             active_space_name: active_space.name().to_string(),
             active_profile_name: active_profile.name().to_string(),
             active_download_policy: active_profile.download_policy().clone(),
+            search_engine: self.search_engine,
             command_query: self.command_query.clone(),
         })
     }

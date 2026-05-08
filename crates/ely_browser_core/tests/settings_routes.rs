@@ -65,3 +65,24 @@ fn settings_scoped_search_opens_spaces_page() -> Result<(), Box<dyn Error>> {
     assert_eq!(core.snapshot()?.command_query, "");
     Ok(())
 }
+
+#[test]
+fn settings_scoped_search_opens_search_page() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query("@settings search");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(
+        intent,
+        Some(CommandIntent::ScopedSearch {
+            scope: CommandScope::Settings,
+            query: "search".to_string(),
+        })
+    );
+    assert_eq!(active_tab.title(), "Search Settings");
+    assert_eq!(active_tab.url().as_str(), "ely://settings/search");
+    assert_eq!(core.snapshot()?.command_query, "");
+    Ok(())
+}

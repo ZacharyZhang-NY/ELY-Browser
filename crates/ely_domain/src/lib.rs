@@ -8,6 +8,7 @@ mod identifiers;
 mod plugin;
 mod profile;
 mod reading_list;
+mod search;
 mod site_permission;
 mod space;
 mod split;
@@ -33,6 +34,7 @@ pub use plugin::{
 };
 pub use profile::{Profile, ProfileKind};
 pub use reading_list::{ReadingListEntry, ReadingProgress};
+pub use search::SearchEngine;
 pub use site_permission::{
     SiteOrigin, SitePermissionAuditAction, SitePermissionAuditEvent, SitePermissionDecision,
     SitePermissionEntry, SitePermissionFeature,

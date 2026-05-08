@@ -31,6 +31,12 @@ const SETTINGS_ROUTES: &[SettingsRoute] = &[
         route: "ely://settings/spaces",
     },
     SettingsRoute {
+        icon: IconName::Search,
+        title: "Search",
+        detail: "Default search engine for Command Bar queries.",
+        route: "ely://settings/search",
+    },
+    SettingsRoute {
         icon: IconName::CircleUser,
         title: "Profiles",
         detail: "Profile identity, color, and download policy.",

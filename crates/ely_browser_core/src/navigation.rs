@@ -1,9 +1,7 @@
-use ely_domain::{BrowserTab, DomainError, PluginId, SiteOrigin, UrlText};
+use ely_domain::{BrowserTab, PluginId, SearchEngine, SiteOrigin, UrlText};
 use url::Url;
 
 use crate::CoreError;
-
-const DEFAULT_SEARCH_URL: &str = "https://duckduckgo.com/";
 
 pub(crate) fn tab_title(url: &UrlText) -> String {
     if let Some(title) = internal_page_title(url.as_str()) {
@@ -28,6 +26,7 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
         "ely://about" => Some("About ELY Browser"),
         "ely://settings" => Some("Settings"),
         "ely://settings/sidebar-tabs" => Some("Sidebar & Tabs Settings"),
+        "ely://settings/search" => Some("Search Settings"),
         "ely://settings/spaces" => Some("Space Settings"),
         "ely://settings/shortcuts" => Some("Shortcut Settings"),
         "ely://settings/plugins" => Some("Plugin Settings"),
@@ -91,11 +90,8 @@ pub(crate) fn space_icon(name: &str) -> String {
     name.chars().next().map_or_else(String::new, |value| value.to_string())
 }
 
-pub(crate) fn search_url(query: &str) -> Result<UrlText, CoreError> {
-    let mut url = Url::parse(DEFAULT_SEARCH_URL)
-        .map_err(|_| DomainError::InvalidUrl { value: DEFAULT_SEARCH_URL.to_string() })?;
-    url.query_pairs_mut().append_pair("q", query);
-    UrlText::parse(url.to_string()).map_err(CoreError::from)
+pub(crate) fn search_url(query: &str, search_engine: SearchEngine) -> Result<UrlText, CoreError> {
+    search_engine.search_url(query).map_err(CoreError::from)
 }
 
 pub(crate) fn downloads_url() -> Result<UrlText, CoreError> {
@@ -162,6 +158,9 @@ fn settings_page_route(query: &str) -> Option<&'static str> {
         "about" | "about ely browser" => Some("ely://about"),
         "sidebar" | "tabs" | "sidebar tabs" | "sidebar & tabs" => {
             Some("ely://settings/sidebar-tabs")
+        }
+        "search" | "search engine" | "default search" | "default search engine" => {
+            Some("ely://settings/search")
         }
         "space" | "spaces" | "space settings" | "spaces settings" => Some("ely://settings/spaces"),
         "shortcut" | "shortcuts" | "keyboard" | "keyboard shortcuts" => {

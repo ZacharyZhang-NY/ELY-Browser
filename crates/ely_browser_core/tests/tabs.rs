@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, CoreError, InitialBrowserConfig};
-use ely_domain::{CommandIntent, CommandScope, TabState, UrlText};
+use ely_domain::{CommandIntent, CommandScope, SearchEngine, TabState, UrlText};
 
 #[test]
 fn opens_new_tab_below_active_tab() -> Result<(), Box<dyn Error>> {
@@ -240,6 +240,22 @@ fn search_command_opens_default_search_url() -> Result<(), Box<dyn Error>> {
     let active_tab = core.active_tab()?;
     assert_eq!(intent, Some(CommandIntent::Search("rust async book".to_string())));
     assert_eq!(active_tab.url().as_str(), "https://duckduckgo.com/?q=rust+async+book");
+    assert_eq!(core.command_query(), "");
+    Ok(())
+}
+
+#[test]
+fn search_command_uses_selected_search_engine() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.set_search_engine(SearchEngine::Google);
+
+    core.set_command_query("? rust async book");
+    let intent = core.submit_command()?;
+
+    let active_tab = core.active_tab()?;
+    assert_eq!(intent, Some(CommandIntent::Search("rust async book".to_string())));
+    assert_eq!(active_tab.url().as_str(), "https://www.google.com/search?q=rust+async+book");
+    assert_eq!(core.snapshot()?.search_engine, SearchEngine::Google);
     assert_eq!(core.command_query(), "");
     Ok(())
 }
