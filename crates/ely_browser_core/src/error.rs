@@ -1,4 +1,4 @@
-use ely_domain::{DomainError, DownloadId, ProfileId, SpaceId, TabId};
+use ely_domain::{DomainError, DownloadId, PluginId, ProfileId, SpaceId, TabId};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -20,6 +20,15 @@ pub enum CoreError {
 
     #[error("download target path is unavailable: {id}")]
     DownloadTargetPathUnavailable { id: DownloadId },
+
+    #[error("plugin already installed: {id}")]
+    PluginAlreadyInstalled { id: PluginId },
+
+    #[error("plugin requires high-risk permission confirmation: {id}")]
+    PluginHighRiskConfirmationRequired { id: PluginId },
+
+    #[error("plugin not found: {id}")]
+    PluginNotFound { id: PluginId },
 
     #[error("favorite limit reached: {limit}")]
     FavoriteLimitReached { limit: usize },

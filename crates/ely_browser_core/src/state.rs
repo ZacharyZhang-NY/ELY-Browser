@@ -10,8 +10,11 @@ use crate::CoreError;
 mod commands;
 mod downloads;
 mod history;
+mod plugins;
 mod profiles;
 mod tabs;
+
+pub use plugins::{InstalledPlugin, PluginAuditAction, PluginAuditEvent};
 
 #[derive(Clone, Debug)]
 pub struct InitialBrowserConfig {
@@ -40,6 +43,8 @@ pub struct BrowserSnapshot {
     pub archived_tabs: Vec<ArchivedTab>,
     pub download_entries: Vec<DownloadEntry>,
     pub history_entries: Vec<HistoryEntry>,
+    pub installed_plugins: Vec<InstalledPlugin>,
+    pub plugin_audit_events: Vec<PluginAuditEvent>,
     pub spaces: Vec<Space>,
     pub active_tab_id: TabId,
     pub active_space_id: SpaceId,
@@ -57,6 +62,8 @@ pub struct BrowserCore {
     archived_tabs: Vec<ArchivedTab>,
     download_entries: Vec<DownloadEntry>,
     history_entries: Vec<HistoryEntry>,
+    installed_plugins: Vec<InstalledPlugin>,
+    plugin_audit_events: Vec<PluginAuditEvent>,
     active_space_id: SpaceId,
     active_profile_id: ProfileId,
     active_tab_id: TabId,
@@ -99,6 +106,8 @@ impl BrowserCore {
             archived_tabs: Vec::new(),
             download_entries: Vec::new(),
             history_entries: Vec::new(),
+            installed_plugins: Vec::new(),
+            plugin_audit_events: Vec::new(),
             command_query: String::new(),
             new_tab_url,
         })
@@ -186,6 +195,8 @@ impl BrowserCore {
             archived_tabs: self.archived_tabs.clone(),
             download_entries: self.visible_downloads(),
             history_entries: self.visible_history(),
+            installed_plugins: self.installed_plugins.clone(),
+            plugin_audit_events: self.plugin_audit_events.clone(),
             spaces: self.spaces.clone(),
             tabs: self.visible_tabs(),
             active_tab_id: self.active_tab_id.clone(),
