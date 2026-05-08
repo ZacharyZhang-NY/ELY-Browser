@@ -19,6 +19,7 @@ pub struct Space {
     default_profile_id: ProfileId,
     archive_policy: ArchivePolicy,
     sidebar_width_px: u16,
+    sort_key: u64,
     created_at: SystemTime,
     updated_at: SystemTime,
 }
@@ -30,6 +31,7 @@ impl Space {
         icon: impl Into<String>,
         accent_hex: u32,
         default_profile_id: ProfileId,
+        sort_key: u64,
     ) -> Self {
         let created_at = SystemTime::now();
         Self {
@@ -40,6 +42,7 @@ impl Space {
             default_profile_id,
             archive_policy: ArchivePolicy::Manual,
             sidebar_width_px: DEFAULT_SIDEBAR_WIDTH_PX,
+            sort_key,
             created_at,
             updated_at: created_at,
         }
@@ -92,6 +95,16 @@ impl Space {
 
     pub fn set_sidebar_width_px(&mut self, sidebar_width_px: u16) {
         self.sidebar_width_px = sidebar_width_px;
+        self.record_update();
+    }
+
+    #[must_use]
+    pub fn sort_key(&self) -> u64 {
+        self.sort_key
+    }
+
+    pub fn set_sort_key(&mut self, sort_key: u64) {
+        self.sort_key = sort_key;
         self.record_update();
     }
 

@@ -108,8 +108,13 @@ impl BrowserCore {
     pub fn new(config: InitialBrowserConfig) -> Result<Self, CoreError> {
         let profile = Profile::new(config.profile_name, 0x26251e, ProfileKind::Standard);
         let active_profile_id = profile.id().clone();
-        let space =
-            Space::new(config.space_name, config.space_icon, 0xf54e00, active_profile_id.clone());
+        let space = Space::new(
+            config.space_name,
+            config.space_icon,
+            0xf54e00,
+            active_profile_id.clone(),
+            0,
+        );
         let new_tab_destination = config.new_tab_destination;
         let new_tab_url = new_tab_destination.url()?;
         let new_tab_title = tab_title(&new_tab_url);
@@ -163,7 +168,8 @@ impl BrowserCore {
         icon: impl Into<String>,
         accent_hex: u32,
     ) -> Result<SpaceId, CoreError> {
-        let space = Space::new(name, icon, accent_hex, self.active_profile_id.clone());
+        let sort_key = self.next_space_sort_key();
+        let space = Space::new(name, icon, accent_hex, self.active_profile_id.clone(), sort_key);
         let space_id = space.id().clone();
         let default_profile_id = space.default_profile_id().clone();
         let tab = self.build_tab_for(space_id.clone(), default_profile_id, self.new_tab_url()?);
@@ -266,6 +272,20 @@ impl BrowserCore {
         Ok(())
     }
 
+    pub fn set_space_sort_key(
+        &mut self,
+        space_id: &SpaceId,
+        sort_key: u64,
+    ) -> Result<(), CoreError> {
+        let space = self
+            .spaces
+            .iter_mut()
+            .find(|space| space.id() == space_id)
+            .ok_or_else(|| CoreError::SpaceNotFound { id: space_id.clone() })?;
+        space.set_sort_key(sort_key);
+        Ok(())
+    }
+
     pub fn set_search_engine(&mut self, search_engine: SearchEngine) {
         self.search_engine = search_engine;
     }
@@ -329,7 +349,7 @@ impl BrowserCore {
             split_layouts: self.visible_split_layouts(),
             installed_plugins: self.installed_plugins.clone(),
             plugin_audit_events: self.plugin_audit_events.clone(),
-            spaces: self.spaces.clone(),
+            spaces: self.sorted_spaces(),
             profiles: self.profiles.clone(),
             sync_status: self.sync_status(),
             tabs: self.visible_tabs(),
@@ -363,6 +383,22 @@ impl BrowserCore {
             .iter()
             .find(|space| space.id() == &self.active_space_id)
             .ok_or_else(|| CoreError::SpaceNotFound { id: self.active_space_id.clone() })
+    }
+
+    fn next_space_sort_key(&self) -> u64 {
+        self.spaces
+            .iter()
+            .map(Space::sort_key)
+            .max()
+            .map_or(0, |sort_key| sort_key.saturating_add(1))
+    }
+
+    fn sorted_spaces(&self) -> Vec<Space> {
+        let mut spaces = self.spaces.clone();
+        spaces.sort_by(|left, right| {
+            left.sort_key().cmp(&right.sort_key()).then_with(|| left.id().cmp(right.id()))
+        });
+        spaces
     }
 
     fn favorites(&self) -> Vec<BrowserTab> {

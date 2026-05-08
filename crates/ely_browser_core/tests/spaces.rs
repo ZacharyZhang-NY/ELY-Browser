@@ -52,6 +52,42 @@ fn created_space_uses_default_sidebar_width() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn created_spaces_receive_incrementing_sort_keys() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let work_space_id = core.snapshot()?.active_space_id;
+    let research_space_id = core.create_space("Research", "R", 0x9fc9a2)?;
+
+    let snapshot = core.snapshot()?;
+    let Some(work_space) = snapshot.spaces.iter().find(|space| space.id() == &work_space_id) else {
+        return Err("missing work space".into());
+    };
+    let Some(research_space) =
+        snapshot.spaces.iter().find(|space| space.id() == &research_space_id)
+    else {
+        return Err("missing research space".into());
+    };
+
+    assert_eq!(work_space.sort_key(), 0);
+    assert_eq!(research_space.sort_key(), 1);
+    Ok(())
+}
+
+#[test]
+fn snapshot_orders_spaces_by_sort_key() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let work_space_id = core.snapshot()?.active_space_id;
+    let research_space_id = core.create_space("Research", "R", 0x9fc9a2)?;
+
+    core.set_space_sort_key(&work_space_id, 20)?;
+    core.set_space_sort_key(&research_space_id, 10)?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(snapshot.spaces[0].id(), &research_space_id);
+    assert_eq!(snapshot.spaces[1].id(), &work_space_id);
+    Ok(())
+}
+
+#[test]
 fn space_default_profile_updates_with_profile_validation() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let work_space_id = core.snapshot()?.active_space_id;
@@ -91,9 +127,13 @@ fn space_settings_refresh_updated_at() -> Result<(), Box<dyn Error>> {
     core.set_space_sidebar_width(&work_space_id, 320)?;
     let after_sidebar_update = active_space_updated_at(&core, &work_space_id)?;
 
+    core.set_space_sort_key(&work_space_id, 8)?;
+    let after_sort_update = active_space_updated_at(&core, &work_space_id)?;
+
     assert!(after_archive_update > before_update);
     assert!(after_profile_update > after_archive_update);
     assert!(after_sidebar_update > after_profile_update);
+    assert!(after_sort_update > after_sidebar_update);
     Ok(())
 }
 
