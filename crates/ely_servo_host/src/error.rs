@@ -23,4 +23,10 @@ pub enum ServoHostError {
 
     #[error("servo rendered frame is unavailable")]
     RenderedFrameUnavailable,
+
+    #[error("servo screenshot capture timed out for {id}")]
+    ScreenshotTimedOut { id: WebViewId },
+
+    #[error("servo screenshot capture failed: {reason}")]
+    ScreenshotUnavailable { reason: String },
 }

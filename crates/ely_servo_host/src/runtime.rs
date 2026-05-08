@@ -6,25 +6,30 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    thread,
+    time::{Duration, Instant},
 };
 
 use dpi::PhysicalSize;
 use ely_domain::{ProfileId, TabId, WebViewId};
 use servo::{
-    DeviceIntPoint, DeviceIntRect, DeviceIntSize, DevicePoint, DeviceVector2D, EventLoopWaker,
-    LoadStatus, RenderingContext, Scroll, Servo, ServoBuilder, WebView, WebViewBuilder,
-    WebViewDelegate, WebViewPoint, WebViewVector,
+    DeviceIntPoint, DeviceIntRect, DeviceIntSize, DevicePoint, DeviceVector2D, LoadStatus,
+    RenderingContext, Scroll, Servo, ServoBuilder, WebView, WebViewBuilder, WebViewDelegate,
+    WebViewPoint, WebViewVector,
 };
 use url::Url;
 
 use crate::{
     KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest,
-    PermissionDecision, PermissionRequest, RenderedFrame, ResizeRequest, ScrollRequest, ServoHost,
-    ServoHostError, TouchTapRequest, WebViewSnapshot, WebViewState,
+    PermissionDecision, PermissionRequest, RenderedFrame, ResizeRequest, ScreenshotRequest,
+    ScrollRequest, ServoHost, ServoHostError, TouchTapRequest, WebViewSnapshot, WebViewState,
     runtime_input::{send_keyboard_text, send_mouse_click, send_mouse_drag, send_touch_tap},
+    runtime_waker::ServoWakeFlag,
 };
 
 static SERVO_RUNTIME_STARTED: AtomicBool = AtomicBool::new(false);
+const SCREENSHOT_TIMEOUT: Duration = Duration::from_secs(20);
+const SCREENSHOT_POLL_INTERVAL: Duration = Duration::from_millis(2);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ServoSurfaceSize {
@@ -219,6 +224,41 @@ impl ServoHost for SoftwareServoHost {
 
         send_keyboard_text(&webview.webview, &request.text);
         Ok(())
+    }
+
+    fn capture_screenshot(
+        &mut self,
+        request: ScreenshotRequest,
+    ) -> Result<RenderedFrame, ServoHostError> {
+        let webview = self.webview(&request.webview_id)?.webview.clone();
+        let captured_image = Rc::new(RefCell::new(None));
+        let callback_image = captured_image.clone();
+        webview.take_screenshot(None, move |result| {
+            callback_image.replace(Some(result));
+        });
+
+        let started_at = Instant::now();
+        while captured_image.borrow().is_none() {
+            if started_at.elapsed() >= SCREENSHOT_TIMEOUT {
+                return Err(ServoHostError::ScreenshotTimedOut { id: request.webview_id.clone() });
+            }
+
+            self.tick();
+            if self.snapshot(&request.webview_id)?.has_pending_frame() {
+                self.paint(&request.webview_id)?;
+            }
+            thread::sleep(SCREENSHOT_POLL_INTERVAL);
+        }
+
+        let Some(result) = captured_image.borrow_mut().take() else {
+            return Err(ServoHostError::RenderedFrameUnavailable);
+        };
+        let image = result.map_err(|error| ServoHostError::ScreenshotUnavailable {
+            reason: format!("{error:?}"),
+        })?;
+        let frame = RenderedFrame::from_rgba_bytes(image.width(), image.height(), image.into_raw());
+        self.last_rendered_frame = Some(frame.clone());
+        Ok(frame)
     }
 
     fn set_permission(
@@ -454,26 +494,5 @@ struct PermissionKey {
 impl PermissionKey {
     fn new(profile_id: ProfileId, tab_id: TabId, feature: String) -> Self {
         Self { profile_id, tab_id, feature }
-    }
-}
-
-#[derive(Clone)]
-struct ServoWakeFlag {
-    requested: Arc<AtomicBool>,
-}
-
-impl ServoWakeFlag {
-    fn new(requested: Arc<AtomicBool>) -> Self {
-        Self { requested }
-    }
-}
-
-impl EventLoopWaker for ServoWakeFlag {
-    fn clone_box(&self) -> Box<dyn EventLoopWaker> {
-        Box::new(self.clone())
-    }
-
-    fn wake(&self) {
-        self.requested.store(true, Ordering::Release);
     }
 }

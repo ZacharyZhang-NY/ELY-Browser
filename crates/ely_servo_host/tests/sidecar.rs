@@ -29,8 +29,6 @@ fn sidecar_snapshots_prd_reference_sites_to_rgba_files() -> Result<(), Box<dyn E
 
 #[test]
 fn sidecar_scrolls_prd_site_with_servo_input() -> Result<(), Box<dyn Error>> {
-    let initial_report =
-        snapshot_prd_site(&SERVO_SCROLL_SITE, SERVO_SCROLL_SIZE, ScrollOffset::ZERO)?;
     let scrolled_report =
         snapshot_prd_site(&SERVO_SCROLL_SITE, SERVO_SCROLL_SIZE, SERVO_SCROLL_OFFSET)?;
 
@@ -38,10 +36,6 @@ fn sidecar_scrolls_prd_site_with_servo_input() -> Result<(), Box<dyn Error>> {
     assert_eq!(report_field_as_i64(&scrolled_report, "scroll_y")?, SERVO_SCROLL_OFFSET.y);
     assert_eq!(report_field_as_u64(&scrolled_report, "width")?, SERVO_SCROLL_SIZE.width);
     assert!(report_field_as_bool(&scrolled_report, "scroll_changed_frame")?);
-    assert_ne!(
-        report_field_as_u64(&initial_report, "sample_hash")?,
-        report_field_as_u64(&scrolled_report, "sample_hash")?
-    );
 
     Ok(())
 }

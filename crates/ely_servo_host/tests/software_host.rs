@@ -5,8 +5,8 @@ use std::{error::Error, thread, time::Duration};
 use ely_domain::{ProfileId, TabId, UrlText};
 use ely_servo_host::{
     KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest, ResizeRequest,
-    ScrollRequest, ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, TouchTapRequest,
-    WebViewState,
+    ScreenshotRequest, ScrollRequest, ServoHost, ServoHostError, ServoSurfaceSize,
+    SoftwareServoHost, TouchTapRequest, WebViewState,
 };
 
 const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
@@ -134,6 +134,17 @@ fn manages_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
             site.url
         );
         assert_rendered_frame_has_content(&host, site.url, MINIMUM_CONTENT_PIXELS)?;
+        if site.url == "https://example.com" {
+            let screenshot =
+                host.capture_screenshot(ScreenshotRequest { webview_id: webview_id.clone() })?;
+            assert_frame_has_dimensions_and_content(
+                &screenshot,
+                "https://example.com screenshot",
+                INITIAL_WIDTH,
+                INITIAL_HEIGHT,
+                MINIMUM_CONTENT_PIXELS,
+            );
+        }
         previous_frame_hash = Some(host.last_rendered_frame()?.sample_hash());
     }
 
@@ -222,12 +233,27 @@ fn assert_rendered_frame_has_dimensions_and_content(
     minimum_content_pixels: u64,
 ) -> Result<(), Box<dyn Error>> {
     let frame = host.last_rendered_frame()?;
+    assert_frame_has_dimensions_and_content(
+        &frame,
+        label,
+        expected_width,
+        expected_height,
+        minimum_content_pixels,
+    );
+    Ok(())
+}
 
+fn assert_frame_has_dimensions_and_content(
+    frame: &ely_servo_host::RenderedFrame,
+    label: &str,
+    expected_width: u32,
+    expected_height: u32,
+    minimum_content_pixels: u64,
+) {
     assert_eq!(frame.width(), expected_width, "{label}: {frame:?}");
     assert_eq!(frame.height(), expected_height, "{label}: {frame:?}");
     assert!(frame.opaque_pixel_count() > 0, "{label}: {frame:?}");
     assert!(frame.non_white_pixel_count() > 0, "{label}: {frame:?}");
     assert!(frame.content_pixel_count() >= minimum_content_pixels, "{label}: {frame:?}");
     assert_ne!(frame.sample_hash(), 0, "{label}: {frame:?}");
-    Ok(())
 }
