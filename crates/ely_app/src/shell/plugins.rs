@@ -34,6 +34,10 @@ impl PendingPluginInstall {
     pub(super) fn high_risk_permissions(&self) -> &[PluginPermission] {
         &self.high_risk_permissions
     }
+
+    pub(super) fn requires_high_risk_confirmation(&self) -> bool {
+        !self.high_risk_permissions.is_empty()
+    }
 }
 
 impl PendingPluginUninstall {
@@ -98,7 +102,8 @@ impl ElyShell {
             return;
         };
 
-        self.install_plugin_package(pending.package, true, cx);
+        let high_risk_confirmed = pending.requires_high_risk_confirmation();
+        self.install_plugin_package(pending.package, true, high_risk_confirmed, cx);
     }
 
     pub(super) fn cancel_plugin_install(&mut self, cx: &mut Context<Self>) {
@@ -172,7 +177,7 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) {
         match result {
-            Ok(package) => self.install_plugin_package(package, false, cx),
+            Ok(package) => self.install_plugin_package(package, false, false, cx),
             Err(error) => {
                 self.plugin_install_error = Some(error.to_string());
                 self.pending_plugin_install = None;
@@ -184,12 +189,13 @@ impl ElyShell {
     fn install_plugin_package(
         &mut self,
         package: VerifiedPluginPackage,
+        local_package_confirmed: bool,
         high_risk_confirmed: bool,
         cx: &mut Context<Self>,
     ) {
         let high_risk_permissions =
             package.manifest().high_risk_permissions().cloned().collect::<Vec<_>>();
-        if !high_risk_confirmed && !high_risk_permissions.is_empty() {
+        if !local_package_confirmed || (!high_risk_confirmed && !high_risk_permissions.is_empty()) {
             self.pending_plugin_install =
                 Some(PendingPluginInstall::new(package, high_risk_permissions));
             self.plugin_install_error = None;

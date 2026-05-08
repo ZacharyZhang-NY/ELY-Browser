@@ -146,7 +146,7 @@ fn render_plugin_install_confirmation(
                         .text_xs()
                         .truncate()
                         .text_color(rgb(colors::MUTED))
-                        .child(high_risk_permissions_label(pending)),
+                        .child(plugin_install_confirmation_label(pending)),
                 ),
         )
         .child(
@@ -427,12 +427,16 @@ fn plugin_audit_action_label(action: &PluginAuditAction) -> &'static str {
     }
 }
 
-fn high_risk_permissions_label(pending: &PendingPluginInstall) -> String {
+fn plugin_install_confirmation_label(pending: &PendingPluginInstall) -> String {
+    if !pending.requires_high_risk_confirmation() {
+        return "Local package from disk requires confirmation.".to_string();
+    }
+
     let permissions = pending
         .high_risk_permissions()
         .iter()
         .map(|permission| permission.as_str())
         .collect::<Vec<_>>()
         .join(", ");
-    format!("High risk permissions: {permissions}")
+    format!("Local package from disk. High risk permissions: {permissions}")
 }
