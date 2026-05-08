@@ -17,5 +17,6 @@ cargo test --workspace --all-targets
 cargo check -p ely_servo_host --features servo-engine --all-targets
 cargo clippy -p ely_servo_host --features servo-engine --all-targets -- -D warnings
 cargo test -p ely_servo_host --features servo-engine --test software_host
+cargo test -p ely_servo_host --features servo-engine --test sidecar -- --test-threads=1
 cargo run -p ely_app
 ```
