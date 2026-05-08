@@ -8,6 +8,7 @@ pub enum SyncObjectKind {
     Spaces,
     Tabs,
     Bookmarks,
+    ReadingList,
     Profiles,
     History,
     PluginSettings,

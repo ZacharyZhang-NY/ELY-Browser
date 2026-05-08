@@ -4,8 +4,8 @@ use crate::{
     CoreError,
     navigation::{
         about_url, bookmarks_url, downloads_url, history_url, move_tab_space_name,
-        new_profile_name, new_space_name, search_url, settings_page_url, settings_url, space_icon,
-        switch_profile_name, sync_status_url,
+        new_profile_name, new_space_name, reading_list_url, search_url, settings_page_url,
+        settings_url, space_icon, switch_profile_name, sync_status_url,
     },
 };
 
@@ -53,6 +53,12 @@ impl BrowserCore {
             }
             CommandIntent::ScopedSearch { scope: CommandScope::Bookmarks, query } => {
                 if let Some(url) = self.find_bookmark_match(query) {
+                    self.open_tab(url);
+                    self.command_query.clear();
+                }
+            }
+            CommandIntent::ScopedSearch { scope: CommandScope::ReadingList, query } => {
+                if let Some(url) = self.find_reading_list_match(query) {
                     self.open_tab(url);
                     self.command_query.clear();
                 }
@@ -112,6 +118,10 @@ impl BrowserCore {
                 self.open_tab(bookmarks_url()?);
                 Ok(true)
             }
+            "reading-list" | "open-reading-list" | "open reading list" => {
+                self.open_tab(reading_list_url()?);
+                Ok(true)
+            }
             "history" | "open-history" | "open history" => {
                 self.open_tab(history_url()?);
                 Ok(true)
@@ -138,6 +148,10 @@ impl BrowserCore {
             }
             "bookmark" | "add-bookmark" | "add bookmark" => {
                 self.bookmark_active_tab()?;
+                Ok(true)
+            }
+            "save-reading-list" | "save reading list" | "read-later" | "read later" => {
+                self.save_active_tab_to_reading_list()?;
                 Ok(true)
             }
             "pin" | "pin-tab" | "toggle-pin" => {

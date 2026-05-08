@@ -21,6 +21,11 @@ impl BrowserCore {
                 SyncObjectState::LocalOnly,
             ),
             SyncObjectStatus::new(
+                SyncObjectKind::ReadingList,
+                self.reading_list.len(),
+                SyncObjectState::LocalOnly,
+            ),
+            SyncObjectStatus::new(
                 SyncObjectKind::Profiles,
                 self.profiles.len(),
                 SyncObjectState::LocalOnly,

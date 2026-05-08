@@ -5,6 +5,7 @@ mod download_labels;
 mod downloads;
 mod plugins;
 mod profiles;
+mod reading_list;
 mod sync;
 
 use ely_browser_core::BrowserSnapshot;
@@ -27,6 +28,7 @@ impl ElyShell {
     ) -> AnyElement {
         match tab.url().as_str() {
             "ely://bookmarks" => self.render_bookmarks_page(snapshot, cx),
+            "ely://reading-list" => self.render_reading_list_page(snapshot, cx),
             "ely://downloads" => self.render_downloads_page(snapshot, cx),
             "ely://history" => self.render_history_page(snapshot, cx),
             "ely://archive" => self.render_archive_page(snapshot, cx),

@@ -7,6 +7,7 @@ mod history;
 mod identifiers;
 mod plugin;
 mod profile;
+mod reading_list;
 mod space;
 mod split;
 mod sync;
@@ -22,12 +23,15 @@ pub use download::{
 };
 pub use error::DomainError;
 pub use history::HistoryEntry;
-pub use identifiers::{BookmarkId, DownloadId, ProfileId, SpaceId, SplitId, TabId, WebViewId};
+pub use identifiers::{
+    BookmarkId, DownloadId, ProfileId, ReadingListId, SpaceId, SplitId, TabId, WebViewId,
+};
 pub use plugin::{
     PluginContributionPoint, PluginId, PluginManifest, PluginPermission, PluginPermissionRisk,
     PluginSignature, PluginSignatureAlgorithm,
 };
 pub use profile::{Profile, ProfileKind};
+pub use reading_list::{ReadingListEntry, ReadingProgress};
 pub use space::{ArchivePolicy, Space};
 pub use split::{SplitAxis, SplitLayout, SplitPane};
 pub use sync::{
