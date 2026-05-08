@@ -338,6 +338,17 @@ impl BrowserCore {
                     self.command_query.clear();
                 }
             }
+            CommandIntent::ScopedSearch { scope: CommandScope::Spaces, query } => {
+                let query = query.trim().to_lowercase();
+                if let Some(space_id) = self.spaces.iter().find_map(|space| {
+                    (space.name().to_lowercase().contains(&query)
+                        || space.icon().to_lowercase().contains(&query))
+                    .then(|| space.id().clone())
+                }) {
+                    self.select_space(&space_id)?;
+                    self.command_query.clear();
+                }
+            }
             CommandIntent::ScopedSearch { scope: CommandScope::Archive, query }
                 if self.restore_archived_tab_match(query)?.is_some() =>
             {

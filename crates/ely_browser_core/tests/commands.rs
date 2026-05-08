@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{CommandIntent, UrlText};
+use ely_domain::{CommandIntent, CommandScope, UrlText};
 
 #[test]
 fn favorite_command_toggles_active_tab() -> Result<(), Box<dyn Error>> {
@@ -65,6 +65,54 @@ fn new_space_command_creates_and_selects_named_space() -> Result<(), Box<dyn Err
     assert_eq!(snapshot.tabs[0].space_id(), &snapshot.active_space_id);
     assert_eq!(active_tab.url().as_str(), "ely://new-tab");
     assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn spaces_scoped_search_selects_matching_space() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let work_space_id = core.snapshot()?.active_space_id;
+    let research_space_id = core.create_space("Research", "R", 0xf54e00)?;
+    core.open_tab(UrlText::parse("https://servo.org")?);
+    core.select_space(&work_space_id)?;
+
+    core.set_command_query("@spaces Research");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(
+        intent,
+        Some(CommandIntent::ScopedSearch {
+            scope: CommandScope::Spaces,
+            query: "Research".to_string()
+        })
+    );
+    assert_eq!(snapshot.active_space_id, research_space_id);
+    assert_eq!(snapshot.active_space_name, "Research");
+    assert_eq!(active_tab.url().as_str(), "https://servo.org");
+    assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn spaces_scoped_search_preserves_query_without_match() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let active_space_id = core.snapshot()?.active_space_id;
+
+    core.set_command_query("@spaces absent");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(
+        intent,
+        Some(CommandIntent::ScopedSearch {
+            scope: CommandScope::Spaces,
+            query: "absent".to_string()
+        })
+    );
+    assert_eq!(snapshot.active_space_id, active_space_id);
+    assert_eq!(snapshot.command_query, "@spaces absent");
     Ok(())
 }
 
