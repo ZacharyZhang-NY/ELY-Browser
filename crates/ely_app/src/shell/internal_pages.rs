@@ -15,6 +15,7 @@ mod search;
 mod settings;
 mod shortcuts;
 mod sidebar_tabs;
+mod site_permissions_settings;
 mod site_settings;
 mod spaces;
 mod sync;
@@ -60,6 +61,9 @@ impl ElyShell {
             "ely://settings/privacy-security" => self.render_privacy_security_page(snapshot, cx),
             "ely://settings/downloads" => self.render_download_settings_page(snapshot, cx),
             "ely://settings/spaces" => self.render_spaces_page(snapshot, cx),
+            "ely://settings/site-permissions" => {
+                self.render_site_permissions_settings_page(snapshot, cx)
+            }
             "ely://settings/shortcuts" => self.render_shortcuts_page(snapshot),
             "ely://settings/plugins" => self.render_plugins_page(snapshot, cx),
             "ely://settings/profiles" => self.render_profiles_page(snapshot, cx),

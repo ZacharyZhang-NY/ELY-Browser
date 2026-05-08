@@ -55,6 +55,12 @@ const SETTINGS_ROUTES: &[SettingsRoute] = &[
         route: "ely://settings/downloads",
     },
     SettingsRoute {
+        icon: IconName::Globe,
+        title: "Site Permissions",
+        detail: "Profile-scoped site permissions and local audit state.",
+        route: "ely://settings/site-permissions",
+    },
+    SettingsRoute {
         icon: IconName::CircleUser,
         title: "Profiles",
         detail: "Profile identity, color, and download policy.",
