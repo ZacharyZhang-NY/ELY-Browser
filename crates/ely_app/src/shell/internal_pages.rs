@@ -1,3 +1,4 @@
+mod download_labels;
 mod downloads;
 
 use ely_browser_core::BrowserSnapshot;

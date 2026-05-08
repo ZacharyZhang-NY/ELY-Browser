@@ -1,8 +1,6 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::{
-    DownloadDestination, DownloadEntry, DownloadPolicy, DownloadSecurity, DownloadState,
-};
+use ely_domain::{DownloadEntry, DownloadSecurity, DownloadState};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div,
@@ -14,7 +12,14 @@ use gpui_component::{
     scroll::ScrollableElement,
 };
 
-use super::{ElyShell, render_canvas_surface};
+use super::{
+    ElyShell,
+    download_labels::{
+        download_entry_location_label, download_policy_label, download_security_label,
+        download_size_label, download_state_label,
+    },
+    render_canvas_surface,
+};
 
 impl ElyShell {
     pub(super) fn render_downloads_page(
@@ -400,43 +405,6 @@ fn download_action_button(
     Button::new((action, index)).ghost().xsmall().icon(icon).tooltip(tooltip)
 }
 
-fn download_state_label(state: &DownloadState) -> &'static str {
-    match state {
-        DownloadState::InProgress => "In progress",
-        DownloadState::Paused => "Paused",
-        DownloadState::Completed => "Complete",
-        DownloadState::Cancelled => "Cancelled",
-        DownloadState::Failed => "Failed",
-    }
-}
-
-fn download_size_label(entry: &DownloadEntry) -> String {
-    match entry.total_bytes() {
-        Some(total_bytes) => {
-            format!("{} of {}", format_bytes(entry.received_bytes()), format_bytes(total_bytes))
-        }
-        None => format_bytes(entry.received_bytes()),
-    }
-}
-
-fn download_policy_label(policy: &DownloadPolicy) -> String {
-    format!("Profile path: {}", download_destination_label(policy.destination()))
-}
-
-fn download_destination_label(destination: &DownloadDestination) -> String {
-    match destination {
-        DownloadDestination::AskEveryTime => "Ask before saving".to_string(),
-        DownloadDestination::FixedDirectory(path) => path.display().to_string(),
-    }
-}
-
-fn download_entry_location_label(entry: &DownloadEntry) -> String {
-    match entry.target_file_path() {
-        Some(path) => path.display().to_string(),
-        None => download_destination_label(entry.destination()),
-    }
-}
-
 fn render_download_file_error(message: String) -> AnyElement {
     div()
         .rounded_md()
@@ -463,28 +431,4 @@ fn render_security_prompt(security: &DownloadSecurity) -> AnyElement {
         .child(IconName::TriangleAlert)
         .child(download_security_label(security))
         .into_any_element()
-}
-
-fn download_security_label(security: &DownloadSecurity) -> &'static str {
-    match security {
-        DownloadSecurity::Standard => "Standard",
-        DownloadSecurity::DangerousExtension => "Extension prompt required",
-    }
-}
-
-fn format_bytes(bytes: u64) -> String {
-    const KIB: u64 = 1024;
-    const MIB: u64 = KIB * 1024;
-    const GIB: u64 = MIB * 1024;
-
-    if bytes >= GIB {
-        return format!("{:.1} GB", bytes as f64 / GIB as f64);
-    }
-    if bytes >= MIB {
-        return format!("{:.1} MB", bytes as f64 / MIB as f64);
-    }
-    if bytes >= KIB {
-        return format!("{:.1} KB", bytes as f64 / KIB as f64);
-    }
-    format!("{bytes} B")
 }
