@@ -28,6 +28,7 @@ mod tab_order;
 mod tabs;
 
 pub use plugins::{InstalledPlugin, PluginAuditAction, PluginAuditEvent};
+pub use spaces::TrashedSpace;
 
 #[derive(Clone, Debug)]
 pub struct InitialBrowserConfig {
@@ -67,6 +68,7 @@ pub struct BrowserSnapshot {
     pub installed_plugins: Vec<InstalledPlugin>,
     pub plugin_audit_events: Vec<PluginAuditEvent>,
     pub spaces: Vec<Space>,
+    pub trashed_spaces: Vec<TrashedSpace>,
     pub profiles: Vec<Profile>,
     pub sync_status: SyncStatus,
     pub active_tab_id: TabId,
@@ -98,6 +100,7 @@ pub struct BrowserCore {
     tab_groups: Vec<TabGroup>,
     split_layouts: Vec<SplitLayout>,
     archived_split_layouts: Vec<SplitLayout>,
+    trashed_spaces: Vec<TrashedSpace>,
     installed_plugins: Vec<InstalledPlugin>,
     plugin_audit_events: Vec<PluginAuditEvent>,
     active_space_id: SpaceId,
@@ -168,6 +171,7 @@ impl BrowserCore {
             tab_groups: Vec::new(),
             split_layouts: Vec::new(),
             archived_split_layouts: Vec::new(),
+            trashed_spaces: Vec::new(),
             installed_plugins: Vec::new(),
             plugin_audit_events: Vec::new(),
             command_query: String::new(),
@@ -390,6 +394,7 @@ impl BrowserCore {
             installed_plugins: self.installed_plugins.clone(),
             plugin_audit_events: self.plugin_audit_events.clone(),
             spaces: self.sorted_spaces(),
+            trashed_spaces: self.trashed_spaces.clone(),
             profiles: self.profiles.clone(),
             sync_status: self.sync_status(),
             tabs: self.visible_tabs(),

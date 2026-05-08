@@ -21,6 +21,44 @@ impl ElyShell {
         }
     }
 
+    pub(super) fn request_space_trash(&mut self, space_id: SpaceId, cx: &mut Context<Self>) {
+        self.pending_space_trash = Some(space_id);
+        cx.notify();
+    }
+
+    pub(super) fn cancel_space_trash(&mut self, cx: &mut Context<Self>) {
+        self.pending_space_trash = None;
+        cx.notify();
+    }
+
+    pub(super) fn trash_pending_space(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(space_id) = self.pending_space_trash.clone() else {
+            return;
+        };
+
+        if let ShellState::Ready(core) = &mut self.state
+            && core.trash_space(&space_id, std::time::SystemTime::now()).is_ok()
+        {
+            self.pending_space_trash = None;
+            self.sync_address_input(window, cx);
+            cx.notify();
+        }
+    }
+
+    pub(super) fn restore_trashed_space(
+        &mut self,
+        space_id: &SpaceId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.restore_trashed_space(space_id).is_ok()
+        {
+            self.sync_address_input(window, cx);
+            cx.notify();
+        }
+    }
+
     pub(super) fn on_select_next_space(
         &mut self,
         _: &SelectNextSpace,

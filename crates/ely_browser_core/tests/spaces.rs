@@ -1,7 +1,12 @@
-use std::error::Error;
+use std::{
+    error::Error,
+    time::{Duration, SystemTime},
+};
 
 use ely_browser_core::{BrowserCore, CoreError, InitialBrowserConfig};
-use ely_domain::{ArchivePolicy, DEFAULT_SIDEBAR_WIDTH_PX, ProfileId, ProfileKind, SpaceId};
+use ely_domain::{
+    ArchivePolicy, DEFAULT_SIDEBAR_WIDTH_PX, ProfileId, ProfileKind, SpaceId, UrlText,
+};
 
 #[test]
 fn created_space_binds_current_profile_as_default() -> Result<(), Box<dyn Error>> {
@@ -124,6 +129,80 @@ fn moving_boundary_or_missing_space_is_safe() -> Result<(), Box<dyn Error>> {
     let error = match core.move_space_up(&missing_space_id) {
         Err(error) => error,
         Ok(_) => return Err("moving a missing space should fail".into()),
+    };
+
+    assert_eq!(error, CoreError::SpaceNotFound { id: missing_space_id });
+    Ok(())
+}
+
+#[test]
+fn trashing_space_removes_it_and_restores_with_tabs() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let work_space_id = core.snapshot()?.active_space_id;
+    let research_space_id = core.create_space("Research", "R", 0x9fc9a2)?;
+    let research_tab_id = core.open_tab(UrlText::parse("https://servo.org")?);
+
+    core.select_space(&work_space_id)?;
+    assert!(core.trash_space(&research_space_id, SystemTime::UNIX_EPOCH)?);
+    let snapshot = core.snapshot()?;
+    assert_eq!(snapshot.active_space_id, work_space_id);
+    assert!(snapshot.spaces.iter().all(|space| space.id() != &research_space_id));
+    assert_eq!(snapshot.trashed_spaces[0].space().id(), &research_space_id);
+    assert!(snapshot.trashed_spaces[0].tabs().iter().any(|tab| tab.id() == &research_tab_id));
+
+    assert!(core.restore_trashed_space(&research_space_id)?);
+    let snapshot = core.snapshot()?;
+    assert_eq!(snapshot.active_space_id, research_space_id);
+    assert!(snapshot.tabs.iter().any(|tab| tab.id() == &research_tab_id));
+    assert!(snapshot.trashed_spaces.is_empty());
+    Ok(())
+}
+
+#[test]
+fn trashing_active_space_selects_remaining_space() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let work_space_id = core.snapshot()?.active_space_id;
+    let research_space_id = core.create_space("Research", "R", 0x9fc9a2)?;
+
+    assert!(core.trash_space(&research_space_id, SystemTime::UNIX_EPOCH)?);
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(snapshot.active_space_id, work_space_id);
+    assert_eq!(snapshot.active_space_name, "Work");
+    Ok(())
+}
+
+#[test]
+fn trashed_space_keeps_thirty_day_retention() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let research_space_id = core.create_space("Research", "R", 0x9fc9a2)?;
+    let trashed_at = SystemTime::UNIX_EPOCH + Duration::from_secs(900);
+
+    core.trash_space(&research_space_id, trashed_at)?;
+    let snapshot = core.snapshot()?;
+    let trashed_space = &snapshot.trashed_spaces[0];
+
+    assert_eq!(trashed_space.trashed_at(), trashed_at);
+    assert_eq!(trashed_space.purge_at(), trashed_at + Duration::from_secs(30 * 86_400));
+    Ok(())
+}
+
+#[test]
+fn trashing_last_or_missing_space_is_rejected() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let work_space_id = core.snapshot()?.active_space_id;
+    let error = match core.trash_space(&work_space_id, SystemTime::UNIX_EPOCH) {
+        Err(error) => error,
+        Ok(_) => return Err("trashing the last space should fail".into()),
+    };
+
+    assert_eq!(error, CoreError::LastSpaceCannotBeTrashed);
+
+    let missing_space_id = SpaceId::new();
+    core.create_space("Research", "R", 0x9fc9a2)?;
+    let error = match core.trash_space(&missing_space_id, SystemTime::UNIX_EPOCH) {
+        Err(error) => error,
+        Ok(_) => return Err("trashing a missing space should fail".into()),
     };
 
     assert_eq!(error, CoreError::SpaceNotFound { id: missing_space_id });

@@ -18,6 +18,12 @@ pub enum CoreError {
     #[error("space not found: {id}")]
     SpaceNotFound { id: SpaceId },
 
+    #[error("trashed space not found: {id}")]
+    TrashedSpaceNotFound { id: SpaceId },
+
+    #[error("last space cannot be moved to trash")]
+    LastSpaceCannotBeTrashed,
+
     #[error("split not found: {id}")]
     SplitNotFound { id: SplitId },
 

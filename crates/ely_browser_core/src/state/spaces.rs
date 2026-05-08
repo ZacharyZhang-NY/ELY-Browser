@@ -1,9 +1,108 @@
-use ely_domain::SpaceId;
+use std::time::{Duration, SystemTime};
+
+use ely_domain::{ArchivedTab, BrowserTab, Space, SpaceId};
 
 use super::BrowserCore;
 use crate::CoreError;
 
+pub const SPACE_TRASH_RETENTION_DAYS: u64 = 30;
+
+#[derive(Clone, Debug)]
+pub struct TrashedSpace {
+    space: Space,
+    tabs: Vec<BrowserTab>,
+    archived_tabs: Vec<ArchivedTab>,
+    trashed_at: SystemTime,
+    purge_at: SystemTime,
+}
+
+impl TrashedSpace {
+    fn new(
+        space: Space,
+        tabs: Vec<BrowserTab>,
+        archived_tabs: Vec<ArchivedTab>,
+        trashed_at: SystemTime,
+    ) -> Self {
+        let purge_at = trashed_at + Duration::from_secs(SPACE_TRASH_RETENTION_DAYS * 86_400);
+        Self { space, tabs, archived_tabs, trashed_at, purge_at }
+    }
+
+    #[must_use]
+    pub fn space(&self) -> &Space {
+        &self.space
+    }
+
+    #[must_use]
+    pub fn tabs(&self) -> &[BrowserTab] {
+        &self.tabs
+    }
+
+    #[must_use]
+    pub fn archived_tabs(&self) -> &[ArchivedTab] {
+        &self.archived_tabs
+    }
+
+    #[must_use]
+    pub fn trashed_at(&self) -> SystemTime {
+        self.trashed_at
+    }
+
+    #[must_use]
+    pub fn purge_at(&self) -> SystemTime {
+        self.purge_at
+    }
+}
+
 impl BrowserCore {
+    pub fn trash_space(
+        &mut self,
+        space_id: &SpaceId,
+        trashed_at: SystemTime,
+    ) -> Result<bool, CoreError> {
+        if self.spaces.len() <= 1 {
+            return Err(CoreError::LastSpaceCannotBeTrashed);
+        }
+
+        let Some(space_index) = self.spaces.iter().position(|space| space.id() == space_id) else {
+            return Err(CoreError::SpaceNotFound { id: space_id.clone() });
+        };
+
+        let trashed_space = self.spaces.remove(space_index);
+        let tabs = self.remove_space_tabs(space_id);
+        let archived_tabs = self.remove_space_archived_tabs(space_id);
+        self.active_tabs_by_space.remove(space_id);
+        self.active_tabs_by_space_profile
+            .retain(|(mapped_space_id, _), _| mapped_space_id != space_id);
+        self.trashed_spaces.push(TrashedSpace::new(trashed_space, tabs, archived_tabs, trashed_at));
+
+        if &self.active_space_id == space_id {
+            let next_space_id = self
+                .sorted_spaces()
+                .first()
+                .map(|space| space.id().clone())
+                .ok_or(CoreError::MissingActiveTab)?;
+            self.select_space(&next_space_id)?;
+        }
+
+        Ok(true)
+    }
+
+    pub fn restore_trashed_space(&mut self, space_id: &SpaceId) -> Result<bool, CoreError> {
+        let Some(trash_index) =
+            self.trashed_spaces.iter().position(|entry| entry.space().id() == space_id)
+        else {
+            return Err(CoreError::TrashedSpaceNotFound { id: space_id.clone() });
+        };
+
+        let trashed_space = self.trashed_spaces.remove(trash_index);
+        let restored_space_id = trashed_space.space().id().clone();
+        self.spaces.push(trashed_space.space);
+        self.tabs.extend(trashed_space.tabs);
+        self.archived_tabs.extend(trashed_space.archived_tabs);
+        self.select_space(&restored_space_id)?;
+        Ok(true)
+    }
+
     pub fn move_space_up(&mut self, space_id: &SpaceId) -> Result<bool, CoreError> {
         let mut ordered_ids = self.sorted_space_ids();
         let Some(index) = ordered_ids.iter().position(|id| id == space_id) else {
@@ -51,5 +150,31 @@ impl BrowserCore {
         }
 
         Ok(())
+    }
+
+    fn remove_space_tabs(&mut self, space_id: &SpaceId) -> Vec<BrowserTab> {
+        let mut removed_tabs = Vec::new();
+        self.tabs.retain(|tab| {
+            if tab.space_id() == space_id {
+                removed_tabs.push(tab.clone());
+                false
+            } else {
+                true
+            }
+        });
+        removed_tabs
+    }
+
+    fn remove_space_archived_tabs(&mut self, space_id: &SpaceId) -> Vec<ArchivedTab> {
+        let mut removed_tabs = Vec::new();
+        self.archived_tabs.retain(|archived| {
+            if archived.tab().space_id() == space_id {
+                removed_tabs.push(archived.clone());
+                false
+            } else {
+                true
+            }
+        });
+        removed_tabs
     }
 }

@@ -1,4 +1,4 @@
-use ely_browser_core::BrowserSnapshot;
+use ely_browser_core::{BrowserSnapshot, TrashedSpace};
 use ely_design_system::colors;
 use ely_domain::{ArchivePolicy, Profile, Space, SpaceId};
 use gpui::{
@@ -28,7 +28,8 @@ impl ElyShell {
                 .gap_5()
                 .child(render_spaces_header(snapshot))
                 .child(render_active_space_summary(snapshot))
-                .child(render_spaces_list(snapshot, cx)),
+                .child(render_spaces_list(snapshot, self.pending_space_trash.as_ref(), cx))
+                .child(render_trashed_spaces_list(snapshot, cx)),
         )
     }
 }
@@ -122,7 +123,11 @@ fn render_active_space_summary(snapshot: &BrowserSnapshot) -> AnyElement {
         .into_any_element()
 }
 
-fn render_spaces_list(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
+fn render_spaces_list(
+    snapshot: &BrowserSnapshot,
+    pending_space_trash: Option<&SpaceId>,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
     div()
         .flex_1()
         .min_h_0()
@@ -138,6 +143,7 @@ fn render_spaces_list(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) ->
                 space,
                 snapshot,
                 space.id() == &snapshot.active_space_id,
+                pending_space_trash == Some(space.id()),
                 cx,
             )
         }))
@@ -150,6 +156,7 @@ fn render_space_row(
     space: &Space,
     snapshot: &BrowserSnapshot,
     active: bool,
+    confirming_trash: bool,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let space_id = space.id().clone();
@@ -187,7 +194,7 @@ fn render_space_row(
                     ),
             ),
         )
-        .child(render_space_actions(index, space_count, space_id, active, cx))
+        .child(render_space_actions(index, space_count, space_id, active, confirming_trash, cx))
         .into_any_element()
 }
 
@@ -196,8 +203,13 @@ fn render_space_actions(
     space_count: usize,
     space_id: SpaceId,
     active: bool,
+    confirming_trash: bool,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
+    if confirming_trash {
+        return render_trash_confirmation(cx);
+    }
+
     let can_move_up = index > 0;
     let can_move_down = index + 1 < space_count;
 
@@ -223,7 +235,8 @@ fn render_space_actions(
             false,
             cx,
         ))
-        .child(render_space_switch_action(index, space_id, active, cx))
+        .child(render_space_switch_action(index, space_id.clone(), active, cx))
+        .child(render_request_trash_button(index, space_id, space_count, cx))
         .into_any_element()
 }
 
@@ -249,6 +262,48 @@ fn render_space_order_button(
                 shell.move_space_down(&space_id, cx);
             }
         }))
+        .into_any_element()
+}
+
+fn render_request_trash_button(
+    index: usize,
+    space_id: SpaceId,
+    space_count: usize,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    Button::new(("trash-space", index))
+        .small()
+        .ghost()
+        .icon(IconName::Delete)
+        .tooltip("Move Space to Trash")
+        .disabled(space_count <= 1)
+        .on_click(cx.listener(move |shell, _, _, cx| {
+            shell.request_space_trash(space_id.clone(), cx);
+        }))
+        .into_any_element()
+}
+
+fn render_trash_confirmation(cx: &mut Context<ElyShell>) -> AnyElement {
+    div()
+        .flex()
+        .items_center()
+        .gap_2()
+        .child(Button::new("cancel-space-trash").small().ghost().label("Cancel").on_click(
+            cx.listener(|shell, _, _, cx| {
+                shell.cancel_space_trash(cx);
+            }),
+        ))
+        .child(
+            Button::new("confirm-space-trash")
+                .small()
+                .danger()
+                .icon(IconName::Delete)
+                .label("Trash")
+                .tooltip("Move Space to Trash")
+                .on_click(cx.listener(|shell, _, window, cx| {
+                    shell.trash_pending_space(window, cx);
+                })),
+        )
         .into_any_element()
 }
 
@@ -279,6 +334,94 @@ fn render_space_switch_action(
         .into_any_element()
 }
 
+fn render_trashed_spaces_list(
+    snapshot: &BrowserSnapshot,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    if snapshot.trashed_spaces.is_empty() {
+        return div().into_any_element();
+    }
+
+    div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .border_t_1()
+        .border_color(rgb(colors::HAIRLINE))
+        .pt_3()
+        .child(
+            div()
+                .text_xs()
+                .font_semibold()
+                .text_color(rgb(colors::MUTED))
+                .child("Recently Trashed"),
+        )
+        .children(
+            snapshot
+                .trashed_spaces
+                .iter()
+                .enumerate()
+                .map(|(index, trashed_space)| render_trashed_space_row(index, trashed_space, cx)),
+        )
+        .into_any_element()
+}
+
+fn render_trashed_space_row(
+    index: usize,
+    trashed_space: &TrashedSpace,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let space_id = trashed_space.space().id().clone();
+    div()
+        .py_2()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap_4()
+        .child(
+            div()
+                .min_w_0()
+                .flex()
+                .items_center()
+                .gap_3()
+                .child(space_avatar(trashed_space.space()))
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(
+                            div()
+                                .text_sm()
+                                .font_semibold()
+                                .truncate()
+                                .text_color(rgb(colors::INK))
+                                .child(trashed_space.space().name().to_string()),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .truncate()
+                                .text_color(rgb(colors::MUTED))
+                                .child(trashed_space_detail_label(trashed_space)),
+                        ),
+                ),
+        )
+        .child(
+            Button::new(("restore-space", index))
+                .small()
+                .primary()
+                .icon(IconName::Undo)
+                .label("Restore")
+                .tooltip("Restore Space")
+                .on_click(cx.listener(move |shell, _, window, cx| {
+                    shell.restore_trashed_space(&space_id, window, cx);
+                })),
+        )
+        .into_any_element()
+}
+
 fn space_avatar(space: &Space) -> AnyElement {
     div()
         .w(px(28.0))
@@ -295,6 +438,14 @@ fn space_avatar(space: &Space) -> AnyElement {
         .text_color(rgb(colors::CANVAS))
         .child(space.icon().to_string())
         .into_any_element()
+}
+
+fn trashed_space_detail_label(trashed_space: &TrashedSpace) -> String {
+    format!(
+        "{} open tabs - {} archived tabs - retained 30 days",
+        trashed_space.tabs().len(),
+        trashed_space.archived_tabs().len()
+    )
 }
 
 fn space_detail_label(space: &Space, profiles: &[Profile]) -> String {
