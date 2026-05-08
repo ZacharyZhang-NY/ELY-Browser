@@ -12,6 +12,7 @@ actions!(
     [
         CloseCurrentTab,
         FocusAddressBar,
+        FocusCommandMode,
         OpenDownloads,
         OpenNewTab,
         Quit,
@@ -40,8 +41,8 @@ fn main() {
             KeyBinding::new("ctrl-shift-t", RestoreClosedTab, None),
             KeyBinding::new("cmd-shift-f", ToggleFavoriteTab, None),
             KeyBinding::new("ctrl-shift-f", ToggleFavoriteTab, None),
-            KeyBinding::new("cmd-shift-p", TogglePinnedTab, None),
-            KeyBinding::new("ctrl-shift-p", TogglePinnedTab, None),
+            KeyBinding::new("cmd-shift-p", FocusCommandMode, None),
+            KeyBinding::new("ctrl-shift-p", FocusCommandMode, None),
             KeyBinding::new("cmd-shift-]", SelectNextTab, None),
             KeyBinding::new("ctrl-tab", SelectNextTab, None),
             KeyBinding::new("cmd-shift-[", SelectPreviousTab, None),
@@ -61,6 +62,8 @@ fn main() {
                 name: "File".into(),
                 items: vec![
                     MenuItem::action("New Tab", OpenNewTab),
+                    MenuItem::separator(),
+                    MenuItem::action("Command Mode", FocusCommandMode),
                     MenuItem::separator(),
                     MenuItem::action("Close Tab", CloseCurrentTab),
                     MenuItem::separator(),

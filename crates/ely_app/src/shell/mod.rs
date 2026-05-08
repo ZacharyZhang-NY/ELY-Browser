@@ -6,8 +6,8 @@ use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscriptio
 use gpui_component::input::{InputEvent, InputState, SelectAll};
 
 use crate::{
-    CloseCurrentTab, FocusAddressBar, OpenDownloads, OpenNewTab, RestoreClosedTab, SelectNextTab,
-    SelectPreviousTab, ToggleFavoriteTab, TogglePinnedTab,
+    CloseCurrentTab, FocusAddressBar, FocusCommandMode, OpenDownloads, OpenNewTab,
+    RestoreClosedTab, SelectNextTab, SelectPreviousTab, ToggleFavoriteTab, TogglePinnedTab,
 };
 
 enum ShellState {
@@ -106,6 +106,18 @@ impl ElyShell {
             input.focus(window, cx);
         });
         window.dispatch_action(Box::new(SelectAll), cx);
+    }
+
+    fn focus_command_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state {
+            core.set_command_query(">");
+        }
+
+        self.command_input.update(cx, |input, cx| {
+            input.set_value(">", window, cx);
+            input.focus(window, cx);
+        });
+        cx.notify();
     }
 
     fn select_tab(&mut self, tab_id: &TabId, window: &mut Window, cx: &mut Context<Self>) {
@@ -208,6 +220,15 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) {
         self.focus_address_bar(window, cx);
+    }
+
+    fn on_focus_command_mode(
+        &mut self,
+        _: &FocusCommandMode,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.focus_command_mode(window, cx);
     }
 
     fn on_open_new_tab(&mut self, _: &OpenNewTab, window: &mut Window, cx: &mut Context<Self>) {
