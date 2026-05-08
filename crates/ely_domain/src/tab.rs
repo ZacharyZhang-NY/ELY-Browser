@@ -165,6 +165,10 @@ impl BrowserTab {
         self.state = TabState::Crashed;
     }
 
+    pub fn mark_discarded(&mut self) {
+        self.state = TabState::Discarded;
+    }
+
     #[must_use]
     pub fn flags(&self) -> &TabFlags {
         &self.flags

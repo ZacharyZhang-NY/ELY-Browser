@@ -21,8 +21,10 @@ mod shortcuts;
 mod sidebar_tabs;
 mod site_permissions_settings;
 mod site_settings;
+mod sleep;
 mod spaces;
 mod sync;
+mod tab_context;
 mod task_manager;
 
 use ely_browser_core::BrowserSnapshot;
@@ -46,6 +48,9 @@ impl ElyShell {
     ) -> AnyElement {
         if tab.state() == &TabState::Crashed {
             return self.render_crash_page(tab, snapshot, cx);
+        }
+        if tab.state() == &TabState::Discarded {
+            return self.render_sleep_page(tab, snapshot, cx);
         }
 
         match tab.url().as_str() {

@@ -13,7 +13,6 @@ use sync::SyncObjectPolicies;
 
 mod bookmarks;
 mod commands;
-mod crashes;
 mod downloads;
 mod history;
 mod notes;
@@ -25,6 +24,7 @@ mod spaces;
 mod splits;
 mod sync;
 mod tab_groups;
+mod tab_lifecycle;
 mod tab_order;
 mod tabs;
 

@@ -47,3 +47,24 @@ Crash recovery uses the same productive register:
 │                              │  └─────────────────────────────────────────┘  │
 └──────────────────────────────┴───────────────────────────────────────────────┘
 ```
+
+Sleeping tabs keep the same layout rhythm:
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ELY Browser   [ https://example.com/sleep................... ] [pin] [*] [+] │
+├──────────────────────────────┬───────────────────────────────────────────────┤
+│ Tabs                         │  ┌─────────────────────────────────────────┐  │
+│   * example.com              │  │ Sleeping Tab                  [Restore] │  │
+│     example.com              │  │ Sleeping example.com                   │  │
+│                              │  ├─────────────────────────────────────────┤  │
+│ Profile                      │  │ URL      https://example.com/sleep      │  │
+│   Default                    │  │ Title    example.com                    │  │
+│                              │  │ Favicon  No favicon saved              │  │
+│                              │  │ Space    Work                           │  │
+│                              │  │ Profile  Default                        │  │
+│                              │  │ Session  Page session remains attached  │  │
+│                              │  │ [Restore]                               │  │
+│                              │  └─────────────────────────────────────────┘  │
+└──────────────────────────────┴───────────────────────────────────────────────┘
+```

@@ -277,9 +277,18 @@ impl BrowserCore {
                 self.crash_active_tab()?;
                 Ok(true)
             }
+            "sleep-tab" | "sleep tab" | "discard-tab" | "discard tab" => {
+                self.discard_active_tab()?;
+                Ok(true)
+            }
             "recover-tab" | "recover tab" | "recover-crashed-tab" | "recover crashed tab" => {
                 let tab_id = self.active_tab()?.id().clone();
                 self.recover_crashed_tab(&tab_id)?;
+                Ok(true)
+            }
+            "wake-tab" | "wake tab" | "restore-sleeping-tab" | "restore sleeping tab" => {
+                let tab_id = self.active_tab()?.id().clone();
+                self.wake_discarded_tab(&tab_id)?;
                 Ok(true)
             }
             "close-split-view" | "close split view" => {

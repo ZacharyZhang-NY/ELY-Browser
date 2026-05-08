@@ -1,6 +1,5 @@
 mod archive_labels;
 mod bookmarks;
-mod crashes;
 mod downloads;
 mod history;
 mod internal_pages;
@@ -13,6 +12,7 @@ mod site_permissions;
 mod spaces;
 mod splits;
 mod tab_groups;
+mod tab_lifecycle;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
 use ely_domain::{
