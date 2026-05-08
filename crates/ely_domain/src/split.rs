@@ -37,12 +37,14 @@ pub struct SplitLayout {
     id: SplitId,
     axis: SplitAxis,
     panes: Vec<SplitPane>,
+    title: String,
+    saved: bool,
 }
 
 impl SplitLayout {
     #[must_use]
     pub fn new(axis: SplitAxis, panes: Vec<SplitPane>) -> Self {
-        Self { id: SplitId::new(), axis, panes }
+        Self { id: SplitId::new(), axis, panes, title: "Split View".to_string(), saved: false }
     }
 
     #[must_use]
@@ -58,6 +60,16 @@ impl SplitLayout {
     #[must_use]
     pub fn panes(&self) -> &[SplitPane] {
         &self.panes
+    }
+
+    #[must_use]
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    #[must_use]
+    pub fn saved(&self) -> bool {
+        self.saved
     }
 
     #[must_use]
@@ -83,5 +95,10 @@ impl SplitLayout {
         let original_len = self.panes.len();
         self.panes.retain(|pane| pane.tab_id() != tab_id);
         self.panes.len() != original_len
+    }
+
+    pub fn save(&mut self, title: impl Into<String>) {
+        self.title = title.into();
+        self.saved = true;
     }
 }

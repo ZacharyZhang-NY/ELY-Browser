@@ -43,6 +43,39 @@ fn split_right_command_focuses_new_pane() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn save_split_view_command_marks_active_layout() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.split_active_tab_right()?;
+
+    core.set_command_query(">save-split-view");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+    let layout = snapshot.split_layouts.first().ok_or("missing split layout")?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("save-split-view".to_string())));
+    assert!(layout.saved());
+    assert_eq!(layout.title(), "Split View: New Tab + New Tab");
+    assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn save_split_view_command_preserves_query_without_active_split() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let active_tab_id = core.active_tab()?.id().clone();
+
+    core.set_command_query(">save-split-view");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("save-split-view".to_string())));
+    assert!(snapshot.split_layouts.is_empty());
+    assert_eq!(snapshot.active_tab_id, active_tab_id);
+    assert_eq!(snapshot.command_query, ">save-split-view");
+    Ok(())
+}
+
+#[test]
 fn closing_split_pane_dissolves_two_pane_layout() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let remaining_tab_id = core.active_tab()?.id().clone();

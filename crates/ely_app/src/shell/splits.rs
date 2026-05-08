@@ -1,6 +1,8 @@
+use std::collections::BTreeSet;
+
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
-use ely_domain::{BrowserTab, SplitAxis, SplitLayout};
+use ely_domain::{BrowserTab, SplitAxis, SplitId, SplitLayout};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window, div, px, rgb,
@@ -11,6 +13,37 @@ use super::{ElyShell, ShellState};
 use crate::SplitRight;
 
 impl ElyShell {
+    pub(super) fn render_sidebar_tab_rows(
+        &mut self,
+        snapshot: &BrowserSnapshot,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        let mut rendered_split_ids = BTreeSet::new();
+        let active_split_id = active_split_id(snapshot);
+
+        snapshot
+            .tabs
+            .iter()
+            .filter(|tab| !tab.flags().favorite)
+            .filter(|tab| !tab.flags().pinned)
+            .filter_map(|tab| {
+                let Some(split_id) = tab.split_id() else {
+                    return Some(self.render_tab_row(tab, tab.id() == &snapshot.active_tab_id, cx));
+                };
+                let Some(layout) = saved_split_layout(snapshot, split_id) else {
+                    return Some(self.render_tab_row(tab, tab.id() == &snapshot.active_tab_id, cx));
+                };
+
+                if rendered_split_ids.insert(split_id.clone()) {
+                    let active = active_split_id.as_ref() == Some(split_id);
+                    return self.render_saved_split_row(layout, active, cx);
+                }
+
+                None
+            })
+            .collect()
+    }
+
     pub(super) fn render_content_area(
         &mut self,
         snapshot: &BrowserSnapshot,
@@ -156,6 +189,60 @@ impl ElyShell {
             )
             .into_any_element()
     }
+
+    fn render_saved_split_row(
+        &mut self,
+        layout: &SplitLayout,
+        active: bool,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let first_tab_id = layout.panes().first()?.tab_id().clone();
+        let background = if active { colors::SURFACE_CARD } else { colors::CANVAS };
+        let border = if active { colors::PRIMARY } else { colors::HAIRLINE };
+
+        Some(
+            div()
+                .id(SharedString::from(format!("saved-split-{}", layout.id().as_str())))
+                .rounded_md()
+                .border_1()
+                .border_color(rgb(border))
+                .bg(rgb(background))
+                .px_3()
+                .py_2()
+                .gap_2()
+                .flex()
+                .items_center()
+                .cursor_pointer()
+                .hover(|style| style.bg(rgb(colors::SURFACE_CARD)))
+                .active(|style| style.opacity(0.82))
+                .on_click(cx.listener(move |shell, _, window, cx| {
+                    shell.select_tab(&first_tab_id, window, cx);
+                }))
+                .child(div().text_color(rgb(colors::PRIMARY)).child(IconName::Frame))
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(
+                            div()
+                                .text_sm()
+                                .font_semibold()
+                                .truncate()
+                                .text_color(rgb(colors::INK))
+                                .child(layout.title().to_string()),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(rgb(colors::MUTED))
+                                .child(format!("{} panes", layout.pane_count())),
+                        ),
+                )
+                .into_any_element(),
+        )
+    }
 }
 
 fn active_split_layout<'a>(
@@ -164,4 +251,19 @@ fn active_split_layout<'a>(
 ) -> Option<&'a SplitLayout> {
     let split_id = active_tab.split_id()?;
     snapshot.split_layouts.iter().find(|layout| layout.id() == split_id)
+}
+
+fn active_split_id(snapshot: &BrowserSnapshot) -> Option<SplitId> {
+    snapshot
+        .tabs
+        .iter()
+        .find(|tab| tab.id() == &snapshot.active_tab_id)
+        .and_then(|tab| tab.split_id().cloned())
+}
+
+fn saved_split_layout<'a>(
+    snapshot: &'a BrowserSnapshot,
+    split_id: &SplitId,
+) -> Option<&'a SplitLayout> {
+    snapshot.split_layouts.iter().find(|layout| layout.id() == split_id && layout.saved())
 }

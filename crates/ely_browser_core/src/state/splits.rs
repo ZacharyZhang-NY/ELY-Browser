@@ -5,6 +5,21 @@ use crate::CoreError;
 use super::BrowserCore;
 
 impl BrowserCore {
+    pub fn save_active_split_view(&mut self) -> Result<Option<SplitId>, CoreError> {
+        let Some(split_id) = self.active_tab()?.split_id().cloned() else {
+            return Ok(None);
+        };
+        let title = self.active_split_title(&split_id)?;
+        let layout = self
+            .split_layouts
+            .iter_mut()
+            .find(|layout| layout.id() == &split_id)
+            .ok_or_else(|| CoreError::SplitNotFound { id: split_id.clone() })?;
+
+        layout.save(title);
+        Ok(Some(split_id))
+    }
+
     pub fn split_active_tab_right(&mut self) -> Result<SplitId, CoreError> {
         let active_index = self.active_tab_index()?;
         let active_tab_id = self.tabs[active_index].id().clone();
@@ -97,5 +112,29 @@ impl BrowserCore {
             .iter()
             .find(|tab| tab.id() == active_tab_id)
             .and_then(|tab| tab.split_id().cloned())
+    }
+
+    fn active_split_title(&self, split_id: &SplitId) -> Result<String, CoreError> {
+        let layout = self
+            .split_layouts
+            .iter()
+            .find(|layout| layout.id() == split_id)
+            .ok_or_else(|| CoreError::SplitNotFound { id: split_id.clone() })?;
+        let pane_titles = layout
+            .panes()
+            .iter()
+            .filter_map(|pane| {
+                self.tabs
+                    .iter()
+                    .find(|tab| tab.id() == pane.tab_id())
+                    .map(|tab| tab.title().to_string())
+            })
+            .collect::<Vec<_>>();
+
+        Ok(match pane_titles.as_slice() {
+            [] => "Split View".to_string(),
+            [title] => format!("Split View: {title}"),
+            [first, second, ..] => format!("Split View: {first} + {second}"),
+        })
     }
 }

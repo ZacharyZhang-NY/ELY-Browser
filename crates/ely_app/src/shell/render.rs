@@ -167,14 +167,7 @@ impl ElyShell {
                 self.render_space_row(space, space.id() == &snapshot.active_space_id, cx)
             }))
             .child(section_label("Tabs"))
-            .children(
-                snapshot
-                    .tabs
-                    .iter()
-                    .filter(|tab| !tab.flags().favorite)
-                    .filter(|tab| !tab.flags().pinned)
-                    .map(|tab| self.render_tab_row(tab, tab.id() == &snapshot.active_tab_id, cx)),
-            )
+            .children(self.render_sidebar_tab_rows(snapshot, cx))
             .child(section_label("Archive"))
             .children(
                 snapshot
@@ -324,7 +317,7 @@ impl ElyShell {
             .into_any_element()
     }
 
-    fn render_tab_row(
+    pub(super) fn render_tab_row(
         &mut self,
         tab: &BrowserTab,
         active: bool,

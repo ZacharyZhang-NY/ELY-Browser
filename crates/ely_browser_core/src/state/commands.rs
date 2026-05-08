@@ -125,6 +125,7 @@ impl BrowserCore {
                 self.split_active_tab_right()?;
                 Ok(true)
             }
+            "save-split-view" | "save split view" => Ok(self.save_active_split_view()?.is_some()),
             "downloads" | "open-downloads" | "open downloads" => {
                 self.open_tab(downloads_url()?);
                 Ok(true)
