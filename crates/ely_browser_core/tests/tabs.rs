@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, CoreError, InitialBrowserConfig};
-use ely_domain::{CommandIntent, CommandScope, SearchEngine, TabState, UrlText};
+use ely_domain::{CommandIntent, CommandScope, NewTabDestination, SearchEngine, TabState, UrlText};
 
 #[test]
 fn opens_new_tab_below_active_tab() -> Result<(), Box<dyn Error>> {
@@ -256,6 +256,23 @@ fn search_command_uses_selected_search_engine() -> Result<(), Box<dyn Error>> {
     assert_eq!(intent, Some(CommandIntent::Search("rust async book".to_string())));
     assert_eq!(active_tab.url().as_str(), "https://www.google.com/search?q=rust+async+book");
     assert_eq!(core.snapshot()?.search_engine, SearchEngine::Google);
+    assert_eq!(core.command_query(), "");
+    Ok(())
+}
+
+#[test]
+fn new_tab_command_uses_selected_destination() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.set_new_tab_destination(NewTabDestination::Bookmarks);
+
+    core.set_command_query(">new-tab");
+    let intent = core.submit_command()?;
+
+    let active_tab = core.active_tab()?;
+    assert_eq!(intent, Some(CommandIntent::Command("new-tab".to_string())));
+    assert_eq!(active_tab.title(), "Bookmarks");
+    assert_eq!(active_tab.url().as_str(), "ely://bookmarks");
+    assert_eq!(core.snapshot()?.new_tab_destination, NewTabDestination::Bookmarks);
     assert_eq!(core.command_query(), "");
     Ok(())
 }

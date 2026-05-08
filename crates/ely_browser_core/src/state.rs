@@ -2,12 +2,12 @@ use std::{collections::BTreeMap, time::SystemTime};
 
 use ely_domain::{
     ArchivePolicy, ArchivedTab, BookmarkEntry, BrowserTab, DomainError, DownloadEntry,
-    DownloadPolicy, HistoryEntry, Profile, ProfileId, ProfileKind, ReadingListEntry, SearchEngine,
-    SitePermissionAuditEvent, SitePermissionEntry, Space, SpaceId, SplitLayout, SyncStatus, TabId,
-    UrlText,
+    DownloadPolicy, HistoryEntry, NewTabDestination, Profile, ProfileId, ProfileKind,
+    ReadingListEntry, SearchEngine, SitePermissionAuditEvent, SitePermissionEntry, Space, SpaceId,
+    SplitLayout, SyncStatus, TabId, UrlText,
 };
 
-use crate::CoreError;
+use crate::{CoreError, navigation::tab_title};
 
 mod bookmarks;
 mod commands;
@@ -28,7 +28,7 @@ pub struct InitialBrowserConfig {
     pub space_name: String,
     pub space_icon: String,
     pub profile_name: String,
-    pub initial_url: UrlText,
+    pub new_tab_destination: NewTabDestination,
 }
 
 impl InitialBrowserConfig {
@@ -37,7 +37,7 @@ impl InitialBrowserConfig {
             space_name: "Work".to_string(),
             space_icon: "W".to_string(),
             profile_name: "Default".to_string(),
-            initial_url: UrlText::parse("ely://new-tab")?,
+            new_tab_destination: NewTabDestination::default(),
         })
     }
 }
@@ -67,6 +67,7 @@ pub struct BrowserSnapshot {
     pub active_profile_name: String,
     pub active_download_policy: DownloadPolicy,
     pub search_engine: SearchEngine,
+    pub new_tab_destination: NewTabDestination,
     pub command_query: String,
 }
 
@@ -92,22 +93,24 @@ pub struct BrowserCore {
     active_tabs_by_space: BTreeMap<SpaceId, TabId>,
     active_tabs_by_space_profile: BTreeMap<(SpaceId, ProfileId), TabId>,
     search_engine: SearchEngine,
+    new_tab_destination: NewTabDestination,
     command_query: String,
-    new_tab_url: UrlText,
 }
 
 impl BrowserCore {
     pub fn new(config: InitialBrowserConfig) -> Result<Self, CoreError> {
         let space = Space::new(config.space_name, config.space_icon, 0xf54e00);
         let profile = Profile::new(config.profile_name, 0x26251e, ProfileKind::Standard);
-        let new_tab_url = config.initial_url;
+        let new_tab_destination = config.new_tab_destination;
+        let new_tab_url = new_tab_destination.url()?;
+        let new_tab_title = tab_title(&new_tab_url);
         let active_space_id = space.id().clone();
         let active_profile_id = profile.id().clone();
         let tab = BrowserTab::new(
             TabId::new(),
             active_space_id.clone(),
             active_profile_id.clone(),
-            "New Tab",
+            new_tab_title,
             new_tab_url.clone(),
         );
         let active_tab_id = tab.id().clone();
@@ -124,6 +127,7 @@ impl BrowserCore {
             active_tabs_by_space,
             active_tabs_by_space_profile,
             search_engine: SearchEngine::default(),
+            new_tab_destination,
             spaces: vec![space],
             profiles: vec![profile],
             tabs: vec![tab],
@@ -139,7 +143,6 @@ impl BrowserCore {
             installed_plugins: Vec::new(),
             plugin_audit_events: Vec::new(),
             command_query: String::new(),
-            new_tab_url,
         })
     }
 
@@ -154,7 +157,7 @@ impl BrowserCore {
         let tab = self.build_tab_for(
             space_id.clone(),
             self.active_profile_id.clone(),
-            self.new_tab_url.clone(),
+            self.new_tab_url()?,
         );
         let tab_id = tab.id().clone();
 
@@ -190,7 +193,7 @@ impl BrowserCore {
         let tab = self.build_tab_for(
             space_id.clone(),
             self.active_profile_id.clone(),
-            self.new_tab_url.clone(),
+            self.new_tab_url()?,
         );
         let tab_id = tab.id().clone();
         self.tabs.push(tab);
@@ -227,6 +230,15 @@ impl BrowserCore {
     #[must_use]
     pub fn search_engine(&self) -> SearchEngine {
         self.search_engine
+    }
+
+    pub fn set_new_tab_destination(&mut self, destination: NewTabDestination) {
+        self.new_tab_destination = destination;
+    }
+
+    #[must_use]
+    pub fn new_tab_destination(&self) -> NewTabDestination {
+        self.new_tab_destination
     }
 
     pub fn set_command_query(&mut self, query: impl Into<String>) {
@@ -266,8 +278,13 @@ impl BrowserCore {
             active_profile_name: active_profile.name().to_string(),
             active_download_policy: active_profile.download_policy().clone(),
             search_engine: self.search_engine,
+            new_tab_destination: self.new_tab_destination,
             command_query: self.command_query.clone(),
         })
+    }
+
+    pub(super) fn new_tab_url(&self) -> Result<UrlText, CoreError> {
+        self.new_tab_destination.url().map_err(CoreError::from)
     }
 
     fn active_profile(&self) -> Result<&Profile, CoreError> {

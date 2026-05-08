@@ -53,7 +53,7 @@ impl BrowserCore {
         let tab = self.build_tab_for(
             self.active_space_id.clone(),
             profile_id.clone(),
-            self.new_tab_url.clone(),
+            self.new_tab_url()?,
         );
         let tab_id = tab.id().clone();
         let insert_index = self

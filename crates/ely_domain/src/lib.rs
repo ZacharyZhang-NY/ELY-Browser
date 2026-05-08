@@ -5,6 +5,7 @@ mod download;
 mod error;
 mod history;
 mod identifiers;
+mod new_tab;
 mod plugin;
 mod profile;
 mod reading_list;
@@ -28,6 +29,7 @@ pub use history::HistoryEntry;
 pub use identifiers::{
     BookmarkId, DownloadId, ProfileId, ReadingListId, SpaceId, SplitId, TabId, WebViewId,
 };
+pub use new_tab::NewTabDestination;
 pub use plugin::{
     PluginContributionPoint, PluginId, PluginManifest, PluginPermission, PluginPermissionRisk,
     PluginSignature, PluginSignatureAlgorithm,

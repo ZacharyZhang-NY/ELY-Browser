@@ -19,6 +19,12 @@ struct SettingsRoute {
 
 const SETTINGS_ROUTES: &[SettingsRoute] = &[
     SettingsRoute {
+        icon: IconName::Settings2,
+        title: "General",
+        detail: "New Tab destination and browser startup defaults.",
+        route: "ely://settings/general",
+    },
+    SettingsRoute {
         icon: IconName::LayoutDashboard,
         title: "Sidebar & Tabs",
         detail: "Vertical tabs, pinned area, and auto archive policy.",

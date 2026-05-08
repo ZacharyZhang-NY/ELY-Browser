@@ -75,7 +75,7 @@ impl BrowserCore {
         let active_profile_id = self.tabs[active_index].profile_id().clone();
         let split_id = self.split_id_for_new_pane(&active_tab_id)?;
         let mut new_tab =
-            self.build_tab_for(active_space_id, active_profile_id, self.new_tab_url.clone());
+            self.build_tab_for(active_space_id, active_profile_id, self.new_tab_url()?);
         let new_tab_id = new_tab.id().clone();
         new_tab.set_split_id(split_id.clone());
 
@@ -276,7 +276,7 @@ impl BrowserCore {
         let replacement = self.build_tab_for(
             closed_space_id.clone(),
             closed_profile_id.clone(),
-            self.new_tab_url.clone(),
+            self.new_tab_url()?,
         );
         let replacement_id = replacement.id().clone();
         self.tabs.insert(start_index.min(self.tabs.len()), replacement);

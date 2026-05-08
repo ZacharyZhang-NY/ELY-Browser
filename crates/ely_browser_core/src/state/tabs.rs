@@ -14,6 +14,11 @@ use super::BrowserCore;
 const DEFAULT_FAVORITE_LIMIT: usize = 12;
 
 impl BrowserCore {
+    pub fn open_new_tab(&mut self) -> Result<TabId, CoreError> {
+        let url = self.new_tab_url()?;
+        Ok(self.open_tab(url))
+    }
+
     pub fn open_tab(&mut self, url: UrlText) -> TabId {
         let tab = self.build_tab(url);
         let tab_id = tab.id().clone();
@@ -62,7 +67,7 @@ impl BrowserCore {
             let tab = self.build_tab_for(
                 source_space_id.clone(),
                 self.active_profile_id.clone(),
-                self.new_tab_url.clone(),
+                self.new_tab_url()?,
             );
             let replacement_id = tab.id().clone();
             self.tabs.insert(tab_index, tab);
@@ -125,7 +130,7 @@ impl BrowserCore {
         let tab = self.build_tab_for(
             closed_space_id.clone(),
             closed_profile_id.clone(),
-            self.new_tab_url.clone(),
+            self.new_tab_url()?,
         );
         let replacement_id = tab.id().clone();
         self.tabs.insert(close_index.min(self.tabs.len()), tab);

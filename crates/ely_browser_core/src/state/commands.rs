@@ -126,7 +126,7 @@ impl BrowserCore {
 
         match command.to_ascii_lowercase().as_str() {
             "new-tab" => {
-                self.open_tab(self.new_tab_url.clone());
+                self.open_new_tab()?;
                 Ok(true)
             }
             "split-right" | "split right" => {

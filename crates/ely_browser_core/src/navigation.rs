@@ -25,6 +25,7 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
         url if SiteOrigin::from_site_route(url).ok().flatten().is_some() => Some("Site Settings"),
         "ely://about" => Some("About ELY Browser"),
         "ely://settings" => Some("Settings"),
+        "ely://settings/general" => Some("General Settings"),
         "ely://settings/sidebar-tabs" => Some("Sidebar & Tabs Settings"),
         "ely://settings/search" => Some("Search Settings"),
         "ely://settings/spaces" => Some("Space Settings"),
@@ -154,7 +155,8 @@ pub(crate) fn settings_page_url(query: &str) -> Result<Option<UrlText>, CoreErro
 
 fn settings_page_route(query: &str) -> Option<&'static str> {
     match query {
-        "settings" | "general" | "browser" => Some("ely://settings"),
+        "settings" => Some("ely://settings"),
+        "general" | "browser" | "new tab" | "new-tab" | "startup" => Some("ely://settings/general"),
         "about" | "about ely browser" => Some("ely://about"),
         "sidebar" | "tabs" | "sidebar tabs" | "sidebar & tabs" => {
             Some("ely://settings/sidebar-tabs")

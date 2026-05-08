@@ -6,7 +6,10 @@ mod site_permissions;
 mod splits;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{ArchivePolicy, CommandIntent, ProfileId, SearchEngine, SpaceId, TabId, UrlText};
+use ely_domain::{
+    ArchivePolicy, CommandIntent, NewTabDestination, ProfileId, SearchEngine, SpaceId, TabId,
+    UrlText,
+};
 use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscription, Window};
 use gpui_component::input::{InputEvent, InputState, SelectAll};
 
@@ -101,7 +104,13 @@ impl ElyShell {
     }
 
     fn open_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.open_internal_tab("ely://new-tab", window, cx);
+        if let ShellState::Ready(core) = &mut self.state
+            && core.open_new_tab().is_ok()
+        {
+            self.sync_address_input(window, cx);
+            self.focus_address_bar(window, cx);
+            cx.notify();
+        }
     }
 
     fn open_downloads(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -267,6 +276,13 @@ impl ElyShell {
     fn set_search_engine(&mut self, search_engine: SearchEngine, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state {
             core.set_search_engine(search_engine);
+            cx.notify();
+        }
+    }
+
+    fn set_new_tab_destination(&mut self, destination: NewTabDestination, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state {
+            core.set_new_tab_destination(destination);
             cx.notify();
         }
     }
