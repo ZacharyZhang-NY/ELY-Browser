@@ -1,13 +1,23 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::{SyncConnectionState, SyncObjectKind, SyncObjectState, SyncObjectStatus};
-use gpui::{AnyElement, IntoElement, ParentElement, Styled, div, px, rgb};
+use ely_domain::{
+    SyncConnectionState, SyncObjectKind, SyncObjectPolicy, SyncObjectState, SyncObjectStatus,
+};
+use gpui::{
+    AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div,
+    px, rgb,
+};
+use gpui::{StatefulInteractiveElement, prelude::FluentBuilder};
 use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
 
 use super::{ElyShell, render_canvas_surface};
 
 impl ElyShell {
-    pub(super) fn render_sync_page(&mut self, snapshot: &BrowserSnapshot) -> AnyElement {
+    pub(super) fn render_sync_page(
+        &mut self,
+        snapshot: &BrowserSnapshot,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         render_canvas_surface(
             div()
                 .size_full()
@@ -17,7 +27,7 @@ impl ElyShell {
                 .gap_5()
                 .child(render_sync_header(snapshot))
                 .child(render_sync_queue(snapshot))
-                .child(render_sync_objects(snapshot)),
+                .child(render_sync_objects(snapshot, cx)),
         )
     }
 }
@@ -87,7 +97,7 @@ fn metric_block(label: &'static str, value: usize, color: u32) -> AnyElement {
         .into_any_element()
 }
 
-fn render_sync_objects(snapshot: &BrowserSnapshot) -> AnyElement {
+fn render_sync_objects(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
     div()
         .flex_1()
         .min_h_0()
@@ -96,11 +106,22 @@ fn render_sync_objects(snapshot: &BrowserSnapshot) -> AnyElement {
         .overflow_y_scrollbar()
         .border_t_1()
         .border_color(rgb(colors::HAIRLINE))
-        .children(snapshot.sync_status.objects().iter().map(render_sync_object_row))
+        .children(
+            snapshot
+                .sync_status
+                .objects()
+                .iter()
+                .enumerate()
+                .map(|(index, status)| render_sync_object_row(index, status, cx)),
+        )
         .into_any_element()
 }
 
-fn render_sync_object_row(status: &SyncObjectStatus) -> AnyElement {
+fn render_sync_object_row(
+    index: usize,
+    status: &SyncObjectStatus,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
     div()
         .py_3()
         .border_b_1()
@@ -133,11 +154,54 @@ fn render_sync_object_row(status: &SyncObjectStatus) -> AnyElement {
         )
         .child(
             div()
-                .text_xs()
-                .font_semibold()
-                .text_color(rgb(sync_object_state_color(status.state())))
-                .child(sync_object_state_label(status.state())),
+                .flex()
+                .items_center()
+                .gap_3()
+                .child(
+                    div()
+                        .text_xs()
+                        .font_semibold()
+                        .text_color(rgb(sync_object_state_color(status.state())))
+                        .child(sync_object_state_label(status.state())),
+                )
+                .child(render_sync_policy_toggle(index, status, cx)),
         )
+        .into_any_element()
+}
+
+fn render_sync_policy_toggle(
+    index: usize,
+    status: &SyncObjectStatus,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let enabled = status.policy() == SyncObjectPolicy::Enabled;
+    let next_policy = if enabled { SyncObjectPolicy::Paused } else { SyncObjectPolicy::Enabled };
+    let kind = status.kind();
+
+    div()
+        .id(SharedString::from(format!("sync-policy-toggle-{index}")))
+        .w(px(38.0))
+        .h(px(22.0))
+        .rounded_full()
+        .border_1()
+        .border_color(rgb(sync_policy_border_color(enabled)))
+        .bg(rgb(sync_policy_track_color(enabled)))
+        .p(px(2.0))
+        .cursor_pointer()
+        .hover(|style| style.opacity(0.9))
+        .active(|style| style.opacity(0.78))
+        .child(
+            div()
+                .w(px(16.0))
+                .h(px(16.0))
+                .rounded_full()
+                .bg(rgb(colors::SURFACE_CARD))
+                .shadow_sm()
+                .when(enabled, |this| this.ml(px(16.0))),
+        )
+        .on_click(cx.listener(move |shell, _, _, cx| {
+            shell.set_sync_object_policy(kind, next_policy, cx);
+        }))
         .into_any_element()
 }
 
@@ -147,7 +211,7 @@ fn connection_label(connection: &SyncConnectionState) -> &'static str {
     }
 }
 
-fn sync_object_kind_label(kind: &SyncObjectKind) -> &'static str {
+fn sync_object_kind_label(kind: SyncObjectKind) -> &'static str {
     match kind {
         SyncObjectKind::Spaces => "Spaces",
         SyncObjectKind::Tabs => "Tabs",
@@ -160,16 +224,26 @@ fn sync_object_kind_label(kind: &SyncObjectKind) -> &'static str {
     }
 }
 
-fn sync_object_state_label(state: &SyncObjectState) -> &'static str {
+fn sync_object_state_label(state: SyncObjectState) -> &'static str {
     match state {
         SyncObjectState::LocalOnly => "Local only",
+        SyncObjectState::Paused => "Paused",
         SyncObjectState::PrivacyControlled => "Privacy controlled",
     }
 }
 
-fn sync_object_state_color(state: &SyncObjectState) -> u32 {
+fn sync_object_state_color(state: SyncObjectState) -> u32 {
     match state {
         SyncObjectState::LocalOnly => colors::MUTED,
+        SyncObjectState::Paused => colors::PRIMARY,
         SyncObjectState::PrivacyControlled => colors::PRIMARY,
     }
+}
+
+fn sync_policy_track_color(enabled: bool) -> u32 {
+    if enabled { colors::SUCCESS } else { colors::CANVAS_SOFT }
+}
+
+fn sync_policy_border_color(enabled: bool) -> u32 {
+    if enabled { colors::SUCCESS } else { colors::HAIRLINE_STRONG }
 }

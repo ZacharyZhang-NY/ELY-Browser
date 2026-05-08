@@ -3,7 +3,7 @@ pub enum SyncConnectionState {
     SignedOut,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SyncObjectKind {
     Spaces,
     Tabs,
@@ -15,9 +15,17 @@ pub enum SyncObjectKind {
     PluginSettings,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SyncObjectPolicy {
+    #[default]
+    Enabled,
+    Paused,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SyncObjectState {
     LocalOnly,
+    Paused,
     PrivacyControlled,
 }
 
@@ -26,6 +34,7 @@ pub struct SyncObjectStatus {
     kind: SyncObjectKind,
     local_count: usize,
     state: SyncObjectState,
+    policy: SyncObjectPolicy,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -39,12 +48,22 @@ pub struct SyncStatus {
 impl SyncObjectStatus {
     #[must_use]
     pub fn new(kind: SyncObjectKind, local_count: usize, state: SyncObjectState) -> Self {
-        Self { kind, local_count, state }
+        Self::with_policy(kind, local_count, state, SyncObjectPolicy::Enabled)
     }
 
     #[must_use]
-    pub fn kind(&self) -> &SyncObjectKind {
-        &self.kind
+    pub fn with_policy(
+        kind: SyncObjectKind,
+        local_count: usize,
+        state: SyncObjectState,
+        policy: SyncObjectPolicy,
+    ) -> Self {
+        Self { kind, local_count, state, policy }
+    }
+
+    #[must_use]
+    pub fn kind(&self) -> SyncObjectKind {
+        self.kind
     }
 
     #[must_use]
@@ -53,8 +72,13 @@ impl SyncObjectStatus {
     }
 
     #[must_use]
-    pub fn state(&self) -> &SyncObjectState {
-        &self.state
+    pub fn state(&self) -> SyncObjectState {
+        self.state
+    }
+
+    #[must_use]
+    pub fn policy(&self) -> SyncObjectPolicy {
+        self.policy
     }
 }
 

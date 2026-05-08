@@ -63,8 +63,8 @@ impl ElyShell {
             "ely://settings/shortcuts" => self.render_shortcuts_page(snapshot),
             "ely://settings/plugins" => self.render_plugins_page(snapshot, cx),
             "ely://settings/profiles" => self.render_profiles_page(snapshot, cx),
-            "ely://settings/sync" => self.render_sync_page(snapshot),
-            "ely://sync/status" => self.render_sync_page(snapshot),
+            "ely://settings/sync" => self.render_sync_page(snapshot, cx),
+            "ely://sync/status" => self.render_sync_page(snapshot, cx),
             _ => render_default_page(tab),
         }
     }

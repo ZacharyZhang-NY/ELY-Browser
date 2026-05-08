@@ -1,7 +1,10 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{SyncConnectionState, SyncObjectKind, SyncObjectState, SyncObjectStatus, UrlText};
+use ely_domain::{
+    SyncConnectionState, SyncObjectKind, SyncObjectPolicy, SyncObjectState, SyncObjectStatus,
+    UrlText,
+};
 
 #[test]
 fn default_sync_status_reflects_local_browser_state() -> Result<(), Box<dyn Error>> {
@@ -30,5 +33,33 @@ fn default_sync_status_reflects_local_browser_state() -> Result<(), Box<dyn Erro
             SyncObjectStatus::new(SyncObjectKind::PluginSettings, 0, SyncObjectState::LocalOnly),
         ],
     );
+    Ok(())
+}
+
+#[test]
+fn sync_object_policy_pauses_object_kind() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.set_sync_object_policy(SyncObjectKind::Tabs, SyncObjectPolicy::Paused);
+
+    let snapshot = core.snapshot()?;
+    let Some(tabs_status) =
+        snapshot.sync_status.objects().iter().find(|status| status.kind() == SyncObjectKind::Tabs)
+    else {
+        return Err("missing tabs sync status".into());
+    };
+    let Some(spaces_status) = snapshot
+        .sync_status
+        .objects()
+        .iter()
+        .find(|status| status.kind() == SyncObjectKind::Spaces)
+    else {
+        return Err("missing spaces sync status".into());
+    };
+
+    assert_eq!(core.sync_object_policy(SyncObjectKind::Tabs), SyncObjectPolicy::Paused);
+    assert_eq!(tabs_status.policy(), SyncObjectPolicy::Paused);
+    assert_eq!(tabs_status.state(), SyncObjectState::Paused);
+    assert_eq!(spaces_status.policy(), SyncObjectPolicy::Enabled);
+    assert_eq!(spaces_status.state(), SyncObjectState::LocalOnly);
     Ok(())
 }

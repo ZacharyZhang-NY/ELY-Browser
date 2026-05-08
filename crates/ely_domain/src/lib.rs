@@ -48,7 +48,8 @@ pub use site_permission::{
 pub use space::{ArchivePolicy, Space};
 pub use split::{MAX_SPLIT_PANES, SplitAxis, SplitLayout, SplitPane};
 pub use sync::{
-    SyncConnectionState, SyncObjectKind, SyncObjectState, SyncObjectStatus, SyncStatus,
+    SyncConnectionState, SyncObjectKind, SyncObjectPolicy, SyncObjectState, SyncObjectStatus,
+    SyncStatus,
 };
 pub use tab::{BrowserTab, TabFlags, TabState};
 pub use url_text::UrlText;

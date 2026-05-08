@@ -8,7 +8,8 @@ mod splits;
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
 use ely_domain::{
     ArchivePolicy, CommandIntent, DownloadPolicy, FavoriteLimit, HistoryRecordingPolicy,
-    NewTabDestination, ProfileId, SearchEngine, SpaceId, TabId, UrlText,
+    NewTabDestination, ProfileId, SearchEngine, SpaceId, SyncObjectKind, SyncObjectPolicy, TabId,
+    UrlText,
 };
 use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscription, Window};
 use gpui_component::input::{InputEvent, InputState, SelectAll};
@@ -313,6 +314,18 @@ impl ElyShell {
     fn set_favorite_limit(&mut self, favorite_limit: FavoriteLimit, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state {
             core.set_favorite_limit(favorite_limit);
+            cx.notify();
+        }
+    }
+
+    fn set_sync_object_policy(
+        &mut self,
+        kind: SyncObjectKind,
+        policy: SyncObjectPolicy,
+        cx: &mut Context<Self>,
+    ) {
+        if let ShellState::Ready(core) = &mut self.state {
+            core.set_sync_object_policy(kind, policy);
             cx.notify();
         }
     }

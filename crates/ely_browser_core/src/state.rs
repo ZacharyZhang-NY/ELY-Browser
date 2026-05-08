@@ -8,6 +8,7 @@ use ely_domain::{
 };
 
 use crate::{CoreError, navigation::tab_title};
+use sync::SyncObjectPolicies;
 
 mod bookmarks;
 mod commands;
@@ -98,6 +99,7 @@ pub struct BrowserCore {
     new_tab_destination: NewTabDestination,
     history_recording_policy: HistoryRecordingPolicy,
     favorite_limit: FavoriteLimit,
+    sync_object_policies: SyncObjectPolicies,
     command_query: String,
 }
 
@@ -134,6 +136,7 @@ impl BrowserCore {
             new_tab_destination,
             history_recording_policy: HistoryRecordingPolicy::default(),
             favorite_limit: FavoriteLimit::default(),
+            sync_object_policies: SyncObjectPolicies::default(),
             spaces: vec![space],
             profiles: vec![profile],
             tabs: vec![tab],
