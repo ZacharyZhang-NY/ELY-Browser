@@ -87,6 +87,19 @@ impl BrowserCore {
             .collect()
     }
 
+    pub fn remove_note_entry(&mut self, note_id: &NoteId) -> Result<(), CoreError> {
+        let index = self.note_entry_index(note_id)?;
+        self.notes.remove(index);
+        Ok(())
+    }
+
+    fn note_entry_index(&self, note_id: &NoteId) -> Result<usize, CoreError> {
+        self.notes
+            .iter()
+            .position(|entry| entry.id() == note_id)
+            .ok_or_else(|| CoreError::NoteNotFound { id: note_id.clone() })
+    }
+
     fn note_index_for_target(
         &self,
         profile_id: &ely_domain::ProfileId,

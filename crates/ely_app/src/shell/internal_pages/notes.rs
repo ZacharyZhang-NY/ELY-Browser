@@ -2,7 +2,7 @@ use std::time::{Duration, SystemTime};
 
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::NoteEntry;
+use ely_domain::{NoteEntry, NoteId};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
@@ -79,6 +79,7 @@ impl ElyShell {
     ) -> AnyElement {
         let url = note.source_url().clone();
         let open_url = note.source_url().clone();
+        let note_id = note.id().clone();
         let space_name = note_space_name(snapshot, note);
 
         div()
@@ -161,6 +162,7 @@ impl ElyShell {
                         shell.open_url(open_url.clone(), window, cx);
                     })),
             )
+            .child(render_remove_note_action(index, note_id, cx))
             .into_any_element()
     }
 }
@@ -205,6 +207,23 @@ fn notes_count_label(count: usize) -> String {
         1 => "1 note".to_string(),
         count => format!("{count} notes"),
     }
+}
+
+fn render_remove_note_action(
+    index: usize,
+    note_id: NoteId,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    Button::new(("remove-note", index))
+        .danger()
+        .xsmall()
+        .icon(IconName::Delete)
+        .label("Remove")
+        .tooltip("Remove Note")
+        .on_click(cx.listener(move |shell, _, _, cx| {
+            shell.remove_note_entry(&note_id, cx);
+        }))
+        .into_any_element()
 }
 
 fn markdown_preview(body: &str) -> String {

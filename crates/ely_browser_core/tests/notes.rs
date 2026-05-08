@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{CommandIntent, CommandScope, NoteTarget, ProfileKind, UrlText};
+use ely_domain::{CommandIntent, CommandScope, NoteId, NoteTarget, ProfileKind, UrlText};
 
 #[test]
 fn url_note_records_active_page_context() -> Result<(), Box<dyn Error>> {
@@ -98,6 +98,32 @@ fn notes_scoped_search_opens_matching_note_url() -> Result<(), Box<dyn Error>> {
     );
     assert_eq!(core.active_tab()?.url().as_str(), "https://example.com/matching-note");
     assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn remove_note_entry_removes_saved_note() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com/remove-note")?);
+    let note_id = core.save_active_url_note("remove me")?;
+
+    core.remove_note_entry(&note_id)?;
+    let snapshot = core.snapshot()?;
+
+    assert!(snapshot.notes.is_empty());
+    Ok(())
+}
+
+#[test]
+fn missing_note_remove_returns_error() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let missing_id = NoteId::new();
+
+    let Err(error) = core.remove_note_entry(&missing_id) else {
+        return Err("expected missing note error".into());
+    };
+
+    assert_eq!(error, ely_browser_core::CoreError::NoteNotFound { id: missing_id });
     Ok(())
 }
 

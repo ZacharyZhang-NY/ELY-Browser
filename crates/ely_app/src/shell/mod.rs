@@ -2,6 +2,7 @@ mod bookmarks;
 mod downloads;
 mod history;
 mod internal_pages;
+mod notes;
 mod plugins;
 mod reading_list;
 mod render;
