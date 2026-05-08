@@ -142,6 +142,20 @@ impl ElyShell {
         }
     }
 
+    fn restore_archived_tab(
+        &mut self,
+        tab_id: &TabId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.restore_archived_tab(tab_id).is_ok()
+        {
+            self.sync_address_input(window, cx);
+            cx.notify();
+        }
+    }
+
     fn toggle_active_tab_favorite(&mut self, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state
             && core.toggle_active_tab_favorite().is_ok()

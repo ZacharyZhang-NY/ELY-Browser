@@ -1,6 +1,6 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{ELY_THEME, colors, spacing};
-use ely_domain::BrowserTab;
+use ely_domain::{ArchiveSource, ArchivedTab, BrowserTab};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window, div, px, rgb,
@@ -176,6 +176,14 @@ impl ElyShell {
                     .filter(|tab| !tab.flags().pinned)
                     .map(|tab| self.render_tab_row(tab, tab.id() == &snapshot.active_tab_id, cx)),
             )
+            .child(section_label("Archive"))
+            .children(
+                snapshot
+                    .archived_tabs
+                    .iter()
+                    .rev()
+                    .map(|archived_tab| self.render_archived_row(archived_tab, cx)),
+            )
             .child(div().flex_1())
             .child(section_label("Profile"))
             .child(
@@ -316,6 +324,54 @@ impl ElyShell {
             .child(div().text_xs().text_color(rgb(colors::MUTED)).child(tab.display_url()))
             .into_any_element()
     }
+
+    fn render_archived_row(
+        &mut self,
+        archived_tab: &ArchivedTab,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let tab = archived_tab.tab();
+        let tab_id = tab.id().clone();
+
+        div()
+            .id(SharedString::from(format!("archived-{}", tab.id().as_str())))
+            .rounded_md()
+            .border_1()
+            .border_color(rgb(colors::HAIRLINE))
+            .bg(rgb(colors::CANVAS))
+            .px_3()
+            .py_2()
+            .gap_2()
+            .flex()
+            .items_center()
+            .cursor_pointer()
+            .hover(|style| style.bg(rgb(colors::SURFACE_CARD)))
+            .active(|style| style.opacity(0.82))
+            .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.restore_archived_tab(&tab_id, window, cx);
+            }))
+            .child(div().text_color(rgb(colors::MUTED)).child(IconName::Undo2))
+            .child(
+                div()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_semibold()
+                            .text_color(rgb(colors::INK))
+                            .child(tab.title().to_string()),
+                    )
+                    .child(div().text_xs().text_color(rgb(colors::MUTED)).child(format!(
+                        "{} - {}",
+                        tab.display_url(),
+                        archive_source_label(archived_tab.source())
+                    ))),
+            )
+            .into_any_element()
+    }
 }
 
 fn render_web_canvas(tab: &BrowserTab) -> AnyElement {
@@ -368,5 +424,12 @@ fn render_tab_status(tab: &BrowserTab) -> String {
     match tab.url().as_str() {
         "ely://new-tab" => "Ready".to_string(),
         url => url.to_string(),
+    }
+}
+
+fn archive_source_label(source: &ArchiveSource) -> &'static str {
+    match source {
+        ArchiveSource::ManualClose => "Closed",
+        ArchiveSource::AutoArchive => "Auto archived",
     }
 }

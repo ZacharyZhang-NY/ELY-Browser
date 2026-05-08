@@ -131,6 +131,17 @@ impl BrowserCore {
         self.restore_tab(tab)
     }
 
+    pub fn restore_archived_tab(&mut self, tab_id: &TabId) -> Result<TabId, CoreError> {
+        let index = self
+            .archived_tabs
+            .iter()
+            .position(|archived| archived.tab().id() == tab_id)
+            .ok_or_else(|| CoreError::TabNotFound { id: tab_id.clone() })?;
+        let archived_tab = self.archived_tabs.remove(index);
+        let tab = archived_tab.into_tab();
+        self.restore_tab(tab)
+    }
+
     pub fn restore_archived_tab_match(&mut self, query: &str) -> Result<Option<TabId>, CoreError> {
         let normalized_query = query.trim().to_lowercase();
         if normalized_query.is_empty() {
