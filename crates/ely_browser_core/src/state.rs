@@ -1,13 +1,14 @@
 use std::collections::BTreeMap;
 
 use ely_domain::{
-    ArchivedTab, BrowserTab, DomainError, HistoryEntry, Profile, ProfileId, ProfileKind, Space,
-    SpaceId, TabId, UrlText,
+    ArchivedTab, BrowserTab, DomainError, DownloadEntry, HistoryEntry, Profile, ProfileId,
+    ProfileKind, Space, SpaceId, TabId, UrlText,
 };
 
 use crate::CoreError;
 
 mod commands;
+mod downloads;
 mod history;
 mod profiles;
 mod tabs;
@@ -37,6 +38,7 @@ pub struct BrowserSnapshot {
     pub favorites: Vec<BrowserTab>,
     pub pinned_tabs: Vec<BrowserTab>,
     pub archived_tabs: Vec<ArchivedTab>,
+    pub download_entries: Vec<DownloadEntry>,
     pub history_entries: Vec<HistoryEntry>,
     pub spaces: Vec<Space>,
     pub active_tab_id: TabId,
@@ -52,6 +54,7 @@ pub struct BrowserCore {
     profiles: Vec<Profile>,
     tabs: Vec<BrowserTab>,
     archived_tabs: Vec<ArchivedTab>,
+    download_entries: Vec<DownloadEntry>,
     history_entries: Vec<HistoryEntry>,
     active_space_id: SpaceId,
     active_profile_id: ProfileId,
@@ -93,6 +96,7 @@ impl BrowserCore {
             profiles: vec![profile],
             tabs: vec![tab],
             archived_tabs: Vec::new(),
+            download_entries: Vec::new(),
             history_entries: Vec::new(),
             command_query: String::new(),
             new_tab_url,
@@ -179,6 +183,7 @@ impl BrowserCore {
             favorites: self.favorites(),
             pinned_tabs: self.pinned_tabs(),
             archived_tabs: self.archived_tabs.clone(),
+            download_entries: self.visible_downloads(),
             history_entries: self.visible_history(),
             spaces: self.spaces.clone(),
             tabs: self.visible_tabs(),

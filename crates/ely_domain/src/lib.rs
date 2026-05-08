@@ -1,5 +1,6 @@
 mod archive;
 mod command;
+mod download;
 mod error;
 mod history;
 mod identifiers;
@@ -11,9 +12,10 @@ mod url_text;
 
 pub use archive::{ArchiveSource, ArchivedTab};
 pub use command::{CommandIntent, CommandScope};
+pub use download::{DownloadEntry, DownloadState};
 pub use error::DomainError;
 pub use history::HistoryEntry;
-pub use identifiers::{ProfileId, SpaceId, SplitId, TabId, WebViewId};
+pub use identifiers::{DownloadId, ProfileId, SpaceId, SplitId, TabId, WebViewId};
 pub use profile::{Profile, ProfileKind};
 pub use space::{ArchivePolicy, Space};
 pub use split::{SplitAxis, SplitLayout, SplitPane};
