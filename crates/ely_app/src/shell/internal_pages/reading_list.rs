@@ -1,3 +1,5 @@
+use std::time::{Duration, SystemTime};
+
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
 use ely_domain::{ReadingListEntry, ReadingListId, ReadingProgress};
@@ -124,6 +126,13 @@ impl ElyShell {
                                     .truncate()
                                     .text_color(rgb(colors::MUTED))
                                     .child(entry.display_url()),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .truncate()
+                                    .text_color(rgb(colors::MUTED_SOFT))
+                                    .child(added_at_label(entry.added_at())),
                             ),
                     ),
             )
@@ -232,5 +241,50 @@ fn reading_list_count_label(count: usize) -> String {
     match count {
         1 => "1 item".to_string(),
         count => format!("{count} items"),
+    }
+}
+
+fn added_at_label(added_at: SystemTime) -> String {
+    added_at_label_for(added_at, SystemTime::now())
+}
+
+fn added_at_label_for(added_at: SystemTime, now: SystemTime) -> String {
+    let age = now.duration_since(added_at).unwrap_or(Duration::ZERO);
+    if age < Duration::from_secs(60) {
+        return "Added just now".to_string();
+    }
+    if age < Duration::from_secs(3_600) {
+        return format!("Added {} mins ago", age.as_secs() / 60);
+    }
+    if age < Duration::from_secs(86_400) {
+        return format!("Added {} hrs ago", age.as_secs() / 3_600);
+    }
+    if age < Duration::from_secs(604_800) {
+        return format!("Added {} days ago", age.as_secs() / 86_400);
+    }
+    "Added earlier".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, SystemTime};
+
+    use super::added_at_label_for;
+
+    #[test]
+    fn added_at_label_formats_recent_entries() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(10_000);
+
+        assert_eq!(added_at_label_for(now - Duration::from_secs(20), now), "Added just now");
+    }
+
+    #[test]
+    fn added_at_label_formats_minutes_hours_days_and_older_entries() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+
+        assert_eq!(added_at_label_for(now - Duration::from_secs(120), now), "Added 2 mins ago");
+        assert_eq!(added_at_label_for(now - Duration::from_secs(10_800), now), "Added 3 hrs ago");
+        assert_eq!(added_at_label_for(now - Duration::from_secs(345_600), now), "Added 4 days ago");
+        assert_eq!(added_at_label_for(now - Duration::from_secs(691_200), now), "Added earlier");
     }
 }
