@@ -4,7 +4,7 @@ use crate::{
     CoreError,
     navigation::{
         downloads_url, history_url, move_tab_space_name, new_profile_name, new_space_name,
-        search_url, settings_url, space_icon, switch_profile_name,
+        search_url, settings_page_url, settings_url, space_icon, switch_profile_name,
     },
 };
 
@@ -41,6 +41,12 @@ impl BrowserCore {
             CommandIntent::ScopedSearch { scope: CommandScope::Spaces, query } => {
                 if let Some(space_id) = self.find_space_match(query) {
                     self.select_space(&space_id)?;
+                    self.command_query.clear();
+                }
+            }
+            CommandIntent::ScopedSearch { scope: CommandScope::Settings, query } => {
+                if let Some(url) = settings_page_url(query)? {
+                    self.open_tab(url);
                     self.command_query.clear();
                 }
             }

@@ -19,6 +19,9 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
         "ely://downloads" => Some("Downloads"),
         "ely://history" => Some("History"),
         "ely://settings" => Some("Settings"),
+        "ely://settings/plugins" => Some("Plugin Settings"),
+        "ely://settings/profiles" => Some("Profile Settings"),
+        "ely://settings/sync" => Some("Sync Settings"),
         _ => None,
     }
 }
@@ -80,6 +83,29 @@ pub(crate) fn history_url() -> Result<UrlText, CoreError> {
 
 pub(crate) fn settings_url() -> Result<UrlText, CoreError> {
     internal_page_url("ely://settings")
+}
+
+pub(crate) fn settings_page_url(query: &str) -> Result<Option<UrlText>, CoreError> {
+    let normalized_query = query.trim().to_ascii_lowercase();
+    let Some(url) = settings_page_route(&normalized_query) else {
+        return Ok(None);
+    };
+
+    internal_page_url(url).map(Some)
+}
+
+fn settings_page_route(query: &str) -> Option<&'static str> {
+    match query {
+        "settings" | "general" | "browser" => Some("ely://settings"),
+        "sync" | "sync settings" => Some("ely://settings/sync"),
+        "profile" | "profiles" | "profile settings" | "profiles settings" => {
+            Some("ely://settings/profiles")
+        }
+        "plugin" | "plugins" | "plugin settings" | "plugins settings" => {
+            Some("ely://settings/plugins")
+        }
+        _ => None,
+    }
 }
 
 fn internal_page_url(value: &str) -> Result<UrlText, CoreError> {
