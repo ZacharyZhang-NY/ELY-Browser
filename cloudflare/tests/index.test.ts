@@ -74,7 +74,7 @@ describe("worker routes", () => {
 
   it("returns JSON not found for unknown routes", async () => {
     const response = await handleRequest(
-      new Request("https://elydora.test/api/sync/status"),
+      new Request("https://elydora.test/api/unknown"),
       testEnv(null),
     );
 
