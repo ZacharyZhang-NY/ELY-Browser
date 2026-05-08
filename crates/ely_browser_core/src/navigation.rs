@@ -100,6 +100,10 @@ pub(crate) fn tab_note_body(command: &str) -> Option<&str> {
     command_argument(command, &["tab-note ", "tab note ", "note-tab ", "note tab "])
 }
 
+pub(crate) fn tab_group_name(command: &str) -> Option<&str> {
+    command_argument(command, &["group-tab ", "group tab ", "tab-group ", "tab group "])
+}
+
 pub(crate) fn new_profile_name(command: &str) -> Option<&str> {
     command_argument(command, &["new-profile ", "new profile "])
 }

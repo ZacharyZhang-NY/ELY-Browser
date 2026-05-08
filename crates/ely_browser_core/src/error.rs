@@ -1,6 +1,6 @@
 use ely_domain::{
     BookmarkId, DomainError, DownloadId, NoteId, PluginId, ProfileId, ReadingListId, SpaceId,
-    SplitId, TabId,
+    SplitId, TabGroupId, TabId,
 };
 use thiserror::Error;
 
@@ -20,6 +20,9 @@ pub enum CoreError {
 
     #[error("split not found: {id}")]
     SplitNotFound { id: SplitId },
+
+    #[error("tab group not found: {id}")]
+    TabGroupNotFound { id: TabGroupId },
 
     #[error("profile not found: {id}")]
     ProfileNotFound { id: ProfileId },

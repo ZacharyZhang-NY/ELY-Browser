@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use crate::{DomainError, ProfileId, SpaceId, SplitId, TabId, UrlText};
+use crate::{DomainError, ProfileId, SpaceId, SplitId, TabGroupId, TabId, UrlText};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TabState {
@@ -30,6 +30,7 @@ pub struct BrowserTab {
     parent_tab_id: Option<TabId>,
     state: TabState,
     flags: TabFlags,
+    group_id: Option<TabGroupId>,
     split_id: Option<SplitId>,
     sort_key: u64,
     sync_enabled: bool,
@@ -57,6 +58,7 @@ impl BrowserTab {
             parent_tab_id: None,
             state: TabState::Ready,
             flags: TabFlags::default(),
+            group_id: None,
             split_id: None,
             sort_key: 0,
             sync_enabled: true,
@@ -174,6 +176,19 @@ impl BrowserTab {
 
     pub fn move_to_space(&mut self, space_id: SpaceId) {
         self.space_id = space_id;
+    }
+
+    #[must_use]
+    pub fn group_id(&self) -> Option<&TabGroupId> {
+        self.group_id.as_ref()
+    }
+
+    pub fn set_group_id(&mut self, group_id: TabGroupId) {
+        self.group_id = Some(group_id);
+    }
+
+    pub fn clear_group_id(&mut self) {
+        self.group_id = None;
     }
 
     #[must_use]

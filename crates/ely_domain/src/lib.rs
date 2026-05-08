@@ -18,6 +18,7 @@ mod space;
 mod split;
 mod sync;
 mod tab;
+mod tab_group;
 mod url_text;
 
 pub use archive::{ArchiveSource, ArchivedTab};
@@ -31,7 +32,8 @@ pub use error::DomainError;
 pub use favorite::FavoriteLimit;
 pub use history::HistoryEntry;
 pub use identifiers::{
-    BookmarkId, DownloadId, NoteId, ProfileId, ReadingListId, SpaceId, SplitId, TabId, WebViewId,
+    BookmarkId, DownloadId, NoteId, ProfileId, ReadingListId, SpaceId, SplitId, TabGroupId, TabId,
+    WebViewId,
 };
 pub use new_tab::NewTabDestination;
 pub use note::{NoteEntry, NoteTarget};
@@ -54,4 +56,5 @@ pub use sync::{
     SyncStatus,
 };
 pub use tab::{BrowserTab, TabFlags, TabState};
+pub use tab_group::TabGroup;
 pub use url_text::UrlText;

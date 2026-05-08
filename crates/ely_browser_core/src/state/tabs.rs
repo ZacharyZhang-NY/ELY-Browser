@@ -4,12 +4,11 @@ use ely_domain::{
     ArchivePolicy, ArchiveSource, ArchivedTab, BrowserTab, ProfileId, SpaceId, TabId, UrlText,
 };
 
+use super::BrowserCore;
 use crate::{
     CoreError,
     navigation::{tab_matches_query, tab_title},
 };
-
-use super::BrowserCore;
 
 impl BrowserCore {
     pub fn open_new_tab(&mut self) -> Result<TabId, CoreError> {
@@ -53,6 +52,7 @@ impl BrowserCore {
         let tab_index = self.active_tab_index()?;
         let target_sort_key = self.next_tab_sort_key(space_id);
         self.tabs[tab_index].move_to_space(space_id.clone());
+        self.tabs[tab_index].clear_group_id();
         self.tabs[tab_index].set_sort_key(target_sort_key);
         self.sort_tabs_within_space(space_id);
         self.active_tabs_by_space.insert(space_id.clone(), tab_id.clone());

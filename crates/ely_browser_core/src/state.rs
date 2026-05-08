@@ -4,8 +4,8 @@ use ely_domain::{
     ArchivePolicy, ArchivedTab, BookmarkEntry, BrowserTab, DomainError, DownloadEntry,
     DownloadPolicy, FavoriteLimit, HistoryEntry, HistoryRecordingPolicy, NewTabDestination,
     NoteEntry, Profile, ProfileId, ProfileKind, ReadingListEntry, SearchEngine,
-    SitePermissionAuditEvent, SitePermissionEntry, Space, SpaceId, SplitLayout, SyncStatus, TabId,
-    UrlText,
+    SitePermissionAuditEvent, SitePermissionEntry, Space, SpaceId, SplitLayout, SyncStatus,
+    TabGroup, TabId, UrlText,
 };
 
 use crate::{CoreError, navigation::tab_title};
@@ -22,6 +22,7 @@ mod reading_list;
 mod site_permissions;
 mod splits;
 mod sync;
+mod tab_groups;
 mod tab_order;
 mod tabs;
 
@@ -60,6 +61,7 @@ pub struct BrowserSnapshot {
     pub download_entries: Vec<DownloadEntry>,
     pub history_entries: Vec<HistoryEntry>,
     pub active_profile_history_entry_count: usize,
+    pub tab_groups: Vec<TabGroup>,
     pub split_layouts: Vec<SplitLayout>,
     pub installed_plugins: Vec<InstalledPlugin>,
     pub plugin_audit_events: Vec<PluginAuditEvent>,
@@ -92,6 +94,7 @@ pub struct BrowserCore {
     site_permission_audit_events: Vec<SitePermissionAuditEvent>,
     download_entries: Vec<DownloadEntry>,
     history_entries: Vec<HistoryEntry>,
+    tab_groups: Vec<TabGroup>,
     split_layouts: Vec<SplitLayout>,
     archived_split_layouts: Vec<SplitLayout>,
     installed_plugins: Vec<InstalledPlugin>,
@@ -161,6 +164,7 @@ impl BrowserCore {
             site_permission_audit_events: Vec::new(),
             download_entries: Vec::new(),
             history_entries: Vec::new(),
+            tab_groups: Vec::new(),
             split_layouts: Vec::new(),
             archived_split_layouts: Vec::new(),
             installed_plugins: Vec::new(),
@@ -354,6 +358,7 @@ impl BrowserCore {
             download_entries: self.visible_downloads(),
             history_entries: self.visible_history(),
             active_profile_history_entry_count: self.active_profile_history_count(),
+            tab_groups: self.visible_tab_groups(),
             split_layouts: self.visible_split_layouts(),
             installed_plugins: self.installed_plugins.clone(),
             plugin_audit_events: self.plugin_audit_events.clone(),

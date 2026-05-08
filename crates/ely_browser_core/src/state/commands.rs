@@ -9,7 +9,7 @@ use crate::{
         move_tab_space_name, new_private_profile_name, new_profile_name, new_space_name, note_body,
         notes_url, plugin_detail_url, plugins_url, reading_list_url, reading_progress_percent,
         search_url, settings_page_url, settings_url, shortcut_settings_url, space_icon,
-        switch_profile_name, sync_status_url, tab_note_body, task_manager_url,
+        switch_profile_name, sync_status_url, tab_group_name, tab_note_body, task_manager_url,
     },
 };
 
@@ -131,6 +131,10 @@ impl BrowserCore {
         }
         if let Some(percent) = reading_progress_percent(command)? {
             self.set_active_tab_reading_progress(percent)?;
+            return Ok(true);
+        }
+        if let Some(name) = tab_group_name(command) {
+            self.group_active_tab(name)?;
             return Ok(true);
         }
         if let Some(body) = tab_note_body(command) {
