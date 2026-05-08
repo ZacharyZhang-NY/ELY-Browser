@@ -1,0 +1,182 @@
+use ely_browser_core::{BrowserSnapshot, InstalledPlugin, PluginAuditAction, PluginAuditEvent};
+use ely_design_system::colors;
+use gpui::{AnyElement, IntoElement, ParentElement, Styled, div, px, rgb};
+use gpui_component::{StyledExt, scroll::ScrollableElement};
+
+use super::{ElyShell, render_canvas_surface};
+
+impl ElyShell {
+    pub(super) fn render_plugins_page(&mut self, snapshot: &BrowserSnapshot) -> AnyElement {
+        render_canvas_surface(
+            div()
+                .size_full()
+                .p_8()
+                .flex()
+                .flex_col()
+                .gap_5()
+                .child(
+                    div()
+                        .flex()
+                        .items_end()
+                        .justify_between()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .text_size(px(26.0))
+                                        .text_color(rgb(colors::INK))
+                                        .child("Plugins"),
+                                )
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(rgb(colors::MUTED))
+                                        .child("Browser scope"),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .items_end()
+                                .gap_1()
+                                .child(div().text_xs().text_color(rgb(colors::MUTED)).child(
+                                    format!("{} installed", snapshot.installed_plugins.len()),
+                                ))
+                                .child(div().text_xs().text_color(rgb(colors::MUTED)).child(
+                                    format!("{} audit events", snapshot.plugin_audit_events.len()),
+                                )),
+                        ),
+                )
+                .child(render_plugin_list(snapshot))
+                .child(render_plugin_audit_list(snapshot)),
+        )
+    }
+}
+
+fn render_plugin_list(snapshot: &BrowserSnapshot) -> AnyElement {
+    if snapshot.installed_plugins.is_empty() {
+        return div()
+            .border_t_1()
+            .border_color(rgb(colors::HAIRLINE))
+            .pt_5()
+            .text_sm()
+            .text_color(rgb(colors::MUTED))
+            .child("No plugins installed.")
+            .into_any_element();
+    }
+
+    div()
+        .flex()
+        .flex_col()
+        .border_t_1()
+        .border_color(rgb(colors::HAIRLINE))
+        .children(snapshot.installed_plugins.iter().map(render_plugin_row))
+        .into_any_element()
+}
+
+fn render_plugin_row(plugin: &InstalledPlugin) -> AnyElement {
+    let high_risk_count = plugin.manifest().high_risk_permissions().count();
+    let status_color = if plugin.enabled() { colors::SUCCESS } else { colors::MUTED };
+    let status_label = if plugin.enabled() { "Enabled" } else { "Disabled" };
+
+    div()
+        .py_3()
+        .border_b_1()
+        .border_color(rgb(colors::HAIRLINE))
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap_4()
+        .child(
+            div()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    div()
+                        .text_sm()
+                        .font_semibold()
+                        .truncate()
+                        .text_color(rgb(colors::INK))
+                        .child(plugin.manifest().name().to_string()),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .truncate()
+                        .text_color(rgb(colors::MUTED))
+                        .child(plugin.id().as_str().to_string()),
+                ),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_3()
+                .text_xs()
+                .text_color(rgb(colors::MUTED))
+                .child(format!("{} permissions", plugin.manifest().permissions().len()))
+                .child(format!("{high_risk_count} high risk"))
+                .child(div().text_color(rgb(status_color)).child(status_label)),
+        )
+        .into_any_element()
+}
+
+fn render_plugin_audit_list(snapshot: &BrowserSnapshot) -> AnyElement {
+    if snapshot.plugin_audit_events.is_empty() {
+        return div().into_any_element();
+    }
+
+    div()
+        .flex_1()
+        .flex()
+        .flex_col()
+        .min_h_0()
+        .gap_3()
+        .child(div().text_xs().font_semibold().text_color(rgb(colors::MUTED)).child("Audit"))
+        .child(
+            div()
+                .flex_1()
+                .flex()
+                .flex_col()
+                .overflow_y_scrollbar()
+                .children(snapshot.plugin_audit_events.iter().rev().map(render_plugin_audit_row)),
+        )
+        .into_any_element()
+}
+
+fn render_plugin_audit_row(event: &PluginAuditEvent) -> AnyElement {
+    div()
+        .py_2()
+        .border_b_1()
+        .border_color(rgb(colors::HAIRLINE))
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap_3()
+        .text_xs()
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_color(rgb(colors::BODY))
+                .child(event.plugin_id().as_str().to_string()),
+        )
+        .child(
+            div().text_color(rgb(colors::MUTED)).child(plugin_audit_action_label(event.action())),
+        )
+        .into_any_element()
+}
+
+fn plugin_audit_action_label(action: &PluginAuditAction) -> &'static str {
+    match action {
+        PluginAuditAction::Installed => "Installed",
+        PluginAuditAction::Enabled => "Enabled",
+        PluginAuditAction::Disabled => "Disabled",
+    }
+}

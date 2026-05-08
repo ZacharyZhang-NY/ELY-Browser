@@ -1,6 +1,7 @@
 mod download_actions;
 mod download_labels;
 mod downloads;
+mod plugins;
 
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
@@ -24,6 +25,7 @@ impl ElyShell {
             "ely://downloads" => self.render_downloads_page(snapshot, cx),
             "ely://history" => self.render_history_page(snapshot, cx),
             "ely://archive" => self.render_archive_page(snapshot, cx),
+            "ely://settings/plugins" => self.render_plugins_page(snapshot),
             _ => render_default_page(tab),
         }
     }
