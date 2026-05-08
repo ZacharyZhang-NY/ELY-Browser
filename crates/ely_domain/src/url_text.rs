@@ -53,6 +53,13 @@ impl UrlText {
     }
 
     #[must_use]
+    pub fn host(&self) -> Option<String> {
+        Url::parse(&self.value)
+            .ok()
+            .and_then(|url| url.host_str().map(|host| host.to_ascii_lowercase()))
+    }
+
+    #[must_use]
     pub fn display_url(&self) -> String {
         let Ok(url) = Url::parse(&self.value) else {
             return self.value.clone();

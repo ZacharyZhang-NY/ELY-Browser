@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use ely_domain::{BrowserTab, HistoryEntry, ProfileId, ProfileKind, UrlText};
+use ely_domain::{BrowserTab, HistoryEntry, ProfileId, ProfileKind, SpaceId, UrlText};
 
 use crate::navigation::records_history;
 
@@ -10,6 +10,15 @@ impl BrowserCore {
     pub fn clear_active_profile_history(&mut self) -> Result<usize, crate::CoreError> {
         let profile_id = self.active_profile_id.clone();
         self.clear_profile_history(&profile_id)
+    }
+
+    pub fn clear_active_space_history_for_host(
+        &mut self,
+        host: &str,
+    ) -> Result<usize, crate::CoreError> {
+        let profile_id = self.active_profile_id.clone();
+        let space_id = self.active_space_id.clone();
+        self.clear_space_profile_history_for_host(&profile_id, &space_id, host)
     }
 
     pub(super) fn record_history_entry(&mut self, tab: &BrowserTab) {
@@ -69,6 +78,33 @@ impl BrowserCore {
 
         let original_count = self.history_entries.len();
         self.history_entries.retain(|entry| entry.profile_id() != profile_id);
+        Ok(original_count - self.history_entries.len())
+    }
+
+    fn clear_space_profile_history_for_host(
+        &mut self,
+        profile_id: &ProfileId,
+        space_id: &SpaceId,
+        host: &str,
+    ) -> Result<usize, crate::CoreError> {
+        if !self.profiles.iter().any(|profile| profile.id() == profile_id) {
+            return Err(crate::CoreError::ProfileNotFound { id: profile_id.clone() });
+        }
+        if !self.spaces.iter().any(|space| space.id() == space_id) {
+            return Err(crate::CoreError::SpaceNotFound { id: space_id.clone() });
+        }
+
+        let normalized_host = host.trim().to_ascii_lowercase();
+        if normalized_host.is_empty() {
+            return Ok(0);
+        }
+
+        let original_count = self.history_entries.len();
+        self.history_entries.retain(|entry| {
+            entry.profile_id() != profile_id
+                || entry.space_id() != space_id
+                || entry.url().host().as_deref() != Some(normalized_host.as_str())
+        });
         Ok(original_count - self.history_entries.len())
     }
 

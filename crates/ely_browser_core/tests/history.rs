@@ -86,6 +86,58 @@ fn clear_active_profile_history_without_entries_is_empty_change() -> Result<(), 
 }
 
 #[test]
+fn clear_active_space_history_for_host_stays_in_space_and_profile() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let work_space_id = core.snapshot()?.active_space_id;
+    let default_profile_id = core.snapshot()?.active_profile_id;
+
+    core.open_tab(UrlText::parse("https://example.com/work-one")?);
+    core.open_tab(UrlText::parse("https://example.com/work-two")?);
+    core.open_tab(UrlText::parse("https://example.org/work")?);
+
+    let research_space_id = core.create_space("Research", "R", 0xf54e00)?;
+    core.open_tab(UrlText::parse("https://example.com/research")?);
+
+    core.select_space(&work_space_id)?;
+    let personal_profile_id = core.create_profile("Personal", 0x26251e, ProfileKind::Standard)?;
+    core.open_tab(UrlText::parse("https://example.com/personal")?);
+    core.select_profile(&default_profile_id)?;
+
+    let removed_count = core.clear_active_space_history_for_host("EXAMPLE.com")?;
+    let work_snapshot = core.snapshot()?;
+    assert_eq!(removed_count, 2);
+    assert_eq!(work_snapshot.history_entries.len(), 1);
+    assert_eq!(work_snapshot.history_entries[0].url().as_str(), "https://example.org/work");
+    assert_eq!(work_snapshot.active_profile_history_entry_count, 2);
+
+    core.select_space(&research_space_id)?;
+    let research_snapshot = core.snapshot()?;
+    assert_eq!(research_snapshot.history_entries.len(), 1);
+    assert_eq!(research_snapshot.history_entries[0].url().as_str(), "https://example.com/research");
+
+    core.select_space(&work_space_id)?;
+    core.select_profile(&personal_profile_id)?;
+    let personal_snapshot = core.snapshot()?;
+    assert_eq!(personal_snapshot.history_entries.len(), 1);
+    assert_eq!(personal_snapshot.history_entries[0].url().as_str(), "https://example.com/personal");
+    Ok(())
+}
+
+#[test]
+fn clear_active_space_history_for_absent_host_is_empty_change() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com/work")?);
+
+    let removed_count = core.clear_active_space_history_for_host("absent.example")?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(removed_count, 0);
+    assert_eq!(snapshot.history_entries.len(), 1);
+    assert_eq!(snapshot.active_profile_history_entry_count, 1);
+    Ok(())
+}
+
+#[test]
 fn history_scoped_search_opens_recent_matching_entry() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     core.open_tab(UrlText::parse("https://example.com/research")?);
