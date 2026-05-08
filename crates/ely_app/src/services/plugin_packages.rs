@@ -9,6 +9,8 @@ use ely_domain::PluginManifest;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+use super::plugin_signatures::{PluginSignatureVerificationError, PluginSignatureVerifier};
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedPluginPackage {
     source_path: PathBuf,
@@ -49,6 +51,9 @@ pub enum PluginPackageError {
     SignatureMismatch,
 
     #[error(transparent)]
+    SignatureVerification(#[from] PluginSignatureVerificationError),
+
+    #[error(transparent)]
     Manifest(#[from] ely_domain::DomainError),
 }
 
@@ -78,6 +83,7 @@ impl PluginPackageReader {
         if signature.trim().to_ascii_lowercase() != manifest.signature().value() {
             return Err(PluginPackageError::SignatureMismatch);
         }
+        PluginSignatureVerifier::verify(path, &manifest)?;
 
         let package_hash = sha256_directory(path)?;
         Ok(VerifiedPluginPackage::new(path.to_path_buf(), manifest, package_hash))
@@ -304,9 +310,8 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use sha2::{Digest, Sha256};
-
     use super::PluginPackageReader;
+    use crate::services::plugin_package_fixtures::{sign_package_in_place, write_signed_package};
 
     #[test]
     fn reads_verified_directory_package() -> Result<(), Box<dyn Error>> {
@@ -347,6 +352,19 @@ mod tests {
     }
 
     #[test]
+    fn rejects_package_signature_verification_failure() -> Result<(), Box<dyn Error>> {
+        let package = write_package("verification", b"wasm component")?;
+        fs::write(package.join("README.md"), "unsigned package metadata")?;
+
+        let error = PluginPackageReader::read_directory_package(&package)
+            .err()
+            .ok_or_else(|| std::io::Error::other("package read succeeded"))?;
+
+        assert!(matches!(error, super::PluginPackageError::SignatureVerification(_)));
+        Ok(())
+    }
+
+    #[test]
     fn rejects_non_package_directory() -> Result<(), Box<dyn Error>> {
         let package = temp_root()?.join("invalid");
         fs::create_dir_all(&package)?;
@@ -365,6 +383,7 @@ mod tests {
         let first_hash =
             PluginPackageReader::read_directory_package(&package)?.package_hash().to_string();
         fs::write(package.join("README.md"), "updated package metadata")?;
+        sign_package_in_place(package.as_path(), "package-hash")?;
 
         let second_hash =
             PluginPackageReader::read_directory_package(&package)?.package_hash().to_string();
@@ -374,43 +393,7 @@ mod tests {
     }
 
     fn write_package(name: &str, component: &[u8]) -> Result<PathBuf, Box<dyn Error>> {
-        let package = temp_root()?.join(format!("{name}.rplug"));
-        fs::create_dir_all(package.join("signatures"))?;
-        fs::write(package.join("component.wasm"), component)?;
-
-        let checksum = sha256_bytes(component);
-        let signature = "b".repeat(128);
-        fs::write(package.join("signatures").join("ed25519.sig"), &signature)?;
-        fs::write(
-            package.join("plugin.toml"),
-            manifest_toml(name, checksum.as_str(), signature.as_str()),
-        )?;
-
-        Ok(package)
-    }
-
-    fn manifest_toml(name: &str, checksum: &str, signature: &str) -> String {
-        format!(
-            r#"
-id = "com.elydora.{name}"
-name = "Verified Plugin"
-description = "Exports verified content."
-author = "Elydora"
-homepage = "https://elydora.com/plugins/{name}"
-permissions = ["page:metadata"]
-contributes = ["command-bar-command"]
-min_ely_build = "0.1.0"
-checksum = "{checksum}"
-
-[signature]
-algorithm = "ed25519"
-value = "{signature}"
-"#
-        )
-    }
-
-    fn sha256_bytes(bytes: &[u8]) -> String {
-        format!("{:x}", Sha256::digest(bytes))
+        write_signed_package(temp_root()?.as_path(), name, component)
     }
 
     fn temp_root() -> Result<PathBuf, Box<dyn Error>> {

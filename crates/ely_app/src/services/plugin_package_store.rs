@@ -261,9 +261,8 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use sha2::{Digest, Sha256};
-
     use super::{PluginPackageStore, PluginPackageStoreError};
+    use crate::services::plugin_package_fixtures::write_signed_package;
     use crate::services::plugin_packages::PluginPackageReader;
 
     #[test]
@@ -324,43 +323,7 @@ mod tests {
     }
 
     fn write_package(root: &Path, name: &str, component: &[u8]) -> Result<PathBuf, Box<dyn Error>> {
-        let package = root.join(format!("{name}.rplug"));
-        fs::create_dir_all(package.join("signatures"))?;
-        fs::write(package.join("component.wasm"), component)?;
-
-        let checksum = sha256_bytes(component);
-        let signature = "b".repeat(128);
-        fs::write(package.join("signatures").join("ed25519.sig"), &signature)?;
-        fs::write(
-            package.join("plugin.toml"),
-            manifest_toml(name, checksum.as_str(), signature.as_str()),
-        )?;
-
-        Ok(package)
-    }
-
-    fn manifest_toml(name: &str, checksum: &str, signature: &str) -> String {
-        format!(
-            r#"
-id = "com.elydora.{name}"
-name = "Verified Plugin"
-description = "Exports verified content."
-author = "Elydora"
-homepage = "https://elydora.com/plugins/{name}"
-permissions = ["page:metadata"]
-contributes = ["command-bar-command"]
-min_ely_build = "0.1.0"
-checksum = "{checksum}"
-
-[signature]
-algorithm = "ed25519"
-value = "{signature}"
-"#
-        )
-    }
-
-    fn sha256_bytes(bytes: &[u8]) -> String {
-        format!("{:x}", Sha256::digest(bytes))
+        write_signed_package(root, name, component)
     }
 
     struct TempTree {

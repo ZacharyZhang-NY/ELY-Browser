@@ -6,6 +6,11 @@ use url::Url;
 
 use crate::DomainError;
 
+mod signature;
+
+use signature::RawPluginSignature;
+pub use signature::{PluginSignature, PluginSignatureAlgorithm};
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PluginId(String);
 
@@ -69,17 +74,6 @@ pub enum PluginContributionPoint {
     ReadingModeExporter,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PluginSignatureAlgorithm {
-    Ed25519,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PluginSignature {
-    algorithm: PluginSignatureAlgorithm,
-    value: String,
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawPluginManifest {
@@ -93,13 +87,6 @@ struct RawPluginManifest {
     min_ely_build: String,
     checksum: String,
     signature: RawPluginSignature,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawPluginSignature {
-    algorithm: String,
-    value: String,
 }
 
 impl PluginId {
@@ -329,40 +316,6 @@ impl PluginContributionPoint {
     }
 }
 
-impl PluginSignature {
-    fn from_raw(raw: RawPluginSignature) -> Result<Self, DomainError> {
-        let algorithm = PluginSignatureAlgorithm::parse(raw.algorithm.as_str())?;
-        let value = plugin_signature_value(&algorithm, raw.value)?;
-        Ok(Self { algorithm, value })
-    }
-
-    #[must_use]
-    pub fn algorithm(&self) -> &PluginSignatureAlgorithm {
-        &self.algorithm
-    }
-
-    #[must_use]
-    pub fn value(&self) -> &str {
-        &self.value
-    }
-}
-
-impl PluginSignatureAlgorithm {
-    fn parse(value: &str) -> Result<Self, DomainError> {
-        match value {
-            "ed25519" => Ok(Self::Ed25519),
-            _ => Err(DomainError::InvalidPluginSignatureAlgorithm { value: value.to_string() }),
-        }
-    }
-
-    #[must_use]
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Ed25519 => "ed25519",
-        }
-    }
-}
-
 fn parse_unique_permissions(values: &[String]) -> Result<Vec<PluginPermission>, DomainError> {
     let mut seen = BTreeSet::new();
     let mut permissions = Vec::with_capacity(values.len());
@@ -426,20 +379,6 @@ fn plugin_checksum(value: impl Into<String>) -> Result<String, DomainError> {
     let value = non_empty_plugin_field("checksum", value)?;
     if !is_hex_of_len(value.as_str(), 64) {
         return Err(DomainError::InvalidPluginChecksum { value });
-    }
-    Ok(value.to_ascii_lowercase())
-}
-
-fn plugin_signature_value(
-    algorithm: &PluginSignatureAlgorithm,
-    value: impl Into<String>,
-) -> Result<String, DomainError> {
-    let value = non_empty_plugin_field("signature", value)?;
-    let valid = match algorithm {
-        PluginSignatureAlgorithm::Ed25519 => is_hex_of_len(value.as_str(), 128),
-    };
-    if !valid {
-        return Err(DomainError::InvalidPluginSignature { value });
     }
     Ok(value.to_ascii_lowercase())
 }

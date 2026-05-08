@@ -56,6 +56,12 @@ pub enum DomainError {
     #[error("invalid plugin signature algorithm: {value}")]
     InvalidPluginSignatureAlgorithm { value: String },
 
+    #[error("invalid plugin signature key id: {value}")]
+    InvalidPluginSignatureKeyId { value: String },
+
+    #[error("invalid plugin signature public key: {value}")]
+    InvalidPluginSignaturePublicKey { value: String },
+
     #[error("invalid plugin signature: {value}")]
     InvalidPluginSignature { value: String },
 }

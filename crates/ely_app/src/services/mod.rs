@@ -2,3 +2,7 @@ pub mod download_checksums;
 pub mod download_files;
 pub mod plugin_package_store;
 pub mod plugin_packages;
+pub mod plugin_signatures;
+
+#[cfg(test)]
+mod plugin_package_fixtures;

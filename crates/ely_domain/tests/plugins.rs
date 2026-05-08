@@ -26,6 +26,11 @@ fn parses_signed_plugin_manifest() -> Result<(), Box<dyn Error>> {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     );
     assert_eq!(manifest.signature().algorithm(), &PluginSignatureAlgorithm::Ed25519);
+    assert_eq!(manifest.signature().key_id(), "elydora-alpha-plugins");
+    assert_eq!(
+        manifest.signature().public_key(),
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
     assert_eq!(
         manifest.signature().value(),
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -101,6 +106,36 @@ fn rejects_unsigned_plugin_manifest() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn rejects_invalid_plugin_signature_key_id() -> Result<(), Box<dyn Error>> {
+    let manifest = valid_manifest()
+        .replace("key_id = \"elydora-alpha-plugins\"", "key_id = \"Elydora Alpha Plugins\"");
+
+    let error = parse_error(manifest.as_str())?;
+
+    assert!(matches!(
+        error,
+        DomainError::InvalidPluginSignatureKeyId { value } if value == "Elydora Alpha Plugins"
+    ));
+    Ok(())
+}
+
+#[test]
+fn rejects_invalid_plugin_signature_public_key() -> Result<(), Box<dyn Error>> {
+    let manifest = valid_manifest().replace(
+        "public_key = \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"",
+        "public_key = \"abcd\"",
+    );
+
+    let error = parse_error(manifest.as_str())?;
+
+    assert!(matches!(
+        error,
+        DomainError::InvalidPluginSignaturePublicKey { value } if value == "abcd"
+    ));
+    Ok(())
+}
+
+#[test]
 fn rejects_mismatched_plugin_checksum() -> Result<(), Box<dyn Error>> {
     let manifest = valid_manifest().replace(
         "checksum = \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"",
@@ -163,6 +198,8 @@ checksum = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
 [signature]
 algorithm = "ed25519"
+key_id = "elydora-alpha-plugins"
+public_key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 value = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
 "#
     .to_string()
