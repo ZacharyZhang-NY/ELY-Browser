@@ -1,7 +1,60 @@
 import type { Env } from "./bindings.js";
+import {
+  SigningKeysSchemaError,
+  parsePublicSigningKeysDocument,
+  publicSigningKeysKvKey,
+} from "./signing_keys.js";
 
 export default {
-  fetch(_request: Request, _env: Env): Response {
-    return new Response("Not Found", { status: 404 });
+  fetch(request: Request, env: Env): Promise<Response> {
+    return handleRequest(request, env);
   },
 };
+
+export async function handleRequest(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  if (url.pathname === "/api/plugins/signing-keys") {
+    return handlePublicSigningKeys(request, env);
+  }
+
+  return jsonResponse({ error: "not_found" }, 404);
+}
+
+async function handlePublicSigningKeys(request: Request, env: Env): Promise<Response> {
+  if (request.method !== "GET") {
+    return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET" });
+  }
+
+  const kvKey = publicSigningKeysKvKey(env.ELY_ENVIRONMENT);
+  const value = await env.ELY_KV.get(kvKey);
+  if (value === null) {
+    return jsonResponse({ error: "public_signing_keys_unavailable" }, 503);
+  }
+
+  try {
+    const document = parsePublicSigningKeysDocument(value);
+    return jsonResponse(document, 200, {
+      "Cache-Control": "public, max-age=300, stale-while-revalidate=60",
+    });
+  } catch (error) {
+    if (error instanceof SigningKeysSchemaError) {
+      return jsonResponse({ error: "public_signing_keys_invalid" }, 500);
+    }
+    throw error;
+  }
+}
+
+function jsonResponse(
+  body: unknown,
+  status: number,
+  headers: Record<string, string> = {},
+): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "X-Content-Type-Options": "nosniff",
+      ...headers,
+    },
+  });
+}
