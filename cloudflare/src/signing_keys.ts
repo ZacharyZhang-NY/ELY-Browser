@@ -1,6 +1,7 @@
+import { prefixedKvKey } from "./kv_keys.js";
+
 const KEY_ID_PATTERN = /^[a-z0-9._-]{3,128}$/;
 const PUBLIC_KEY_PATTERN = /^[a-f0-9]{64}$/;
-const KV_NAMESPACE_PREFIX = "ely";
 const PUBLIC_SIGNING_KEYS_NAMESPACE = "public_signing_keys";
 
 export interface PublicSigningKey {
@@ -21,8 +22,7 @@ export class SigningKeysSchemaError extends Error {
 }
 
 export function publicSigningKeysKvKey(environment: string): string {
-  const normalizedEnvironment = normalizedEnvironmentName(environment);
-  return `${KV_NAMESPACE_PREFIX}:${normalizedEnvironment}:${PUBLIC_SIGNING_KEYS_NAMESPACE}`;
+  return prefixedKvKey(environment, PUBLIC_SIGNING_KEYS_NAMESPACE);
 }
 
 export function parsePublicSigningKeysDocument(value: string): PublicSigningKeysDocument {
@@ -83,14 +83,6 @@ function parsePublicSigningKey(value: unknown): PublicSigningKey {
   }
 
   return { key_id: keyId, public_key: publicKey };
-}
-
-function normalizedEnvironmentName(value: string): string {
-  const environment = value.trim();
-  if (!/^[a-z0-9._-]{3,64}$/.test(environment)) {
-    throw new SigningKeysSchemaError(`invalid environment name: ${value}`);
-  }
-  return environment;
 }
 
 function stringField(value: Record<string, unknown>, field: string): string {

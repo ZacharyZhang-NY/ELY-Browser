@@ -3,9 +3,12 @@ import { describe, it } from "node:test";
 
 import type { Env } from "../src/bindings.js";
 import { handleRequest } from "../src/index.js";
+import { releaseManifestKvKey } from "../src/release_manifests.js";
 import { publicSigningKeysKvKey } from "../src/signing_keys.js";
 
 const PUBLIC_KEY = "a".repeat(64);
+const RELEASE_SIGNATURE = "b".repeat(128);
+const RELEASE_SHA256 = "c".repeat(64);
 
 describe("worker routes", () => {
   it("returns public plugin signing keys from KV", async () => {
@@ -74,12 +77,77 @@ describe("worker routes", () => {
     assert.equal(response.status, 404);
     assert.deepEqual(await response.json(), { error: "not_found" });
   });
+
+  it("returns release manifest from KV", async () => {
+    const env = testEnv(null, releaseManifestDocument());
+
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/releases/manifest"),
+      env,
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(
+      response.headers.get("cache-control"),
+      "public, max-age=120, stale-while-revalidate=60",
+    );
+    assert.deepEqual(await response.json(), {
+      version: 1,
+      channel: "stable",
+      generated_at: "2026-05-08T00:00:00.000Z",
+      artifacts: [
+        {
+          platform: "macos",
+          architecture: "aarch64",
+          version: "0.1.0",
+          url: "https://downloads.elydora.com/ely-browser/0.1.0/macos-aarch64.zip",
+          sha256: RELEASE_SHA256,
+          signature: RELEASE_SIGNATURE,
+          size_bytes: 1048576,
+        },
+      ],
+    });
+  });
+
+  it("rejects unsupported methods on release manifest", async () => {
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/releases/manifest", { method: "POST" }),
+      testEnv(null, releaseManifestDocument()),
+    );
+
+    assert.equal(response.status, 405);
+    assert.equal(response.headers.get("allow"), "GET");
+    assert.deepEqual(await response.json(), { error: "method_not_allowed" });
+  });
+
+  it("returns service unavailable when release manifest is missing", async () => {
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/releases/manifest"),
+      testEnv(null),
+    );
+
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: "release_manifest_unavailable" });
+  });
+
+  it("returns a generic server error for malformed release manifest", async () => {
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/releases/manifest"),
+      testEnv(null, "{"),
+    );
+
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), { error: "release_manifest_invalid" });
+  });
 });
 
-function testEnv(publicSigningKeys: string | null): Env {
+function testEnv(publicSigningKeys: string | null, releaseManifest?: string | null): Env {
   const values = new Map<string, string>();
   if (publicSigningKeys !== null) {
     values.set(publicSigningKeysKvKey("local"), publicSigningKeys);
+  }
+  if (releaseManifest !== undefined && releaseManifest !== null) {
+    values.set(releaseManifestKvKey("local"), releaseManifest);
   }
 
   return {
@@ -90,4 +158,23 @@ function testEnv(publicSigningKeys: string | null): Env {
       },
     },
   };
+}
+
+function releaseManifestDocument(): string {
+  return JSON.stringify({
+    version: 1,
+    channel: "stable",
+    generated_at: "2026-05-08T00:00:00.000Z",
+    artifacts: [
+      {
+        platform: "macos",
+        architecture: "aarch64",
+        version: "0.1.0",
+        url: "https://downloads.elydora.com/ely-browser/0.1.0/macos-aarch64.zip",
+        sha256: RELEASE_SHA256,
+        signature: RELEASE_SIGNATURE,
+        size_bytes: 1048576,
+      },
+    ],
+  });
 }
