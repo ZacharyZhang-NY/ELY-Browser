@@ -9,7 +9,10 @@ use gpui_component::input::{InputEvent, InputState, SelectAll};
 use crate::{
     CloseCurrentTab, FocusAddressBar, FocusCommandMode, OpenDownloads, OpenHistory, OpenNewTab,
     OpenSettings, RestoreClosedTab, SelectNextTab, SelectPreviousTab, ToggleFavoriteTab,
-    TogglePinnedTab, services::download_files::DownloadFileAction,
+    TogglePinnedTab,
+    services::{
+        download_checksums::DownloadChecksumCalculator, download_files::DownloadFileAction,
+    },
 };
 
 enum ShellState {
@@ -22,7 +25,7 @@ pub struct ElyShell {
     focus_handle: FocusHandle,
     command_input: Entity<InputState>,
     last_intent: Option<CommandIntent>,
-    download_file_error: Option<String>,
+    download_action_error: Option<String>,
     download_clear_confirmation: bool,
     _command_subscription: Subscription,
 }
@@ -79,7 +82,7 @@ impl ElyShell {
             focus_handle: cx.focus_handle(),
             command_input,
             last_intent: None,
-            download_file_error: None,
+            download_action_error: None,
             download_clear_confirmation: false,
             _command_subscription: command_subscription,
         }
@@ -266,7 +269,26 @@ impl ElyShell {
             core.clear_downloads_for_active_profile();
         }
         self.download_clear_confirmation = false;
-        self.download_file_error = None;
+        self.download_action_error = None;
+        cx.notify();
+    }
+
+    fn calculate_download_checksum(&mut self, download_id: &DownloadId, cx: &mut Context<Self>) {
+        let result = match &mut self.state {
+            ShellState::Ready(core) => core
+                .download_target_file_path(download_id)
+                .map_err(|error| error.to_string())
+                .and_then(|path| {
+                    DownloadChecksumCalculator::sha256(&path).map_err(|error| error.to_string())
+                })
+                .and_then(|checksum| {
+                    core.record_download_checksum(download_id, checksum)
+                        .map_err(|error| error.to_string())
+                }),
+            ShellState::StartupError(message) => Err(message.clone()),
+        };
+
+        self.download_action_error = result.err();
         cx.notify();
     }
 
@@ -292,7 +314,7 @@ impl ElyShell {
             ShellState::StartupError(message) => Err(message.clone()),
         };
 
-        self.download_file_error = result.err();
+        self.download_action_error = result.err();
         cx.notify();
     }
 

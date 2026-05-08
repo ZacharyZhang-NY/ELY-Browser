@@ -19,6 +19,7 @@ gpui = "0.2.2"
 gpui-component = "0.5.1"
 gpui-component-assets = "0.5.1"
 servo = "0.1.0"
+sha2 = "0.10.9"
 thiserror = "2.0.12"
 url = "2.5.4"
 uuid = { version = "1.12.1", features = ["v7"] }

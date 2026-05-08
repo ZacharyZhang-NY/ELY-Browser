@@ -16,7 +16,7 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         div()
-            .w(px(64.0))
+            .w(px(96.0))
             .flex()
             .items_center()
             .justify_end()
@@ -84,6 +84,7 @@ impl ElyShell {
                 |this| {
                     let open_id = entry.id().clone();
                     let reveal_id = entry.id().clone();
+                    let checksum_id = entry.id().clone();
 
                     this.child(
                         download_action_button("open", index, IconName::ExternalLink, "Open File")
@@ -104,6 +105,20 @@ impl ElyShell {
                         }))
                         .into_any_element(),
                     )
+                    .when(entry.checksum().is_none(), |this| {
+                        this.child(
+                            download_action_button(
+                                "checksum",
+                                index,
+                                IconName::CircleCheck,
+                                "Calculate SHA-256",
+                            )
+                            .on_click(cx.listener(move |shell, _, _, cx| {
+                                shell.calculate_download_checksum(&checksum_id, cx);
+                            }))
+                            .into_any_element(),
+                        )
+                    })
                 },
             )
             .into_any_element()

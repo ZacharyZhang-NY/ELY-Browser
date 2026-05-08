@@ -1,6 +1,6 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::{DownloadEntry, DownloadSecurity};
+use ely_domain::{DownloadChecksum, DownloadEntry, DownloadSecurity};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div,
@@ -106,8 +106,8 @@ impl ElyShell {
                                 ),
                         ),
                 )
-                .when_some(self.download_file_error.clone(), |this, message| {
-                    this.child(render_download_file_error(message))
+                .when_some(self.download_action_error.clone(), |this, message| {
+                    this.child(render_download_action_error(message))
                 })
                 .when(
                     self.download_clear_confirmation && !snapshot.download_entries.is_empty(),
@@ -259,6 +259,9 @@ impl ElyShell {
                                     )
                                     .when(entry.security().requires_prompt(), |this| {
                                         this.child(render_security_prompt(entry.security()))
+                                    })
+                                    .when_some(entry.checksum(), |this, checksum| {
+                                        this.child(render_checksum_label(checksum))
                                     }),
                             ),
                     ),
@@ -296,7 +299,7 @@ impl ElyShell {
     }
 }
 
-fn render_download_file_error(message: String) -> AnyElement {
+fn render_download_action_error(message: String) -> AnyElement {
     div()
         .rounded_md()
         .border_1()
@@ -322,4 +325,19 @@ fn render_security_prompt(security: &DownloadSecurity) -> AnyElement {
         .child(IconName::TriangleAlert)
         .child(download_security_label(security))
         .into_any_element()
+}
+
+fn render_checksum_label(checksum: &DownloadChecksum) -> AnyElement {
+    div()
+        .flex()
+        .items_center()
+        .gap_1()
+        .text_color(rgb(colors::SUCCESS))
+        .child(IconName::CircleCheck)
+        .child(format!("SHA-256 {}", short_checksum(checksum.value())))
+        .into_any_element()
+}
+
+fn short_checksum(value: &str) -> &str {
+    value.get(..12).unwrap_or(value)
 }
