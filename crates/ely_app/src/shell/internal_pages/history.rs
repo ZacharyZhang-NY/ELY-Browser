@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::HistoryEntry;
+use ely_domain::{ArchivedTab, BrowserTab, HistoryEntry};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div,
@@ -245,18 +245,20 @@ fn render_history_list(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -
                 .iter()
                 .rev()
                 .enumerate()
-                .map(|(index, entry)| render_history_row(index, entry, cx)),
+                .map(|(index, entry)| render_history_row(snapshot, index, entry, cx)),
         )
         .into_any_element()
 }
 
 fn render_history_row(
+    snapshot: &BrowserSnapshot,
     index: usize,
     entry: &HistoryEntry,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let url = entry.url().clone();
     let host = entry.url().host();
+    let source_tab_label = history_source_tab_label(&snapshot.tabs, &snapshot.archived_tabs, entry);
 
     div()
         .id(SharedString::from(format!("history-{index}")))
@@ -300,7 +302,16 @@ fn render_history_row(
                             div()
                                 .text_color(rgb(colors::MUTED_SOFT))
                                 .child(visited_at_label(entry.visited_at())),
-                        ),
+                        )
+                        .when_some(source_tab_label, |this, source_tab_label| {
+                            this.child(div().text_color(rgb(colors::MUTED_SOFT)).child("-")).child(
+                                div()
+                                    .max_w(px(180.0))
+                                    .truncate()
+                                    .text_color(rgb(colors::MUTED_SOFT))
+                                    .child(format!("Source: {source_tab_label}")),
+                            )
+                        }),
                 ),
         )
         .child(
@@ -373,11 +384,31 @@ fn elapsed_label(value: u64, unit: &str) -> String {
     }
 }
 
+fn history_source_tab_label(
+    tabs: &[BrowserTab],
+    archived_tabs: &[ArchivedTab],
+    entry: &HistoryEntry,
+) -> Option<String> {
+    tabs.iter()
+        .find(|tab| tab.id() == entry.source_tab_id())
+        .or_else(|| {
+            archived_tabs.iter().map(ArchivedTab::tab).find(|tab| tab.id() == entry.source_tab_id())
+        })
+        .map(|tab| tab.title().to_string())
+}
+
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, UNIX_EPOCH};
+    use std::{
+        error::Error,
+        time::{Duration, UNIX_EPOCH},
+    };
 
-    use super::visited_at_label_for;
+    use ely_domain::{
+        ArchiveSource, ArchivedTab, BrowserTab, HistoryEntry, ProfileId, SpaceId, TabId, UrlText,
+    };
+
+    use super::{history_source_tab_label, visited_at_label_for};
 
     #[test]
     fn visited_at_label_formats_recent_visit() {
@@ -394,5 +425,62 @@ mod tests {
         assert_eq!(visited_at_label_for(now - Duration::from_secs(10_800), now), "3 hrs ago");
         assert_eq!(visited_at_label_for(now - Duration::from_secs(345_600), now), "4 days ago");
         assert_eq!(visited_at_label_for(now - Duration::from_secs(691_200), now), "Earlier");
+    }
+
+    #[test]
+    fn history_source_tab_label_uses_open_tab_title() -> Result<(), Box<dyn Error>> {
+        let profile_id = ProfileId::new();
+        let space_id = SpaceId::new();
+        let tab_id = TabId::new();
+        let tab = BrowserTab::new(
+            tab_id,
+            space_id.clone(),
+            profile_id.clone(),
+            "Research Brief",
+            UrlText::parse("https://example.com/research")?,
+        );
+        let entry = HistoryEntry::new(
+            profile_id,
+            space_id,
+            tab.id().clone(),
+            "example.com",
+            UrlText::parse("https://example.com/research")?,
+            UNIX_EPOCH,
+        );
+
+        assert_eq!(
+            history_source_tab_label(&[tab], &[], &entry),
+            Some("Research Brief".to_string())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn history_source_tab_label_uses_archived_tab_title() -> Result<(), Box<dyn Error>> {
+        let profile_id = ProfileId::new();
+        let space_id = SpaceId::new();
+        let tab_id = TabId::new();
+        let tab = BrowserTab::new(
+            tab_id,
+            space_id.clone(),
+            profile_id.clone(),
+            "Closed Research",
+            UrlText::parse("https://example.com/closed")?,
+        );
+        let entry = HistoryEntry::new(
+            profile_id,
+            space_id,
+            tab.id().clone(),
+            "example.com",
+            UrlText::parse("https://example.com/closed")?,
+            UNIX_EPOCH,
+        );
+        let archived_tab = ArchivedTab::new(tab, ArchiveSource::ManualClose);
+
+        assert_eq!(
+            history_source_tab_label(&[], &[archived_tab], &entry),
+            Some("Closed Research".to_string())
+        );
+        Ok(())
     }
 }
