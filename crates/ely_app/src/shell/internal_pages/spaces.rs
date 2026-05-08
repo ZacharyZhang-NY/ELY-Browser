@@ -1,6 +1,6 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::{ArchivePolicy, Space, SpaceId};
+use ely_domain::{ArchivePolicy, Profile, Space, SpaceId};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div,
     px, rgb,
@@ -109,13 +109,13 @@ fn render_active_space_summary(snapshot: &BrowserSnapshot) -> AnyElement {
                             .text_color(rgb(colors::INK))
                             .child(active_space.name().to_string()),
                     )
-                    .child(div().text_xs().truncate().text_color(rgb(colors::MUTED)).child(
-                        format!(
-                            "{} - {}",
-                            accent_label(active_space.accent_hex()),
-                            archive_policy_label(active_space.archive_policy())
-                        ),
-                    )),
+                    .child(
+                        div()
+                            .text_xs()
+                            .truncate()
+                            .text_color(rgb(colors::MUTED))
+                            .child(space_detail_label(active_space, &snapshot.profiles)),
+                    ),
             ),
         )
         .child(div().text_xs().font_semibold().text_color(rgb(colors::SUCCESS)).child("Active"))
@@ -132,7 +132,7 @@ fn render_spaces_list(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) ->
         .border_t_1()
         .border_color(rgb(colors::HAIRLINE))
         .children(snapshot.spaces.iter().enumerate().map(|(index, space)| {
-            render_space_row(index, space, space.id() == &snapshot.active_space_id, cx)
+            render_space_row(index, space, snapshot, space.id() == &snapshot.active_space_id, cx)
         }))
         .into_any_element()
 }
@@ -140,6 +140,7 @@ fn render_spaces_list(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) ->
 fn render_space_row(
     index: usize,
     space: &Space,
+    snapshot: &BrowserSnapshot,
     active: bool,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
@@ -174,7 +175,7 @@ fn render_space_row(
                             .text_xs()
                             .truncate()
                             .text_color(rgb(colors::MUTED))
-                            .child(space_detail_label(space)),
+                            .child(space_detail_label(space, &snapshot.profiles)),
                     ),
             ),
         )
@@ -227,12 +228,22 @@ fn space_avatar(space: &Space) -> AnyElement {
         .into_any_element()
 }
 
-fn space_detail_label(space: &Space) -> String {
+fn space_detail_label(space: &Space, profiles: &[Profile]) -> String {
     format!(
-        "{} - {}",
+        "{} - {} - {}",
         accent_label(space.accent_hex()),
-        archive_policy_label(space.archive_policy())
+        archive_policy_label(space.archive_policy()),
+        default_profile_label(space, profiles)
     )
+}
+
+fn default_profile_label(space: &Space, profiles: &[Profile]) -> String {
+    let Some(profile) = profiles.iter().find(|profile| profile.id() == space.default_profile_id())
+    else {
+        return "Default profile unavailable".to_string();
+    };
+
+    format!("Default profile: {}", profile.name())
 }
 
 fn accent_label(accent_hex: u32) -> String {

@@ -106,13 +106,14 @@ pub struct BrowserCore {
 
 impl BrowserCore {
     pub fn new(config: InitialBrowserConfig) -> Result<Self, CoreError> {
-        let space = Space::new(config.space_name, config.space_icon, 0xf54e00);
         let profile = Profile::new(config.profile_name, 0x26251e, ProfileKind::Standard);
+        let active_profile_id = profile.id().clone();
+        let space =
+            Space::new(config.space_name, config.space_icon, 0xf54e00, active_profile_id.clone());
         let new_tab_destination = config.new_tab_destination;
         let new_tab_url = new_tab_destination.url()?;
         let new_tab_title = tab_title(&new_tab_url);
         let active_space_id = space.id().clone();
-        let active_profile_id = profile.id().clone();
         let tab = BrowserTab::new(
             TabId::new(),
             active_space_id.clone(),
@@ -162,13 +163,10 @@ impl BrowserCore {
         icon: impl Into<String>,
         accent_hex: u32,
     ) -> Result<SpaceId, CoreError> {
-        let space = Space::new(name, icon, accent_hex);
+        let space = Space::new(name, icon, accent_hex, self.active_profile_id.clone());
         let space_id = space.id().clone();
-        let tab = self.build_tab_for(
-            space_id.clone(),
-            self.active_profile_id.clone(),
-            self.new_tab_url()?,
-        );
+        let default_profile_id = space.default_profile_id().clone();
+        let tab = self.build_tab_for(space_id.clone(), default_profile_id, self.new_tab_url()?);
         let tab_id = tab.id().clone();
 
         self.spaces.push(space);
@@ -200,11 +198,14 @@ impl BrowserCore {
             return Ok(tab_id);
         }
 
-        let tab = self.build_tab_for(
-            space_id.clone(),
-            self.active_profile_id.clone(),
-            self.new_tab_url()?,
-        );
+        let default_profile_id = self
+            .spaces
+            .iter()
+            .find(|space| space.id() == space_id)
+            .ok_or_else(|| CoreError::SpaceNotFound { id: space_id.clone() })?
+            .default_profile_id()
+            .clone();
+        let tab = self.build_tab_for(space_id.clone(), default_profile_id, self.new_tab_url()?);
         let tab_id = tab.id().clone();
         self.tabs.push(tab);
         self.select_tab(&tab_id)?;
@@ -230,6 +231,24 @@ impl BrowserCore {
             .find(|space| space.id() == space_id)
             .ok_or_else(|| CoreError::SpaceNotFound { id: space_id.clone() })?;
         space.set_archive_policy(archive_policy);
+        Ok(())
+    }
+
+    pub fn set_space_default_profile(
+        &mut self,
+        space_id: &SpaceId,
+        profile_id: &ProfileId,
+    ) -> Result<(), CoreError> {
+        if !self.profiles.iter().any(|profile| profile.id() == profile_id) {
+            return Err(CoreError::ProfileNotFound { id: profile_id.clone() });
+        }
+
+        let space = self
+            .spaces
+            .iter_mut()
+            .find(|space| space.id() == space_id)
+            .ok_or_else(|| CoreError::SpaceNotFound { id: space_id.clone() })?;
+        space.set_default_profile_id(profile_id.clone());
         Ok(())
     }
 
