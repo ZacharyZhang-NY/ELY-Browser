@@ -1,3 +1,4 @@
+mod about;
 mod download_actions;
 mod download_labels;
 mod downloads;
@@ -27,6 +28,7 @@ impl ElyShell {
             "ely://downloads" => self.render_downloads_page(snapshot, cx),
             "ely://history" => self.render_history_page(snapshot, cx),
             "ely://archive" => self.render_archive_page(snapshot, cx),
+            "ely://about" => self.render_about_page(snapshot),
             "ely://settings/plugins" => self.render_plugins_page(snapshot, cx),
             "ely://settings/profiles" => self.render_profiles_page(snapshot, cx),
             "ely://settings/sync" => self.render_sync_page(snapshot),

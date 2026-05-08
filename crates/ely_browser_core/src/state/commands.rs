@@ -3,9 +3,9 @@ use ely_domain::{CommandIntent, CommandScope, ProfileId, ProfileKind, SpaceId};
 use crate::{
     CoreError,
     navigation::{
-        downloads_url, history_url, move_tab_space_name, new_profile_name, new_space_name,
-        search_url, settings_page_url, settings_url, space_icon, switch_profile_name,
-        sync_status_url,
+        about_url, downloads_url, history_url, move_tab_space_name, new_profile_name,
+        new_space_name, search_url, settings_page_url, settings_url, space_icon,
+        switch_profile_name, sync_status_url,
     },
 };
 
@@ -104,6 +104,10 @@ impl BrowserCore {
             }
             "history" | "open-history" | "open history" => {
                 self.open_tab(history_url()?);
+                Ok(true)
+            }
+            "about" | "open-about" | "open about" => {
+                self.open_tab(about_url()?);
                 Ok(true)
             }
             "settings" | "open-settings" | "open settings" => {

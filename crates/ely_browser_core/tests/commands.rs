@@ -82,6 +82,21 @@ fn open_history_command_opens_history_page() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn open_about_command_opens_about_page() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query(">about");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("about".to_string())));
+    assert_eq!(active_tab.title(), "About ELY Browser");
+    assert_eq!(active_tab.url().as_str(), "ely://about");
+    assert_eq!(core.snapshot()?.command_query, "");
+    Ok(())
+}
+
+#[test]
 fn open_settings_command_opens_settings_page() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
 
@@ -107,6 +122,27 @@ fn open_sync_status_command_opens_sync_status_page() -> Result<(), Box<dyn Error
     assert_eq!(intent, Some(CommandIntent::Command("open-sync-status".to_string())));
     assert_eq!(active_tab.title(), "Sync Status");
     assert_eq!(active_tab.url().as_str(), "ely://sync/status");
+    assert_eq!(core.snapshot()?.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn settings_scoped_search_opens_about_page() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query("@settings about");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(
+        intent,
+        Some(CommandIntent::ScopedSearch {
+            scope: CommandScope::Settings,
+            query: "about".to_string()
+        })
+    );
+    assert_eq!(active_tab.title(), "About ELY Browser");
+    assert_eq!(active_tab.url().as_str(), "ely://about");
     assert_eq!(core.snapshot()?.command_query, "");
     Ok(())
 }
