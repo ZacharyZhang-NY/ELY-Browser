@@ -1,6 +1,6 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{ELY_THEME, colors, spacing};
-use ely_domain::{ArchiveSource, ArchivedTab, BrowserTab, Space};
+use ely_domain::{ArchiveSource, ArchivedTab, BrowserTab, Profile, Space};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window, div, px, rgb,
@@ -166,17 +166,23 @@ impl ElyShell {
             .border_color(rgb(colors::HAIRLINE))
             .bg(rgb(colors::CANVAS))
             .child(section_label("Favorites"))
-            .children(
-                snapshot.favorites.iter().map(|tab| {
-                    self.render_favorite_row(tab, tab.id() == &snapshot.active_tab_id, cx)
-                }),
-            )
+            .children(snapshot.favorites.iter().map(|tab| {
+                self.render_favorite_row(
+                    tab,
+                    &snapshot.profiles,
+                    tab.id() == &snapshot.active_tab_id,
+                    cx,
+                )
+            }))
             .child(section_label("Pinned"))
-            .children(
-                snapshot.pinned_tabs.iter().map(|tab| {
-                    self.render_pinned_row(tab, tab.id() == &snapshot.active_tab_id, cx)
-                }),
-            )
+            .children(snapshot.pinned_tabs.iter().map(|tab| {
+                self.render_pinned_row(
+                    tab,
+                    &snapshot.profiles,
+                    tab.id() == &snapshot.active_tab_id,
+                    cx,
+                )
+            }))
             .child(section_label("Space"))
             .children(snapshot.spaces.iter().map(|space| {
                 self.render_space_row(space, space.id() == &snapshot.active_space_id, cx)
@@ -243,12 +249,14 @@ impl ElyShell {
     fn render_favorite_row(
         &mut self,
         tab: &BrowserTab,
+        profiles: &[Profile],
         active: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let tab_id = tab.id().clone();
         let background = if active { colors::SURFACE_CARD } else { colors::CANVAS };
         let border = if active { colors::HAIRLINE_STRONG } else { colors::HAIRLINE };
+        let detail = sidebar_tab_detail(tab, profiles);
 
         div()
             .id(SharedString::from(format!("favorite-{}", tab.id().as_str())))
@@ -281,7 +289,7 @@ impl ElyShell {
                             .text_color(rgb(colors::INK))
                             .child(tab.title().to_string()),
                     )
-                    .child(div().text_xs().text_color(rgb(colors::MUTED)).child(tab.display_url())),
+                    .child(div().text_xs().text_color(rgb(colors::MUTED)).child(detail)),
             )
             .into_any_element()
     }
@@ -289,12 +297,14 @@ impl ElyShell {
     fn render_pinned_row(
         &mut self,
         tab: &BrowserTab,
+        profiles: &[Profile],
         active: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let tab_id = tab.id().clone();
         let background = if active { colors::SURFACE_CARD } else { colors::CANVAS };
         let border = if active { colors::HAIRLINE_STRONG } else { colors::HAIRLINE };
+        let detail = sidebar_tab_detail(tab, profiles);
 
         div()
             .id(SharedString::from(format!("pinned-{}", tab.id().as_str())))
@@ -327,7 +337,7 @@ impl ElyShell {
                             .text_color(rgb(colors::INK))
                             .child(tab.title().to_string()),
                     )
-                    .child(div().text_xs().text_color(rgb(colors::MUTED)).child(tab.display_url())),
+                    .child(div().text_xs().text_color(rgb(colors::MUTED)).child(detail)),
             )
             .into_any_element()
     }
@@ -450,4 +460,16 @@ fn archive_source_label(source: &ArchiveSource) -> &'static str {
         ArchiveSource::ManualClose => "Closed",
         ArchiveSource::AutoArchive => "Auto archived",
     }
+}
+
+fn sidebar_tab_detail(tab: &BrowserTab, profiles: &[Profile]) -> String {
+    format!("{} - {}", tab.display_url(), tab_profile_label(tab, profiles))
+}
+
+pub(super) fn tab_profile_label(tab: &BrowserTab, profiles: &[Profile]) -> String {
+    profiles
+        .iter()
+        .find(|profile| profile.id() == tab.profile_id())
+        .map(|profile| format!("Profile: {}", profile.name()))
+        .unwrap_or_else(|| format!("Profile: {}", tab.profile_id().as_str()))
 }

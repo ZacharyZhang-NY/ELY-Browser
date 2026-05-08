@@ -9,7 +9,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
 };
 
-use super::{ElyShell, ShellState};
+use super::{ElyShell, ShellState, render::tab_profile_label};
 use crate::ToggleSidebar;
 
 impl ElyShell {
@@ -43,6 +43,7 @@ impl ElyShell {
                 self.render_compact_tab_button(
                     ("compact-favorite", index),
                     tab,
+                    snapshot,
                     tab.id() == &snapshot.active_tab_id,
                     IconName::Star,
                     cx,
@@ -52,6 +53,7 @@ impl ElyShell {
                 self.render_compact_tab_button(
                     ("compact-pinned", index),
                     tab,
+                    snapshot,
                     tab.id() == &snapshot.active_tab_id,
                     IconName::Asterisk,
                     cx,
@@ -69,6 +71,7 @@ impl ElyShell {
                 self.render_compact_tab_button(
                     ("compact-tab", index),
                     tab,
+                    snapshot,
                     tab.id() == &snapshot.active_tab_id,
                     IconName::Globe,
                     cx,
@@ -130,17 +133,19 @@ impl ElyShell {
         &mut self,
         id: (&'static str, usize),
         tab: &BrowserTab,
+        snapshot: &BrowserSnapshot,
         active: bool,
         icon: IconName,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let tab_id = tab.id().clone();
+        let tooltip = format!("{} - {}", tab.title(), tab_profile_label(tab, &snapshot.profiles));
         Button::new(id)
             .ghost()
             .small()
             .selected(active)
             .icon(icon)
-            .tooltip(tab.title().to_string())
+            .tooltip(tooltip)
             .on_click(cx.listener(move |shell, _, window, cx| {
                 shell.select_tab(&tab_id, window, cx);
             }))
