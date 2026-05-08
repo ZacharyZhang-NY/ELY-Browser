@@ -1,12 +1,22 @@
 use ely_browser_core::{BrowserSnapshot, InstalledPlugin, PluginAuditAction, PluginAuditEvent};
 use ely_design_system::colors;
-use gpui::{AnyElement, IntoElement, ParentElement, Styled, div, px, rgb};
-use gpui_component::{StyledExt, scroll::ScrollableElement};
+use gpui::prelude::FluentBuilder;
+use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, px, rgb};
+use gpui_component::{
+    IconName, Sizable, StyledExt,
+    button::{Button, ButtonVariants},
+    scroll::ScrollableElement,
+};
 
+use super::super::plugins::PendingPluginInstall;
 use super::{ElyShell, render_canvas_surface};
 
 impl ElyShell {
-    pub(super) fn render_plugins_page(&mut self, snapshot: &BrowserSnapshot) -> AnyElement {
+    pub(super) fn render_plugins_page(
+        &mut self,
+        snapshot: &BrowserSnapshot,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         render_canvas_surface(
             div()
                 .size_full()
@@ -51,10 +61,113 @@ impl ElyShell {
                                 )),
                         ),
                 )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap_3()
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(rgb(colors::MUTED))
+                                .child("Install signed .rplug packages from local disk."),
+                        )
+                        .child(
+                            Button::new("install-plugin-package")
+                                .primary()
+                                .small()
+                                .icon(IconName::Plus)
+                                .label("Install")
+                                .tooltip("Install Plugin from File")
+                                .on_click(cx.listener(|shell, _, window, cx| {
+                                    shell.choose_plugin_package(window, cx);
+                                })),
+                        ),
+                )
+                .when_some(self.plugin_install_error.clone(), |this, message| {
+                    this.child(render_plugin_install_error(message))
+                })
+                .when_some(self.pending_plugin_install.clone(), |this, pending| {
+                    this.child(render_plugin_install_confirmation(&pending, cx))
+                })
                 .child(render_plugin_list(snapshot))
                 .child(render_plugin_audit_list(snapshot)),
         )
     }
+}
+
+fn render_plugin_install_error(message: String) -> AnyElement {
+    div()
+        .rounded_md()
+        .border_1()
+        .border_color(rgb(colors::ERROR))
+        .px_3()
+        .py_2()
+        .text_xs()
+        .text_color(rgb(colors::ERROR))
+        .child(message)
+        .into_any_element()
+}
+
+fn render_plugin_install_confirmation(
+    pending: &PendingPluginInstall,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    div()
+        .rounded_md()
+        .border_1()
+        .border_color(rgb(colors::ERROR))
+        .px_3()
+        .py_2()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap_3()
+        .child(
+            div()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    div()
+                        .text_xs()
+                        .font_semibold()
+                        .text_color(rgb(colors::ERROR))
+                        .child(format!("Confirm install for {}", pending.manifest().name())),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .truncate()
+                        .text_color(rgb(colors::MUTED))
+                        .child(high_risk_permissions_label(pending)),
+                ),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    Button::new("cancel-plugin-install").ghost().xsmall().label("Cancel").on_click(
+                        cx.listener(|shell, _, _, cx| {
+                            shell.cancel_plugin_install(cx);
+                        }),
+                    ),
+                )
+                .child(
+                    Button::new("confirm-plugin-install")
+                        .danger()
+                        .xsmall()
+                        .label("Confirm")
+                        .on_click(cx.listener(|shell, _, _, cx| {
+                            shell.confirm_plugin_install(cx);
+                        })),
+                ),
+        )
+        .into_any_element()
 }
 
 fn render_plugin_list(snapshot: &BrowserSnapshot) -> AnyElement {
@@ -179,4 +292,14 @@ fn plugin_audit_action_label(action: &PluginAuditAction) -> &'static str {
         PluginAuditAction::Enabled => "Enabled",
         PluginAuditAction::Disabled => "Disabled",
     }
+}
+
+fn high_risk_permissions_label(pending: &PendingPluginInstall) -> String {
+    let permissions = pending
+        .high_risk_permissions()
+        .iter()
+        .map(|permission| permission.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("High risk permissions: {permissions}")
 }

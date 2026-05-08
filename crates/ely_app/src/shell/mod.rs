@@ -1,5 +1,6 @@
 mod downloads;
 mod internal_pages;
+mod plugins;
 mod render;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
@@ -8,6 +9,7 @@ use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscriptio
 use gpui_component::input::{InputEvent, InputState, SelectAll};
 
 use downloads::PendingDownloadFileAction;
+use plugins::PendingPluginInstall;
 
 use crate::{
     CloseCurrentTab, FocusAddressBar, FocusCommandMode, OpenDownloads, OpenHistory, OpenNewTab,
@@ -28,6 +30,8 @@ pub struct ElyShell {
     download_action_error: Option<String>,
     download_clear_confirmation: bool,
     download_security_confirmation: Option<PendingDownloadFileAction>,
+    plugin_install_error: Option<String>,
+    pending_plugin_install: Option<PendingPluginInstall>,
     _command_subscription: Subscription,
 }
 
@@ -86,6 +90,8 @@ impl ElyShell {
             download_action_error: None,
             download_clear_confirmation: false,
             download_security_confirmation: None,
+            plugin_install_error: None,
+            pending_plugin_install: None,
             _command_subscription: command_subscription,
         }
     }
