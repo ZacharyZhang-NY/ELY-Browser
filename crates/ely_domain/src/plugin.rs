@@ -51,6 +51,12 @@ pub enum PluginPermission {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PluginPermissionRisk {
+    Standard,
+    High,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PluginContributionPoint {
     CommandBarCommand,
     TabContextMenu,
@@ -166,6 +172,10 @@ impl PluginManifest {
         &self.permissions
     }
 
+    pub fn high_risk_permissions(&self) -> impl Iterator<Item = &PluginPermission> {
+        self.permissions.iter().filter(|permission| permission.requires_separate_confirmation())
+    }
+
     #[must_use]
     pub fn contributes(&self) -> &[PluginContributionPoint] {
         &self.contributes
@@ -244,6 +254,40 @@ impl PluginPermission {
             Self::UiCommand => "ui:command",
             Self::UiContextMenu => "ui:context_menu",
         }
+    }
+
+    #[must_use]
+    pub fn risk(&self) -> PluginPermissionRisk {
+        match self {
+            Self::TabsRead
+            | Self::SpacesRead
+            | Self::PageMetadata
+            | Self::SettingsRead
+            | Self::UiPanel
+            | Self::UiCommand
+            | Self::UiContextMenu => PluginPermissionRisk::Standard,
+            Self::TabsWrite
+            | Self::SpacesWrite
+            | Self::BookmarksRead
+            | Self::BookmarksWrite
+            | Self::HistoryRead
+            | Self::DownloadsRead
+            | Self::DownloadsWrite
+            | Self::PageScreenshot
+            | Self::PageScript
+            | Self::ClipboardRead
+            | Self::ClipboardWrite
+            | Self::FilesystemRead
+            | Self::FilesystemWrite
+            | Self::NetworkFetch
+            | Self::SettingsWrite
+            | Self::SyncPlugin => PluginPermissionRisk::High,
+        }
+    }
+
+    #[must_use]
+    pub fn requires_separate_confirmation(&self) -> bool {
+        self.risk() == PluginPermissionRisk::High
     }
 }
 

@@ -21,8 +21,8 @@ pub use error::DomainError;
 pub use history::HistoryEntry;
 pub use identifiers::{DownloadId, ProfileId, SpaceId, SplitId, TabId, WebViewId};
 pub use plugin::{
-    PluginContributionPoint, PluginId, PluginManifest, PluginPermission, PluginSignature,
-    PluginSignatureAlgorithm,
+    PluginContributionPoint, PluginId, PluginManifest, PluginPermission, PluginPermissionRisk,
+    PluginSignature, PluginSignatureAlgorithm,
 };
 pub use profile::{Profile, ProfileKind};
 pub use space::{ArchivePolicy, Space};

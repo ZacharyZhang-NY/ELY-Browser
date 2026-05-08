@@ -1,7 +1,7 @@
 use std::{error::Error, io};
 
 use ely_domain::{
-    DomainError, PluginContributionPoint, PluginManifest, PluginPermission,
+    DomainError, PluginContributionPoint, PluginManifest, PluginPermission, PluginPermissionRisk,
     PluginSignatureAlgorithm,
 };
 
@@ -30,6 +30,20 @@ fn parses_signed_plugin_manifest() -> Result<(), Box<dyn Error>> {
         manifest.signature().value(),
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     );
+    Ok(())
+}
+
+#[test]
+fn classifies_plugin_permission_risk_for_separate_confirmation() -> Result<(), Box<dyn Error>> {
+    let manifest = PluginManifest::from_toml(valid_manifest().as_str())?;
+    let high_risk_permissions = manifest.high_risk_permissions().collect::<Vec<_>>();
+
+    assert!(high_risk_permissions.is_empty());
+    assert_eq!(PluginPermission::PageMetadata.risk(), PluginPermissionRisk::Standard);
+    assert_eq!(PluginPermission::UiCommand.risk(), PluginPermissionRisk::Standard);
+    assert_eq!(PluginPermission::HistoryRead.risk(), PluginPermissionRisk::High);
+    assert!(PluginPermission::PageScript.requires_separate_confirmation());
+    assert!(PluginPermission::FilesystemWrite.requires_separate_confirmation());
     Ok(())
 }
 
