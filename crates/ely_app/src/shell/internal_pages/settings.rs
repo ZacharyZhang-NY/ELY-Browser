@@ -19,6 +19,12 @@ struct SettingsRoute {
 
 const SETTINGS_ROUTES: &[SettingsRoute] = &[
     SettingsRoute {
+        icon: IconName::LayoutDashboard,
+        title: "Sidebar & Tabs",
+        detail: "Vertical tabs, pinned area, and auto archive policy.",
+        route: "ely://settings/sidebar-tabs",
+    },
+    SettingsRoute {
         icon: IconName::CircleUser,
         title: "Profiles",
         detail: "Profile identity, color, and download policy.",
@@ -31,7 +37,7 @@ const SETTINGS_ROUTES: &[SettingsRoute] = &[
         route: "ely://settings/sync",
     },
     SettingsRoute {
-        icon: IconName::LayoutDashboard,
+        icon: IconName::Asterisk,
         title: "Plugins",
         detail: "Installed plugin control and audit trail.",
         route: "ely://settings/plugins",

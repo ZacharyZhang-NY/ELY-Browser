@@ -27,6 +27,7 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
         url if SiteOrigin::from_site_route(url).ok().flatten().is_some() => Some("Site Settings"),
         "ely://about" => Some("About ELY Browser"),
         "ely://settings" => Some("Settings"),
+        "ely://settings/sidebar-tabs" => Some("Sidebar & Tabs Settings"),
         "ely://settings/plugins" => Some("Plugin Settings"),
         "ely://settings/profiles" => Some("Profile Settings"),
         "ely://settings/sync" => Some("Sync Settings"),
@@ -153,6 +154,9 @@ fn settings_page_route(query: &str) -> Option<&'static str> {
     match query {
         "settings" | "general" | "browser" => Some("ely://settings"),
         "about" | "about ely browser" => Some("ely://about"),
+        "sidebar" | "tabs" | "sidebar tabs" | "sidebar & tabs" => {
+            Some("ely://settings/sidebar-tabs")
+        }
         "sync" | "sync settings" => Some("ely://settings/sync"),
         "profile" | "profiles" | "profile settings" | "profiles settings" => {
             Some("ely://settings/profiles")

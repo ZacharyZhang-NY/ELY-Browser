@@ -6,7 +6,7 @@ mod site_permissions;
 mod splits;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{CommandIntent, ProfileId, SpaceId, TabId, UrlText};
+use ely_domain::{ArchivePolicy, CommandIntent, ProfileId, SpaceId, TabId, UrlText};
 use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscription, Window};
 use gpui_component::input::{InputEvent, InputState, SelectAll};
 
@@ -247,6 +247,26 @@ impl ElyShell {
     fn toggle_active_tab_pinned(&mut self, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state
             && core.toggle_active_tab_pinned().is_ok()
+        {
+            cx.notify();
+        }
+    }
+
+    fn set_active_space_archive_policy(
+        &mut self,
+        archive_policy: ArchivePolicy,
+        cx: &mut Context<Self>,
+    ) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.set_active_space_archive_policy(archive_policy).is_ok()
+        {
+            cx.notify();
+        }
+    }
+
+    fn archive_idle_tabs_now(&mut self, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.archive_idle_tabs(std::time::SystemTime::now()).is_ok()
         {
             cx.notify();
         }
