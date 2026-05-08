@@ -16,6 +16,7 @@
 │   ● New Tab                  │                                               │
 │ Archive                      │                                               │
 │   ↶ servo.org                │                                               │
+│     Space: Work - Profile: Default - Closed - Just now                      │
 │                              │                                               │
 │ Profile                      │  Ready                                        │
 │   Default                    │                                               │

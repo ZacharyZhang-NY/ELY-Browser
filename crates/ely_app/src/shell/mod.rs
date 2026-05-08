@@ -1,3 +1,4 @@
+mod archive_labels;
 mod bookmarks;
 mod downloads;
 mod history;

@@ -1,6 +1,6 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{ELY_THEME, colors, spacing};
-use ely_domain::{ArchiveSource, ArchivedTab, BrowserTab, Profile, Space};
+use ely_domain::{ArchivedTab, BrowserTab, Profile, Space};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window, div, px, rgb,
@@ -12,7 +12,7 @@ use gpui_component::{
 };
 
 use super::sidebar::{collapsed_sidebar_active, render_command_bar_identity};
-use super::{ElyShell, ShellState};
+use super::{ElyShell, ShellState, archive_labels::archive_detail_label};
 
 impl Render for ElyShell {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -195,7 +195,7 @@ impl ElyShell {
                     .archived_tabs
                     .iter()
                     .rev()
-                    .map(|archived_tab| self.render_archived_row(archived_tab, cx)),
+                    .map(|archived_tab| self.render_archived_row(archived_tab, snapshot, cx)),
             )
             .child(div().flex_1())
             .child(section_label("Profile"))
@@ -383,10 +383,12 @@ impl ElyShell {
     fn render_archived_row(
         &mut self,
         archived_tab: &ArchivedTab,
+        snapshot: &BrowserSnapshot,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let tab = archived_tab.tab();
         let tab_id = tab.id().clone();
+        let detail = archive_detail_label(archived_tab, &snapshot.spaces, &snapshot.profiles);
 
         div()
             .id(SharedString::from(format!("archived-{}", tab.id().as_str())))
@@ -419,11 +421,7 @@ impl ElyShell {
                             .text_color(rgb(colors::INK))
                             .child(tab.title().to_string()),
                     )
-                    .child(div().text_xs().text_color(rgb(colors::MUTED)).child(format!(
-                        "{} - {}",
-                        tab.display_url(),
-                        archive_source_label(archived_tab.source())
-                    ))),
+                    .child(div().text_xs().text_color(rgb(colors::MUTED)).child(detail)),
             )
             .into_any_element()
     }
@@ -453,13 +451,6 @@ fn active_sidebar_width(snapshot: &BrowserSnapshot) -> Result<f32, String> {
     };
 
     Ok(f32::from(active_space.sidebar_width_px()))
-}
-
-fn archive_source_label(source: &ArchiveSource) -> &'static str {
-    match source {
-        ArchiveSource::ManualClose => "Closed",
-        ArchiveSource::AutoArchive => "Auto archived",
-    }
 }
 
 fn sidebar_tab_detail(tab: &BrowserTab, profiles: &[Profile]) -> String {

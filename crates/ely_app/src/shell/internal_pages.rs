@@ -26,7 +26,7 @@ mod task_manager;
 
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
-use ely_domain::{ArchiveSource, ArchivedTab, BrowserTab};
+use ely_domain::{ArchivedTab, BrowserTab};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, div, px, rgb,
@@ -34,6 +34,7 @@ use gpui::{
 use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
 
 use super::ElyShell;
+use super::archive_labels::archive_detail_label;
 
 impl ElyShell {
     pub(super) fn render_web_canvas(
@@ -147,14 +148,9 @@ impl ElyShell {
             .overflow_y_scrollbar()
             .border_t_1()
             .border_color(rgb(colors::HAIRLINE))
-            .children(
-                snapshot
-                    .archived_tabs
-                    .iter()
-                    .rev()
-                    .enumerate()
-                    .map(|(index, archived_tab)| self.render_archive_row(index, archived_tab, cx)),
-            )
+            .children(snapshot.archived_tabs.iter().rev().enumerate().map(
+                |(index, archived_tab)| self.render_archive_row(index, archived_tab, snapshot, cx),
+            ))
             .into_any_element()
     }
 
@@ -162,10 +158,12 @@ impl ElyShell {
         &mut self,
         index: usize,
         archived_tab: &ArchivedTab,
+        snapshot: &BrowserSnapshot,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let tab = archived_tab.tab();
         let tab_id = tab.id().clone();
+        let detail = archive_detail_label(archived_tab, &snapshot.spaces, &snapshot.profiles);
 
         div()
             .id(SharedString::from(format!("archive-{index}")))
@@ -196,13 +194,7 @@ impl ElyShell {
                             .text_color(rgb(colors::INK))
                             .child(tab.title().to_string()),
                     )
-                    .child(div().text_xs().truncate().text_color(rgb(colors::MUTED)).child(
-                        format!(
-                            "{} - {}",
-                            tab.display_url(),
-                            archive_source_label(archived_tab.source())
-                        ),
-                    )),
+                    .child(div().text_xs().truncate().text_color(rgb(colors::MUTED)).child(detail)),
             )
             .child(div().text_color(rgb(colors::MUTED_SOFT)).child(IconName::Undo2))
             .into_any_element()
@@ -249,12 +241,5 @@ fn render_tab_status(tab: &BrowserTab) -> String {
     match tab.url().as_str() {
         "ely://new-tab" => "Ready".to_string(),
         url => url.to_string(),
-    }
-}
-
-fn archive_source_label(source: &ArchiveSource) -> &'static str {
-    match source {
-        ArchiveSource::ManualClose => "Closed",
-        ArchiveSource::AutoArchive => "Auto archived",
     }
 }
