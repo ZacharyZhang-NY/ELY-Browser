@@ -30,6 +30,7 @@ pub struct BrowserTab {
     state: TabState,
     flags: TabFlags,
     split_id: Option<SplitId>,
+    sort_key: u64,
     sync_enabled: bool,
     created_at: SystemTime,
     last_active_at: SystemTime,
@@ -55,6 +56,7 @@ impl BrowserTab {
             state: TabState::Ready,
             flags: TabFlags::default(),
             split_id: None,
+            sort_key: 0,
             sync_enabled: true,
             created_at,
             last_active_at: created_at,
@@ -64,6 +66,12 @@ impl BrowserTab {
     #[must_use]
     pub fn with_parent_tab_id(mut self, parent_tab_id: TabId) -> Self {
         self.parent_tab_id = Some(parent_tab_id);
+        self
+    }
+
+    #[must_use]
+    pub fn with_sort_key(mut self, sort_key: u64) -> Self {
+        self.sort_key = sort_key;
         self
     }
 
@@ -162,6 +170,15 @@ impl BrowserTab {
 
     pub fn clear_split_id(&mut self) {
         self.split_id = None;
+    }
+
+    #[must_use]
+    pub fn sort_key(&self) -> u64 {
+        self.sort_key
+    }
+
+    pub fn set_sort_key(&mut self, sort_key: u64) {
+        self.sort_key = sort_key;
     }
 
     pub fn set_sync_enabled(&mut self, sync_enabled: bool) {

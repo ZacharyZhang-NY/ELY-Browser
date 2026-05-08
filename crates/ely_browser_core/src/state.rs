@@ -20,6 +20,7 @@ mod reading_list;
 mod site_permissions;
 mod splits;
 mod sync;
+mod tab_order;
 mod tabs;
 
 pub use plugins::{InstalledPlugin, PluginAuditAction, PluginAuditEvent};
@@ -125,7 +126,8 @@ impl BrowserCore {
             active_profile_id.clone(),
             new_tab_title,
             new_tab_url.clone(),
-        );
+        )
+        .with_sort_key(0);
         let active_tab_id = tab.id().clone();
         let mut active_tabs_by_space = BTreeMap::new();
         let mut active_tabs_by_space_profile = BTreeMap::new();
@@ -406,16 +408,18 @@ impl BrowserCore {
     }
 
     fn pinned_tabs(&self) -> Vec<BrowserTab> {
-        self.tabs
-            .iter()
-            .filter(|tab| tab.space_id() == &self.active_space_id)
-            .filter(|tab| tab.flags().pinned && !tab.flags().favorite)
-            .cloned()
-            .collect()
+        tab_order::sorted_tabs(
+            self.tabs
+                .iter()
+                .filter(|tab| tab.space_id() == &self.active_space_id)
+                .filter(|tab| tab.flags().pinned && !tab.flags().favorite),
+        )
     }
 
     fn visible_tabs(&self) -> Vec<BrowserTab> {
-        self.tabs.iter().filter(|tab| tab.space_id() == &self.active_space_id).cloned().collect()
+        tab_order::sorted_tabs(
+            self.tabs.iter().filter(|tab| tab.space_id() == &self.active_space_id),
+        )
     }
 
     fn record_tab_activity(&mut self, tab_id: &TabId, active_at: SystemTime) {

@@ -20,6 +20,7 @@ impl BrowserCore {
     pub fn open_tab(&mut self, url: UrlText) -> TabId {
         let tab = self.build_tab(url);
         let tab_id = tab.id().clone();
+        let space_id = tab.space_id().clone();
         let insert_index = self
             .tabs
             .iter()
@@ -27,6 +28,7 @@ impl BrowserCore {
             .map_or(self.tabs.len(), |index| index + 1);
         self.record_history_entry(&tab);
         self.tabs.insert(insert_index, tab);
+        self.normalize_tab_sort_keys(&space_id);
         self.active_tab_id = tab_id.clone();
         self.active_tabs_by_space.insert(self.active_space_id.clone(), tab_id.clone());
         self.active_tabs_by_space_profile
@@ -49,7 +51,10 @@ impl BrowserCore {
 
         self.detach_tab_from_split(&tab_id);
         let tab_index = self.active_tab_index()?;
+        let target_sort_key = self.next_tab_sort_key(space_id);
         self.tabs[tab_index].move_to_space(space_id.clone());
+        self.tabs[tab_index].set_sort_key(target_sort_key);
+        self.sort_tabs_within_space(space_id);
         self.active_tabs_by_space.insert(space_id.clone(), tab_id.clone());
         self.active_tabs_by_space_profile.remove(&(source_space_id.clone(), profile_id.clone()));
 
@@ -257,6 +262,18 @@ impl BrowserCore {
         Ok(())
     }
 
+    pub fn set_tab_sort_key(&mut self, tab_id: &TabId, sort_key: u64) -> Result<(), CoreError> {
+        let tab = self
+            .tabs
+            .iter_mut()
+            .find(|tab| tab.id() == tab_id)
+            .ok_or_else(|| CoreError::TabNotFound { id: tab_id.clone() })?;
+        let space_id = tab.space_id().clone();
+        tab.set_sort_key(sort_key);
+        self.sort_tabs_within_space(&space_id);
+        Ok(())
+    }
+
     pub fn active_tab(&self) -> Result<&BrowserTab, CoreError> {
         self.tabs
             .iter()
@@ -279,7 +296,8 @@ impl BrowserCore {
         url: UrlText,
     ) -> BrowserTab {
         let title = tab_title(&url);
-        BrowserTab::new(TabId::new(), space_id, profile_id, title, url)
+        let sort_key = self.next_tab_sort_key(&space_id);
+        BrowserTab::new(TabId::new(), space_id, profile_id, title, url).with_sort_key(sort_key)
     }
 
     pub(super) fn tab_belongs_to_space(&self, tab_id: &TabId, space_id: &SpaceId) -> bool {
@@ -294,7 +312,9 @@ impl BrowserCore {
             .position(|existing| existing.id() == &self.active_tab_id)
             .map_or(self.tabs.len(), |index| index + 1);
 
+        let space_id = tab.space_id().clone();
         self.tabs.insert(insert_index, tab);
+        self.normalize_tab_sort_keys(&space_id);
         self.select_tab(&tab_id)?;
         Ok(tab_id)
     }
