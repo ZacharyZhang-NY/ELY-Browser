@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, CoreError, InitialBrowserConfig};
-use ely_domain::{CommandIntent, MAX_SPLIT_PANES, SplitAxis, UrlText};
+use ely_domain::{CommandIntent, MAX_SPLIT_PANES, SplitAxis, TabState, UrlText};
 
 #[test]
 fn group_active_tab_creates_visible_space_group() -> Result<(), Box<dyn Error>> {
@@ -164,6 +164,42 @@ fn auto_group_domains_preserves_existing_manual_groups() -> Result<(), Box<dyn E
     assert_eq!(tab_group_id(&snapshot, &manual_tab_id), Some(&manual_group_id));
     assert_eq!(tab_group_id(&snapshot, &first_auto_tab_id), Some(domain_group.id()));
     assert_eq!(tab_group_id(&snapshot, &second_auto_tab_id), Some(domain_group.id()));
+    Ok(())
+}
+
+#[test]
+fn sleep_tab_group_command_discards_active_group_tabs() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let ungrouped_tab_id = core.open_tab(UrlText::parse("https://servo.org")?);
+    let first_group_tab_id = core.open_tab(UrlText::parse("https://example.com/a")?);
+    core.group_active_tab("Docs")?;
+    let second_group_tab_id = core.open_tab(UrlText::parse("https://example.com/b")?);
+    core.group_active_tab("Docs")?;
+
+    core.set_command_query(">sleep-tab-group");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("sleep-tab-group".to_string())));
+    assert_eq!(snapshot.command_query, "");
+    assert_eq!(tab_state(&snapshot, &first_group_tab_id), Some(&TabState::Discarded));
+    assert_eq!(tab_state(&snapshot, &second_group_tab_id), Some(&TabState::Discarded));
+    assert_eq!(tab_state(&snapshot, &ungrouped_tab_id), Some(&TabState::Ready));
+    Ok(())
+}
+
+#[test]
+fn sleep_tab_group_command_preserves_query_without_active_group() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let tab_id = core.open_tab(UrlText::parse("https://example.com")?);
+
+    core.set_command_query(">sleep-tab-group");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("sleep-tab-group".to_string())));
+    assert_eq!(snapshot.command_query, ">sleep-tab-group");
+    assert_eq!(tab_state(&snapshot, &tab_id), Some(&TabState::Ready));
     Ok(())
 }
 
@@ -332,4 +368,11 @@ fn tab_group_id<'a>(
     tab_id: &ely_domain::TabId,
 ) -> Option<&'a ely_domain::TabGroupId> {
     snapshot.tabs.iter().find(|tab| tab.id() == tab_id).and_then(|tab| tab.group_id())
+}
+
+fn tab_state<'a>(
+    snapshot: &'a ely_browser_core::BrowserSnapshot,
+    tab_id: &ely_domain::TabId,
+) -> Option<&'a TabState> {
+    snapshot.tabs.iter().find(|tab| tab.id() == tab_id).map(|tab| tab.state())
 }

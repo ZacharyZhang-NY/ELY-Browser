@@ -213,6 +213,9 @@ impl BrowserCore {
                 Ok(self.set_active_tab_group_collapsed(false)?.is_some())
             }
             "ungroup-tab" | "ungroup tab" => self.ungroup_active_tab(),
+            "sleep-tab-group" | "sleep tab group" | "discard-tab-group" | "discard tab group" => {
+                Ok(self.discard_active_tab_group()?.is_some())
+            }
             "downloads" | "open-downloads" | "open downloads" => {
                 self.open_tab(downloads_url()?);
                 Ok(true)

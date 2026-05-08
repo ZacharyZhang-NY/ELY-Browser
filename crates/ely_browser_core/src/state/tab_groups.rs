@@ -80,6 +80,19 @@ impl BrowserCore {
         Ok(true)
     }
 
+    pub fn discard_active_tab_group(&mut self) -> Result<Option<usize>, CoreError> {
+        let Some(group_id) = self.active_tab_group_id()? else {
+            return Ok(None);
+        };
+        let tab_ids = self.active_space_group_tab_ids(&group_id);
+
+        for tab_id in &tab_ids {
+            self.discard_tab(tab_id)?;
+        }
+
+        Ok(Some(tab_ids.len()))
+    }
+
     pub fn split_active_tab_group(&mut self) -> Result<Option<SplitId>, CoreError> {
         let Some(group_id) = self.active_tab_group_id()? else {
             return Ok(None);
@@ -267,6 +280,10 @@ impl BrowserCore {
                 .filter(|tab| tab.space_id() == &self.active_space_id)
                 .filter(|tab| tab.group_id() == Some(group_id)),
         )
+    }
+
+    fn active_space_group_tab_ids(&self, group_id: &TabGroupId) -> Vec<TabId> {
+        self.active_space_group_tabs(group_id).iter().map(|tab| tab.id().clone()).collect()
     }
 
     fn split_pane_space_id(

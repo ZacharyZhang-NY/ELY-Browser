@@ -86,3 +86,20 @@ Domain auto grouping keeps manual groups intact and groups matching ungrouped ho
 │     servo.org                │                                               │
 └──────────────────────────────┴───────────────────────────────────────────────┘
 ```
+
+Group sleep applies the sleeping state to every tab in the active group:
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ELY Browser   [ >sleep-tab-group............................. ] [pin] [*] [+] │
+├──────────────────────────────┬───────────────────────────────────────────────┤
+│ Tabs                         │  Sleeping Tab                                 │
+│   [folder] Docs              │  Sleeping https://example.com/b               │
+│     2 tabs - Expanded        │                                               │
+│     example.com              │  URL      https://example.com/b               │
+│       example.com            │  Title    example.com                         │
+│     example.com              │  Session  Page session remains attached       │
+│       example.com            │                                               │
+│   servo.org                  │  [Restore]                                    │
+└──────────────────────────────┴───────────────────────────────────────────────┘
+```
