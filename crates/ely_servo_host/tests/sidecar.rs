@@ -19,6 +19,15 @@ fn sidecar_snapshots_prd_sites_to_rgba_files() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn sidecar_snapshots_prd_reference_sites_to_rgba_files() -> Result<(), Box<dyn Error>> {
+    for case in PRD_REFERENCE_SITE_COMPATIBILITY_CASES {
+        snapshot_prd_site(case, PRD_REFERENCE_SITE_SIZE, ScrollOffset::ZERO)?;
+    }
+
+    Ok(())
+}
+
+#[test]
 fn sidecar_scrolls_prd_site_with_servo_input() -> Result<(), Box<dyn Error>> {
     let initial_report =
         snapshot_prd_site(&SERVO_SCROLL_SITE, SERVO_SCROLL_SIZE, ScrollOffset::ZERO)?;

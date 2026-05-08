@@ -1,7 +1,7 @@
 use ely_servo_host::{RenderedFrame, WebViewSnapshot, WebViewState};
 use serde::Serialize;
 
-use super::SnapshotArgs;
+use super::args::SnapshotArgs;
 
 pub(super) struct SnapshotInputChanges {
     pub(super) scroll: bool,

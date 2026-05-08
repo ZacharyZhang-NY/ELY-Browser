@@ -10,7 +10,7 @@ use ely_domain::UrlText;
 use serde::Deserialize;
 use thiserror::Error;
 
-const SIDECAR_COMMAND_TIMEOUT: Duration = Duration::from_secs(20);
+const SIDECAR_COMMAND_TIMEOUT: Duration = Duration::from_secs(35);
 const SIDECAR_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 #[derive(Clone, Debug)]
@@ -175,7 +175,7 @@ pub struct SidecarSnapshot {
 impl SidecarSnapshot {
     fn from_report(report: SidecarReport, rgba_bytes: Vec<u8>) -> Result<Self, ServoSidecarError> {
         let expected_byte_count = expected_rgba_byte_count(report.width, report.height)?;
-        if report.state != "complete" {
+        if !is_renderable_state(&report.state) {
             return Err(ServoSidecarError::IncompleteRender { state: report.state });
         }
         if report.rgba_byte_count != expected_byte_count || rgba_bytes.len() != expected_byte_count
@@ -285,6 +285,10 @@ pub enum ServoSidecarError {
     ContentlessRenderedFrame { requested_url: String },
 }
 
+fn is_renderable_state(state: &str) -> bool {
+    matches!(state, "complete" | "loading")
+}
+
 #[derive(Deserialize)]
 struct SidecarReport {
     requested_url: String,
@@ -353,4 +357,47 @@ fn expected_rgba_byte_count(width: u32, height: u32) -> Result<usize, ServoSidec
         .ok_or(ServoSidecarError::RgbaByteCountOverflow { width, height })?;
     usize::try_from(byte_count)
         .map_err(|_| ServoSidecarError::RgbaByteCountOverflow { width, height })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_loading_report_with_visible_content() -> Result<(), ServoSidecarError> {
+        let snapshot = SidecarSnapshot::from_report(report_with_state("loading"), visible_frame())?;
+
+        assert_eq!(snapshot.loaded_url(), Some("https://example.com/"));
+        assert_eq!(snapshot.title(), Some("Example Domain"));
+        assert_eq!(snapshot.width(), 2);
+        assert_eq!(snapshot.height(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_created_report_with_visible_content() {
+        let result = SidecarSnapshot::from_report(report_with_state("created"), visible_frame());
+
+        assert!(
+            matches!(result, Err(ServoSidecarError::IncompleteRender { state }) if state == "created")
+        );
+    }
+
+    fn report_with_state(state: &str) -> SidecarReport {
+        SidecarReport {
+            requested_url: "https://example.com".to_string(),
+            loaded_url: Some("https://example.com/".to_string()),
+            title: Some("Example Domain".to_string()),
+            state: state.to_string(),
+            width: 2,
+            height: 1,
+            rgba_byte_count: 8,
+            non_white_pixel_count: 1,
+            content_pixel_count: 1,
+        }
+    }
+
+    fn visible_frame() -> Vec<u8> {
+        vec![0, 0, 0, 255, 255, 255, 255, 255]
+    }
 }

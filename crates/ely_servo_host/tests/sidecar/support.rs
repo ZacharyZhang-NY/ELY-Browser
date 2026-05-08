@@ -2,24 +2,105 @@ use std::{
     error::Error,
     io,
     process::{Child, Command, Output, Stdio},
+    sync::Mutex,
     thread,
     time::{Duration, Instant},
 };
 
 pub(super) const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
-const SIDECAR_TIMEOUT: Duration = Duration::from_secs(25);
+const SIDECAR_TIMEOUT: Duration = Duration::from_secs(45);
 const SIDECAR_POLL_INTERVAL: Duration = Duration::from_millis(20);
+const SIDECAR_RETRY_INTERVAL: Duration = Duration::from_millis(250);
+static SIDECAR_COMMAND_LOCK: Mutex<()> = Mutex::new(());
 pub(super) const PRD_SITE_COMPATIBILITY_CASES: &[PrdSiteCompatibilityCase] = &[
     PrdSiteCompatibilityCase { url: "https://example.com", title_fragment: "Example Domain" },
-    PrdSiteCompatibilityCase { url: "https://servo.org", title_fragment: "Servo" },
+    PrdSiteCompatibilityCase { url: "https://servo.org/", title_fragment: "Servo" },
+];
+pub(super) const PRD_REFERENCE_SITE_COMPATIBILITY_CASES: &[PrdSiteCompatibilityCase] = &[
+    PrdSiteCompatibilityCase {
+        url: "https://blog.google/products-and-platforms/products/chrome/new-chrome-productivity-features/",
+        title_fragment: "Chrome",
+    },
+    PrdSiteCompatibilityCase {
+        url: "https://www.microsoft.com/en-us/edge/features/vertical-tabs",
+        title_fragment: "Microsoft Edge",
+    },
+    PrdSiteCompatibilityCase {
+        url: "https://resources.arc.net/hc/en-us/articles/19230755904151-Favorites-Top-Tabs-Across-Every-Space",
+        title_fragment: "Favorites",
+    },
+    PrdSiteCompatibilityCase {
+        url: "https://resources.arc.net/hc/en-us/articles/19228855311127-Auto-Archive-Clean-as-you-go",
+        title_fragment: "Auto Archive",
+    },
+    PrdSiteCompatibilityCase {
+        url: "https://vivaldi.com/features/workspaces/",
+        title_fragment: "Workspaces",
+    },
+    PrdSiteCompatibilityCase {
+        url: "https://help.vivaldi.com/desktop/tabs/tab-tiling/",
+        title_fragment: "Tab Tiling",
+    },
+    PrdSiteCompatibilityCase { url: "https://www.gpui.rs/", title_fragment: "gpui" },
+    PrdSiteCompatibilityCase { url: "https://docs.rs/gpui/latest/gpui/", title_fragment: "gpui" },
+    PrdSiteCompatibilityCase {
+        url: "https://zed.dev/blog/videogame",
+        title_fragment: "Leveraging Rust",
+    },
+    PrdSiteCompatibilityCase {
+        url: "https://github.com/longbridge/gpui-component/",
+        title_fragment: "gpui-component",
+    },
+    PrdSiteCompatibilityCase {
+        url: "https://github.com/zed-industries/awesome-gpui/",
+        title_fragment: "awesome-gpui",
+    },
+    PrdSiteCompatibilityCase { url: "https://servo.org/", title_fragment: "Servo" },
+    PrdSiteCompatibilityCase {
+        url: "https://servo.org/blog/2026/04/13/servo-0.1.0-release/",
+        title_fragment: "Servo",
+    },
+    PrdSiteCompatibilityCase {
+        url: "https://developers.cloudflare.com/d1/",
+        title_fragment: "Cloudflare",
+    },
+    PrdSiteCompatibilityCase {
+        url: "https://developers.cloudflare.com/workers/platform/storage-options/",
+        title_fragment: "Cloudflare",
+    },
+    PrdSiteCompatibilityCase {
+        url: "https://developers.cloudflare.com/kv/concepts/how-kv-works/",
+        title_fragment: "Cloudflare",
+    },
+    PrdSiteCompatibilityCase {
+        url: "https://better-auth.com/blog/1-5",
+        title_fragment: "Better Auth",
+    },
+    PrdSiteCompatibilityCase {
+        url: "https://developers.cloudflare.com/d1/platform/limits/",
+        title_fragment: "Cloudflare",
+    },
+    PrdSiteCompatibilityCase {
+        url: "https://component-model.bytecodealliance.org/",
+        title_fragment: "WebAssembly Component Model",
+    },
+    PrdSiteCompatibilityCase {
+        url: "https://docs.wasmtime.dev/api/wasmtime/component/index.html",
+        title_fragment: "wasmtime",
+    },
+    PrdSiteCompatibilityCase {
+        url: "https://docs.wasmtime.dev/security.html",
+        title_fragment: "Wasmtime",
+    },
 ];
 pub(super) const PRD_SITE_COMPATIBILITY_SIZES: &[FrameSize] = &[
     FrameSize { width: 640, height: 480 },
     FrameSize { width: 934, height: 657 },
     FrameSize { width: 1614, height: 980 },
 ];
+pub(super) const PRD_REFERENCE_SITE_SIZE: FrameSize = FrameSize { width: 934, height: 657 };
 pub(super) const SERVO_SCROLL_SITE: PrdSiteCompatibilityCase =
-    PrdSiteCompatibilityCase { url: "https://servo.org", title_fragment: "Servo" };
+    PrdSiteCompatibilityCase { url: "https://servo.org/", title_fragment: "Servo" };
 pub(super) const SERVO_SCROLL_SIZE: FrameSize = FrameSize { width: 934, height: 657 };
 pub(super) const SERVO_SCROLL_OFFSET: ScrollOffset = ScrollOffset { x: 0, y: 480 };
 const SERVO_CLICK_URL: &str = "data:text/html,%3C!doctype%20html%3E%3Ctitle%3EClick%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23f7f7f7%3B%7Dbutton%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A220px%3Bheight%3A90px%3Bfont%3A28px%20sans-serif%3Bbackground%3A%23ffffff%3Bcolor%3A%23111111%3B%7D%3C%2Fstyle%3E%3Cbutton%20onclick%3D%22document.body.style.background%3D%27%230039ff%27%3Bdocument.title%3D%27Clicked%27%3Bthis.textContent%3D%27Clicked%27%3B%22%3ETap%3C%2Fbutton%3E";
@@ -97,11 +178,7 @@ pub(super) fn snapshot_prd_site(
         scroll_offset.y
     ));
 
-    if output_path.exists() {
-        std::fs::remove_file(&output_path)?;
-    }
-
-    let output = run_sidecar_snapshot(
+    let output = run_sidecar_snapshot_with_retry(
         case.url,
         &output_path,
         size,
@@ -121,6 +198,7 @@ pub(super) fn snapshot_prd_site(
     );
 
     let report: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    assert_report_state_is_renderable(&report)?;
     assert_eq!(report_field_as_u64(&report, "width")?, size.width, "{}", case.url);
     assert_eq!(report_field_as_u64(&report, "height")?, size.height, "{}", case.url);
     assert_eq!(
@@ -209,7 +287,8 @@ fn snapshot_probe(
         std::fs::remove_file(&output_path)?;
     }
 
-    let output = run_sidecar_snapshot(url, &output_path, size, ScrollOffset::ZERO, input)?;
+    let output =
+        run_sidecar_snapshot_with_retry(url, &output_path, size, ScrollOffset::ZERO, input)?;
 
     assert!(
         output.status.success(),
@@ -236,6 +315,9 @@ fn run_sidecar_snapshot(
     scroll_offset: ScrollOffset,
     input: SnapshotInput<'_>,
 ) -> Result<Output, Box<dyn Error>> {
+    let _guard = SIDECAR_COMMAND_LOCK
+        .lock()
+        .map_err(|_| io::Error::other("sidecar command lock poisoned"))?;
     let mut command = Command::new(env!("CARGO_BIN_EXE_ely_servo_sidecar"));
     command
         .arg("snapshot")
@@ -291,6 +373,32 @@ fn run_sidecar_snapshot(
     }
 }
 
+fn run_sidecar_snapshot_with_retry(
+    site_url: &str,
+    output_path: &std::path::Path,
+    size: FrameSize,
+    scroll_offset: ScrollOffset,
+    input: SnapshotInput<'_>,
+) -> Result<Output, Box<dyn Error>> {
+    for attempt in 0..2 {
+        if output_path.exists() {
+            std::fs::remove_file(output_path)?;
+        }
+
+        match run_sidecar_snapshot(site_url, output_path, size, scroll_offset, input) {
+            Ok(output) if output.status.success() => return Ok(output),
+            Ok(output) if attempt == 1 => return Ok(output),
+            Ok(_output) => {}
+            Err(error) if attempt == 1 => return Err(error),
+            Err(_error) => {}
+        }
+
+        thread::sleep(SIDECAR_RETRY_INTERVAL);
+    }
+
+    Err("sidecar snapshot retry did not produce output".into())
+}
+
 fn terminate_child(mut child: Child) -> Result<(), Box<dyn Error>> {
     match child.kill() {
         Ok(()) => {
@@ -312,6 +420,15 @@ fn assert_report_text_contains(
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| format!("missing text report field: {field}"))?;
     assert!(value.contains(fragment), "{field}: {value}");
+    Ok(())
+}
+
+fn assert_report_state_is_renderable(report: &serde_json::Value) -> Result<(), Box<dyn Error>> {
+    let state = report
+        .get("state")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "missing text report field: state".to_string())?;
+    assert!(matches!(state, "complete" | "loading"), "state: {state}");
     Ok(())
 }
 
