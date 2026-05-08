@@ -3,12 +3,16 @@ import { describe, it } from "node:test";
 
 import type { Env } from "../src/bindings.js";
 import { handleRequest } from "../src/index.js";
+import { pluginRegistryKvKey } from "../src/plugin_registry.js";
 import { releaseManifestKvKey } from "../src/release_manifests.js";
 import { publicSigningKeysKvKey } from "../src/signing_keys.js";
 
 const PUBLIC_KEY = "a".repeat(64);
 const RELEASE_SIGNATURE = "b".repeat(128);
 const RELEASE_SHA256 = "c".repeat(64);
+const PLUGIN_CHECKSUM = "d".repeat(64);
+const PLUGIN_PACKAGE_SHA256 = "e".repeat(64);
+const PLUGIN_SIGNATURE = "f".repeat(128);
 
 describe("worker routes", () => {
   it("returns public plugin signing keys from KV", async () => {
@@ -76,6 +80,123 @@ describe("worker routes", () => {
 
     assert.equal(response.status, 404);
     assert.deepEqual(await response.json(), { error: "not_found" });
+  });
+
+  it("returns public plugin catalog from KV", async () => {
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/plugins"),
+      testEnv(null, null, pluginRegistryDocument()),
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(
+      response.headers.get("cache-control"),
+      "public, max-age=300, stale-while-revalidate=60",
+    );
+    assert.deepEqual(await response.json(), {
+      version: 1,
+      generated_at: "2026-05-08T00:00:00.000Z",
+      plugins: [
+        {
+          id: "elydora.reader",
+          name: "Reader",
+          description: "Reading workflow tools.",
+          author: "Elydora",
+          homepage: "https://elydora.com/plugins/reader",
+          permissions: ["page:metadata", "ui:command"],
+          contributes: ["command-bar-command"],
+          min_ely_build: "0.1.0",
+        },
+      ],
+    });
+  });
+
+  it("returns public plugin details from KV", async () => {
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/plugins/elydora.reader"),
+      testEnv(null, null, pluginRegistryDocument()),
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      version: 1,
+      generated_at: "2026-05-08T00:00:00.000Z",
+      plugin: {
+        id: "elydora.reader",
+        name: "Reader",
+        description: "Reading workflow tools.",
+        author: "Elydora",
+        homepage: "https://elydora.com/plugins/reader",
+        permissions: ["page:metadata", "ui:command"],
+        contributes: ["command-bar-command"],
+        min_ely_build: "0.1.0",
+        checksum: PLUGIN_CHECKSUM,
+        signature: {
+          algorithm: "ed25519",
+          key_id: "elydora-alpha-plugins",
+          public_key: PUBLIC_KEY,
+          value: PLUGIN_SIGNATURE,
+        },
+      },
+    });
+  });
+
+  it("returns public plugin package download information", async () => {
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/plugins/elydora.reader/package"),
+      testEnv(null, null, pluginRegistryDocument()),
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      version: 1,
+      plugin_id: "elydora.reader",
+      url: "https://downloads.elydora.com/plugins/reader/0.1.0/reader.rplug",
+      sha256: PLUGIN_PACKAGE_SHA256,
+      signature: PLUGIN_SIGNATURE,
+      size_bytes: 65536,
+    });
+  });
+
+  it("rejects unsupported methods on public plugin catalog", async () => {
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/plugins", { method: "POST" }),
+      testEnv(null, null, pluginRegistryDocument()),
+    );
+
+    assert.equal(response.status, 405);
+    assert.equal(response.headers.get("allow"), "GET");
+    assert.deepEqual(await response.json(), { error: "method_not_allowed" });
+  });
+
+  it("returns service unavailable when plugin registry is missing", async () => {
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/plugins"),
+      testEnv(null),
+    );
+
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: "plugin_registry_unavailable" });
+  });
+
+  it("returns a generic server error for malformed plugin registry", async () => {
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/plugins"),
+      testEnv(null, null, "{"),
+    );
+
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), { error: "plugin_registry_invalid" });
+  });
+
+  it("returns not found for unknown public plugins", async () => {
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/plugins/elydora.unknown"),
+      testEnv(null, null, pluginRegistryDocument()),
+    );
+
+    assert.equal(response.status, 404);
+    assert.deepEqual(await response.json(), { error: "plugin_not_found" });
   });
 
   it("returns release manifest from KV", async () => {
@@ -202,13 +323,20 @@ describe("worker routes", () => {
   });
 });
 
-function testEnv(publicSigningKeys: string | null, releaseManifest?: string | null): Env {
+function testEnv(
+  publicSigningKeys: string | null,
+  releaseManifest?: string | null,
+  pluginRegistry?: string | null,
+): Env {
   const values = new Map<string, string>();
   if (publicSigningKeys !== null) {
     values.set(publicSigningKeysKvKey("local"), publicSigningKeys);
   }
   if (releaseManifest !== undefined && releaseManifest !== null) {
     values.set(releaseManifestKvKey("local"), releaseManifest);
+  }
+  if (pluginRegistry !== undefined && pluginRegistry !== null) {
+    values.set(pluginRegistryKvKey("local"), pluginRegistry);
   }
 
   return {
@@ -235,6 +363,37 @@ function releaseManifestDocument(): string {
         sha256: RELEASE_SHA256,
         signature: RELEASE_SIGNATURE,
         size_bytes: 1048576,
+      },
+    ],
+  });
+}
+
+function pluginRegistryDocument(): string {
+  return JSON.stringify({
+    version: 1,
+    generated_at: "2026-05-08T00:00:00.000Z",
+    plugins: [
+      {
+        id: "elydora.reader",
+        name: "Reader",
+        description: "Reading workflow tools.",
+        author: "Elydora",
+        homepage: "https://elydora.com/plugins/reader",
+        permissions: ["page:metadata", "ui:command"],
+        contributes: ["command-bar-command"],
+        min_ely_build: "0.1.0",
+        checksum: PLUGIN_CHECKSUM,
+        signature: {
+          algorithm: "ed25519",
+          key_id: "elydora-alpha-plugins",
+          public_key: PUBLIC_KEY,
+          value: PLUGIN_SIGNATURE,
+        },
+        package: {
+          url: "https://downloads.elydora.com/plugins/reader/0.1.0/reader.rplug",
+          sha256: PLUGIN_PACKAGE_SHA256,
+          size_bytes: 65536,
+        },
       },
     ],
   });
