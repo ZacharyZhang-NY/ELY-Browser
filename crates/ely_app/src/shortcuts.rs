@@ -4,8 +4,8 @@ use gpui::{App, KeyBinding};
 
 use crate::{
     CloseCurrentTab, FocusAddressBar, FocusCommandMode, OpenDownloads, OpenHistory, OpenNewTab,
-    OpenSettings, OpenTaskManager, Quit, RestoreClosedTab, SelectNextTab, SelectPreviousTab,
-    SplitRight, ToggleFavoriteTab, ToggleSidebar,
+    OpenSettings, OpenTaskManager, Quit, RestoreClosedTab, SelectNextSpace, SelectNextTab,
+    SelectPreviousSpace, SelectPreviousTab, SplitRight, ToggleFavoriteTab, ToggleSidebar,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -30,6 +30,8 @@ pub(crate) enum ShortcutAction {
     OpenNewTab,
     CloseCurrentTab,
     RestoreClosedTab,
+    SelectNextSpace,
+    SelectPreviousSpace,
     SelectNextTab,
     SelectPreviousTab,
     SplitRight,
@@ -50,6 +52,8 @@ impl ShortcutAction {
             Self::OpenNewTab => "New Tab",
             Self::CloseCurrentTab => "Close Tab",
             Self::RestoreClosedTab => "Restore Closed Tab",
+            Self::SelectNextSpace => "Next Space",
+            Self::SelectPreviousSpace => "Previous Space",
             Self::SelectNextTab => "Next Tab",
             Self::SelectPreviousTab => "Previous Tab",
             Self::SplitRight => "Split Right",
@@ -69,6 +73,8 @@ impl ShortcutAction {
             Self::OpenNewTab
             | Self::CloseCurrentTab
             | Self::RestoreClosedTab
+            | Self::SelectNextSpace
+            | Self::SelectPreviousSpace
             | Self::SelectNextTab
             | Self::SelectPreviousTab
             | Self::SplitRight
@@ -87,6 +93,8 @@ impl ShortcutAction {
             Self::OpenNewTab => Some(">new-tab"),
             Self::CloseCurrentTab => Some(">close-tab"),
             Self::RestoreClosedTab => Some(">restore-tab"),
+            Self::SelectNextSpace => None,
+            Self::SelectPreviousSpace => None,
             Self::SelectNextTab => None,
             Self::SelectPreviousTab => None,
             Self::SplitRight => Some(">split-right"),
@@ -127,6 +135,8 @@ pub(crate) const SHORTCUT_ACTIONS: &[ShortcutAction] = &[
     ShortcutAction::OpenNewTab,
     ShortcutAction::CloseCurrentTab,
     ShortcutAction::RestoreClosedTab,
+    ShortcutAction::SelectNextSpace,
+    ShortcutAction::SelectPreviousSpace,
     ShortcutAction::SelectNextTab,
     ShortcutAction::SelectPreviousTab,
     ShortcutAction::SplitRight,
@@ -164,6 +174,10 @@ pub(crate) const SHORTCUT_BINDINGS: &[ShortcutBinding] = &[
     shortcut(ShortcutAction::ToggleFavoriteTab, ShortcutPlatform::WindowsLinux, "ctrl-shift-f"),
     shortcut(ShortcutAction::FocusCommandMode, ShortcutPlatform::Macos, "cmd-shift-p"),
     shortcut(ShortcutAction::FocusCommandMode, ShortcutPlatform::WindowsLinux, "ctrl-shift-p"),
+    shortcut(ShortcutAction::SelectNextSpace, ShortcutPlatform::Macos, "cmd-alt-right"),
+    shortcut(ShortcutAction::SelectNextSpace, ShortcutPlatform::WindowsLinux, "ctrl-alt-right"),
+    shortcut(ShortcutAction::SelectPreviousSpace, ShortcutPlatform::Macos, "cmd-alt-left"),
+    shortcut(ShortcutAction::SelectPreviousSpace, ShortcutPlatform::WindowsLinux, "ctrl-alt-left"),
     shortcut(ShortcutAction::SelectNextTab, ShortcutPlatform::Macos, "cmd-shift-]"),
     shortcut(ShortcutAction::SelectNextTab, ShortcutPlatform::Macos, "cmd-alt-down"),
     shortcut(ShortcutAction::SelectNextTab, ShortcutPlatform::WindowsLinux, "ctrl-tab"),
@@ -239,7 +253,13 @@ impl ShortcutBinding {
             ShortcutAction::RestoreClosedTab => {
                 KeyBinding::new(self.keystroke, RestoreClosedTab, None)
             }
+            ShortcutAction::SelectNextSpace => {
+                KeyBinding::new(self.keystroke, SelectNextSpace, None)
+            }
             ShortcutAction::SelectNextTab => KeyBinding::new(self.keystroke, SelectNextTab, None),
+            ShortcutAction::SelectPreviousSpace => {
+                KeyBinding::new(self.keystroke, SelectPreviousSpace, None)
+            }
             ShortcutAction::SelectPreviousTab => {
                 KeyBinding::new(self.keystroke, SelectPreviousTab, None)
             }
@@ -308,6 +328,35 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(bindings, vec!["Cmd + B".to_string(), "Ctrl + B".to_string()]);
+    }
+
+    #[test]
+    fn space_switch_shortcuts_have_platform_bindings() {
+        let next_bindings =
+            bindings_for_action(ShortcutAction::SelectNextSpace, ShortcutPlatform::Macos)
+                .chain(bindings_for_action(
+                    ShortcutAction::SelectNextSpace,
+                    ShortcutPlatform::WindowsLinux,
+                ))
+                .map(|binding| binding.display_keystroke())
+                .collect::<Vec<_>>();
+        let previous_bindings =
+            bindings_for_action(ShortcutAction::SelectPreviousSpace, ShortcutPlatform::Macos)
+                .chain(bindings_for_action(
+                    ShortcutAction::SelectPreviousSpace,
+                    ShortcutPlatform::WindowsLinux,
+                ))
+                .map(|binding| binding.display_keystroke())
+                .collect::<Vec<_>>();
+
+        assert_eq!(
+            next_bindings,
+            vec!["Cmd + Option + RIGHT".to_string(), "Ctrl + Alt + RIGHT".to_string()]
+        );
+        assert_eq!(
+            previous_bindings,
+            vec!["Cmd + Option + LEFT".to_string(), "Ctrl + Alt + LEFT".to_string()]
+        );
     }
 
     #[test]

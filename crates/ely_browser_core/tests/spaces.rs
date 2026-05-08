@@ -152,6 +152,29 @@ fn space_sidebar_width_updates_selected_space() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[test]
+fn selecting_adjacent_spaces_uses_sort_order_with_wraparound() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let work_space_id = core.snapshot()?.active_space_id;
+    let research_space_id = core.create_space("Research", "R", 0x9fc9a2)?;
+    let personal_space_id = core.create_space("Personal", "P", 0x8eb7d4)?;
+
+    core.set_space_sort_key(&work_space_id, 20)?;
+    core.set_space_sort_key(&research_space_id, 10)?;
+    core.set_space_sort_key(&personal_space_id, 30)?;
+    core.select_space(&work_space_id)?;
+
+    core.select_next_space()?;
+    assert_eq!(core.snapshot()?.active_space_id, personal_space_id);
+
+    core.select_next_space()?;
+    assert_eq!(core.snapshot()?.active_space_id, research_space_id);
+
+    core.select_previous_space()?;
+    assert_eq!(core.snapshot()?.active_space_id, personal_space_id);
+    Ok(())
+}
+
 fn active_space_updated_at(
     core: &BrowserCore,
     space_id: &ely_domain::SpaceId,

@@ -8,6 +8,7 @@ mod reading_list;
 mod render;
 mod sidebar;
 mod site_permissions;
+mod spaces;
 mod splits;
 mod tab_groups;
 

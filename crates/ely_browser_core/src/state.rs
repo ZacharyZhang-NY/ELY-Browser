@@ -229,6 +229,32 @@ impl BrowserCore {
         Ok(tab_id)
     }
 
+    pub fn select_next_space(&mut self) -> Result<TabId, CoreError> {
+        let spaces = self.sorted_spaces();
+        let Some(active_index) =
+            spaces.iter().position(|space| space.id() == &self.active_space_id)
+        else {
+            return Err(CoreError::SpaceNotFound { id: self.active_space_id.clone() });
+        };
+
+        let next_index = (active_index + 1) % spaces.len();
+        let space_id = spaces[next_index].id().clone();
+        self.select_space(&space_id)
+    }
+
+    pub fn select_previous_space(&mut self) -> Result<TabId, CoreError> {
+        let spaces = self.sorted_spaces();
+        let Some(active_index) =
+            spaces.iter().position(|space| space.id() == &self.active_space_id)
+        else {
+            return Err(CoreError::SpaceNotFound { id: self.active_space_id.clone() });
+        };
+
+        let previous_index = if active_index == 0 { spaces.len() - 1 } else { active_index - 1 };
+        let space_id = spaces[previous_index].id().clone();
+        self.select_space(&space_id)
+    }
+
     pub fn set_active_space_archive_policy(
         &mut self,
         archive_policy: ArchivePolicy,
