@@ -4,8 +4,8 @@ use std::{error::Error, thread, time::Duration};
 
 use ely_domain::{ProfileId, TabId, UrlText};
 use ely_servo_host::{
-    NavigationRequest, ScrollRequest, ServoHost, ServoHostError, ServoSurfaceSize,
-    SoftwareServoHost, WebViewState,
+    MouseClickRequest, NavigationRequest, ScrollRequest, ServoHost, ServoHostError,
+    ServoSurfaceSize, SoftwareServoHost, WebViewState,
 };
 
 const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
@@ -13,6 +13,7 @@ const PRD_SITE_COMPATIBILITY_CASES: &[PrdSiteCompatibilityCase] = &[
     PrdSiteCompatibilityCase { url: "https://example.com", title_fragment: "Example Domain" },
     PrdSiteCompatibilityCase { url: "https://servo.org", title_fragment: "Servo" },
 ];
+const CLICK_PROBE_URL: &str = "data:text/html,%3C!doctype%20html%3E%3Ctitle%3EClick%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23f7f7f7%3B%7Dbutton%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A220px%3Bheight%3A90px%3Bfont%3A28px%20sans-serif%3Bbackground%3A%23ffffff%3Bcolor%3A%23111111%3B%7D%3C%2Fstyle%3E%3Cbutton%20onclick%3D%22document.body.style.background%3D%27%230039ff%27%3Bdocument.title%3D%27Clicked%27%3Bthis.textContent%3D%27Clicked%27%3B%22%3ETap%3C%2Fbutton%3E";
 
 struct PrdSiteCompatibilityCase {
     url: &'static str,
@@ -33,9 +34,7 @@ fn manages_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
     assert_eq!(snapshot.profile_id(), &profile_id);
     assert_eq!(snapshot.state(), &WebViewState::Created);
 
-    let url = UrlText::parse(
-        "data:text/html,%3Ctitle%3EELY%20Host%3C%2Ftitle%3E%3Cmain%3EReady%3C%2Fmain%3E",
-    )?;
+    let url = UrlText::parse(CLICK_PROBE_URL)?;
 
     host.navigate(NavigationRequest { webview_id: webview_id.clone(), tab_id, url })?;
 
@@ -46,6 +45,13 @@ fn manages_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
         "snapshot: {snapshot:?}"
     );
     assert_rendered_frame_has_content(&host, "data:text/html", 1)?;
+
+    let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
+    host.click(MouseClickRequest { webview_id: webview_id.clone(), x: 160, y: 120 })?;
+    let snapshot = wait_for_rendered_webview(&mut host, &webview_id, Some(previous_frame_hash))?;
+    assert_eq!(snapshot.state(), &WebViewState::Complete, "snapshot: {snapshot:?}");
+    assert_rendered_frame_has_content(&host, "data:text/html clicked", 1)?;
+    assert_ne!(host.last_rendered_frame()?.sample_hash(), previous_frame_hash);
 
     let mut previous_frame_hash = Some(host.last_rendered_frame()?.sample_hash());
     for site in PRD_SITE_COMPATIBILITY_CASES {

@@ -1,6 +1,6 @@
 use ely_domain::{BrowserTab, TabId};
 use gpui::{
-    AnyElement, App, Entity, ImageSource, InteractiveElement, IntoElement, ObjectFit,
+    AnyElement, App, Entity, ImageSource, InteractiveElement, IntoElement, MouseButton, ObjectFit,
     ParentElement, Styled, StyledImage, Window, canvas, div, img, prelude::FluentBuilder, px, rgb,
 };
 use gpui_component::StyledExt;
@@ -104,9 +104,9 @@ fn render_web_surface(
     detail: Option<String>,
     content: impl IntoElement,
 ) -> AnyElement {
-    let scroll_tab_id = tab.id().clone();
-    let scroll_url = tab.url().as_str().to_string();
-    let scroll_entity = state_entity.clone();
+    let input_tab_id = tab.id().clone();
+    let input_url = tab.url().as_str().to_string();
+    let input_entity = state_entity.clone();
     let tracker_entity = state_entity;
 
     div()
@@ -132,23 +132,56 @@ fn render_web_surface(
                         .min_h_0()
                         .overflow_hidden()
                         .bg(rgb(colors::SURFACE_CARD))
-                        .on_scroll_wheel(move |event, window, cx| {
-                            let delta = event.delta.pixel_delta(window.line_height());
-                            scroll_entity.update(cx, |shell, cx| {
-                                shell.scroll_external_web_viewport(
-                                    scroll_tab_id.clone(),
-                                    scroll_url.clone(),
-                                    delta,
-                                    cx,
-                                );
-                            });
-                            cx.stop_propagation();
-                        })
                         .child(content)
-                        .child(render_viewport_tracker(tab.id().clone(), tracker_entity)),
+                        .child(render_viewport_tracker(tab.id().clone(), tracker_entity))
+                        .child(render_input_overlay(input_tab_id, input_url, input_entity)),
                 ),
         )
         .into_any_element()
+}
+
+fn render_input_overlay(
+    tab_id: TabId,
+    url: String,
+    state_entity: Entity<ElyShell>,
+) -> impl IntoElement {
+    let click_tab_id = tab_id.clone();
+    let click_url = url.clone();
+    let click_entity = state_entity.clone();
+    let scroll_tab_id = tab_id;
+    let scroll_url = url;
+    let scroll_entity = state_entity;
+
+    div()
+        .absolute()
+        .size_full()
+        .occlude()
+        .capture_any_mouse_up(move |event, _window, cx| {
+            if event.button != MouseButton::Left {
+                return;
+            }
+            click_entity.update(cx, |shell, cx| {
+                shell.click_external_web_viewport(
+                    click_tab_id.clone(),
+                    click_url.clone(),
+                    event.position,
+                    cx,
+                );
+            });
+            cx.stop_propagation();
+        })
+        .on_scroll_wheel(move |event, window, cx| {
+            let delta = event.delta.pixel_delta(window.line_height());
+            scroll_entity.update(cx, |shell, cx| {
+                shell.scroll_external_web_viewport(
+                    scroll_tab_id.clone(),
+                    scroll_url.clone(),
+                    delta,
+                    cx,
+                );
+            });
+            cx.stop_propagation();
+        })
 }
 
 fn render_viewport_tracker(tab_id: TabId, state_entity: Entity<ElyShell>) -> impl IntoElement {

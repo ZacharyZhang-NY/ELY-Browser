@@ -15,6 +15,36 @@ impl WebSurfaceSize {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct WebSurfaceClickPoint {
+    x: u32,
+    y: u32,
+}
+
+impl WebSurfaceClickPoint {
+    pub(super) fn from_window_position(
+        bounds: Bounds<Pixels>,
+        position: Point<Pixels>,
+    ) -> Option<Self> {
+        Some(Self {
+            x: click_coordinate(position.x, bounds.origin.x, bounds.size.width)?,
+            y: click_coordinate(position.y, bounds.origin.y, bounds.size.height)?,
+        })
+    }
+
+    pub(super) fn detail_label(self) -> String {
+        format!("click={},{}", self.x, self.y)
+    }
+
+    pub(super) fn x(self) -> u32 {
+        self.x
+    }
+
+    pub(super) fn y(self) -> u32 {
+        self.y
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct WebSurfaceScrollOffset {
     x: i32,
@@ -86,6 +116,16 @@ fn scroll_dimension(pixels: Pixels) -> Option<i32> {
     }
 
     Some(value as i32)
+}
+
+fn click_coordinate(position: Pixels, origin: Pixels, size: Pixels) -> Option<u32> {
+    let relative = f32::from(position) - f32::from(origin);
+    let size = f32::from(size);
+    if !relative.is_finite() || !size.is_finite() || relative < 0.0 || relative >= size {
+        return None;
+    }
+
+    Some(relative.floor() as u32)
 }
 
 fn positive_scroll_component(current: i32, delta: i32) -> i32 {

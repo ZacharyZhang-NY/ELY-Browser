@@ -64,7 +64,8 @@ impl ServoSidecarClient {
         request: &SidecarSnapshotRequest,
         rgba_path: &Path,
     ) -> Result<Output, ServoSidecarError> {
-        let mut child = Command::new(&self.binary_path)
+        let mut command = Command::new(&self.binary_path);
+        command
             .arg("snapshot")
             .arg("--url")
             .arg(request.url.as_str())
@@ -77,7 +78,16 @@ impl ServoSidecarClient {
             .arg("--scroll-x")
             .arg(request.scroll_x.to_string())
             .arg("--scroll-y")
-            .arg(request.scroll_y.to_string())
+            .arg(request.scroll_y.to_string());
+        if let Some(click_point) = request.click_point {
+            command
+                .arg("--click-x")
+                .arg(click_point.x.to_string())
+                .arg("--click-y")
+                .arg(click_point.y.to_string());
+        }
+
+        let mut child = command
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -109,12 +119,13 @@ pub struct SidecarSnapshotRequest {
     height: u32,
     scroll_x: i32,
     scroll_y: i32,
+    click_point: Option<SidecarClickPoint>,
 }
 
 impl SidecarSnapshotRequest {
     #[must_use]
     pub fn new(url: UrlText, width: u32, height: u32) -> Self {
-        Self { url, width, height, scroll_x: 0, scroll_y: 0 }
+        Self { url, width, height, scroll_x: 0, scroll_y: 0, click_point: None }
     }
 
     #[must_use]
@@ -123,6 +134,18 @@ impl SidecarSnapshotRequest {
         self.scroll_y = scroll_y;
         self
     }
+
+    #[must_use]
+    pub fn with_click_point(mut self, x: u32, y: u32) -> Self {
+        self.click_point = Some(SidecarClickPoint { x, y });
+        self
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SidecarClickPoint {
+    x: u32,
+    y: u32,
 }
 
 #[derive(Clone, Debug)]

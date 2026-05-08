@@ -7,7 +7,7 @@ use thiserror::Error;
 use crate::services::servo_sidecar::SidecarSnapshot;
 
 use super::{
-    web_surface_geometry::{WebSurfaceScrollOffset, WebSurfaceSize},
+    web_surface_geometry::{WebSurfaceClickPoint, WebSurfaceScrollOffset, WebSurfaceSize},
     web_surface_image::renderable_image_buffer,
 };
 
@@ -19,6 +19,7 @@ pub(super) struct WebSurfaceFrame {
     width: u32,
     height: u32,
     scroll_offset: WebSurfaceScrollOffset,
+    click_point: Option<WebSurfaceClickPoint>,
     pub(super) image: Arc<RenderImage>,
 }
 
@@ -26,6 +27,7 @@ impl WebSurfaceFrame {
     pub(super) fn from_snapshot(
         requested_url: String,
         scroll_offset: WebSurfaceScrollOffset,
+        click_point: Option<WebSurfaceClickPoint>,
         snapshot: SidecarSnapshot,
     ) -> Result<Self, WebSurfaceError> {
         let width = snapshot.width();
@@ -47,6 +49,7 @@ impl WebSurfaceFrame {
             width,
             height,
             scroll_offset,
+            click_point,
             image: Arc::new(RenderImage::new([image::Frame::new(image_buffer)])),
         })
     }
@@ -60,7 +63,11 @@ impl WebSurfaceFrame {
     }
 
     pub(super) fn detail_label(&self) -> String {
-        self.scroll_offset.detail_label(self.size())
+        let detail = self.scroll_offset.detail_label(self.size());
+        match self.click_point {
+            Some(click_point) => format!("{detail} {}", click_point.detail_label()),
+            None => detail,
+        }
     }
 
     pub(super) fn size(&self) -> WebSurfaceSize {
@@ -69,6 +76,10 @@ impl WebSurfaceFrame {
 
     pub(super) fn scroll_offset(&self) -> WebSurfaceScrollOffset {
         self.scroll_offset
+    }
+
+    pub(super) fn click_point(&self) -> Option<WebSurfaceClickPoint> {
+        self.click_point
     }
 }
 

@@ -12,14 +12,15 @@ use dpi::PhysicalSize;
 use ely_domain::{ProfileId, TabId, WebViewId};
 use servo::{
     DeviceIntPoint, DeviceIntRect, DeviceIntSize, DevicePoint, DeviceVector2D, EventLoopWaker,
-    LoadStatus, RenderingContext, Scroll, Servo, ServoBuilder, WebView, WebViewBuilder,
-    WebViewDelegate, WebViewPoint, WebViewVector,
+    InputEvent, LoadStatus, MouseButton, MouseButtonAction, MouseButtonEvent, MouseMoveEvent,
+    RenderingContext, Scroll, Servo, ServoBuilder, WebView, WebViewBuilder, WebViewDelegate,
+    WebViewPoint, WebViewVector,
 };
 use url::Url;
 
 use crate::{
-    NavigationRequest, PermissionDecision, PermissionRequest, RenderedFrame, ScrollRequest,
-    ServoHost, ServoHostError, WebViewSnapshot, WebViewState,
+    MouseClickRequest, NavigationRequest, PermissionDecision, PermissionRequest, RenderedFrame,
+    ScrollRequest, ServoHost, ServoHostError, WebViewSnapshot, WebViewState,
 };
 
 static SERVO_RUNTIME_STARTED: AtomicBool = AtomicBool::new(false);
@@ -160,6 +161,27 @@ impl ServoHost for SoftwareServoHost {
             ))),
             WebViewPoint::Device(DevicePoint::zero()),
         );
+        Ok(())
+    }
+
+    fn click(&mut self, request: MouseClickRequest) -> Result<(), ServoHostError> {
+        let webview = self
+            .webviews
+            .get(&request.webview_id)
+            .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
+
+        let point = WebViewPoint::Device(DevicePoint::new(request.x as f32, request.y as f32));
+        webview.webview.notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(point)));
+        webview.webview.notify_input_event(InputEvent::MouseButton(MouseButtonEvent::new(
+            MouseButtonAction::Down,
+            MouseButton::Left,
+            point,
+        )));
+        webview.webview.notify_input_event(InputEvent::MouseButton(MouseButtonEvent::new(
+            MouseButtonAction::Up,
+            MouseButton::Left,
+            point,
+        )));
         Ok(())
     }
 

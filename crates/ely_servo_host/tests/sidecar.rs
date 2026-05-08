@@ -24,6 +24,9 @@ const SERVO_SCROLL_SITE: PrdSiteCompatibilityCase =
     PrdSiteCompatibilityCase { url: "https://servo.org", title_fragment: "Servo" };
 const SERVO_SCROLL_SIZE: FrameSize = FrameSize { width: 934, height: 657 };
 const SERVO_SCROLL_OFFSET: ScrollOffset = ScrollOffset { x: 0, y: 480 };
+const SERVO_CLICK_URL: &str = "data:text/html,%3C!doctype%20html%3E%3Ctitle%3EClick%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23f7f7f7%3B%7Dbutton%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A220px%3Bheight%3A90px%3Bfont%3A28px%20sans-serif%3Bbackground%3A%23ffffff%3Bcolor%3A%23111111%3B%7D%3C%2Fstyle%3E%3Cbutton%20onclick%3D%22document.body.style.background%3D%27%230039ff%27%3Bdocument.title%3D%27Clicked%27%3Bthis.textContent%3D%27Clicked%27%3B%22%3ETap%3C%2Fbutton%3E";
+const SERVO_CLICK_SIZE: FrameSize = FrameSize { width: 640, height: 480 };
+const SERVO_CLICK_POINT: ClickPoint = ClickPoint { x: 160, y: 120 };
 
 struct PrdSiteCompatibilityCase {
     url: &'static str,
@@ -44,6 +47,12 @@ struct ScrollOffset {
 
 impl ScrollOffset {
     const ZERO: Self = Self { x: 0, y: 0 };
+}
+
+#[derive(Clone, Copy)]
+struct ClickPoint {
+    x: u64,
+    y: u64,
 }
 
 #[test]
@@ -87,6 +96,22 @@ fn sidecar_scrolls_prd_site_with_servo_input() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[test]
+fn sidecar_clicks_page_with_servo_mouse_input() -> Result<(), Box<dyn Error>> {
+    let initial_report = snapshot_click_probe(None)?;
+    let clicked_report = snapshot_click_probe(Some(SERVO_CLICK_POINT))?;
+
+    assert_eq!(report_field_as_u64(&clicked_report, "click_x")?, SERVO_CLICK_POINT.x);
+    assert_eq!(report_field_as_u64(&clicked_report, "click_y")?, SERVO_CLICK_POINT.y);
+    assert!(report_field_as_bool(&clicked_report, "click_changed_frame")?);
+    assert_ne!(
+        report_field_as_u64(&initial_report, "sample_hash")?,
+        report_field_as_u64(&clicked_report, "sample_hash")?
+    );
+
+    Ok(())
+}
+
 fn snapshot_prd_site(
     case: &PrdSiteCompatibilityCase,
     size: FrameSize,
@@ -110,7 +135,7 @@ fn snapshot_prd_site(
         std::fs::remove_file(&output_path)?;
     }
 
-    let output = run_sidecar_snapshot(case.url, &output_path, size, scroll_offset)?;
+    let output = run_sidecar_snapshot(case.url, &output_path, size, scroll_offset, None)?;
 
     assert!(
         output.status.success(),
@@ -147,11 +172,55 @@ fn snapshot_prd_site(
     Ok(report)
 }
 
+fn snapshot_click_probe(
+    click_point: Option<ClickPoint>,
+) -> Result<serde_json::Value, Box<dyn Error>> {
+    let output_path = std::env::temp_dir().join(format!(
+        "ely-servo-sidecar-{}-click-{}x{}.rgba",
+        std::process::id(),
+        SERVO_CLICK_SIZE.width,
+        SERVO_CLICK_SIZE.height
+    ));
+
+    if output_path.exists() {
+        std::fs::remove_file(&output_path)?;
+    }
+
+    let output = run_sidecar_snapshot(
+        SERVO_CLICK_URL,
+        &output_path,
+        SERVO_CLICK_SIZE,
+        ScrollOffset::ZERO,
+        click_point,
+    )?;
+
+    assert!(
+        output.status.success(),
+        "click probe\nstatus: {:?}\nstdout: {}\nstderr: {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    assert_eq!(report_field_as_u64(&report, "width")?, SERVO_CLICK_SIZE.width);
+    assert_eq!(report_field_as_u64(&report, "height")?, SERVO_CLICK_SIZE.height);
+    assert!(report_field_as_u64(&report, "content_pixel_count")? > 0);
+    assert_eq!(
+        std::fs::metadata(&output_path)?.len(),
+        SERVO_CLICK_SIZE.width * SERVO_CLICK_SIZE.height * 4
+    );
+
+    std::fs::remove_file(&output_path)?;
+    Ok(report)
+}
+
 fn run_sidecar_snapshot(
     site_url: &str,
     output_path: &std::path::Path,
     size: FrameSize,
     scroll_offset: ScrollOffset,
+    click_point: Option<ClickPoint>,
 ) -> Result<Output, Box<dyn Error>> {
     let mut command = Command::new(env!("CARGO_BIN_EXE_ely_servo_sidecar"));
     command
@@ -169,6 +238,10 @@ fn run_sidecar_snapshot(
     }
     if scroll_offset.y != 0 {
         command.arg("--scroll-y").arg(scroll_offset.y.to_string());
+    }
+    if let Some(click_point) = click_point {
+        command.arg("--click-x").arg(click_point.x.to_string());
+        command.arg("--click-y").arg(click_point.y.to_string());
     }
 
     let mut child = command.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;

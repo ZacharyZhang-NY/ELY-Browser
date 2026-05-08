@@ -8,8 +8,8 @@ use std::{
 
 use ely_domain::{ProfileId, TabId, UrlText};
 use ely_servo_host::{
-    NavigationRequest, RenderedFrame, ScrollRequest, ServoHost, ServoHostError, ServoSurfaceSize,
-    SoftwareServoHost, WebViewSnapshot, WebViewState,
+    MouseClickRequest, NavigationRequest, RenderedFrame, ScrollRequest, ServoHost, ServoHostError,
+    ServoSurfaceSize, SoftwareServoHost, WebViewSnapshot, WebViewState,
 };
 use serde::Serialize;
 use thiserror::Error;
@@ -17,7 +17,7 @@ use thiserror::Error;
 const WAIT_ITERATIONS: usize = 5_000;
 const WAIT_INTERVAL: Duration = Duration::from_millis(2);
 const RENDER_TIMEOUT: Duration = Duration::from_secs(20);
-const SCROLL_SETTLE_TIMEOUT: Duration = Duration::from_millis(700);
+const INPUT_SETTLE_TIMEOUT: Duration = Duration::from_millis(700);
 
 fn main() -> Result<(), SidecarError> {
     match parse_command(env::args())? {
@@ -36,6 +36,13 @@ struct SnapshotArgs {
     height: u32,
     scroll_x: i32,
     scroll_y: i32,
+    click_point: Option<ClickPoint>,
+}
+
+#[derive(Clone, Copy)]
+struct ClickPoint {
+    x: u32,
+    y: u32,
 }
 
 #[derive(Debug, Error)]
@@ -65,6 +72,9 @@ enum SidecarError {
 
     #[error("{name} must be greater than zero")]
     ZeroDimension { name: &'static str },
+
+    #[error("--click-x and --click-y must be provided together")]
+    IncompleteClickPoint,
 
     #[error("rgba output path is empty")]
     EmptyRgbaOutputPath,
@@ -106,6 +116,8 @@ fn parse_snapshot_args(
     let mut height = None;
     let mut scroll_x = 0;
     let mut scroll_y = 0;
+    let mut click_x = None;
+    let mut click_y = None;
 
     while let Some(name) = args.next() {
         match name.as_str() {
@@ -127,9 +139,27 @@ fn parse_snapshot_args(
                 scroll_y =
                     parse_scroll_delta("--scroll-y", next_argument(&mut args, "--scroll-y")?)?
             }
+            "--click-x" => {
+                click_x = Some(parse_click_coordinate(
+                    "--click-x",
+                    next_argument(&mut args, "--click-x")?,
+                )?)
+            }
+            "--click-y" => {
+                click_y = Some(parse_click_coordinate(
+                    "--click-y",
+                    next_argument(&mut args, "--click-y")?,
+                )?)
+            }
             _ => return Err(SidecarError::UnknownArgument { value: name }),
         }
     }
+
+    let click_point = match (click_x, click_y) {
+        (Some(x), Some(y)) => Some(ClickPoint { x, y }),
+        (None, None) => None,
+        _ => return Err(SidecarError::IncompleteClickPoint),
+    };
 
     Ok(SnapshotArgs {
         url: url.ok_or(SidecarError::MissingRequiredArgument { name: "--url" })?,
@@ -138,6 +168,7 @@ fn parse_snapshot_args(
         height: height.ok_or(SidecarError::MissingRequiredArgument { name: "--height" })?,
         scroll_x,
         scroll_y,
+        click_point,
     })
 }
 
@@ -165,6 +196,10 @@ fn parse_scroll_delta(name: &'static str, value: String) -> Result<i32, SidecarE
     value.parse::<i32>().map_err(|source| SidecarError::InvalidInteger { name, value, source })
 }
 
+fn parse_click_coordinate(name: &'static str, value: String) -> Result<u32, SidecarError> {
+    value.parse::<u32>().map_err(|source| SidecarError::InvalidInteger { name, value, source })
+}
+
 fn parse_output_path(value: String) -> Result<PathBuf, SidecarError> {
     if value.trim().is_empty() {
         return Err(SidecarError::EmptyRgbaOutputPath);
@@ -188,20 +223,14 @@ fn run_snapshot(args: SnapshotArgs) -> Result<(), SidecarError> {
     let snapshot = wait_for_frame(&mut host, &webview_id, args.url.as_str())?;
     let (snapshot, scroll_changed_frame) =
         apply_scroll_if_requested(&mut host, &webview_id, &args, snapshot)?;
+    let (snapshot, click_changed_frame) =
+        apply_click_if_requested(&mut host, &webview_id, &args, snapshot)?;
     let frame = host.last_rendered_frame()?;
     std::fs::write(&args.rgba_out, frame.rgba_bytes())?;
 
     serde_json::to_writer(
         std::io::stdout().lock(),
-        &SnapshotReport::new(
-            args.url.as_str(),
-            &args.rgba_out,
-            &snapshot,
-            &frame,
-            args.scroll_x,
-            args.scroll_y,
-            scroll_changed_frame,
-        ),
+        &SnapshotReport::new(&args, &snapshot, &frame, scroll_changed_frame, click_changed_frame),
     )?;
     Ok(())
 }
@@ -221,6 +250,25 @@ fn apply_scroll_if_requested(
         webview_id: webview_id.clone(),
         delta_x: args.scroll_x,
         delta_y: args.scroll_y,
+    })?;
+    wait_for_changed_or_settled_frame(host, webview_id, previous_frame_hash)
+}
+
+fn apply_click_if_requested(
+    host: &mut SoftwareServoHost,
+    webview_id: &ely_domain::WebViewId,
+    args: &SnapshotArgs,
+    snapshot: WebViewSnapshot,
+) -> Result<(WebViewSnapshot, bool), SidecarError> {
+    let Some(click_point) = args.click_point else {
+        return Ok((snapshot, false));
+    };
+
+    let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
+    host.click(MouseClickRequest {
+        webview_id: webview_id.clone(),
+        x: click_point.x,
+        y: click_point.y,
     })?;
     wait_for_changed_or_settled_frame(host, webview_id, previous_frame_hash)
 }
@@ -267,7 +315,7 @@ fn wait_for_changed_or_settled_frame(
     let mut latest_snapshot = host.snapshot(webview_id)?;
 
     for _ in 0..WAIT_ITERATIONS {
-        if started_at.elapsed() >= SCROLL_SETTLE_TIMEOUT {
+        if started_at.elapsed() >= INPUT_SETTLE_TIMEOUT {
             break;
         }
 
@@ -308,23 +356,24 @@ struct SnapshotReport {
     scroll_x: i32,
     scroll_y: i32,
     scroll_changed_frame: bool,
+    click_x: Option<u32>,
+    click_y: Option<u32>,
+    click_changed_frame: bool,
 }
 
 impl SnapshotReport {
     fn new(
-        requested_url: &str,
-        rgba_path: &std::path::Path,
+        args: &SnapshotArgs,
         snapshot: &WebViewSnapshot,
         frame: &RenderedFrame,
-        scroll_x: i32,
-        scroll_y: i32,
         scroll_changed_frame: bool,
+        click_changed_frame: bool,
     ) -> Self {
         Self {
-            requested_url: requested_url.to_string(),
+            requested_url: args.url.as_str().to_string(),
             loaded_url: snapshot.url().map(str::to_string),
             title: snapshot.title().map(str::to_string),
-            rgba_path: rgba_path.display().to_string(),
+            rgba_path: args.rgba_out.display().to_string(),
             state: state_label(snapshot.state()),
             width: frame.width(),
             height: frame.height(),
@@ -333,9 +382,12 @@ impl SnapshotReport {
             non_white_pixel_count: frame.non_white_pixel_count(),
             content_pixel_count: frame.content_pixel_count(),
             sample_hash: frame.sample_hash(),
-            scroll_x,
-            scroll_y,
+            scroll_x: args.scroll_x,
+            scroll_y: args.scroll_y,
             scroll_changed_frame,
+            click_x: args.click_point.map(|point| point.x),
+            click_y: args.click_point.map(|point| point.y),
+            click_changed_frame,
         }
     }
 }

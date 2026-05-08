@@ -1,16 +1,20 @@
 use std::collections::BTreeMap;
 
 use ely_domain::{BrowserTab, TabId};
-use gpui::{AnyElement, Bounds, Context, Pixels};
+use gpui::{AnyElement, Bounds, Context, Pixels, Point};
 
-use crate::services::servo_sidecar::{
-    ServoSidecarClient, ServoSidecarError, SidecarSnapshot, SidecarSnapshotRequest,
-};
+use crate::services::servo_sidecar::{ServoSidecarError, SidecarSnapshot, SidecarSnapshotRequest};
 
 use super::{
     ElyShell,
     web_surface_frame::WebSurfaceFrame,
-    web_surface_geometry::{WebSurfaceScrollDelta, WebSurfaceScrollOffset, WebSurfaceSize},
+    web_surface_geometry::{
+        WebSurfaceClickPoint, WebSurfaceScrollDelta, WebSurfaceScrollOffset, WebSurfaceSize,
+    },
+    web_surface_state::{
+        WebSurfaceClickState, WebSurfaceClient, WebSurfaceRequest, WebSurfaceScrollState,
+        WebSurfaceState,
+    },
     web_surface_view::{
         render_failed_web_surface, render_loading_web_surface, render_ready_web_surface,
     },
@@ -19,7 +23,9 @@ use super::{
 pub(super) struct WebSurfaceStore {
     client: WebSurfaceClient,
     pending_viewport_sizes: BTreeMap<TabId, WebSurfaceSize>,
+    click_points: BTreeMap<TabId, WebSurfaceClickState>,
     scroll_offsets: BTreeMap<TabId, WebSurfaceScrollState>,
+    viewport_bounds: BTreeMap<TabId, Bounds<Pixels>>,
     viewport_sizes: BTreeMap<TabId, WebSurfaceSize>,
     states: BTreeMap<TabId, WebSurfaceState>,
 }
@@ -29,7 +35,9 @@ impl WebSurfaceStore {
         Self {
             client: WebSurfaceClient::new(),
             pending_viewport_sizes: BTreeMap::new(),
+            click_points: BTreeMap::new(),
             scroll_offsets: BTreeMap::new(),
+            viewport_bounds: BTreeMap::new(),
             viewport_sizes: BTreeMap::new(),
             states: BTreeMap::new(),
         }
@@ -47,10 +55,11 @@ impl WebSurfaceStore {
         let size = self.viewport_sizes.get(tab.id()).copied()?;
         let requested_url = tab.url().as_str().to_string();
         let scroll_offset = self.scroll_offset_for(tab.id(), requested_url.as_str());
+        let click_point = self.click_point_for(tab.id(), requested_url.as_str(), scroll_offset);
         if self.is_loading_requested_url(tab.id(), requested_url.as_str()) {
             return None;
         }
-        if self.has_current_state(tab.id(), &requested_url, size, scroll_offset) {
+        if self.has_current_state(tab.id(), &requested_url, size, scroll_offset, click_point) {
             return None;
         }
 
@@ -63,6 +72,7 @@ impl WebSurfaceStore {
                         requested_url,
                         size,
                         scroll_offset,
+                        click_point,
                         message: message.clone(),
                     },
                 );
@@ -76,22 +86,26 @@ impl WebSurfaceStore {
                 requested_url: requested_url.clone(),
                 size,
                 scroll_offset,
+                click_point,
                 previous_frame: self.previous_ready_frame(tab.id(), requested_url.as_str()),
             },
         );
+
+        let mut snapshot_request =
+            SidecarSnapshotRequest::new(tab.url().clone(), size.width, size.height)
+                .with_scroll_offset(scroll_offset.x(), scroll_offset.y());
+        if let Some(click_point) = click_point {
+            snapshot_request = snapshot_request.with_click_point(click_point.x(), click_point.y());
+        }
 
         Some(WebSurfaceRequest {
             tab_id: tab.id().clone(),
             requested_url,
             size,
             scroll_offset,
+            click_point,
             client,
-            snapshot_request: SidecarSnapshotRequest::new(
-                tab.url().clone(),
-                size.width,
-                size.height,
-            )
-            .with_scroll_offset(scroll_offset.x(), scroll_offset.y()),
+            snapshot_request,
         })
     }
 
@@ -101,32 +115,38 @@ impl WebSurfaceStore {
         requested_url: &str,
         size: WebSurfaceSize,
         scroll_offset: WebSurfaceScrollOffset,
+        click_point: Option<WebSurfaceClickPoint>,
     ) -> bool {
         match self.states.get(tab_id) {
             Some(WebSurfaceState::Loading {
                 requested_url: current_url,
                 size: current_size,
                 scroll_offset: current_scroll_offset,
+                click_point: current_click_point,
                 ..
             }) => {
                 current_url == requested_url
                     && *current_size == size
                     && *current_scroll_offset == scroll_offset
+                    && *current_click_point == click_point
             }
             Some(WebSurfaceState::Ready(frame)) => {
                 frame.requested_url == requested_url
                     && frame.size() == size
                     && frame.scroll_offset() == scroll_offset
+                    && frame.click_point() == click_point
             }
             Some(WebSurfaceState::Failed {
                 requested_url: current_url,
                 size: current_size,
                 scroll_offset: current_scroll_offset,
+                click_point: current_click_point,
                 ..
             }) => {
                 current_url == requested_url
                     && *current_size == size
                     && *current_scroll_offset == scroll_offset
+                    && *current_click_point == click_point
             }
             None => false,
         }
@@ -138,6 +158,7 @@ impl WebSurfaceStore {
         requested_url: &str,
         size: WebSurfaceSize,
         scroll_offset: WebSurfaceScrollOffset,
+        click_point: Option<WebSurfaceClickPoint>,
     ) -> bool {
         matches!(
             self.states.get(tab_id),
@@ -145,11 +166,13 @@ impl WebSurfaceStore {
                 requested_url: current_url,
                 size: current_size,
                 scroll_offset: current_scroll_offset,
+                click_point: current_click_point,
                 ..
             })
                 if current_url == requested_url
                     && *current_size == size
                     && *current_scroll_offset == scroll_offset
+                    && *current_click_point == click_point
         )
     }
 
@@ -201,6 +224,7 @@ impl WebSurfaceStore {
         }
 
         state.offset = next_offset;
+        self.click_points.remove(tab_id);
         true
     }
 
@@ -208,6 +232,7 @@ impl WebSurfaceStore {
         let Some(size) = WebSurfaceSize::from_bounds(bounds) else {
             return false;
         };
+        self.viewport_bounds.insert(tab_id.clone(), bounds);
 
         let Some(current_size) = self.viewport_sizes.get(tab_id).copied() else {
             self.viewport_sizes.insert(tab_id.clone(), size);
@@ -230,6 +255,32 @@ impl WebSurfaceStore {
         true
     }
 
+    fn record_click_point(
+        &mut self,
+        tab_id: &TabId,
+        requested_url: &str,
+        position: Point<Pixels>,
+    ) -> bool {
+        let Some(bounds) = self.viewport_bounds.get(tab_id).copied() else {
+            return false;
+        };
+        let Some(point) = WebSurfaceClickPoint::from_window_position(bounds, position) else {
+            return false;
+        };
+
+        let state = WebSurfaceClickState {
+            requested_url: requested_url.to_string(),
+            scroll_offset: self.scroll_offset_for(tab_id, requested_url),
+            point,
+        };
+        if self.click_points.get(tab_id) == Some(&state) {
+            return false;
+        }
+
+        self.click_points.insert(tab_id.clone(), state);
+        true
+    }
+
     fn scroll_offset_for(&self, tab_id: &TabId, requested_url: &str) -> WebSurfaceScrollOffset {
         self.scroll_offsets
             .get(tab_id)
@@ -237,56 +288,20 @@ impl WebSurfaceStore {
             .map(|state| state.offset)
             .unwrap_or_default()
     }
-}
 
-struct WebSurfaceScrollState {
-    requested_url: String,
-    offset: WebSurfaceScrollOffset,
-}
-
-impl WebSurfaceScrollState {
-    fn new(requested_url: String) -> Self {
-        Self { requested_url, offset: WebSurfaceScrollOffset::default() }
-    }
-}
-
-enum WebSurfaceClient {
-    Ready(ServoSidecarClient),
-    Unavailable(String),
-}
-
-impl WebSurfaceClient {
-    fn new() -> Self {
-        match ServoSidecarClient::new() {
-            Ok(client) => Self::Ready(client),
-            Err(error) => Self::Unavailable(error.to_string()),
-        }
-    }
-}
-
-struct WebSurfaceRequest {
-    tab_id: TabId,
-    requested_url: String,
-    size: WebSurfaceSize,
-    scroll_offset: WebSurfaceScrollOffset,
-    client: ServoSidecarClient,
-    snapshot_request: SidecarSnapshotRequest,
-}
-
-enum WebSurfaceState {
-    Loading {
-        requested_url: String,
-        size: WebSurfaceSize,
+    fn click_point_for(
+        &self,
+        tab_id: &TabId,
+        requested_url: &str,
         scroll_offset: WebSurfaceScrollOffset,
-        previous_frame: Option<WebSurfaceFrame>,
-    },
-    Ready(WebSurfaceFrame),
-    Failed {
-        requested_url: String,
-        size: WebSurfaceSize,
-        scroll_offset: WebSurfaceScrollOffset,
-        message: String,
-    },
+    ) -> Option<WebSurfaceClickPoint> {
+        self.click_points
+            .get(tab_id)
+            .filter(|state| {
+                state.requested_url == requested_url && state.scroll_offset == scroll_offset
+            })
+            .map(|state| state.point)
+    }
 }
 
 impl ElyShell {
@@ -324,6 +339,7 @@ impl ElyShell {
             requested_url,
             size,
             scroll_offset,
+            click_point,
             client,
             snapshot_request,
         } = request;
@@ -339,6 +355,7 @@ impl ElyShell {
                     requested_url,
                     size,
                     scroll_offset,
+                    click_point,
                     result,
                 );
                 cx.notify();
@@ -353,29 +370,40 @@ impl ElyShell {
         requested_url: String,
         size: WebSurfaceSize,
         scroll_offset: WebSurfaceScrollOffset,
+        click_point: Option<WebSurfaceClickPoint>,
         result: Result<SidecarSnapshot, ServoSidecarError>,
     ) {
-        if !self.web_surfaces.is_loading(&tab_id, requested_url.as_str(), size, scroll_offset) {
+        if !self.web_surfaces.is_loading(
+            &tab_id,
+            requested_url.as_str(),
+            size,
+            scroll_offset,
+            click_point,
+        ) {
             return;
         }
 
         let state = match result {
-            Ok(snapshot) => {
-                match WebSurfaceFrame::from_snapshot(requested_url.clone(), scroll_offset, snapshot)
-                {
-                    Ok(frame) => WebSurfaceState::Ready(frame),
-                    Err(error) => WebSurfaceState::Failed {
-                        requested_url,
-                        size,
-                        scroll_offset,
-                        message: error.to_string(),
-                    },
-                }
-            }
+            Ok(snapshot) => match WebSurfaceFrame::from_snapshot(
+                requested_url.clone(),
+                scroll_offset,
+                click_point,
+                snapshot,
+            ) {
+                Ok(frame) => WebSurfaceState::Ready(frame),
+                Err(error) => WebSurfaceState::Failed {
+                    requested_url,
+                    size,
+                    scroll_offset,
+                    click_point,
+                    message: error.to_string(),
+                },
+            },
             Err(error) => WebSurfaceState::Failed {
                 requested_url,
                 size,
                 scroll_offset,
+                click_point,
                 message: error.to_string(),
             },
         };
@@ -401,6 +429,18 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) {
         if self.web_surfaces.record_scroll_delta(&tab_id, requested_url.as_str(), delta) {
+            cx.notify();
+        }
+    }
+
+    pub(super) fn click_external_web_viewport(
+        &mut self,
+        tab_id: TabId,
+        requested_url: String,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.web_surfaces.record_click_point(&tab_id, requested_url.as_str(), position) {
             cx.notify();
         }
     }
