@@ -14,7 +14,7 @@ use gpui_component::{
     scroll::ScrollableElement,
 };
 
-use super::{ElyShell, render_canvas_surface};
+use super::{ElyShell, notes_markdown::render_markdown_preview, render_canvas_surface};
 
 impl ElyShell {
     pub(super) fn render_notes_page(
@@ -127,13 +127,7 @@ impl ElyShell {
                                     .text_color(rgb(colors::MUTED))
                                     .child(note.display_url()),
                             )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .truncate()
-                                    .text_color(rgb(colors::MUTED_SOFT))
-                                    .child(markdown_preview(note.body())),
-                            ),
+                            .child(render_markdown_preview(note.body())),
                     ),
             )
             .child(
@@ -226,24 +220,6 @@ fn render_remove_note_action(
         .into_any_element()
 }
 
-fn markdown_preview(body: &str) -> String {
-    let preview = body
-        .lines()
-        .find_map(|line| {
-            let trimmed = line.trim();
-            (!trimmed.is_empty()).then_some(trimmed)
-        })
-        .unwrap_or(body.trim());
-
-    truncate_chars(preview, 120)
-}
-
-fn truncate_chars(value: &str, limit: usize) -> String {
-    let mut chars = value.chars();
-    let truncated: String = chars.by_ref().take(limit).collect();
-    if chars.next().is_some() { format!("{truncated}...") } else { truncated }
-}
-
 fn updated_at_label(updated_at: SystemTime) -> String {
     updated_at_label_for(updated_at, SystemTime::now())
 }
@@ -269,20 +245,7 @@ fn updated_at_label_for(updated_at: SystemTime, now: SystemTime) -> String {
 mod tests {
     use std::time::{Duration, SystemTime};
 
-    use super::{markdown_preview, updated_at_label_for};
-
-    #[test]
-    fn markdown_preview_uses_first_non_empty_line() {
-        assert_eq!(markdown_preview("\n  # Heading\n- detail"), "# Heading");
-    }
-
-    #[test]
-    fn markdown_preview_truncates_long_lines() {
-        let preview = markdown_preview(&"a".repeat(130));
-
-        assert_eq!(preview.len(), 123);
-        assert!(preview.ends_with("..."));
-    }
+    use super::updated_at_label_for;
 
     #[test]
     fn updated_at_label_formats_recent_entries() {

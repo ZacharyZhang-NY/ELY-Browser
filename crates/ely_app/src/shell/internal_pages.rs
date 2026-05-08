@@ -7,6 +7,7 @@ mod downloads;
 mod general;
 mod history;
 mod notes;
+mod notes_markdown;
 mod plugin_catalog;
 mod plugin_details;
 mod plugins;
