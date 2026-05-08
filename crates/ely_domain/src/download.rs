@@ -32,6 +32,17 @@ pub enum DownloadSecurity {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DownloadChecksumAlgorithm {
+    Sha256,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DownloadChecksum {
+    algorithm: DownloadChecksumAlgorithm,
+    value: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DownloadEntry {
     id: DownloadId,
     profile_id: ProfileId,
@@ -43,6 +54,7 @@ pub struct DownloadEntry {
     state: DownloadState,
     received_bytes: u64,
     total_bytes: Option<u64>,
+    checksum: Option<DownloadChecksum>,
     started_at: SystemTime,
 }
 
@@ -137,6 +149,40 @@ impl DownloadSecurity {
     }
 }
 
+impl DownloadChecksumAlgorithm {
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Sha256 => "sha256",
+        }
+    }
+}
+
+impl DownloadChecksum {
+    pub fn sha256_hex(value: impl Into<String>) -> Result<Self, DomainError> {
+        let value = value.into();
+        let value = value.trim();
+        if !is_sha256_hex(value) {
+            return Err(DomainError::InvalidDownloadChecksum {
+                algorithm: DownloadChecksumAlgorithm::Sha256.as_str(),
+                value: value.to_string(),
+            });
+        }
+
+        Ok(Self { algorithm: DownloadChecksumAlgorithm::Sha256, value: value.to_ascii_lowercase() })
+    }
+
+    #[must_use]
+    pub fn algorithm(&self) -> &DownloadChecksumAlgorithm {
+        &self.algorithm
+    }
+
+    #[must_use]
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+}
+
 impl DownloadEntry {
     pub fn started(
         profile_id: ProfileId,
@@ -165,6 +211,7 @@ impl DownloadEntry {
             state: DownloadState::InProgress,
             received_bytes: 0,
             total_bytes,
+            checksum: None,
             started_at,
         })
     }
@@ -212,6 +259,12 @@ impl DownloadEntry {
     pub fn fail(&mut self) -> Result<(), DomainError> {
         self.require_state("fail", &[DownloadState::InProgress, DownloadState::Paused])?;
         self.state = DownloadState::Failed;
+        Ok(())
+    }
+
+    pub fn record_checksum(&mut self, checksum: DownloadChecksum) -> Result<(), DomainError> {
+        self.require_state("record checksum", &[DownloadState::Completed])?;
+        self.checksum = Some(checksum);
         Ok(())
     }
 
@@ -263,6 +316,11 @@ impl DownloadEntry {
     #[must_use]
     pub fn total_bytes(&self) -> Option<u64> {
         self.total_bytes
+    }
+
+    #[must_use]
+    pub fn checksum(&self) -> Option<&DownloadChecksum> {
+        self.checksum.as_ref()
     }
 
     #[must_use]
@@ -329,4 +387,8 @@ fn download_extension(file_name: &str) -> Option<&str> {
 
 fn is_dangerous_extension(extension: &str) -> bool {
     DANGEROUS_DOWNLOAD_EXTENSIONS.iter().any(|candidate| extension.eq_ignore_ascii_case(candidate))
+}
+
+fn is_sha256_hex(value: &str) -> bool {
+    value.len() == 64 && value.as_bytes().iter().all(u8::is_ascii_hexdigit)
 }

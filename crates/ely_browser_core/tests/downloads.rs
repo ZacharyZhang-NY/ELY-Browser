@@ -2,9 +2,11 @@ use std::{error::Error, path::Path};
 
 use ely_browser_core::{BrowserCore, CoreError, InitialBrowserConfig};
 use ely_domain::{
-    DomainError, DownloadDestination, DownloadId, DownloadPolicy, DownloadSecurity, DownloadState,
-    ProfileKind, UrlText,
+    DomainError, DownloadChecksum, DownloadDestination, DownloadId, DownloadPolicy,
+    DownloadSecurity, DownloadState, ProfileKind, UrlText,
 };
+
+const REPORT_SHA256: &str = "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855";
 
 #[test]
 fn download_entries_stay_with_active_profile() -> Result<(), Box<dyn Error>> {
@@ -63,6 +65,67 @@ fn controls_download_lifecycle() -> Result<(), Box<dyn Error>> {
     let completed = active_download(&core)?;
     assert_eq!(completed.state(), &DownloadState::Completed);
     assert_eq!(completed.received_bytes(), 2048);
+    Ok(())
+}
+
+#[test]
+fn records_checksum_after_download_completion() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let download_id = core.record_download_started(
+        UrlText::parse("https://example.com/report.pdf")?,
+        "report.pdf",
+        Some(2048),
+    )?;
+
+    core.complete_download(&download_id, 2048)?;
+    core.record_download_checksum(&download_id, DownloadChecksum::sha256_hex(REPORT_SHA256)?)?;
+
+    let checksum =
+        active_download(&core)?.checksum().ok_or("download checksum should exist")?.clone();
+    assert_eq!(checksum.value(), REPORT_SHA256.to_ascii_lowercase());
+    Ok(())
+}
+
+#[test]
+fn rejects_checksum_before_download_completion() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let download_id = core.record_download_started(
+        UrlText::parse("https://example.com/report.pdf")?,
+        "report.pdf",
+        Some(2048),
+    )?;
+
+    let error = match core
+        .record_download_checksum(&download_id, DownloadChecksum::sha256_hex(REPORT_SHA256)?)
+    {
+        Ok(()) => return Err("checksum should require completed download".into()),
+        Err(error) => error,
+    };
+
+    assert_eq!(
+        error,
+        CoreError::Domain(DomainError::InvalidDownloadTransition {
+            action: "record checksum",
+            state: "in_progress"
+        })
+    );
+    Ok(())
+}
+
+#[test]
+fn rejects_invalid_sha256_checksum() -> Result<(), Box<dyn Error>> {
+    let error = match DownloadChecksum::sha256_hex("not-a-sha256") {
+        Ok(_) => return Err("checksum should require 64 hex characters".into()),
+        Err(error) => error,
+    };
+
+    assert_eq!(
+        error,
+        DomainError::InvalidDownloadChecksum {
+            algorithm: "sha256",
+            value: "not-a-sha256".to_string()
+        }
+    );
     Ok(())
 }
 

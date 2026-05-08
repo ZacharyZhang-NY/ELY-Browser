@@ -1,6 +1,6 @@
 use std::{path::PathBuf, time::SystemTime};
 
-use ely_domain::{DownloadEntry, DownloadId, UrlText};
+use ely_domain::{DownloadChecksum, DownloadEntry, DownloadId, UrlText};
 
 use crate::CoreError;
 
@@ -67,6 +67,15 @@ impl BrowserCore {
 
     pub fn fail_download(&mut self, download_id: &DownloadId) -> Result<(), CoreError> {
         self.download_entry_mut(download_id)?.fail()?;
+        Ok(())
+    }
+
+    pub fn record_download_checksum(
+        &mut self,
+        download_id: &DownloadId,
+        checksum: DownloadChecksum,
+    ) -> Result<(), CoreError> {
+        self.download_entry_mut(download_id)?.record_checksum(checksum)?;
         Ok(())
     }
 
