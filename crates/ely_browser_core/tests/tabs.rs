@@ -1,7 +1,9 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, CoreError, InitialBrowserConfig};
-use ely_domain::{CommandIntent, CommandScope, NewTabDestination, SearchEngine, TabState, UrlText};
+use ely_domain::{
+    CommandIntent, CommandScope, FavoriteLimit, NewTabDestination, SearchEngine, TabState, UrlText,
+};
 
 #[test]
 fn opens_new_tab_below_active_tab() -> Result<(), Box<dyn Error>> {
@@ -396,5 +398,29 @@ fn enforces_default_favorite_limit() -> Result<(), Box<dyn Error>> {
 
     assert_eq!(error, CoreError::FavoriteLimitReached { limit: 12 });
     assert_eq!(core.snapshot()?.favorites.len(), 12);
+    Ok(())
+}
+
+#[test]
+fn enforces_configured_favorite_limit() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.set_favorite_limit(FavoriteLimit::Six);
+
+    core.toggle_active_tab_favorite()?;
+    for index in 1..6 {
+        core.open_tab(UrlText::parse(format!("https://example.com/{index}"))?);
+        core.toggle_active_tab_favorite()?;
+    }
+
+    core.open_tab(UrlText::parse("https://example.com/overflow")?);
+    let error = match core.toggle_active_tab_favorite() {
+        Err(error) => error,
+        Ok(_) => return Err("configured favorite limit should apply".into()),
+    };
+
+    let snapshot = core.snapshot()?;
+    assert_eq!(error, CoreError::FavoriteLimitReached { limit: 6 });
+    assert_eq!(snapshot.favorite_limit, FavoriteLimit::Six);
+    assert_eq!(snapshot.favorites.len(), 6);
     Ok(())
 }

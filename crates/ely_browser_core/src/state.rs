@@ -2,9 +2,9 @@ use std::{collections::BTreeMap, time::SystemTime};
 
 use ely_domain::{
     ArchivePolicy, ArchivedTab, BookmarkEntry, BrowserTab, DomainError, DownloadEntry,
-    DownloadPolicy, HistoryEntry, HistoryRecordingPolicy, NewTabDestination, Profile, ProfileId,
-    ProfileKind, ReadingListEntry, SearchEngine, SitePermissionAuditEvent, SitePermissionEntry,
-    Space, SpaceId, SplitLayout, SyncStatus, TabId, UrlText,
+    DownloadPolicy, FavoriteLimit, HistoryEntry, HistoryRecordingPolicy, NewTabDestination,
+    Profile, ProfileId, ProfileKind, ReadingListEntry, SearchEngine, SitePermissionAuditEvent,
+    SitePermissionEntry, Space, SpaceId, SplitLayout, SyncStatus, TabId, UrlText,
 };
 
 use crate::{CoreError, navigation::tab_title};
@@ -69,6 +69,7 @@ pub struct BrowserSnapshot {
     pub search_engine: SearchEngine,
     pub new_tab_destination: NewTabDestination,
     pub history_recording_policy: HistoryRecordingPolicy,
+    pub favorite_limit: FavoriteLimit,
     pub command_query: String,
 }
 
@@ -96,6 +97,7 @@ pub struct BrowserCore {
     search_engine: SearchEngine,
     new_tab_destination: NewTabDestination,
     history_recording_policy: HistoryRecordingPolicy,
+    favorite_limit: FavoriteLimit,
     command_query: String,
 }
 
@@ -131,6 +133,7 @@ impl BrowserCore {
             search_engine: SearchEngine::default(),
             new_tab_destination,
             history_recording_policy: HistoryRecordingPolicy::default(),
+            favorite_limit: FavoriteLimit::default(),
             spaces: vec![space],
             profiles: vec![profile],
             tabs: vec![tab],
@@ -253,6 +256,15 @@ impl BrowserCore {
         self.history_recording_policy
     }
 
+    pub fn set_favorite_limit(&mut self, favorite_limit: FavoriteLimit) {
+        self.favorite_limit = favorite_limit;
+    }
+
+    #[must_use]
+    pub fn favorite_limit(&self) -> FavoriteLimit {
+        self.favorite_limit
+    }
+
     pub fn set_command_query(&mut self, query: impl Into<String>) {
         self.command_query = query.into();
     }
@@ -292,6 +304,7 @@ impl BrowserCore {
             search_engine: self.search_engine,
             new_tab_destination: self.new_tab_destination,
             history_recording_policy: self.history_recording_policy,
+            favorite_limit: self.favorite_limit,
             command_query: self.command_query.clone(),
         })
     }

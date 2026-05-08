@@ -11,8 +11,6 @@ use crate::{
 
 use super::BrowserCore;
 
-const DEFAULT_FAVORITE_LIMIT: usize = 12;
-
 impl BrowserCore {
     pub fn open_new_tab(&mut self) -> Result<TabId, CoreError> {
         let url = self.new_tab_url()?;
@@ -227,9 +225,10 @@ impl BrowserCore {
         let favorite_count = self.tabs.iter().filter(|tab| tab.flags().favorite).count();
         let active_tab = self.tabs.get_mut(active_index).ok_or(CoreError::MissingActiveTab)?;
         let next_favorite = !active_tab.flags().favorite;
+        let favorite_limit = self.favorite_limit.value();
 
-        if next_favorite && favorite_count >= DEFAULT_FAVORITE_LIMIT {
-            return Err(CoreError::FavoriteLimitReached { limit: DEFAULT_FAVORITE_LIMIT });
+        if next_favorite && favorite_count >= favorite_limit {
+            return Err(CoreError::FavoriteLimitReached { limit: favorite_limit });
         }
 
         active_tab.set_favorite(next_favorite);

@@ -3,6 +3,7 @@ mod bookmark;
 mod command;
 mod download;
 mod error;
+mod favorite;
 mod history;
 mod identifiers;
 mod new_tab;
@@ -26,6 +27,7 @@ pub use download::{
     DownloadPolicy, DownloadSecurity, DownloadState,
 };
 pub use error::DomainError;
+pub use favorite::FavoriteLimit;
 pub use history::HistoryEntry;
 pub use identifiers::{
     BookmarkId, DownloadId, ProfileId, ReadingListId, SpaceId, SplitId, TabId, WebViewId,
