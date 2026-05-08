@@ -216,6 +216,7 @@ fn sync_object_kind_label(kind: SyncObjectKind) -> &'static str {
         SyncObjectKind::Spaces => "Spaces",
         SyncObjectKind::Tabs => "Tabs",
         SyncObjectKind::Bookmarks => "Bookmarks",
+        SyncObjectKind::Notes => "Notes",
         SyncObjectKind::ReadingList => "Reading List",
         SyncObjectKind::Profiles => "Profiles",
         SyncObjectKind::SitePermissions => "Site permissions",

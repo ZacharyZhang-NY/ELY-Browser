@@ -7,6 +7,7 @@ mod favorite;
 mod history;
 mod identifiers;
 mod new_tab;
+mod note;
 mod plugin;
 mod privacy;
 mod profile;
@@ -30,9 +31,10 @@ pub use error::DomainError;
 pub use favorite::FavoriteLimit;
 pub use history::HistoryEntry;
 pub use identifiers::{
-    BookmarkId, DownloadId, ProfileId, ReadingListId, SpaceId, SplitId, TabId, WebViewId,
+    BookmarkId, DownloadId, NoteId, ProfileId, ReadingListId, SpaceId, SplitId, TabId, WebViewId,
 };
 pub use new_tab::NewTabDestination;
+pub use note::{NoteEntry, NoteTarget};
 pub use plugin::{
     PluginContributionPoint, PluginId, PluginManifest, PluginPermission, PluginPermissionRisk,
     PluginSignature, PluginSignatureAlgorithm,

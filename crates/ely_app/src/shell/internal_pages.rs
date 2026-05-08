@@ -6,6 +6,7 @@ mod download_settings;
 mod downloads;
 mod general;
 mod history;
+mod notes;
 mod plugin_catalog;
 mod plugin_details;
 mod plugins;
@@ -42,6 +43,7 @@ impl ElyShell {
     ) -> AnyElement {
         match tab.url().as_str() {
             "ely://bookmarks" => self.render_bookmarks_page(snapshot, cx),
+            "ely://notes" => self.render_notes_page(snapshot, cx),
             "ely://reading-list" => self.render_reading_list_page(snapshot, cx),
             "ely://downloads" => self.render_downloads_page(snapshot, cx),
             "ely://history" => self.render_history_page(snapshot, cx),

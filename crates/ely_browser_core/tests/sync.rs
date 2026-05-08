@@ -12,6 +12,7 @@ fn default_sync_status_reflects_local_browser_state() -> Result<(), Box<dyn Erro
     core.create_space("Research", "R", 0xf54e00)?;
     core.open_tab(UrlText::parse("https://example.com/research")?);
     core.bookmark_active_tab()?;
+    core.save_active_url_note("sync note")?;
     core.save_active_tab_to_reading_list()?;
 
     let snapshot = core.snapshot()?;
@@ -26,6 +27,7 @@ fn default_sync_status_reflects_local_browser_state() -> Result<(), Box<dyn Erro
             SyncObjectStatus::new(SyncObjectKind::Spaces, 2, SyncObjectState::LocalOnly),
             SyncObjectStatus::new(SyncObjectKind::Tabs, 3, SyncObjectState::LocalOnly),
             SyncObjectStatus::new(SyncObjectKind::Bookmarks, 1, SyncObjectState::LocalOnly),
+            SyncObjectStatus::new(SyncObjectKind::Notes, 1, SyncObjectState::LocalOnly),
             SyncObjectStatus::new(SyncObjectKind::ReadingList, 1, SyncObjectState::LocalOnly),
             SyncObjectStatus::new(SyncObjectKind::Profiles, 1, SyncObjectState::LocalOnly),
             SyncObjectStatus::new(SyncObjectKind::SitePermissions, 0, SyncObjectState::LocalOnly),

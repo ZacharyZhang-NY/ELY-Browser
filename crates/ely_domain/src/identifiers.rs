@@ -41,3 +41,4 @@ entity_id!(WebViewId, "webview");
 entity_id!(DownloadId, "download");
 entity_id!(BookmarkId, "bookmark");
 entity_id!(ReadingListId, "reading");
+entity_id!(NoteId, "note");

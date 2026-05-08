@@ -3,8 +3,9 @@ use std::{collections::BTreeMap, time::SystemTime};
 use ely_domain::{
     ArchivePolicy, ArchivedTab, BookmarkEntry, BrowserTab, DomainError, DownloadEntry,
     DownloadPolicy, FavoriteLimit, HistoryEntry, HistoryRecordingPolicy, NewTabDestination,
-    Profile, ProfileId, ProfileKind, ReadingListEntry, SearchEngine, SitePermissionAuditEvent,
-    SitePermissionEntry, Space, SpaceId, SplitLayout, SyncStatus, TabId, UrlText,
+    NoteEntry, Profile, ProfileId, ProfileKind, ReadingListEntry, SearchEngine,
+    SitePermissionAuditEvent, SitePermissionEntry, Space, SpaceId, SplitLayout, SyncStatus, TabId,
+    UrlText,
 };
 
 use crate::{CoreError, navigation::tab_title};
@@ -14,6 +15,7 @@ mod bookmarks;
 mod commands;
 mod downloads;
 mod history;
+mod notes;
 mod plugins;
 mod profiles;
 mod reading_list;
@@ -51,6 +53,7 @@ pub struct BrowserSnapshot {
     pub pinned_tabs: Vec<BrowserTab>,
     pub archived_tabs: Vec<ArchivedTab>,
     pub bookmarks: Vec<BookmarkEntry>,
+    pub notes: Vec<NoteEntry>,
     pub reading_list: Vec<ReadingListEntry>,
     pub site_permissions: Vec<SitePermissionEntry>,
     pub site_permission_audit_events: Vec<SitePermissionAuditEvent>,
@@ -83,6 +86,7 @@ pub struct BrowserCore {
     tabs: Vec<BrowserTab>,
     archived_tabs: Vec<ArchivedTab>,
     bookmarks: Vec<BookmarkEntry>,
+    notes: Vec<NoteEntry>,
     reading_list: Vec<ReadingListEntry>,
     site_permissions: Vec<SitePermissionEntry>,
     site_permission_audit_events: Vec<SitePermissionAuditEvent>,
@@ -151,6 +155,7 @@ impl BrowserCore {
             tabs: vec![tab],
             archived_tabs: Vec::new(),
             bookmarks: Vec::new(),
+            notes: Vec::new(),
             reading_list: Vec::new(),
             site_permissions: Vec::new(),
             site_permission_audit_events: Vec::new(),
@@ -342,6 +347,7 @@ impl BrowserCore {
             pinned_tabs: self.pinned_tabs(),
             archived_tabs: self.archived_tabs.clone(),
             bookmarks: self.visible_bookmarks(),
+            notes: self.visible_notes(),
             reading_list: self.visible_reading_list(),
             site_permissions: self.visible_site_permissions(),
             site_permission_audit_events: self.visible_site_permission_audit_events(),

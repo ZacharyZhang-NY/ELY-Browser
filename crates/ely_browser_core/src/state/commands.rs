@@ -6,10 +6,10 @@ use crate::{
     CoreError,
     navigation::{
         about_url, archive_idle_days, archive_url, bookmarks_url, downloads_url, history_url,
-        move_tab_space_name, new_private_profile_name, new_profile_name, new_space_name,
-        plugin_detail_url, plugins_url, reading_list_url, reading_progress_percent, search_url,
-        settings_page_url, settings_url, shortcut_settings_url, space_icon, switch_profile_name,
-        sync_status_url, task_manager_url,
+        move_tab_space_name, new_private_profile_name, new_profile_name, new_space_name, note_body,
+        notes_url, plugin_detail_url, plugins_url, reading_list_url, reading_progress_percent,
+        search_url, settings_page_url, settings_url, shortcut_settings_url, space_icon,
+        switch_profile_name, sync_status_url, tab_note_body, task_manager_url,
     },
 };
 
@@ -57,6 +57,12 @@ impl BrowserCore {
             }
             CommandIntent::ScopedSearch { scope: CommandScope::Bookmarks, query } => {
                 if let Some(url) = self.find_bookmark_match(query) {
+                    self.open_tab(url);
+                    self.command_query.clear();
+                }
+            }
+            CommandIntent::ScopedSearch { scope: CommandScope::Notes, query } => {
+                if let Some(url) = self.find_note_match(query) {
                     self.open_tab(url);
                     self.command_query.clear();
                 }
@@ -127,6 +133,14 @@ impl BrowserCore {
             self.set_active_tab_reading_progress(percent)?;
             return Ok(true);
         }
+        if let Some(body) = tab_note_body(command) {
+            self.save_active_tab_note(body)?;
+            return Ok(true);
+        }
+        if let Some(body) = note_body(command) {
+            self.save_active_url_note(body)?;
+            return Ok(true);
+        }
 
         match command.to_ascii_lowercase().as_str() {
             "new-tab" => {
@@ -148,6 +162,10 @@ impl BrowserCore {
             }
             "reading-list" | "open-reading-list" | "open reading list" => {
                 self.open_tab(reading_list_url()?);
+                Ok(true)
+            }
+            "notes" | "open-notes" | "open notes" => {
+                self.open_tab(notes_url()?);
                 Ok(true)
             }
             "history" | "open-history" | "open history" => {

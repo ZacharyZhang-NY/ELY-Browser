@@ -17,6 +17,7 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
     match url {
         "ely://new-tab" => Some("New Tab"),
         "ely://bookmarks" => Some("Bookmarks"),
+        "ely://notes" => Some("Notes"),
         "ely://reading-list" => Some("Reading List"),
         "ely://downloads" => Some("Downloads"),
         "ely://history" => Some("History"),
@@ -91,6 +92,14 @@ pub(crate) fn reading_progress_percent(
     ReadingProgressPercent::new(percent).map(Some).map_err(CoreError::from)
 }
 
+pub(crate) fn note_body(command: &str) -> Option<&str> {
+    command_argument(command, &["note ", "add-note ", "add note "])
+}
+
+pub(crate) fn tab_note_body(command: &str) -> Option<&str> {
+    command_argument(command, &["tab-note ", "tab note ", "note-tab ", "note tab "])
+}
+
 pub(crate) fn new_profile_name(command: &str) -> Option<&str> {
     command_argument(command, &["new-profile ", "new profile "])
 }
@@ -132,6 +141,10 @@ pub(crate) fn bookmarks_url() -> Result<UrlText, CoreError> {
 
 pub(crate) fn reading_list_url() -> Result<UrlText, CoreError> {
     internal_page_url("ely://reading-list")
+}
+
+pub(crate) fn notes_url() -> Result<UrlText, CoreError> {
+    internal_page_url("ely://notes")
 }
 
 pub(crate) fn history_url() -> Result<UrlText, CoreError> {

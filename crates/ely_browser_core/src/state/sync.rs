@@ -7,6 +7,7 @@ pub(super) struct SyncObjectPolicies {
     spaces: SyncObjectPolicy,
     tabs: SyncObjectPolicy,
     bookmarks: SyncObjectPolicy,
+    notes: SyncObjectPolicy,
     reading_list: SyncObjectPolicy,
     profiles: SyncObjectPolicy,
     site_permissions: SyncObjectPolicy,
@@ -20,6 +21,7 @@ impl Default for SyncObjectPolicies {
             spaces: SyncObjectPolicy::Enabled,
             tabs: SyncObjectPolicy::Enabled,
             bookmarks: SyncObjectPolicy::Enabled,
+            notes: SyncObjectPolicy::Enabled,
             reading_list: SyncObjectPolicy::Enabled,
             profiles: SyncObjectPolicy::Enabled,
             site_permissions: SyncObjectPolicy::Enabled,
@@ -35,6 +37,7 @@ impl SyncObjectPolicies {
             SyncObjectKind::Spaces => self.spaces,
             SyncObjectKind::Tabs => self.tabs,
             SyncObjectKind::Bookmarks => self.bookmarks,
+            SyncObjectKind::Notes => self.notes,
             SyncObjectKind::ReadingList => self.reading_list,
             SyncObjectKind::Profiles => self.profiles,
             SyncObjectKind::SitePermissions => self.site_permissions,
@@ -48,6 +51,7 @@ impl SyncObjectPolicies {
             SyncObjectKind::Spaces => self.spaces = policy,
             SyncObjectKind::Tabs => self.tabs = policy,
             SyncObjectKind::Bookmarks => self.bookmarks = policy,
+            SyncObjectKind::Notes => self.notes = policy,
             SyncObjectKind::ReadingList => self.reading_list = policy,
             SyncObjectKind::Profiles => self.profiles = policy,
             SyncObjectKind::SitePermissions => self.site_permissions = policy,
@@ -82,6 +86,11 @@ impl BrowserCore {
             self.sync_object_status(
                 SyncObjectKind::Bookmarks,
                 self.bookmarks.len(),
+                SyncObjectState::LocalOnly,
+            ),
+            self.sync_object_status(
+                SyncObjectKind::Notes,
+                self.notes.len(),
                 SyncObjectState::LocalOnly,
             ),
             self.sync_object_status(
