@@ -3,23 +3,26 @@ use std::path::PathBuf;
 use ely_domain::{PluginManifest, PluginPermission};
 use gpui::{Context, PathPromptOptions, Window};
 
-use crate::services::plugin_packages::{PluginPackageError, PluginPackageReader};
+use crate::services::{
+    plugin_package_store::PluginPackageStore,
+    plugin_packages::{PluginPackageError, PluginPackageReader, VerifiedPluginPackage},
+};
 
 use super::{ElyShell, ShellState};
 
 #[derive(Clone, Debug)]
 pub(super) struct PendingPluginInstall {
-    manifest: PluginManifest,
+    package: VerifiedPluginPackage,
     high_risk_permissions: Vec<PluginPermission>,
 }
 
 impl PendingPluginInstall {
-    fn new(manifest: PluginManifest, high_risk_permissions: Vec<PluginPermission>) -> Self {
-        Self { manifest, high_risk_permissions }
+    fn new(package: VerifiedPluginPackage, high_risk_permissions: Vec<PluginPermission>) -> Self {
+        Self { package, high_risk_permissions }
     }
 
     pub(super) fn manifest(&self) -> &PluginManifest {
-        &self.manifest
+        self.package.manifest()
     }
 
     pub(super) fn high_risk_permissions(&self) -> &[PluginPermission] {
@@ -75,7 +78,7 @@ impl ElyShell {
             return;
         };
 
-        self.install_plugin_manifest(pending.manifest, true, cx);
+        self.install_plugin_package(pending.package, true, cx);
     }
 
     pub(super) fn cancel_plugin_install(&mut self, cx: &mut Context<Self>) {
@@ -85,11 +88,11 @@ impl ElyShell {
 
     fn handle_plugin_package_result(
         &mut self,
-        result: Result<PluginManifest, PluginPackageError>,
+        result: Result<VerifiedPluginPackage, PluginPackageError>,
         cx: &mut Context<Self>,
     ) {
         match result {
-            Ok(manifest) => self.install_plugin_manifest(manifest, false, cx),
+            Ok(package) => self.install_plugin_package(package, false, cx),
             Err(error) => {
                 self.plugin_install_error = Some(error.to_string());
                 self.pending_plugin_install = None;
@@ -98,26 +101,31 @@ impl ElyShell {
         }
     }
 
-    fn install_plugin_manifest(
+    fn install_plugin_package(
         &mut self,
-        manifest: PluginManifest,
+        package: VerifiedPluginPackage,
         high_risk_confirmed: bool,
         cx: &mut Context<Self>,
     ) {
-        let high_risk_permissions = manifest.high_risk_permissions().cloned().collect::<Vec<_>>();
+        let high_risk_permissions =
+            package.manifest().high_risk_permissions().cloned().collect::<Vec<_>>();
         if !high_risk_confirmed && !high_risk_permissions.is_empty() {
             self.pending_plugin_install =
-                Some(PendingPluginInstall::new(manifest, high_risk_permissions));
+                Some(PendingPluginInstall::new(package, high_risk_permissions));
             self.plugin_install_error = None;
             cx.notify();
             return;
         }
 
         let result = match &mut self.state {
-            ShellState::Ready(core) => core
-                .install_plugin(manifest, high_risk_confirmed)
-                .map(|_| ())
-                .map_err(|error| error.to_string()),
+            ShellState::Ready(core) => PluginPackageStore::application()
+                .and_then(|store| store.store(&package))
+                .map_err(|error| error.to_string())
+                .and_then(|stored_package| {
+                    core.install_plugin(stored_package.manifest().clone(), high_risk_confirmed)
+                        .map(|_| ())
+                        .map_err(|error| error.to_string())
+                }),
             ShellState::StartupError(message) => Err(message.clone()),
         };
 
@@ -129,6 +137,6 @@ impl ElyShell {
     }
 }
 
-fn load_plugin_package(path: PathBuf) -> Result<PluginManifest, PluginPackageError> {
+fn load_plugin_package(path: PathBuf) -> Result<VerifiedPluginPackage, PluginPackageError> {
     PluginPackageReader::read_directory_package(&path)
 }

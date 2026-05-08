@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+directories.workspace = true
 ely_browser_core = { path = "../ely_browser_core" }
 ely_design_system = { path = "../ely_design_system" }
 ely_domain = { path = "../ely_domain" }
