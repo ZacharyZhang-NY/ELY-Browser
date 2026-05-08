@@ -221,6 +221,13 @@ pub struct ScrollRequest {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResizeRequest {
+    pub webview_id: WebViewId,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MouseClickRequest {
     pub webview_id: WebViewId,
     pub x: u32,
@@ -274,6 +281,8 @@ pub trait ServoHost {
     fn navigate(&mut self, request: NavigationRequest) -> Result<(), ServoHostError>;
 
     fn scroll(&mut self, request: ScrollRequest) -> Result<(), ServoHostError>;
+
+    fn resize(&mut self, request: ResizeRequest) -> Result<(), ServoHostError>;
 
     fn click(&mut self, request: MouseClickRequest) -> Result<(), ServoHostError>;
 

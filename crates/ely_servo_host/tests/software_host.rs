@@ -4,11 +4,16 @@ use std::{error::Error, thread, time::Duration};
 
 use ely_domain::{ProfileId, TabId, UrlText};
 use ely_servo_host::{
-    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest, ScrollRequest,
-    ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, TouchTapRequest, WebViewState,
+    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest, ResizeRequest,
+    ScrollRequest, ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, TouchTapRequest,
+    WebViewState,
 };
 
 const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
+const INITIAL_WIDTH: u32 = 640;
+const INITIAL_HEIGHT: u32 = 480;
+const RESIZED_WIDTH: u32 = 934;
+const RESIZED_HEIGHT: u32 = 657;
 const PRD_SITE_COMPATIBILITY_CASES: &[PrdSiteCompatibilityCase] = &[
     PrdSiteCompatibilityCase { url: "https://example.com", title_fragment: "Example Domain" },
     PrdSiteCompatibilityCase { url: "https://servo.org", title_fragment: "Servo" },
@@ -26,7 +31,7 @@ struct PrdSiteCompatibilityCase {
 
 #[test]
 fn manages_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
-    let mut host = SoftwareServoHost::new(ServoSurfaceSize::new(640, 480))?;
+    let mut host = SoftwareServoHost::new(ServoSurfaceSize::new(INITIAL_WIDTH, INITIAL_HEIGHT))?;
     let tab_id = TabId::new();
     let profile_id = ProfileId::new();
 
@@ -139,8 +144,25 @@ fn manages_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
     assert_rendered_frame_has_content(&host, "https://servo.org scrolled", MINIMUM_CONTENT_PIXELS)?;
     assert_ne!(host.last_rendered_frame()?.sample_hash(), previous_frame_hash);
 
+    let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
+    host.resize(ResizeRequest {
+        webview_id: webview_id.clone(),
+        width: RESIZED_WIDTH,
+        height: RESIZED_HEIGHT,
+    })?;
+    let snapshot = wait_for_rendered_webview(&mut host, &webview_id, Some(previous_frame_hash))?;
+    assert_eq!(snapshot.state(), &WebViewState::Complete, "snapshot: {snapshot:?}");
+    assert_rendered_frame_has_dimensions_and_content(
+        &host,
+        "https://servo.org resized",
+        RESIZED_WIDTH,
+        RESIZED_HEIGHT,
+        MINIMUM_CONTENT_PIXELS,
+    )?;
+    assert_ne!(host.last_rendered_frame()?.sample_hash(), previous_frame_hash);
+
     assert!(matches!(
-        SoftwareServoHost::new(ServoSurfaceSize::new(640, 480)),
+        SoftwareServoHost::new(ServoSurfaceSize::new(INITIAL_WIDTH, INITIAL_HEIGHT)),
         Err(ServoHostError::RuntimeAlreadyStarted)
     ));
     Ok(())
@@ -183,10 +205,26 @@ fn assert_rendered_frame_has_content(
     label: &str,
     minimum_content_pixels: u64,
 ) -> Result<(), Box<dyn Error>> {
+    assert_rendered_frame_has_dimensions_and_content(
+        host,
+        label,
+        INITIAL_WIDTH,
+        INITIAL_HEIGHT,
+        minimum_content_pixels,
+    )
+}
+
+fn assert_rendered_frame_has_dimensions_and_content(
+    host: &SoftwareServoHost,
+    label: &str,
+    expected_width: u32,
+    expected_height: u32,
+    minimum_content_pixels: u64,
+) -> Result<(), Box<dyn Error>> {
     let frame = host.last_rendered_frame()?;
 
-    assert_eq!(frame.width(), 640, "{label}: {frame:?}");
-    assert_eq!(frame.height(), 480, "{label}: {frame:?}");
+    assert_eq!(frame.width(), expected_width, "{label}: {frame:?}");
+    assert_eq!(frame.height(), expected_height, "{label}: {frame:?}");
     assert!(frame.opaque_pixel_count() > 0, "{label}: {frame:?}");
     assert!(frame.non_white_pixel_count() > 0, "{label}: {frame:?}");
     assert!(frame.content_pixel_count() >= minimum_content_pixels, "{label}: {frame:?}");

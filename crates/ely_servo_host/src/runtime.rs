@@ -19,8 +19,8 @@ use url::Url;
 
 use crate::{
     KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest,
-    PermissionDecision, PermissionRequest, RenderedFrame, ScrollRequest, ServoHost, ServoHostError,
-    TouchTapRequest, WebViewSnapshot, WebViewState,
+    PermissionDecision, PermissionRequest, RenderedFrame, ResizeRequest, ScrollRequest, ServoHost,
+    ServoHostError, TouchTapRequest, WebViewSnapshot, WebViewState,
     runtime_input::{send_keyboard_text, send_mouse_click, send_mouse_drag, send_touch_tap},
 };
 
@@ -162,6 +162,16 @@ impl ServoHost for SoftwareServoHost {
             ))),
             WebViewPoint::Device(DevicePoint::zero()),
         );
+        Ok(())
+    }
+
+    fn resize(&mut self, request: ResizeRequest) -> Result<(), ServoHostError> {
+        let webview = self
+            .webviews
+            .get(&request.webview_id)
+            .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
+
+        webview.webview.resize(PhysicalSize::new(request.width, request.height));
         Ok(())
     }
 

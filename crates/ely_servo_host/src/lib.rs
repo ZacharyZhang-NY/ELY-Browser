@@ -10,8 +10,8 @@ mod runtime_input;
 pub use error::ServoHostError;
 pub use host::{
     KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest,
-    PermissionDecision, PermissionRequest, RenderedFrame, RenderedFrameSummary, ScrollRequest,
-    ServoHost, TouchTapRequest, WebViewSnapshot, WebViewState,
+    PermissionDecision, PermissionRequest, RenderedFrame, RenderedFrameSummary, ResizeRequest,
+    ScrollRequest, ServoHost, TouchTapRequest, WebViewSnapshot, WebViewState,
 };
 #[cfg(feature = "servo-engine")]
 pub use runtime::{ServoSurfaceSize, SoftwareServoHost};
