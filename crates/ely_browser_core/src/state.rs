@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use ely_domain::{
     ArchivedTab, BookmarkEntry, BrowserTab, DomainError, DownloadEntry, DownloadPolicy,
-    HistoryEntry, Profile, ProfileId, ProfileKind, ReadingListEntry, Space, SpaceId, SyncStatus,
-    TabId, UrlText,
+    HistoryEntry, Profile, ProfileId, ProfileKind, ReadingListEntry, SitePermissionAuditEvent,
+    SitePermissionEntry, Space, SpaceId, SyncStatus, TabId, UrlText,
 };
 
 use crate::CoreError;
@@ -15,6 +15,7 @@ mod history;
 mod plugins;
 mod profiles;
 mod reading_list;
+mod site_permissions;
 mod sync;
 mod tabs;
 
@@ -47,6 +48,8 @@ pub struct BrowserSnapshot {
     pub archived_tabs: Vec<ArchivedTab>,
     pub bookmarks: Vec<BookmarkEntry>,
     pub reading_list: Vec<ReadingListEntry>,
+    pub site_permissions: Vec<SitePermissionEntry>,
+    pub site_permission_audit_events: Vec<SitePermissionAuditEvent>,
     pub download_entries: Vec<DownloadEntry>,
     pub history_entries: Vec<HistoryEntry>,
     pub installed_plugins: Vec<InstalledPlugin>,
@@ -71,6 +74,8 @@ pub struct BrowserCore {
     archived_tabs: Vec<ArchivedTab>,
     bookmarks: Vec<BookmarkEntry>,
     reading_list: Vec<ReadingListEntry>,
+    site_permissions: Vec<SitePermissionEntry>,
+    site_permission_audit_events: Vec<SitePermissionAuditEvent>,
     download_entries: Vec<DownloadEntry>,
     history_entries: Vec<HistoryEntry>,
     installed_plugins: Vec<InstalledPlugin>,
@@ -117,6 +122,8 @@ impl BrowserCore {
             archived_tabs: Vec::new(),
             bookmarks: Vec::new(),
             reading_list: Vec::new(),
+            site_permissions: Vec::new(),
+            site_permission_audit_events: Vec::new(),
             download_entries: Vec::new(),
             history_entries: Vec::new(),
             installed_plugins: Vec::new(),
@@ -200,6 +207,8 @@ impl BrowserCore {
             archived_tabs: self.archived_tabs.clone(),
             bookmarks: self.visible_bookmarks(),
             reading_list: self.visible_reading_list(),
+            site_permissions: self.visible_site_permissions(),
+            site_permission_audit_events: self.visible_site_permission_audit_events(),
             download_entries: self.visible_downloads(),
             history_entries: self.visible_history(),
             installed_plugins: self.installed_plugins.clone(),

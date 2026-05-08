@@ -8,6 +8,7 @@ mod identifiers;
 mod plugin;
 mod profile;
 mod reading_list;
+mod site_permission;
 mod space;
 mod split;
 mod sync;
@@ -32,6 +33,10 @@ pub use plugin::{
 };
 pub use profile::{Profile, ProfileKind};
 pub use reading_list::{ReadingListEntry, ReadingProgress};
+pub use site_permission::{
+    SiteOrigin, SitePermissionAuditAction, SitePermissionAuditEvent, SitePermissionDecision,
+    SitePermissionEntry, SitePermissionFeature,
+};
 pub use space::{ArchivePolicy, Space};
 pub use split::{SplitAxis, SplitLayout, SplitPane};
 pub use sync::{

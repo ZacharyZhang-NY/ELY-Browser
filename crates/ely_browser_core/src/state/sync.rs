@@ -31,6 +31,11 @@ impl BrowserCore {
                 SyncObjectState::LocalOnly,
             ),
             SyncObjectStatus::new(
+                SyncObjectKind::SitePermissions,
+                self.site_permissions.len(),
+                SyncObjectState::LocalOnly,
+            ),
+            SyncObjectStatus::new(
                 SyncObjectKind::History,
                 self.history_entries.len(),
                 SyncObjectState::PrivacyControlled,

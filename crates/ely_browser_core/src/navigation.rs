@@ -1,4 +1,4 @@
-use ely_domain::{BrowserTab, DomainError, PluginId, UrlText};
+use ely_domain::{BrowserTab, DomainError, PluginId, SiteOrigin, UrlText};
 use url::Url;
 
 use crate::CoreError;
@@ -24,6 +24,7 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
         "ely://task-manager" => Some("Task Manager"),
         "ely://plugins" => Some("Plugin Marketplace"),
         url if plugin_detail_route_id(url).is_some() => Some("Plugin Details"),
+        url if SiteOrigin::from_site_route(url).ok().flatten().is_some() => Some("Site Settings"),
         "ely://about" => Some("About ELY Browser"),
         "ely://settings" => Some("Settings"),
         "ely://settings/plugins" => Some("Plugin Settings"),

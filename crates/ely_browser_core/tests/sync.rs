@@ -25,6 +25,7 @@ fn default_sync_status_reflects_local_browser_state() -> Result<(), Box<dyn Erro
             SyncObjectStatus::new(SyncObjectKind::Bookmarks, 1, SyncObjectState::LocalOnly),
             SyncObjectStatus::new(SyncObjectKind::ReadingList, 1, SyncObjectState::LocalOnly),
             SyncObjectStatus::new(SyncObjectKind::Profiles, 1, SyncObjectState::LocalOnly),
+            SyncObjectStatus::new(SyncObjectKind::SitePermissions, 0, SyncObjectState::LocalOnly),
             SyncObjectStatus::new(SyncObjectKind::History, 1, SyncObjectState::PrivacyControlled),
             SyncObjectStatus::new(SyncObjectKind::PluginSettings, 0, SyncObjectState::LocalOnly),
         ],

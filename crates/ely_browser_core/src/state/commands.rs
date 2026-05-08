@@ -146,6 +146,13 @@ impl BrowserCore {
                 self.open_tab(plugins_url()?);
                 Ok(true)
             }
+            "site-settings" | "open-site-settings" | "open site settings" => {
+                let Some(url) = self.active_tab_site_settings_url()? else {
+                    return Ok(false);
+                };
+                self.open_tab(url);
+                Ok(true)
+            }
             "about" | "open-about" | "open about" => {
                 self.open_tab(about_url()?);
                 Ok(true)

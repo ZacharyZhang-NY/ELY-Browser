@@ -8,6 +8,9 @@ pub enum DomainError {
     #[error("invalid URL: {value}")]
     InvalidUrl { value: String },
 
+    #[error("invalid site origin: {value}")]
+    InvalidSiteOrigin { value: String },
+
     #[error("invalid file name: {value}")]
     InvalidFileName { value: String },
 

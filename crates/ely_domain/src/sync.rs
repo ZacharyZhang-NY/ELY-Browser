@@ -10,6 +10,7 @@ pub enum SyncObjectKind {
     Bookmarks,
     ReadingList,
     Profiles,
+    SitePermissions,
     History,
     PluginSettings,
 }

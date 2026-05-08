@@ -8,6 +8,7 @@ mod plugin_details;
 mod plugins;
 mod profiles;
 mod reading_list;
+mod site_settings;
 mod sync;
 mod task_manager;
 
@@ -39,6 +40,9 @@ impl ElyShell {
             "ely://plugins" => self.render_plugin_catalog_page(snapshot, cx),
             url if url.starts_with("ely://plugin/") => {
                 self.render_plugin_detail_page(snapshot, url, cx)
+            }
+            url if url.starts_with("ely://site/") => {
+                self.render_site_settings_page(snapshot, url, cx)
             }
             "ely://about" => self.render_about_page(snapshot),
             "ely://settings/plugins" => self.render_plugins_page(snapshot, cx),

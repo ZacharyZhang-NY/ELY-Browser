@@ -154,6 +154,7 @@ fn sync_object_kind_label(kind: &SyncObjectKind) -> &'static str {
         SyncObjectKind::Bookmarks => "Bookmarks",
         SyncObjectKind::ReadingList => "Reading List",
         SyncObjectKind::Profiles => "Profiles",
+        SyncObjectKind::SitePermissions => "Site permissions",
         SyncObjectKind::History => "History",
         SyncObjectKind::PluginSettings => "Plugin settings",
     }
