@@ -3,8 +3,8 @@ mod shell;
 mod shortcuts;
 
 use gpui::{
-    App, AppContext, Application, Bounds, Focusable, Menu, MenuItem, SystemMenuType, WindowBounds,
-    WindowOptions, actions, px, size,
+    App, AppContext, Application, Bounds, Focusable, Menu, MenuItem, SystemMenuType,
+    TitlebarOptions, WindowBounds, WindowOptions, actions, point, px, size,
 };
 use gpui_component_assets::Assets;
 use shell::ElyShell;
@@ -81,7 +81,11 @@ fn main() {
         let bounds = Bounds::centered(None, size(px(1240.0), px(780.0)), cx);
         let opened = cx.open_window(
             WindowOptions {
-                titlebar: None,
+                titlebar: Some(TitlebarOptions {
+                    title: Some("ELY Browser".into()),
+                    appears_transparent: true,
+                    traffic_light_position: Some(point(px(18.0), px(24.0))),
+                }),
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 ..WindowOptions::default()
             },

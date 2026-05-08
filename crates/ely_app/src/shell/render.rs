@@ -97,7 +97,8 @@ impl ElyShell {
 
         div()
             .h(px(spacing::COMMAND_BAR_HEIGHT))
-            .px_4()
+            .pl(px(96.0))
+            .pr_4()
             .gap_3()
             .flex()
             .items_center()

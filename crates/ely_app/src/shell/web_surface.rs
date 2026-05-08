@@ -2,11 +2,12 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use ely_domain::{BrowserTab, TabId};
 use gpui::{
-    AnyElement, Context, ImageSource, IntoElement, ObjectFit, ParentElement, RenderImage, Styled,
-    StyledImage, div, img, px, rgb,
+    AnyElement, App, Bounds, Context, Entity, ImageSource, IntoElement, ObjectFit, ParentElement,
+    Pixels, RenderImage, Styled, StyledImage, Window, canvas, div, img, prelude::FluentBuilder, px,
+    rgb,
 };
 use gpui_component::StyledExt;
-use image::{ImageBuffer, Rgba};
+use image::{ImageBuffer, Rgba, imageops::FilterType};
 use thiserror::Error;
 
 use crate::services::servo_sidecar::{
@@ -16,17 +17,21 @@ use crate::services::servo_sidecar::{
 use super::ElyShell;
 use ely_design_system::{colors, spacing};
 
-const WEB_SURFACE_WIDTH: u32 = 1024;
-const WEB_SURFACE_HEIGHT: u32 = 768;
+const WEB_SURFACE_IMAGE_MAX_EDGE: u32 = 1024;
 
 pub(super) struct WebSurfaceStore {
     client: WebSurfaceClient,
+    viewport_sizes: BTreeMap<TabId, WebSurfaceSize>,
     states: BTreeMap<TabId, WebSurfaceState>,
 }
 
 impl WebSurfaceStore {
     pub(super) fn new() -> Self {
-        Self { client: WebSurfaceClient::new(), states: BTreeMap::new() }
+        Self {
+            client: WebSurfaceClient::new(),
+            viewport_sizes: BTreeMap::new(),
+            states: BTreeMap::new(),
+        }
     }
 
     fn state(&self, tab_id: &TabId) -> Option<&WebSurfaceState> {
@@ -38,8 +43,12 @@ impl WebSurfaceStore {
             return None;
         }
 
+        let size = self.viewport_sizes.get(tab.id()).copied()?;
         let requested_url = tab.url().as_str().to_string();
-        if self.has_current_state(tab.id(), &requested_url) {
+        if self.is_loading_requested_url(tab.id(), requested_url.as_str()) {
+            return None;
+        }
+        if self.has_current_state(tab.id(), &requested_url, size) {
             return None;
         }
 
@@ -48,7 +57,7 @@ impl WebSurfaceStore {
             WebSurfaceClient::Unavailable(message) => {
                 self.states.insert(
                     tab.id().clone(),
-                    WebSurfaceState::Failed { requested_url, message: message.clone() },
+                    WebSurfaceState::Failed { requested_url, size, message: message.clone() },
                 );
                 return None;
             }
@@ -56,44 +65,70 @@ impl WebSurfaceStore {
 
         self.states.insert(
             tab.id().clone(),
-            WebSurfaceState::Loading { requested_url: requested_url.clone() },
+            WebSurfaceState::Loading { requested_url: requested_url.clone(), size },
         );
 
         Some(WebSurfaceRequest {
             tab_id: tab.id().clone(),
             requested_url,
+            size,
             client,
             snapshot_request: SidecarSnapshotRequest::new(
                 tab.url().clone(),
-                WEB_SURFACE_WIDTH,
-                WEB_SURFACE_HEIGHT,
+                size.width,
+                size.height,
             ),
         })
     }
 
-    fn has_current_state(&self, tab_id: &TabId, requested_url: &str) -> bool {
+    fn has_current_state(&self, tab_id: &TabId, requested_url: &str, size: WebSurfaceSize) -> bool {
         match self.states.get(tab_id) {
-            Some(WebSurfaceState::Loading { requested_url: current_url }) => {
-                current_url == requested_url
+            Some(WebSurfaceState::Loading { requested_url: current_url, size: current_size }) => {
+                current_url == requested_url && *current_size == size
             }
-            Some(WebSurfaceState::Ready(frame)) => frame.requested_url == requested_url,
-            Some(WebSurfaceState::Failed { requested_url: current_url, .. }) => {
-                current_url == requested_url
+            Some(WebSurfaceState::Ready(frame)) => {
+                frame.requested_url == requested_url && frame.size() == size
             }
+            Some(WebSurfaceState::Failed {
+                requested_url: current_url,
+                size: current_size,
+                ..
+            }) => current_url == requested_url && *current_size == size,
             None => false,
         }
     }
 
-    fn is_loading(&self, tab_id: &TabId, requested_url: &str) -> bool {
+    fn is_loading(&self, tab_id: &TabId, requested_url: &str, size: WebSurfaceSize) -> bool {
         matches!(
             self.states.get(tab_id),
-            Some(WebSurfaceState::Loading { requested_url: current_url })
+            Some(WebSurfaceState::Loading { requested_url: current_url, size: current_size })
+                if current_url == requested_url && *current_size == size
+        )
+    }
+
+    fn is_loading_requested_url(&self, tab_id: &TabId, requested_url: &str) -> bool {
+        matches!(
+            self.states.get(tab_id),
+            Some(WebSurfaceState::Loading { requested_url: current_url, .. })
                 if current_url == requested_url
         )
     }
 
     fn finish(&mut self, tab_id: TabId, state: WebSurfaceState) {
         self.states.insert(tab_id, state);
+    }
+
+    fn record_viewport_size(&mut self, tab_id: &TabId, bounds: Bounds<Pixels>) -> bool {
+        let Some(size) = WebSurfaceSize::from_bounds(bounds) else {
+            return false;
+        };
+
+        if self.viewport_sizes.get(tab_id) == Some(&size) {
+            return false;
+        }
+
+        self.viewport_sizes.insert(tab_id.clone(), size);
+        true
     }
 }
 
@@ -114,14 +149,30 @@ impl WebSurfaceClient {
 struct WebSurfaceRequest {
     tab_id: TabId,
     requested_url: String,
+    size: WebSurfaceSize,
     client: ServoSidecarClient,
     snapshot_request: SidecarSnapshotRequest,
 }
 
 enum WebSurfaceState {
-    Loading { requested_url: String },
+    Loading { requested_url: String, size: WebSurfaceSize },
     Ready(WebSurfaceFrame),
-    Failed { requested_url: String, message: String },
+    Failed { requested_url: String, size: WebSurfaceSize, message: String },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct WebSurfaceSize {
+    width: u32,
+    height: u32,
+}
+
+impl WebSurfaceSize {
+    fn from_bounds(bounds: Bounds<Pixels>) -> Option<Self> {
+        Some(Self {
+            width: viewport_dimension(bounds.size.width)?,
+            height: viewport_dimension(bounds.size.height)?,
+        })
+    }
 }
 
 struct WebSurfaceFrame {
@@ -148,13 +199,15 @@ impl WebSurfaceFrame {
             return Err(WebSurfaceError::InvalidFrameBuffer { width, height });
         };
 
+        let image_buffer = renderable_image_buffer(buffer);
+
         Ok(Self {
             requested_url,
             loaded_url,
             title,
             width,
             height,
-            image: Arc::new(RenderImage::new([image::Frame::new(buffer)])),
+            image: Arc::new(RenderImage::new([image::Frame::new(image_buffer)])),
         })
     }
 
@@ -164,6 +217,10 @@ impl WebSurfaceFrame {
 
     fn url_label(&self) -> &str {
         self.loaded_url.as_deref().unwrap_or(self.requested_url.as_str())
+    }
+
+    fn size(&self) -> WebSurfaceSize {
+        WebSurfaceSize { width: self.width, height: self.height }
     }
 }
 
@@ -181,12 +238,17 @@ impl ElyShell {
     ) -> AnyElement {
         self.ensure_external_web_frame(tab, cx);
 
+        let state_entity = cx.entity().clone();
         match self.web_surfaces.state(tab.id()) {
-            Some(WebSurfaceState::Ready(frame)) => render_ready_web_surface(frame),
-            Some(WebSurfaceState::Failed { message, .. }) => {
-                render_failed_web_surface(tab, message.as_str())
+            Some(WebSurfaceState::Ready(frame)) => {
+                render_ready_web_surface(frame, tab, state_entity)
             }
-            Some(WebSurfaceState::Loading { .. }) | None => render_loading_web_surface(tab),
+            Some(WebSurfaceState::Failed { message, .. }) => {
+                render_failed_web_surface(tab, message.as_str(), state_entity)
+            }
+            Some(WebSurfaceState::Loading { .. }) | None => {
+                render_loading_web_surface(tab, state_entity)
+            }
         }
     }
 
@@ -195,7 +257,7 @@ impl ElyShell {
             return;
         };
 
-        let WebSurfaceRequest { tab_id, requested_url, client, snapshot_request } = request;
+        let WebSurfaceRequest { tab_id, requested_url, size, client, snapshot_request } = request;
         cx.spawn(async move |shell, cx| {
             let result = cx
                 .background_executor()
@@ -203,7 +265,7 @@ impl ElyShell {
                 .await;
 
             _ = shell.update(cx, |shell, cx| {
-                shell.handle_external_web_frame_result(tab_id, requested_url, result);
+                shell.handle_external_web_frame_result(tab_id, requested_url, size, result);
                 cx.notify();
             });
         })
@@ -214,42 +276,55 @@ impl ElyShell {
         &mut self,
         tab_id: TabId,
         requested_url: String,
+        size: WebSurfaceSize,
         result: Result<SidecarSnapshot, ServoSidecarError>,
     ) {
-        if !self.web_surfaces.is_loading(&tab_id, requested_url.as_str()) {
+        if !self.web_surfaces.is_loading(&tab_id, requested_url.as_str(), size) {
             return;
         }
 
         let state = match result {
             Ok(snapshot) => match WebSurfaceFrame::from_snapshot(requested_url.clone(), snapshot) {
                 Ok(frame) => WebSurfaceState::Ready(frame),
-                Err(error) => WebSurfaceState::Failed { requested_url, message: error.to_string() },
+                Err(error) => {
+                    WebSurfaceState::Failed { requested_url, size, message: error.to_string() }
+                }
             },
-            Err(error) => WebSurfaceState::Failed { requested_url, message: error.to_string() },
+            Err(error) => {
+                WebSurfaceState::Failed { requested_url, size, message: error.to_string() }
+            }
         };
         self.web_surfaces.finish(tab_id, state);
     }
+
+    fn record_external_web_viewport(
+        &mut self,
+        tab_id: TabId,
+        bounds: Bounds<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.web_surfaces.record_viewport_size(&tab_id, bounds) {
+            cx.notify();
+        }
+    }
 }
 
-fn render_ready_web_surface(frame: &WebSurfaceFrame) -> AnyElement {
+fn render_ready_web_surface(
+    frame: &WebSurfaceFrame,
+    tab: &BrowserTab,
+    state_entity: Entity<ElyShell>,
+) -> AnyElement {
     render_web_surface(
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(rgb(colors::SURFACE_CARD))
-            .child(render_web_surface_header(frame))
-            .child(
-                div().flex_1().min_h_0().overflow_hidden().bg(rgb(colors::SURFACE_CARD)).child(
-                    img(ImageSource::Render(frame.image.clone()))
-                        .size_full()
-                        .object_fit(ObjectFit::Contain),
-                ),
-            ),
+        tab,
+        state_entity,
+        frame.title_label(),
+        frame.url_label().to_string(),
+        Some(format!("{}x{}", frame.width, frame.height)),
+        img(ImageSource::Render(frame.image.clone())).size_full().object_fit(ObjectFit::Contain),
     )
 }
 
-fn render_web_surface_header(frame: &WebSurfaceFrame) -> AnyElement {
+fn render_web_surface_header(title: String, url: String, detail: Option<String>) -> AnyElement {
     div()
         .h(px(34.0))
         .px_3()
@@ -267,36 +342,41 @@ fn render_web_surface_header(frame: &WebSurfaceFrame) -> AnyElement {
                 .text_sm()
                 .font_semibold()
                 .text_color(rgb(colors::INK))
-                .child(frame.title_label()),
+                .child(title),
         )
+        .when_some(detail, |this, detail| {
+            this.child(div().text_xs().text_color(rgb(colors::MUTED)).child(detail))
+        })
         .child(
-            div()
-                .text_xs()
-                .text_color(rgb(colors::MUTED))
-                .child(format!("{}x{}", frame.width, frame.height)),
-        )
-        .child(
-            div()
-                .max_w(px(420.0))
-                .truncate()
-                .text_xs()
-                .text_color(rgb(colors::MUTED))
-                .child(frame.url_label().to_string()),
+            div().max_w(px(420.0)).truncate().text_xs().text_color(rgb(colors::MUTED)).child(url),
         )
         .into_any_element()
 }
 
-fn render_loading_web_surface(tab: &BrowserTab) -> AnyElement {
-    render_web_surface(centered_status(
-        tab.title(),
-        tab.url().as_str(),
-        "Rendering page with Servo",
-        colors::BODY,
-    ))
+fn render_loading_web_surface(tab: &BrowserTab, state_entity: Entity<ElyShell>) -> AnyElement {
+    render_web_surface(
+        tab,
+        state_entity,
+        tab.title().to_string(),
+        tab.url().as_str().to_string(),
+        Some("Rendering".to_string()),
+        centered_status(tab.title(), tab.url().as_str(), "Rendering page with Servo", colors::BODY),
+    )
 }
 
-fn render_failed_web_surface(tab: &BrowserTab, message: &str) -> AnyElement {
-    render_web_surface(centered_status(tab.title(), tab.url().as_str(), message, colors::ERROR))
+fn render_failed_web_surface(
+    tab: &BrowserTab,
+    message: &str,
+    state_entity: Entity<ElyShell>,
+) -> AnyElement {
+    render_web_surface(
+        tab,
+        state_entity,
+        tab.title().to_string(),
+        tab.url().as_str().to_string(),
+        Some("Render failed".to_string()),
+        centered_status(tab.title(), tab.url().as_str(), message, colors::ERROR),
+    )
 }
 
 fn centered_status(title: &str, url: &str, detail: &str, detail_color: u32) -> impl IntoElement {
@@ -314,7 +394,14 @@ fn centered_status(title: &str, url: &str, detail: &str, detail_color: u32) -> i
         .child(div().text_sm().text_color(rgb(detail_color)).child(detail.to_string()))
 }
 
-fn render_web_surface(content: impl IntoElement) -> AnyElement {
+fn render_web_surface(
+    tab: &BrowserTab,
+    state_entity: Entity<ElyShell>,
+    title: String,
+    url: String,
+    detail: Option<String>,
+    content: impl IntoElement,
+) -> AnyElement {
     div()
         .flex_1()
         .h_full()
@@ -328,9 +415,68 @@ fn render_web_surface(content: impl IntoElement) -> AnyElement {
                 .border_1()
                 .border_color(rgb(colors::HAIRLINE))
                 .bg(rgb(colors::SURFACE_CARD))
-                .child(content),
+                .flex()
+                .flex_col()
+                .child(render_web_surface_header(title, url, detail))
+                .child(
+                    div()
+                        .relative()
+                        .flex_1()
+                        .min_h_0()
+                        .overflow_hidden()
+                        .bg(rgb(colors::SURFACE_CARD))
+                        .child(content)
+                        .child(render_viewport_tracker(tab.id().clone(), state_entity)),
+                ),
         )
         .into_any_element()
+}
+
+fn render_viewport_tracker(tab_id: TabId, state_entity: Entity<ElyShell>) -> impl IntoElement {
+    canvas(
+        move |bounds, _window: &mut Window, cx: &mut App| {
+            state_entity.update(cx, |shell, cx| {
+                shell.record_external_web_viewport(tab_id, bounds, cx);
+            });
+        },
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .size_full()
+}
+
+fn viewport_dimension(pixels: Pixels) -> Option<u32> {
+    let value = f32::from(pixels.round());
+    if !value.is_finite() || value < 1.0 || value > u32::MAX as f32 {
+        return None;
+    }
+
+    Some(value as u32)
+}
+
+fn renderable_image_buffer(
+    buffer: ImageBuffer<Rgba<u8>, Vec<u8>>,
+) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
+    let largest_edge = buffer.width().max(buffer.height());
+    if largest_edge <= WEB_SURFACE_IMAGE_MAX_EDGE {
+        return buffer;
+    }
+
+    image::imageops::resize(
+        &buffer,
+        scaled_image_dimension(buffer.width(), largest_edge),
+        scaled_image_dimension(buffer.height(), largest_edge),
+        FilterType::Triangle,
+    )
+}
+
+fn scaled_image_dimension(dimension: u32, largest_edge: u32) -> u32 {
+    let numerator = u64::from(dimension) * u64::from(WEB_SURFACE_IMAGE_MAX_EDGE);
+    let rounded = (numerator + u64::from(largest_edge / 2)) / u64::from(largest_edge);
+    match u32::try_from(rounded.max(1)) {
+        Ok(value) => value,
+        Err(_) => WEB_SURFACE_IMAGE_MAX_EDGE,
+    }
 }
 
 pub(super) fn is_external_web_url(url: &str) -> bool {

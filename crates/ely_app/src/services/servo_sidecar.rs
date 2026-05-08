@@ -1,13 +1,17 @@
 use std::{
     env, fs, io,
     path::{Path, PathBuf},
-    process::Command,
-    time::{SystemTime, SystemTimeError, UNIX_EPOCH},
+    process::{Command, Output, Stdio},
+    thread,
+    time::{Duration, Instant, SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
 use ely_domain::UrlText;
 use serde::Deserialize;
 use thiserror::Error;
+
+const SIDECAR_COMMAND_TIMEOUT: Duration = Duration::from_secs(20);
+const SIDECAR_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 #[derive(Clone, Debug)]
 pub struct ServoSidecarClient {
@@ -30,7 +34,13 @@ impl ServoSidecarClient {
         }
 
         let rgba_path = temporary_rgba_path()?;
-        let output = self.run_snapshot_command(&request, &rgba_path)?;
+        let output = match self.run_snapshot_command(&request, &rgba_path) {
+            Ok(output) => output,
+            Err(error) => {
+                remove_temporary_file(&rgba_path)?;
+                return Err(error);
+            }
+        };
 
         if !output.status.success() {
             remove_temporary_file(&rgba_path)?;
@@ -53,8 +63,8 @@ impl ServoSidecarClient {
         &self,
         request: &SidecarSnapshotRequest,
         rgba_path: &Path,
-    ) -> Result<std::process::Output, ServoSidecarError> {
-        Command::new(&self.binary_path)
+    ) -> Result<Output, ServoSidecarError> {
+        let mut child = Command::new(&self.binary_path)
             .arg("snapshot")
             .arg("--url")
             .arg(request.url.as_str())
@@ -64,8 +74,27 @@ impl ServoSidecarClient {
             .arg(request.width.to_string())
             .arg("--height")
             .arg(request.height.to_string())
-            .output()
-            .map_err(ServoSidecarError::Command)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(ServoSidecarError::Command)?;
+
+        let started_at = Instant::now();
+        loop {
+            if child.try_wait().map_err(ServoSidecarError::Command)?.is_some() {
+                return child.wait_with_output().map_err(ServoSidecarError::Command);
+            }
+
+            if started_at.elapsed() >= SIDECAR_COMMAND_TIMEOUT {
+                terminate_child(child)?;
+                return Err(ServoSidecarError::SidecarTimedOut {
+                    url: request.url.as_str().to_string(),
+                    seconds: SIDECAR_COMMAND_TIMEOUT.as_secs(),
+                });
+            }
+
+            thread::sleep(SIDECAR_POLL_INTERVAL);
+        }
     }
 }
 
@@ -108,6 +137,11 @@ impl SidecarSnapshot {
         }
         if report.non_white_pixel_count == 0 {
             return Err(ServoSidecarError::BlankRenderedFrame {
+                requested_url: report.requested_url,
+            });
+        }
+        if report.content_pixel_count == 0 {
+            return Err(ServoSidecarError::ContentlessRenderedFrame {
                 requested_url: report.requested_url,
             });
         }
@@ -170,6 +204,9 @@ pub enum ServoSidecarError {
     #[error("servo sidecar exited with {status}: {stderr}")]
     SidecarFailed { status: String, stderr: String },
 
+    #[error("servo sidecar timed out after {seconds}s while rendering {url}")]
+    SidecarTimedOut { url: String, seconds: u64 },
+
     #[error("failed to parse servo sidecar report: {0}")]
     Report(#[from] serde_json::Error),
 
@@ -192,6 +229,9 @@ pub enum ServoSidecarError {
 
     #[error("servo rendered a blank frame for {requested_url}")]
     BlankRenderedFrame { requested_url: String },
+
+    #[error("servo rendered a frame without visible content for {requested_url}")]
+    ContentlessRenderedFrame { requested_url: String },
 }
 
 #[derive(Deserialize)]
@@ -204,6 +244,7 @@ struct SidecarReport {
     height: u32,
     rgba_byte_count: usize,
     non_white_pixel_count: u64,
+    content_pixel_count: u64,
 }
 
 fn default_sidecar_path() -> Result<PathBuf, ServoSidecarError> {
@@ -231,6 +272,17 @@ fn remove_temporary_file(path: &Path) -> Result<(), ServoSidecarError> {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(ServoSidecarError::FrameCleanup(error)),
+    }
+}
+
+fn terminate_child(mut child: std::process::Child) -> Result<(), ServoSidecarError> {
+    match child.kill() {
+        Ok(()) => {
+            let _output = child.wait_with_output().map_err(ServoSidecarError::Command)?;
+            Ok(())
+        }
+        Err(error) if error.kind() == io::ErrorKind::InvalidInput => Ok(()),
+        Err(error) => Err(ServoSidecarError::Command(error)),
     }
 }
 

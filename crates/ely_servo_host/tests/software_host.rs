@@ -7,7 +7,16 @@ use ely_servo_host::{
     NavigationRequest, ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, WebViewState,
 };
 
-const PRD_SITE_COMPATIBILITY_URLS: &[&str] = &["https://example.com", "https://servo.org"];
+const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
+const PRD_SITE_COMPATIBILITY_CASES: &[PrdSiteCompatibilityCase] = &[
+    PrdSiteCompatibilityCase { url: "https://example.com", title_fragment: "Example Domain" },
+    PrdSiteCompatibilityCase { url: "https://servo.org", title_fragment: "Servo" },
+];
+
+struct PrdSiteCompatibilityCase {
+    url: &'static str,
+    title_fragment: &'static str,
+}
 
 #[test]
 fn manages_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
@@ -35,22 +44,28 @@ fn manages_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
         snapshot.url().is_some_and(|value| value.starts_with("data:text/html,")),
         "snapshot: {snapshot:?}"
     );
-    assert_rendered_frame_has_content(&host, "data:text/html")?;
+    assert_rendered_frame_has_content(&host, "data:text/html", 1)?;
 
     let mut previous_frame_hash = Some(host.last_rendered_frame()?.sample_hash());
-    for site_url in PRD_SITE_COMPATIBILITY_URLS {
+    for site in PRD_SITE_COMPATIBILITY_CASES {
         let tab_id = TabId::new();
-        let url = UrlText::parse(*site_url)?;
+        let url = UrlText::parse(site.url)?;
 
         host.navigate(NavigationRequest { webview_id: webview_id.clone(), tab_id, url })?;
         let snapshot = wait_for_rendered_webview(&mut host, &webview_id, previous_frame_hash)?;
 
-        assert_eq!(snapshot.state(), &WebViewState::Complete, "{site_url}: {snapshot:?}");
+        assert_eq!(snapshot.state(), &WebViewState::Complete, "{}: {snapshot:?}", site.url);
         assert!(
-            snapshot.url().is_some_and(|value| value.starts_with(site_url)),
-            "{site_url}: {snapshot:?}"
+            snapshot.url().is_some_and(|value| value.starts_with(site.url)),
+            "{}: {snapshot:?}",
+            site.url
         );
-        assert_rendered_frame_has_content(&host, site_url)?;
+        assert!(
+            snapshot.title().is_some_and(|value| value.contains(site.title_fragment)),
+            "{}: {snapshot:?}",
+            site.url
+        );
+        assert_rendered_frame_has_content(&host, site.url, MINIMUM_CONTENT_PIXELS)?;
         previous_frame_hash = Some(host.last_rendered_frame()?.sample_hash());
     }
 
@@ -96,6 +111,7 @@ fn wait_for_rendered_webview(
 fn assert_rendered_frame_has_content(
     host: &SoftwareServoHost,
     label: &str,
+    minimum_content_pixels: u64,
 ) -> Result<(), Box<dyn Error>> {
     let frame = host.last_rendered_frame()?;
 
@@ -103,6 +119,7 @@ fn assert_rendered_frame_has_content(
     assert_eq!(frame.height(), 480, "{label}: {frame:?}");
     assert!(frame.opaque_pixel_count() > 0, "{label}: {frame:?}");
     assert!(frame.non_white_pixel_count() > 0, "{label}: {frame:?}");
+    assert!(frame.content_pixel_count() >= minimum_content_pixels, "{label}: {frame:?}");
     assert_ne!(frame.sample_hash(), 0, "{label}: {frame:?}");
     Ok(())
 }

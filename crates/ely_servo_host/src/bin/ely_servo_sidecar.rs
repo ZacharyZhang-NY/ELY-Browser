@@ -1,4 +1,10 @@
-use std::{env, num::ParseIntError, path::PathBuf, thread, time::Duration};
+use std::{
+    env,
+    num::ParseIntError,
+    path::PathBuf,
+    thread,
+    time::{Duration, Instant},
+};
 
 use ely_domain::{ProfileId, TabId, UrlText};
 use ely_servo_host::{
@@ -10,6 +16,7 @@ use thiserror::Error;
 
 const WAIT_ITERATIONS: usize = 5_000;
 const WAIT_INTERVAL: Duration = Duration::from_millis(2);
+const RENDER_TIMEOUT: Duration = Duration::from_secs(20);
 
 fn main() -> Result<(), SidecarError> {
     match parse_command(env::args())? {
@@ -175,7 +182,12 @@ fn wait_for_frame(
     webview_id: &ely_domain::WebViewId,
     url: &str,
 ) -> Result<WebViewSnapshot, SidecarError> {
+    let started_at = Instant::now();
     for _ in 0..WAIT_ITERATIONS {
+        if started_at.elapsed() >= RENDER_TIMEOUT {
+            break;
+        }
+
         host.tick();
         let snapshot = host.snapshot(webview_id)?;
         if snapshot.has_pending_frame() {
@@ -210,6 +222,7 @@ struct SnapshotReport {
     rgba_byte_count: usize,
     opaque_pixel_count: u64,
     non_white_pixel_count: u64,
+    content_pixel_count: u64,
     sample_hash: u64,
 }
 
@@ -231,6 +244,7 @@ impl SnapshotReport {
             rgba_byte_count: frame.rgba_bytes().len(),
             opaque_pixel_count: frame.opaque_pixel_count(),
             non_white_pixel_count: frame.non_white_pixel_count(),
+            content_pixel_count: frame.content_pixel_count(),
             sample_hash: frame.sample_hash(),
         }
     }

@@ -17,6 +17,7 @@ pub struct RenderedFrameSummary {
     height: u32,
     opaque_pixel_count: u64,
     non_white_pixel_count: u64,
+    content_pixel_count: u64,
     sample_hash: u64,
 }
 
@@ -25,6 +26,7 @@ impl RenderedFrameSummary {
     pub fn from_rgba_bytes(width: u32, height: u32, rgba_bytes: &[u8]) -> Self {
         let mut opaque_pixel_count = 0;
         let mut non_white_pixel_count = 0;
+        let mut content_pixel_count = 0;
         let mut sample_hash = 0xcbf29ce484222325_u64;
 
         for (index, pixel) in rgba_bytes.chunks_exact(4).enumerate() {
@@ -35,6 +37,9 @@ impl RenderedFrameSummary {
             if alpha > 0 && (red < 245 || green < 245 || blue < 245) {
                 non_white_pixel_count += 1;
             }
+            if alpha > 0 && (red < 220 || green < 220 || blue < 220) {
+                content_pixel_count += 1;
+            }
             if index % 97 == 0 {
                 for byte in pixel {
                     sample_hash ^= u64::from(*byte);
@@ -43,7 +48,14 @@ impl RenderedFrameSummary {
             }
         }
 
-        Self { width, height, opaque_pixel_count, non_white_pixel_count, sample_hash }
+        Self {
+            width,
+            height,
+            opaque_pixel_count,
+            non_white_pixel_count,
+            content_pixel_count,
+            sample_hash,
+        }
     }
 
     #[must_use]
@@ -64,6 +76,11 @@ impl RenderedFrameSummary {
     #[must_use]
     pub fn non_white_pixel_count(&self) -> u64 {
         self.non_white_pixel_count
+    }
+
+    #[must_use]
+    pub fn content_pixel_count(&self) -> u64 {
+        self.content_pixel_count
     }
 
     #[must_use]
@@ -115,6 +132,11 @@ impl RenderedFrame {
     #[must_use]
     pub fn non_white_pixel_count(&self) -> u64 {
         self.summary.non_white_pixel_count()
+    }
+
+    #[must_use]
+    pub fn content_pixel_count(&self) -> u64 {
+        self.summary.content_pixel_count()
     }
 
     #[must_use]
