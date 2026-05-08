@@ -30,6 +30,7 @@ impl ElyShell {
             "ely://settings/plugins" => self.render_plugins_page(snapshot, cx),
             "ely://settings/profiles" => self.render_profiles_page(snapshot, cx),
             "ely://settings/sync" => self.render_sync_page(snapshot),
+            "ely://sync/status" => self.render_sync_page(snapshot),
             _ => render_default_page(tab),
         }
     }

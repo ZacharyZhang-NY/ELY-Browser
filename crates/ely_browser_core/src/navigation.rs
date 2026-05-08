@@ -23,6 +23,7 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
         "ely://settings/plugins" => Some("Plugin Settings"),
         "ely://settings/profiles" => Some("Profile Settings"),
         "ely://settings/sync" => Some("Sync Settings"),
+        "ely://sync/status" => Some("Sync Status"),
         _ => None,
     }
 }
@@ -90,8 +91,8 @@ pub(crate) fn settings_url() -> Result<UrlText, CoreError> {
     internal_page_url("ely://settings")
 }
 
-pub(crate) fn sync_url() -> Result<UrlText, CoreError> {
-    internal_page_url("ely://settings/sync")
+pub(crate) fn sync_status_url() -> Result<UrlText, CoreError> {
+    internal_page_url("ely://sync/status")
 }
 
 pub(crate) fn settings_page_url(query: &str) -> Result<Option<UrlText>, CoreError> {
