@@ -51,4 +51,8 @@ impl Space {
     pub fn archive_policy(&self) -> &ArchivePolicy {
         &self.archive_policy
     }
+
+    pub fn set_archive_policy(&mut self, archive_policy: ArchivePolicy) {
+        self.archive_policy = archive_policy;
+    }
 }

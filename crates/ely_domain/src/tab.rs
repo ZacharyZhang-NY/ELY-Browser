@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use crate::{ProfileId, SpaceId, SplitId, TabId, UrlText};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -27,6 +29,8 @@ pub struct BrowserTab {
     state: TabState,
     flags: TabFlags,
     split_id: Option<SplitId>,
+    created_at: SystemTime,
+    last_active_at: SystemTime,
 }
 
 impl BrowserTab {
@@ -38,6 +42,7 @@ impl BrowserTab {
         title: impl Into<String>,
         url: UrlText,
     ) -> Self {
+        let created_at = SystemTime::now();
         Self {
             id,
             space_id,
@@ -47,6 +52,8 @@ impl BrowserTab {
             state: TabState::Ready,
             flags: TabFlags::default(),
             split_id: None,
+            created_at,
+            last_active_at: created_at,
         }
     }
 
@@ -83,6 +90,20 @@ impl BrowserTab {
     #[must_use]
     pub fn state(&self) -> &TabState {
         &self.state
+    }
+
+    #[must_use]
+    pub fn created_at(&self) -> SystemTime {
+        self.created_at
+    }
+
+    #[must_use]
+    pub fn last_active_at(&self) -> SystemTime {
+        self.last_active_at
+    }
+
+    pub fn record_activity(&mut self, active_at: SystemTime) {
+        self.last_active_at = active_at;
     }
 
     pub fn mark_archived(&mut self) {

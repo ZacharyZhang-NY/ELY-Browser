@@ -1,9 +1,10 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::SystemTime};
 
 use ely_domain::{
-    ArchivedTab, BookmarkEntry, BrowserTab, DomainError, DownloadEntry, DownloadPolicy,
-    HistoryEntry, Profile, ProfileId, ProfileKind, ReadingListEntry, SitePermissionAuditEvent,
-    SitePermissionEntry, Space, SpaceId, SplitLayout, SyncStatus, TabId, UrlText,
+    ArchivePolicy, ArchivedTab, BookmarkEntry, BrowserTab, DomainError, DownloadEntry,
+    DownloadPolicy, HistoryEntry, Profile, ProfileId, ProfileKind, ReadingListEntry,
+    SitePermissionAuditEvent, SitePermissionEntry, Space, SpaceId, SplitLayout, SyncStatus, TabId,
+    UrlText,
 };
 
 use crate::CoreError;
@@ -194,6 +195,28 @@ impl BrowserCore {
         Ok(tab_id)
     }
 
+    pub fn set_active_space_archive_policy(
+        &mut self,
+        archive_policy: ArchivePolicy,
+    ) -> Result<(), CoreError> {
+        let active_space_id = self.active_space_id.clone();
+        self.set_space_archive_policy(&active_space_id, archive_policy)
+    }
+
+    pub fn set_space_archive_policy(
+        &mut self,
+        space_id: &SpaceId,
+        archive_policy: ArchivePolicy,
+    ) -> Result<(), CoreError> {
+        let space = self
+            .spaces
+            .iter_mut()
+            .find(|space| space.id() == space_id)
+            .ok_or_else(|| CoreError::SpaceNotFound { id: space_id.clone() })?;
+        space.set_archive_policy(archive_policy);
+        Ok(())
+    }
+
     pub fn set_command_query(&mut self, query: impl Into<String>) {
         self.command_query = query.into();
     }
@@ -263,5 +286,11 @@ impl BrowserCore {
 
     fn visible_tabs(&self) -> Vec<BrowserTab> {
         self.tabs.iter().filter(|tab| tab.space_id() == &self.active_space_id).cloned().collect()
+    }
+
+    fn record_tab_activity(&mut self, tab_id: &TabId, active_at: SystemTime) {
+        if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id() == tab_id) {
+            tab.record_activity(active_at);
+        }
     }
 }

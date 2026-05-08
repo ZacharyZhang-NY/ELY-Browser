@@ -56,6 +56,11 @@ pub(crate) fn move_tab_space_name(command: &str) -> Option<&str> {
     )
 }
 
+pub(crate) fn archive_idle_days(command: &str) -> Option<u16> {
+    command_argument(command, &["archive-idle-tabs ", "archive idle tabs "])
+        .and_then(|value| value.parse().ok())
+}
+
 pub(crate) fn new_profile_name(command: &str) -> Option<&str> {
     command_argument(command, &["new-profile ", "new profile "])
 }

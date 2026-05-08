@@ -1,12 +1,14 @@
-use ely_domain::{CommandIntent, CommandScope, ProfileId, ProfileKind, SpaceId};
+use std::time::SystemTime;
+
+use ely_domain::{ArchivePolicy, CommandIntent, CommandScope, ProfileId, ProfileKind, SpaceId};
 
 use crate::{
     CoreError,
     navigation::{
-        about_url, archive_url, bookmarks_url, downloads_url, history_url, move_tab_space_name,
-        new_private_profile_name, new_profile_name, new_space_name, plugin_detail_url, plugins_url,
-        reading_list_url, search_url, settings_page_url, settings_url, space_icon,
-        switch_profile_name, sync_status_url, task_manager_url,
+        about_url, archive_idle_days, archive_url, bookmarks_url, downloads_url, history_url,
+        move_tab_space_name, new_private_profile_name, new_profile_name, new_space_name,
+        plugin_detail_url, plugins_url, reading_list_url, search_url, settings_page_url,
+        settings_url, space_icon, switch_profile_name, sync_status_url, task_manager_url,
     },
 };
 
@@ -115,6 +117,11 @@ impl BrowserCore {
             self.select_profile(&profile_id)?;
             return Ok(true);
         }
+        if let Some(idle_days) = archive_idle_days(command) {
+            self.set_active_space_archive_policy(ArchivePolicy::IdleDays(idle_days))?;
+            self.archive_idle_tabs(SystemTime::now())?;
+            return Ok(true);
+        }
 
         match command.to_ascii_lowercase().as_str() {
             "new-tab" => {
@@ -184,6 +191,10 @@ impl BrowserCore {
             }
             "close-split-view" | "close split view" => {
                 Ok(self.close_active_saved_split_view()?.is_some())
+            }
+            "archive-idle-tabs" | "archive idle tabs" => {
+                self.archive_idle_tabs(SystemTime::now())?;
+                Ok(true)
             }
             "favorite" | "toggle-favorite" => {
                 self.toggle_active_tab_favorite()?;
