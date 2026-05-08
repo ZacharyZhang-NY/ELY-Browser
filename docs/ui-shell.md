@@ -87,6 +87,22 @@ Domain auto grouping keeps manual groups intact and groups matching ungrouped ho
 └──────────────────────────────┴───────────────────────────────────────────────┘
 ```
 
+Group rename updates the active group row in place:
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ELY Browser   [ >rename-tab-group Research................. ] [pin] [*] [+] │
+├──────────────────────────────┬───────────────────────────────────────────────┤
+│ Tabs                         │  example.com                                  │
+│   [folder] Research          │  https://example.com/b                        │
+│     2 tabs - Expanded        │                                               │
+│     example.com              │  Group    Research                            │
+│       example.com            │                                               │
+│     example.com              │                                               │
+│       example.com            │                                               │
+└──────────────────────────────┴───────────────────────────────────────────────┘
+```
+
 Group sleep applies the sleeping state to every tab in the active group:
 
 ```text

@@ -10,9 +10,9 @@ use crate::{
         about_url, archive_idle_days, archive_url, bookmarks_url, downloads_url, history_url,
         move_tab_space_name, new_private_profile_name, new_profile_name, new_space_name, note_body,
         notes_url, plugin_detail_url, plugins_url, reading_list_url, reading_progress_percent,
-        search_url, settings_page_url, settings_url, shortcut_settings_url, space_icon,
-        split_group_name, switch_profile_name, sync_status_url, tab_group_name, tab_note_body,
-        task_manager_url,
+        rename_tab_group_name, search_url, settings_page_url, settings_url, shortcut_settings_url,
+        space_icon, split_group_name, switch_profile_name, sync_status_url, tab_group_name,
+        tab_note_body, task_manager_url,
     },
 };
 
@@ -145,6 +145,9 @@ impl BrowserCore {
         if let Some(name) = tab_group_name(command) {
             self.group_active_tab(name)?;
             return Ok(true);
+        }
+        if let Some(name) = rename_tab_group_name(command) {
+            return Ok(self.rename_active_tab_group(name)?.is_some());
         }
         if let Some(body) = tab_note_body(command) {
             self.save_active_tab_note(body)?;

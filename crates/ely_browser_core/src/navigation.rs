@@ -105,6 +105,13 @@ pub(crate) fn tab_group_name(command: &str) -> Option<&str> {
     command_argument(command, &["group-tab ", "group tab ", "tab-group ", "tab group "])
 }
 
+pub(crate) fn rename_tab_group_name(command: &str) -> Option<&str> {
+    command_argument(
+        command,
+        &["rename-tab-group ", "rename tab group ", "rename-group ", "rename group "],
+    )
+}
+
 pub(crate) fn split_group_name(command: &str) -> Option<&str> {
     command_argument(
         command,

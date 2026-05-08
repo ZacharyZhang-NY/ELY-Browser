@@ -80,6 +80,26 @@ impl BrowserCore {
         Ok(true)
     }
 
+    pub fn rename_active_tab_group(
+        &mut self,
+        name: impl Into<String>,
+    ) -> Result<Option<TabGroupId>, CoreError> {
+        let Some(group_id) = self.active_tab_group_id()? else {
+            return Ok(None);
+        };
+        self.rename_tab_group(&group_id, name)?;
+        Ok(Some(group_id))
+    }
+
+    pub fn rename_tab_group(
+        &mut self,
+        group_id: &TabGroupId,
+        name: impl Into<String>,
+    ) -> Result<(), CoreError> {
+        let group = self.tab_group_mut(group_id)?;
+        group.rename(name).map_err(CoreError::from)
+    }
+
     pub fn discard_active_tab_group(&mut self) -> Result<Option<usize>, CoreError> {
         let Some(group_id) = self.active_tab_group_id()? else {
             return Ok(None);
