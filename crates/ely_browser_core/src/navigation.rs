@@ -32,6 +32,10 @@ pub(crate) fn tab_matches_query(tab: &BrowserTab, normalized_query: &str) -> boo
         || tab.display_url().to_lowercase().contains(normalized_query)
 }
 
+pub(crate) fn records_history(url: &UrlText) -> bool {
+    Url::parse(url.as_str()).map(|parsed_url| parsed_url.scheme() != "ely").unwrap_or(false)
+}
+
 pub(crate) fn new_space_name(command: &str) -> Option<&str> {
     command_argument(command, &["new-space ", "new space "])
 }

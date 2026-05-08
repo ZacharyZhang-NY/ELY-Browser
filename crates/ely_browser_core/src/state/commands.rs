@@ -44,6 +44,12 @@ impl BrowserCore {
                     self.command_query.clear();
                 }
             }
+            CommandIntent::ScopedSearch { scope: CommandScope::History, query } => {
+                if let Some(url) = self.find_history_match(query) {
+                    self.open_tab(url);
+                    self.command_query.clear();
+                }
+            }
             CommandIntent::ScopedSearch { scope: CommandScope::Settings, query } => {
                 if let Some(url) = settings_page_url(query)? {
                     self.open_tab(url);

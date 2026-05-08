@@ -18,6 +18,7 @@ impl BrowserCore {
             .iter()
             .position(|existing| existing.id() == &self.active_tab_id)
             .map_or(self.tabs.len(), |index| index + 1);
+        self.record_history_entry(&tab);
         self.tabs.insert(insert_index, tab);
         self.active_tab_id = tab_id.clone();
         self.active_tabs_by_space.insert(self.active_space_id.clone(), tab_id.clone());
