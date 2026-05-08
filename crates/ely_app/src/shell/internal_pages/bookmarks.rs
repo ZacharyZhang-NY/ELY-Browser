@@ -286,6 +286,9 @@ fn bookmark_metadata_label(bookmark: &BookmarkEntry) -> String {
     if let Some(note) = bookmark.note() {
         parts.push(note.to_string());
     }
+    if bookmark.thumbnail_key().is_some() {
+        parts.push("Snapshot saved".to_string());
+    }
     parts.join(" - ")
 }
 

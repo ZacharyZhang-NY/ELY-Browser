@@ -63,6 +63,23 @@ impl BrowserCore {
         Ok(())
     }
 
+    pub fn set_bookmark_thumbnail_key(
+        &mut self,
+        bookmark_id: &BookmarkId,
+        thumbnail_key: impl Into<String>,
+    ) -> Result<(), CoreError> {
+        self.bookmark_mut(bookmark_id)?.set_thumbnail_key(thumbnail_key)?;
+        Ok(())
+    }
+
+    pub fn clear_bookmark_thumbnail_key(
+        &mut self,
+        bookmark_id: &BookmarkId,
+    ) -> Result<(), CoreError> {
+        self.bookmark_mut(bookmark_id)?.clear_thumbnail_key();
+        Ok(())
+    }
+
     pub fn update_bookmark_metadata(
         &mut self,
         bookmark_id: &BookmarkId,

@@ -12,6 +12,7 @@ pub struct BookmarkEntry {
     url: UrlText,
     tags: Vec<String>,
     note: Option<String>,
+    thumbnail_key: Option<String>,
     added_at: SystemTime,
 }
 
@@ -36,6 +37,7 @@ impl BookmarkEntry {
             url,
             tags: Vec::new(),
             note: None,
+            thumbnail_key: None,
             added_at,
         })
     }
@@ -86,6 +88,11 @@ impl BookmarkEntry {
     }
 
     #[must_use]
+    pub fn thumbnail_key(&self) -> Option<&str> {
+        self.thumbnail_key.as_deref()
+    }
+
+    #[must_use]
     pub fn added_at(&self) -> SystemTime {
         self.added_at
     }
@@ -110,6 +117,18 @@ impl BookmarkEntry {
 
     pub fn clear_note(&mut self) {
         self.note = None;
+    }
+
+    pub fn set_thumbnail_key(
+        &mut self,
+        thumbnail_key: impl Into<String>,
+    ) -> Result<(), DomainError> {
+        self.thumbnail_key = Some(non_empty_text("bookmark thumbnail key", thumbnail_key.into())?);
+        Ok(())
+    }
+
+    pub fn clear_thumbnail_key(&mut self) {
+        self.thumbnail_key = None;
     }
 }
 

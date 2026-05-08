@@ -194,3 +194,18 @@ Group archive uses the explicit archive command for the same active group flow:
 │   example.com                │                                               │
 └──────────────────────────────┴───────────────────────────────────────────────┘
 ```
+
+Bookmarks with saved page thumbnails keep the list compact and show the snapshot state inline:
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ELY Browser   [ ely://bookmarks............................ ] [pin] [*] [+] │
+├──────────────────────────────┬───────────────────────────────────────────────┤
+│ Tabs                         │  Bookmarks                         1 bookmark │
+│   Bookmarks                  │  Profile: Default                             │
+│                              │                                               │
+│                              │  [book] example.com               [open][edit]│
+│                              │         https://example.com/research          │
+│                              │         Work - Snapshot saved                 │
+└──────────────────────────────┴───────────────────────────────────────────────┘
+```

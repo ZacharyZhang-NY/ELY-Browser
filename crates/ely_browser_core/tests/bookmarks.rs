@@ -25,6 +25,7 @@ fn bookmark_active_tab_records_current_context() -> Result<(), Box<dyn Error>> {
     assert_eq!(bookmark.url().as_str(), "https://example.com/research");
     assert!(bookmark.tags().is_empty());
     assert_eq!(bookmark.note(), None);
+    assert_eq!(bookmark.thumbnail_key(), None);
     Ok(())
 }
 
@@ -62,6 +63,22 @@ fn bookmark_metadata_updates_collection_tags_and_note() -> Result<(), Box<dyn Er
     core.clear_bookmark_note(&bookmark_id)?;
     let snapshot = core.snapshot()?;
     assert_eq!(snapshot.bookmarks[0].note(), None);
+    Ok(())
+}
+
+#[test]
+fn bookmark_thumbnail_key_can_be_set_and_cleared() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com/research")?);
+    let bookmark_id = core.bookmark_active_tab()?;
+
+    core.set_bookmark_thumbnail_key(&bookmark_id, " screenshots/example.avif ")?;
+    let snapshot = core.snapshot()?;
+    assert_eq!(snapshot.bookmarks[0].thumbnail_key(), Some("screenshots/example.avif"));
+
+    core.clear_bookmark_thumbnail_key(&bookmark_id)?;
+    let snapshot = core.snapshot()?;
+    assert_eq!(snapshot.bookmarks[0].thumbnail_key(), None);
     Ok(())
 }
 
@@ -111,6 +128,13 @@ fn bookmark_metadata_rejects_empty_fields() -> Result<(), Box<dyn Error>> {
         return Err("expected empty bookmark note error".into());
     };
     assert_eq!(note_error, CoreError::Domain(DomainError::EmptyField { field: "bookmark note" }));
+    let Err(thumbnail_error) = core.set_bookmark_thumbnail_key(&bookmark_id, " ") else {
+        return Err("expected empty bookmark thumbnail key error".into());
+    };
+    assert_eq!(
+        thumbnail_error,
+        CoreError::Domain(DomainError::EmptyField { field: "bookmark thumbnail key" })
+    );
     Ok(())
 }
 
