@@ -211,6 +211,24 @@ fn split_tab_group_command_converts_active_group_to_split_view() -> Result<(), B
 }
 
 #[test]
+fn tab_group_to_split_alias_converts_active_group_to_split_view() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.group_active_tab("Research")?;
+    core.open_tab(UrlText::parse("https://example.com")?);
+    core.group_active_tab("Research")?;
+
+    core.set_command_query(">tab group to split");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("tab group to split".to_string())));
+    assert!(snapshot.tab_groups.is_empty());
+    assert_eq!(snapshot.split_layouts.len(), 1);
+    assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
 fn split_tab_group_command_preserves_query_for_single_tab_group() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     core.group_active_tab("Research")?;

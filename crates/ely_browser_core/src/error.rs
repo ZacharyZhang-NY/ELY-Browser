@@ -21,6 +21,9 @@ pub enum CoreError {
     #[error("split not found: {id}")]
     SplitNotFound { id: SplitId },
 
+    #[error("split pane belongs to a different space: {id}")]
+    SplitPaneSpaceMismatch { id: SplitId },
+
     #[error("tab group not found: {id}")]
     TabGroupNotFound { id: TabGroupId },
 

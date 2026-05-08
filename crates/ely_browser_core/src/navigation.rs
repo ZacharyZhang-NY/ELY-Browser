@@ -104,6 +104,13 @@ pub(crate) fn tab_group_name(command: &str) -> Option<&str> {
     command_argument(command, &["group-tab ", "group tab ", "tab-group ", "tab group "])
 }
 
+pub(crate) fn split_group_name(command: &str) -> Option<&str> {
+    command_argument(
+        command,
+        &["group-split-view ", "group split view ", "split-view-to-group ", "split view to group "],
+    )
+}
+
 pub(crate) fn new_profile_name(command: &str) -> Option<&str> {
     command_argument(command, &["new-profile ", "new profile "])
 }

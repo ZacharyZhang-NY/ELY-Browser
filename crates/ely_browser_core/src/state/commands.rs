@@ -9,7 +9,8 @@ use crate::{
         move_tab_space_name, new_private_profile_name, new_profile_name, new_space_name, note_body,
         notes_url, plugin_detail_url, plugins_url, reading_list_url, reading_progress_percent,
         search_url, settings_page_url, settings_url, shortcut_settings_url, space_icon,
-        switch_profile_name, sync_status_url, tab_group_name, tab_note_body, task_manager_url,
+        split_group_name, switch_profile_name, sync_status_url, tab_group_name, tab_note_body,
+        task_manager_url,
     },
 };
 
@@ -133,6 +134,12 @@ impl BrowserCore {
             self.set_active_tab_reading_progress(percent)?;
             return Ok(true);
         }
+        if command.eq_ignore_ascii_case("tab group to split") {
+            return Ok(self.split_active_tab_group()?.is_some());
+        }
+        if let Some(name) = split_group_name(command) {
+            return Ok(self.group_active_split_view(Some(name))?.is_some());
+        }
         if let Some(name) = tab_group_name(command) {
             self.group_active_tab(name)?;
             return Ok(true);
@@ -159,6 +166,10 @@ impl BrowserCore {
             "split-tab-group" | "split tab group" | "tab-group-to-split" | "tab group to split" => {
                 Ok(self.split_active_tab_group()?.is_some())
             }
+            "group-split-view"
+            | "group split view"
+            | "split-view-to-group"
+            | "split view to group" => Ok(self.group_active_split_view(None)?.is_some()),
             "toggle-tab-group" | "toggle tab group" => {
                 Ok(self.toggle_active_tab_group_collapsed()?.is_some())
             }

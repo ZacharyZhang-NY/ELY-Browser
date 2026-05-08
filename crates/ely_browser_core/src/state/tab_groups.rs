@@ -1,5 +1,6 @@
 use ely_domain::{
-    MAX_SPLIT_PANES, SplitAxis, SplitId, SplitLayout, SplitPane, TabGroup, TabGroupId, TabId,
+    BrowserTab, MAX_SPLIT_PANES, SpaceId, SplitAxis, SplitId, SplitLayout, SplitPane, TabGroup,
+    TabGroupId, TabId,
 };
 
 use crate::CoreError;
@@ -89,6 +90,49 @@ impl BrowserCore {
         Ok(Some(split_id))
     }
 
+    pub fn group_active_split_view(
+        &mut self,
+        name: Option<&str>,
+    ) -> Result<Option<TabGroupId>, CoreError> {
+        let Some(split_id) = self.active_tab()?.split_id().cloned() else {
+            return Ok(None);
+        };
+        let layout_index = self
+            .split_layouts
+            .iter()
+            .position(|layout| layout.id() == &split_id)
+            .ok_or_else(|| CoreError::SplitNotFound { id: split_id.clone() })?;
+        let layout = self.split_layouts[layout_index].clone();
+        if layout.pane_count() < 2 {
+            return Ok(None);
+        }
+
+        let pane_ids = layout.panes().iter().map(|pane| pane.tab_id().clone()).collect::<Vec<_>>();
+        let space_id = self.split_pane_space_id(&split_id, &pane_ids)?;
+        let group_name = name
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map_or_else(|| layout.title().to_string(), ToString::to_string);
+        let color_hex = self
+            .spaces
+            .iter()
+            .find(|space| space.id() == &space_id)
+            .map(|space| space.accent_hex())
+            .ok_or_else(|| CoreError::SpaceNotFound { id: space_id.clone() })?;
+        let sort_key = self.next_tab_group_sort_key_for_space(&space_id);
+        let group = TabGroup::new(space_id, group_name, color_hex, sort_key)?;
+        let group_id = group.id().clone();
+
+        for tab in self.tabs.iter_mut().filter(|tab| pane_ids.contains(tab.id())) {
+            tab.clear_split_id();
+            tab.set_group_id(group_id.clone());
+        }
+
+        self.split_layouts.remove(layout_index);
+        self.tab_groups.push(group);
+        Ok(Some(group_id))
+    }
+
     pub fn toggle_active_tab_group_collapsed(&mut self) -> Result<Option<bool>, CoreError> {
         let Some(group_id) = self.active_tab_group_id()? else {
             return Ok(None);
@@ -148,7 +192,7 @@ impl BrowserCore {
 
         let active_space_id = self.active_space_id.clone();
         let color_hex = self.active_space()?.accent_hex();
-        let sort_key = self.next_tab_group_sort_key();
+        let sort_key = self.next_tab_group_sort_key_for_space(&active_space_id);
         let group = TabGroup::new(active_space_id, name, color_hex, sort_key)?;
         let group_id = group.id().clone();
         self.tab_groups.push(group);
@@ -166,22 +210,50 @@ impl BrowserCore {
             .map(|group| group.id().clone())
     }
 
-    fn next_tab_group_sort_key(&self) -> u64 {
+    fn next_tab_group_sort_key_for_space(&self, space_id: &SpaceId) -> u64 {
         self.tab_groups
             .iter()
-            .filter(|group| group.space_id() == &self.active_space_id)
+            .filter(|group| group.space_id() == space_id)
             .map(TabGroup::sort_key)
             .max()
             .map_or(0, |sort_key| sort_key.saturating_add(1))
     }
 
-    fn active_space_group_tabs(&self, group_id: &TabGroupId) -> Vec<ely_domain::BrowserTab> {
+    fn active_space_group_tabs(&self, group_id: &TabGroupId) -> Vec<BrowserTab> {
         tab_order::sorted_tabs(
             self.tabs
                 .iter()
                 .filter(|tab| tab.space_id() == &self.active_space_id)
                 .filter(|tab| tab.group_id() == Some(group_id)),
         )
+    }
+
+    fn split_pane_space_id(
+        &self,
+        split_id: &SplitId,
+        pane_ids: &[TabId],
+    ) -> Result<SpaceId, CoreError> {
+        let first_pane_id =
+            pane_ids.first().ok_or_else(|| CoreError::SplitNotFound { id: split_id.clone() })?;
+        let first_tab = self
+            .tabs
+            .iter()
+            .find(|tab| tab.id() == first_pane_id)
+            .ok_or_else(|| CoreError::TabNotFound { id: first_pane_id.clone() })?;
+        let space_id = first_tab.space_id().clone();
+
+        for pane_id in pane_ids {
+            let tab = self
+                .tabs
+                .iter()
+                .find(|tab| tab.id() == pane_id)
+                .ok_or_else(|| CoreError::TabNotFound { id: pane_id.clone() })?;
+            if tab.space_id() != &space_id {
+                return Err(CoreError::SplitPaneSpaceMismatch { id: split_id.clone() });
+            }
+        }
+
+        Ok(space_id)
     }
 
     fn active_tab_group_id(&self) -> Result<Option<TabGroupId>, CoreError> {

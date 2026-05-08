@@ -159,6 +159,72 @@ fn close_split_view_command_preserves_query_without_saved_split() -> Result<(), 
 }
 
 #[test]
+fn split_view_to_group_command_converts_active_split() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let first_tab_id = core.active_tab()?.id().clone();
+    core.split_active_tab_right()?;
+    let second_tab_id = core.active_tab()?.id().clone();
+    core.save_active_split_view()?;
+
+    core.set_command_query(">split-view-to-group Research");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+    let group = snapshot.tab_groups.first().ok_or("missing tab group")?;
+    let grouped_tab_ids = snapshot
+        .tabs
+        .iter()
+        .filter(|tab| tab.group_id() == Some(group.id()))
+        .map(|tab| tab.id().clone())
+        .collect::<Vec<_>>();
+
+    assert_eq!(intent, Some(CommandIntent::Command("split-view-to-group Research".to_string())));
+    assert_eq!(snapshot.active_tab_id, second_tab_id);
+    assert!(snapshot.split_layouts.is_empty());
+    assert_eq!(snapshot.tab_groups.len(), 1);
+    assert_eq!(group.name(), "Research");
+    assert_eq!(grouped_tab_ids, vec![first_tab_id, second_tab_id]);
+    assert!(snapshot.tabs.iter().all(|tab| tab.split_id().is_none()));
+    assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn split_view_to_group_command_uses_saved_split_title_without_name() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.split_active_tab_right()?;
+    core.save_active_split_view()?;
+
+    core.set_command_query(">split-view-to-group");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+    let group = snapshot.tab_groups.first().ok_or("missing tab group")?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("split-view-to-group".to_string())));
+    assert!(snapshot.split_layouts.is_empty());
+    assert_eq!(group.name(), "Split View: New Tab + New Tab");
+    assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn split_view_to_group_command_preserves_query_without_active_split() -> Result<(), Box<dyn Error>>
+{
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let active_tab_id = core.active_tab()?.id().clone();
+
+    core.set_command_query(">split-view-to-group Research");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("split-view-to-group Research".to_string())));
+    assert_eq!(snapshot.active_tab_id, active_tab_id);
+    assert!(snapshot.tab_groups.is_empty());
+    assert!(snapshot.split_layouts.is_empty());
+    assert_eq!(snapshot.command_query, ">split-view-to-group Research");
+    Ok(())
+}
+
+#[test]
 fn restore_last_archived_tab_restores_saved_split_view() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let remaining_tab_id = core.active_tab()?.id().clone();
