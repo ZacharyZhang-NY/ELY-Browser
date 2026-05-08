@@ -1,4 +1,4 @@
-use ely_domain::{DomainError, ProfileId, SpaceId, TabId};
+use ely_domain::{DomainError, DownloadId, ProfileId, SpaceId, TabId};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -14,6 +14,9 @@ pub enum CoreError {
 
     #[error("profile not found: {id}")]
     ProfileNotFound { id: ProfileId },
+
+    #[error("download not found: {id}")]
+    DownloadNotFound { id: DownloadId },
 
     #[error("favorite limit reached: {limit}")]
     FavoriteLimitReached { limit: usize },
