@@ -3,24 +3,43 @@ use std::time::SystemTime;
 use crate::{DomainError, ProfileId, ReadingListId, SpaceId, UrlText};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReadingProgressPercent(u8);
+
+impl ReadingProgressPercent {
+    pub fn new(value: u8) -> Result<Self, DomainError> {
+        if !(1..=99).contains(&value) {
+            return Err(DomainError::InvalidReadingProgressPercent { value: value.to_string() });
+        }
+        Ok(Self(value))
+    }
+
+    #[must_use]
+    pub fn value(self) -> u8 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReadingProgress {
     Unread,
+    InProgress(ReadingProgressPercent),
     Finished,
 }
 
 impl ReadingProgress {
     #[must_use]
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Self::Unread => "Unread",
-            Self::Finished => "Read",
+            Self::Unread => "Unread".to_string(),
+            Self::InProgress(percent) => format!("{}% read", percent.value()),
+            Self::Finished => "Read".to_string(),
         }
     }
 
     #[must_use]
     pub fn action_label(self) -> &'static str {
         match self {
-            Self::Unread => "Mark Read",
+            Self::Unread | Self::InProgress(_) => "Mark Read",
             Self::Finished => "Mark Unread",
         }
     }
@@ -28,7 +47,7 @@ impl ReadingProgress {
     #[must_use]
     pub fn toggled(self) -> Self {
         match self {
-            Self::Unread => Self::Finished,
+            Self::Unread | Self::InProgress(_) => Self::Finished,
             Self::Finished => Self::Unread,
         }
     }
@@ -117,4 +136,31 @@ fn non_empty_text(field: &'static str, value: String) -> Result<String, DomainEr
         return Err(DomainError::EmptyField { field });
     }
     Ok(trimmed.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ReadingProgress, ReadingProgressPercent};
+    use crate::DomainError;
+
+    #[test]
+    fn reading_progress_percent_accepts_partial_progress() -> Result<(), DomainError> {
+        let percent = ReadingProgressPercent::new(42)?;
+
+        assert_eq!(percent.value(), 42);
+        assert_eq!(ReadingProgress::InProgress(percent).label(), "42% read");
+        Ok(())
+    }
+
+    #[test]
+    fn reading_progress_percent_rejects_terminal_values() {
+        assert_eq!(
+            ReadingProgressPercent::new(0),
+            Err(DomainError::InvalidReadingProgressPercent { value: "0".to_string() })
+        );
+        assert_eq!(
+            ReadingProgressPercent::new(100),
+            Err(DomainError::InvalidReadingProgressPercent { value: "100".to_string() })
+        );
+    }
 }

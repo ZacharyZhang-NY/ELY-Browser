@@ -1,4 +1,6 @@
-use ely_domain::{BrowserTab, PluginId, SearchEngine, SiteOrigin, UrlText};
+use ely_domain::{
+    BrowserTab, DomainError, PluginId, ReadingProgressPercent, SearchEngine, SiteOrigin, UrlText,
+};
 use url::Url;
 
 use crate::CoreError;
@@ -65,6 +67,28 @@ pub(crate) fn move_tab_space_name(command: &str) -> Option<&str> {
 pub(crate) fn archive_idle_days(command: &str) -> Option<u16> {
     command_argument(command, &["archive-idle-tabs ", "archive idle tabs "])
         .and_then(|value| value.parse().ok())
+}
+
+pub(crate) fn reading_progress_percent(
+    command: &str,
+) -> Result<Option<ReadingProgressPercent>, CoreError> {
+    let Some(value) = command_argument(
+        command,
+        &[
+            "reading-progress ",
+            "reading progress ",
+            "set-reading-progress ",
+            "set reading progress ",
+        ],
+    ) else {
+        return Ok(None);
+    };
+
+    let percent_text = value.trim().strip_suffix('%').unwrap_or(value.trim()).trim();
+    let percent = percent_text.parse::<u8>().map_err(|_| {
+        DomainError::InvalidReadingProgressPercent { value: value.trim().to_string() }
+    })?;
+    ReadingProgressPercent::new(percent).map(Some).map_err(CoreError::from)
 }
 
 pub(crate) fn new_profile_name(command: &str) -> Option<&str> {

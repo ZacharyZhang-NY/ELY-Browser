@@ -7,9 +7,9 @@ use crate::{
     navigation::{
         about_url, archive_idle_days, archive_url, bookmarks_url, downloads_url, history_url,
         move_tab_space_name, new_private_profile_name, new_profile_name, new_space_name,
-        plugin_detail_url, plugins_url, reading_list_url, search_url, settings_page_url,
-        settings_url, shortcut_settings_url, space_icon, switch_profile_name, sync_status_url,
-        task_manager_url,
+        plugin_detail_url, plugins_url, reading_list_url, reading_progress_percent, search_url,
+        settings_page_url, settings_url, shortcut_settings_url, space_icon, switch_profile_name,
+        sync_status_url, task_manager_url,
     },
 };
 
@@ -121,6 +121,10 @@ impl BrowserCore {
         if let Some(idle_days) = archive_idle_days(command) {
             self.set_active_space_archive_policy(ArchivePolicy::IdleDays(idle_days))?;
             self.archive_idle_tabs(SystemTime::now())?;
+            return Ok(true);
+        }
+        if let Some(percent) = reading_progress_percent(command)? {
+            self.set_active_tab_reading_progress(percent)?;
             return Ok(true);
         }
 

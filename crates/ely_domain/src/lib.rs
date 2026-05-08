@@ -39,7 +39,7 @@ pub use plugin::{
 };
 pub use privacy::HistoryRecordingPolicy;
 pub use profile::{Profile, ProfileKind, ProfileSyncPolicy};
-pub use reading_list::{ReadingListEntry, ReadingProgress};
+pub use reading_list::{ReadingListEntry, ReadingProgress, ReadingProgressPercent};
 pub use search::SearchEngine;
 pub use site_permission::{
     SiteOrigin, SitePermissionAuditAction, SitePermissionAuditEvent, SitePermissionDecision,

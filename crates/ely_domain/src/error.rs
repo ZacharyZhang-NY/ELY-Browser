@@ -29,6 +29,9 @@ pub enum DomainError {
     #[error("download progress {received_bytes} exceeds total {total_bytes}")]
     InvalidDownloadProgress { received_bytes: u64, total_bytes: u64 },
 
+    #[error("invalid reading progress percent: {value}")]
+    InvalidReadingProgressPercent { value: String },
+
     #[error("invalid plugin manifest: {reason}")]
     InvalidPluginManifest { reason: String },
 

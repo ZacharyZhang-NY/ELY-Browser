@@ -1,8 +1,9 @@
 use std::error::Error;
 
-use ely_browser_core::{BrowserCore, InitialBrowserConfig};
+use ely_browser_core::{BrowserCore, CoreError, InitialBrowserConfig};
 use ely_domain::{
-    CommandIntent, CommandScope, ProfileKind, ReadingListId, ReadingProgress, UrlText,
+    CommandIntent, CommandScope, DomainError, ProfileKind, ReadingListId, ReadingProgress,
+    ReadingProgressPercent, UrlText,
 };
 
 #[test]
@@ -49,11 +50,76 @@ fn reading_list_progress_updates_entry() -> Result<(), Box<dyn Error>> {
     core.open_tab(UrlText::parse("https://example.com/long-read")?);
     let entry_id = core.save_active_tab_to_reading_list()?;
 
+    core.set_reading_list_progress(
+        &entry_id,
+        ReadingProgress::InProgress(ReadingProgressPercent::new(42)?),
+    )?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(snapshot.reading_list[0].id(), &entry_id);
+    assert_eq!(
+        snapshot.reading_list[0].progress(),
+        &ReadingProgress::InProgress(ReadingProgressPercent::new(42)?)
+    );
+
     core.set_reading_list_progress(&entry_id, ReadingProgress::Finished)?;
     let snapshot = core.snapshot()?;
 
     assert_eq!(snapshot.reading_list[0].id(), &entry_id);
     assert_eq!(snapshot.reading_list[0].progress(), &ReadingProgress::Finished);
+    Ok(())
+}
+
+#[test]
+fn active_tab_reading_progress_saves_partial_progress() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com/long-read")?);
+
+    let entry_id = core.set_active_tab_reading_progress(ReadingProgressPercent::new(47)?)?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(snapshot.reading_list.len(), 1);
+    assert_eq!(snapshot.reading_list[0].id(), &entry_id);
+    assert_eq!(
+        snapshot.reading_list[0].progress(),
+        &ReadingProgress::InProgress(ReadingProgressPercent::new(47)?)
+    );
+    Ok(())
+}
+
+#[test]
+fn reading_progress_command_updates_active_page_entry() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com/long-read")?);
+
+    core.set_command_query(">reading-progress 42%");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("reading-progress 42%".to_string())));
+    assert_eq!(snapshot.command_query, "");
+    assert_eq!(snapshot.reading_list.len(), 1);
+    assert_eq!(
+        snapshot.reading_list[0].progress(),
+        &ReadingProgress::InProgress(ReadingProgressPercent::new(42)?)
+    );
+    Ok(())
+}
+
+#[test]
+fn reading_progress_command_rejects_terminal_percent() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com/long-read")?);
+
+    core.set_command_query(">reading-progress 100");
+    let Err(error) = core.submit_command() else {
+        return Err("expected invalid reading progress error".into());
+    };
+
+    assert_eq!(
+        error,
+        CoreError::Domain(DomainError::InvalidReadingProgressPercent { value: "100".to_string() })
+    );
     Ok(())
 }
 

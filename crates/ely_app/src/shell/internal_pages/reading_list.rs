@@ -192,7 +192,7 @@ fn reading_list_space_name(snapshot: &BrowserSnapshot, entry: &ReadingListEntry)
         .map(|space| space.name().to_string())
 }
 
-fn progress_label(progress: &ReadingProgress) -> &'static str {
+fn progress_label(progress: &ReadingProgress) -> String {
     progress.label()
 }
 
@@ -204,7 +204,7 @@ fn render_progress_action(
 ) -> AnyElement {
     let next_progress = progress.toggled();
     let icon = match progress {
-        ReadingProgress::Unread => IconName::CircleCheck,
+        ReadingProgress::Unread | ReadingProgress::InProgress(_) => IconName::CircleCheck,
         ReadingProgress::Finished => IconName::Undo2,
     };
 

@@ -1,6 +1,8 @@
 use std::time::SystemTime;
 
-use ely_domain::{ReadingListEntry, ReadingListId, ReadingProgress, UrlText};
+use ely_domain::{
+    ReadingListEntry, ReadingListId, ReadingProgress, ReadingProgressPercent, UrlText,
+};
 
 use crate::CoreError;
 
@@ -34,6 +36,15 @@ impl BrowserCore {
     ) -> Result<(), CoreError> {
         self.reading_list_entry_mut(entry_id)?.set_progress(progress);
         Ok(())
+    }
+
+    pub fn set_active_tab_reading_progress(
+        &mut self,
+        percent: ReadingProgressPercent,
+    ) -> Result<ReadingListId, CoreError> {
+        let entry_id = self.save_active_tab_to_reading_list()?;
+        self.set_reading_list_progress(&entry_id, ReadingProgress::InProgress(percent))?;
+        Ok(entry_id)
     }
 
     pub fn remove_reading_list_entry(&mut self, entry_id: &ReadingListId) -> Result<(), CoreError> {
