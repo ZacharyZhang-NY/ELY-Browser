@@ -21,6 +21,15 @@ impl BrowserCore {
         self.clear_space_profile_history_for_host(&profile_id, &space_id, host)
     }
 
+    pub fn clear_active_space_history_since(
+        &mut self,
+        cutoff: SystemTime,
+    ) -> Result<usize, crate::CoreError> {
+        let profile_id = self.active_profile_id.clone();
+        let space_id = self.active_space_id.clone();
+        self.clear_space_profile_history_since(&profile_id, &space_id, cutoff)
+    }
+
     pub(super) fn record_history_entry(&mut self, tab: &BrowserTab) {
         if !self.history_recording_policy.records_history()
             || !records_history(tab.url())
@@ -104,6 +113,28 @@ impl BrowserCore {
             entry.profile_id() != profile_id
                 || entry.space_id() != space_id
                 || entry.url().host().as_deref() != Some(normalized_host.as_str())
+        });
+        Ok(original_count - self.history_entries.len())
+    }
+
+    fn clear_space_profile_history_since(
+        &mut self,
+        profile_id: &ProfileId,
+        space_id: &SpaceId,
+        cutoff: SystemTime,
+    ) -> Result<usize, crate::CoreError> {
+        if !self.profiles.iter().any(|profile| profile.id() == profile_id) {
+            return Err(crate::CoreError::ProfileNotFound { id: profile_id.clone() });
+        }
+        if !self.spaces.iter().any(|space| space.id() == space_id) {
+            return Err(crate::CoreError::SpaceNotFound { id: space_id.clone() });
+        }
+
+        let original_count = self.history_entries.len();
+        self.history_entries.retain(|entry| {
+            entry.profile_id() != profile_id
+                || entry.space_id() != space_id
+                || entry.visited_at() < cutoff
         });
         Ok(original_count - self.history_entries.len())
     }

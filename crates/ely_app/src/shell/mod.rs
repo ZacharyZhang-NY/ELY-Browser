@@ -16,7 +16,7 @@ use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscriptio
 use gpui_component::input::{InputEvent, InputState, SelectAll};
 
 use downloads::PendingDownloadFileAction;
-use history::PendingHistoryDomainClear;
+use history::{PendingHistoryDomainClear, PendingHistoryTimeClear};
 use plugins::{PendingPluginInstall, PendingPluginUninstall};
 
 use crate::{
@@ -40,6 +40,7 @@ pub struct ElyShell {
     download_security_confirmation: Option<PendingDownloadFileAction>,
     history_clear_confirmation: Option<ProfileId>,
     pending_history_domain_clear: Option<PendingHistoryDomainClear>,
+    pending_history_time_clear: Option<PendingHistoryTimeClear>,
     site_permissions_clear_confirmation: Option<ProfileId>,
     plugin_install_error: Option<String>,
     pending_plugin_install: Option<PendingPluginInstall>,
@@ -104,6 +105,7 @@ impl ElyShell {
             download_security_confirmation: None,
             history_clear_confirmation: None,
             pending_history_domain_clear: None,
+            pending_history_time_clear: None,
             site_permissions_clear_confirmation: None,
             plugin_install_error: None,
             pending_plugin_install: None,

@@ -12,7 +12,7 @@ use gpui_component::{
     scroll::ScrollableElement,
 };
 
-use super::super::PendingHistoryDomainClear;
+use super::super::{PendingHistoryDomainClear, PendingHistoryTimeClear};
 use super::{ElyShell, render_canvas_surface};
 
 impl ElyShell {
@@ -24,6 +24,9 @@ impl ElyShell {
         let pending_domain_clear = self.pending_history_domain_clear.clone().filter(|pending| {
             pending.matches_context(&snapshot.active_profile_id, &snapshot.active_space_id)
         });
+        let pending_time_clear = self.pending_history_time_clear.clone().filter(|pending| {
+            pending.matches_context(&snapshot.active_profile_id, &snapshot.active_space_id)
+        });
 
         render_canvas_surface(
             div()
@@ -32,7 +35,10 @@ impl ElyShell {
                 .flex()
                 .flex_col()
                 .gap_5()
-                .child(render_history_header(snapshot))
+                .child(render_history_header(snapshot, cx))
+                .when_some(pending_time_clear, |this, pending| {
+                    this.child(render_time_clear_confirmation(&pending, cx))
+                })
                 .when_some(pending_domain_clear, |this, pending| {
                     this.child(render_domain_clear_confirmation(&pending, cx))
                 })
@@ -41,13 +47,15 @@ impl ElyShell {
     }
 }
 
-fn render_history_header(snapshot: &BrowserSnapshot) -> AnyElement {
+fn render_history_header(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
     div()
         .flex()
         .items_end()
         .justify_between()
+        .gap_4()
         .child(
             div()
+                .min_w_0()
                 .flex()
                 .flex_col()
                 .gap_2()
@@ -59,9 +67,89 @@ fn render_history_header(snapshot: &BrowserSnapshot) -> AnyElement {
         )
         .child(
             div()
-                .text_xs()
-                .text_color(rgb(colors::MUTED))
-                .child(format!("{} entries", snapshot.history_entries.len())),
+                .flex()
+                .items_center()
+                .gap_3()
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(rgb(colors::MUTED))
+                        .child(format!("{} entries", snapshot.history_entries.len())),
+                )
+                .when(!snapshot.history_entries.is_empty(), |this| {
+                    this.child(
+                        Button::new("request-clear-recent-history")
+                            .danger()
+                            .xsmall()
+                            .label("Clear Last Hour")
+                            .tooltip("Clear Recent History")
+                            .on_click(cx.listener(|shell, _, _, cx| {
+                                shell.request_clear_recent_history_confirmation(cx);
+                            })),
+                    )
+                }),
+        )
+        .into_any_element()
+}
+
+fn render_time_clear_confirmation(
+    pending: &PendingHistoryTimeClear,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    div()
+        .rounded_md()
+        .border_1()
+        .border_color(rgb(colors::ERROR))
+        .bg(rgb(colors::CANVAS_SOFT))
+        .px_4()
+        .py_3()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap_4()
+        .child(
+            div()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    div()
+                        .text_sm()
+                        .font_semibold()
+                        .text_color(rgb(colors::INK))
+                        .child(format!("Confirm clearing {}", pending.label())),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(rgb(colors::MUTED))
+                        .child("This removes recent history in the current Space."),
+                ),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    Button::new("cancel-clear-recent-history")
+                        .ghost()
+                        .xsmall()
+                        .label("Cancel")
+                        .on_click(cx.listener(|shell, _, _, cx| {
+                            shell.cancel_clear_recent_history_confirmation(cx);
+                        })),
+                )
+                .child(
+                    Button::new("confirm-clear-recent-history")
+                        .danger()
+                        .xsmall()
+                        .label("Clear")
+                        .on_click(cx.listener(|shell, _, _, cx| {
+                            shell.clear_active_space_history_for_pending_time(cx);
+                        })),
+                ),
         )
         .into_any_element()
 }
