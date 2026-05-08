@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
 use ely_domain::HistoryEntry;
@@ -292,6 +294,12 @@ fn render_history_row(
                             div()
                                 .text_color(rgb(colors::MUTED_SOFT))
                                 .child(visit_count_label(entry.visit_count())),
+                        )
+                        .child(div().text_color(rgb(colors::MUTED_SOFT)).child("-"))
+                        .child(
+                            div()
+                                .text_color(rgb(colors::MUTED_SOFT))
+                                .child(visited_at_label(entry.visited_at())),
                         ),
                 ),
         )
@@ -330,5 +338,61 @@ fn visit_count_label(visit_count: u32) -> String {
     match visit_count {
         1 => "1 visit".to_string(),
         count => format!("{count} visits"),
+    }
+}
+
+fn visited_at_label(visited_at: SystemTime) -> String {
+    visited_at_label_for(visited_at, SystemTime::now())
+}
+
+fn visited_at_label_for(visited_at: SystemTime, now: SystemTime) -> String {
+    let Ok(elapsed) = now.duration_since(visited_at) else {
+        return "Just now".to_string();
+    };
+
+    let seconds = elapsed.as_secs();
+    if seconds < 60 {
+        return "Just now".to_string();
+    }
+    if seconds < 3_600 {
+        return elapsed_label(seconds / 60, "min");
+    }
+    if seconds < 86_400 {
+        return elapsed_label(seconds / 3_600, "hr");
+    }
+    if seconds < 604_800 {
+        return elapsed_label(seconds / 86_400, "day");
+    }
+    "Earlier".to_string()
+}
+
+fn elapsed_label(value: u64, unit: &str) -> String {
+    match value {
+        1 => format!("1 {unit} ago"),
+        count => format!("{count} {unit}s ago"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    use super::visited_at_label_for;
+
+    #[test]
+    fn visited_at_label_formats_recent_visit() {
+        let now = UNIX_EPOCH + Duration::from_secs(120);
+
+        assert_eq!(visited_at_label_for(now - Duration::from_secs(20), now), "Just now");
+    }
+
+    #[test]
+    fn visited_at_label_formats_minutes_hours_days_and_older_visits() {
+        let now = UNIX_EPOCH + Duration::from_secs(900_000);
+
+        assert_eq!(visited_at_label_for(now - Duration::from_secs(120), now), "2 mins ago");
+        assert_eq!(visited_at_label_for(now - Duration::from_secs(10_800), now), "3 hrs ago");
+        assert_eq!(visited_at_label_for(now - Duration::from_secs(345_600), now), "4 days ago");
+        assert_eq!(visited_at_label_for(now - Duration::from_secs(691_200), now), "Earlier");
     }
 }
