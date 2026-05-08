@@ -103,3 +103,18 @@ Group sleep applies the sleeping state to every tab in the active group:
 │   servo.org                  │  [Restore]                                    │
 └──────────────────────────────┴───────────────────────────────────────────────┘
 ```
+
+Group close archives every tab in the active group and removes the empty group row:
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ELY Browser   [ >close-tab-group............................ ] [pin] [*] [+] │
+├──────────────────────────────┬───────────────────────────────────────────────┤
+│ Tabs                         │  servo.org                                    │
+│   New Tab                    │  https://servo.org                            │
+│   servo.org                  │                                               │
+│ Archive                      │  Closed group tabs appear in Archive          │
+│   example.com                │                                               │
+│   example.com                │                                               │
+└──────────────────────────────┴───────────────────────────────────────────────┘
+```

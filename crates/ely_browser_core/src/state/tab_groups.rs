@@ -93,6 +93,25 @@ impl BrowserCore {
         Ok(Some(tab_ids.len()))
     }
 
+    pub fn close_active_tab_group(&mut self) -> Result<Option<usize>, CoreError> {
+        let Some(group_id) = self.active_tab_group_id()? else {
+            return Ok(None);
+        };
+        let tab_ids = self.active_space_group_tab_ids(&group_id);
+
+        for tab_id in &tab_ids {
+            self.clear_tab_group(tab_id)?;
+        }
+
+        self.tab_groups.retain(|group| group.id() != &group_id);
+
+        for tab_id in &tab_ids {
+            self.close_tab(tab_id)?;
+        }
+
+        Ok(Some(tab_ids.len()))
+    }
+
     pub fn split_active_tab_group(&mut self) -> Result<Option<SplitId>, CoreError> {
         let Some(group_id) = self.active_tab_group_id()? else {
             return Ok(None);
