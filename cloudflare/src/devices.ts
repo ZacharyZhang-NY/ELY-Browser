@@ -1,10 +1,33 @@
 import type { AuthContext } from "./auth.js";
 import type { Env } from "./bindings.js";
+import {
+  type DeviceApprovalDocument,
+  type DeviceApprovalRequest,
+  type DeviceApprovalRow,
+  type DeviceListDocument,
+  type DeviceRegistrationDocument,
+  type DeviceRevocationDocument,
+  type DeviceRevocationRequest,
+  type DeviceRevocationRow,
+  type DeviceRow,
+  DevicePermissionError,
+  DevicePersistenceError,
+  approvedDeviceDocument,
+  currentDeviceId,
+  deviceApprovalRequest,
+  deviceDocument,
+  deviceIdValue,
+  deviceRegistrationRequest,
+  deviceRevocationRequest,
+  revokedDeviceDocument,
+  timestamp,
+} from "./device_schema.js";
 
-const DEVICE_ID_PATTERN = /^[a-zA-Z0-9._:-]{3,128}$/;
-const PUBLIC_KEY_PATTERN = /^[a-fA-F0-9]{64,256}$/;
-const DEVICE_TEXT_PATTERN = /^[^\p{Cc}\p{Cs}]{1,128}$/u;
-const APPROVAL_STATUS = new Set(["pending", "approved", "revoked"]);
+export {
+  DevicePermissionError,
+  DevicePersistenceError,
+  DeviceSchemaError,
+} from "./device_schema.js";
 
 const DEVICE_LIST_QUERY = `
   SELECT
@@ -113,91 +136,36 @@ const DEVICE_APPROVE_QUERY = `
     last_active_at = ?
   WHERE user_id = ? AND device_id = ? AND approval_status = 'pending' AND revoked_at IS NULL
 `;
-
-export interface DeviceListDocument {
-  version: 1;
-  user_id: string;
-  devices: DeviceDocument[];
-}
-
-export interface DeviceRegistrationDocument {
-  version: 1;
-  user_id: string;
-  device: DeviceDocument;
-}
-
-export interface DeviceApprovalDocument {
-  version: 1;
-  user_id: string;
-  approved_by_device_id: string;
-  approved_at: number;
-  device: DeviceDocument;
-}
-
-export interface DeviceDocument {
-  device_id: string;
-  public_key: string;
-  device_name: string;
-  platform: string;
-  approval_status: "pending" | "approved" | "revoked";
-  created_at: number;
-  approved_at: number | null;
-  last_active_at: number | null;
-  revoked_at: number | null;
-  current: boolean;
-}
-
-interface DeviceRow {
-  device_id: unknown;
-  public_key: unknown;
-  device_name: unknown;
-  platform: unknown;
-  approval_status: unknown;
-  created_at: unknown;
-  approved_at: unknown;
-  last_active_at: unknown;
-  revoked_at: unknown;
-}
-
-interface DeviceRegistrationRequest {
-  deviceId: string;
-  publicKey: string;
-  deviceName: string;
-  platform: string;
-  idempotencyKey: string;
-}
-
-type DeviceApprovalRequest = { deviceId: string; idempotencyKey: string };
-
-interface DeviceApprovalRow {
-  device_id: unknown;
-  requester_device_id: unknown;
-  status: unknown;
-  decided_at: unknown;
-}
-
-type DeviceRequestBody = Record<string, unknown>;
-
-export class DeviceSchemaError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "DeviceSchemaError";
-  }
-}
-
-export class DevicePermissionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "DevicePermissionError";
-  }
-}
-
-export class DevicePersistenceError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "DevicePersistenceError";
-  }
-}
+const DEVICE_REVOCATION_BY_IDEMPOTENCY_KEY_QUERY = `
+  SELECT
+    actor_device_id,
+    subject_id,
+    outcome,
+    created_at
+  FROM audit_events
+  WHERE user_id = ? AND event_id = ? AND event_type = 'device.revoke'
+`;
+const DEVICE_REVOCATION_INSERT_QUERY = `
+  INSERT INTO audit_events (
+    event_id,
+    user_id,
+    actor_device_id,
+    event_type,
+    subject_type,
+    subject_id,
+    outcome,
+    metadata_hash,
+    created_at
+  ) VALUES (?, ?, ?, 'device.revoke', 'device', ?, 'success', NULL, ?)
+  ON CONFLICT(event_id) DO NOTHING
+`;
+const DEVICE_REVOKE_QUERY = `
+  UPDATE user_devices
+  SET
+    approval_status = 'revoked',
+    revoked_at = COALESCE(revoked_at, ?)
+  WHERE user_id = ? AND device_id = ? AND revoked_at IS NULL
+`;
 
 export async function deviceListDocument(
   env: Env,
@@ -260,18 +228,12 @@ export async function approveDeviceDocument(
     throw new DevicePermissionError("device_self_approval_forbidden");
   }
 
+  await assertApprovedRequester(env, context.userId, requesterDeviceId);
   const existingApproval = await env.ELY_DB.prepare(DEVICE_APPROVAL_BY_IDEMPOTENCY_KEY_QUERY)
     .bind(context.userId, approval.idempotencyKey)
     .first<DeviceApprovalRow>();
   if (existingApproval !== null) {
     return existingApprovalDocument(env, context, approval, requesterDeviceId, existingApproval);
-  }
-
-  const approver = await env.ELY_DB.prepare(APPROVED_DEVICE_QUERY)
-    .bind(context.userId, requesterDeviceId)
-    .first<DeviceRow>();
-  if (approver === null) {
-    throw new DevicePermissionError("approver_device_unapproved");
   }
 
   const pendingDevice = await deviceRowById(env, context.userId, approval.deviceId);
@@ -309,40 +271,56 @@ export async function approveDeviceDocument(
   return approvedDeviceDocument(context.userId, requesterDeviceId, approvedDevice);
 }
 
-async function deviceRegistrationRequest(request: Request): Promise<DeviceRegistrationRequest> {
-  const value = await deviceRequestBody(request, "device_registration");
-  assertOnlyFields(value, [
-    "version",
-    "device_id",
-    "public_key",
-    "device_name",
-    "platform",
-    "idempotency_key",
-  ]);
-  if (value.version !== 1) {
-    throw new DeviceSchemaError("device_registration_version_invalid");
+export async function revokeDeviceDocument(
+  request: Request,
+  env: Env,
+  context: AuthContext,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): Promise<DeviceRevocationDocument> {
+  const revocation = await deviceRevocationRequest(request);
+  const requesterDeviceId = currentDeviceId(context);
+  if (requesterDeviceId === revocation.deviceId) {
+    throw new DevicePermissionError("device_self_revocation_forbidden");
   }
 
-  return {
-    deviceId: deviceIdValue(value.device_id, "device_id"),
-    publicKey: publicKeyValue(value.public_key),
-    deviceName: deviceText(value.device_name, "device_name"),
-    platform: deviceText(value.platform, "platform"),
-    idempotencyKey: idempotencyKeyValue(value.idempotency_key),
-  };
+  const revocationEventId = deviceRevocationEventId(context.userId, revocation.idempotencyKey);
+  await assertApprovedRequester(env, context.userId, requesterDeviceId);
+  const existingRevocation = await env.ELY_DB.prepare(DEVICE_REVOCATION_BY_IDEMPOTENCY_KEY_QUERY)
+    .bind(context.userId, revocationEventId)
+    .first<DeviceRevocationRow>();
+  if (existingRevocation !== null) {
+    return existingRevocationDocument(env, context, revocation, requesterDeviceId, existingRevocation);
+  }
+
+  const targetDevice = await deviceRowById(env, context.userId, revocation.deviceId);
+  if (targetDevice === null) {
+    throw new DevicePermissionError("device_not_found");
+  }
+  const targetDocument = deviceDocument(targetDevice, requesterDeviceId);
+  if (targetDocument.revoked_at !== null) {
+    throw new DevicePermissionError("device_already_revoked");
+  }
+
+  await env.ELY_DB.batch([
+    env.ELY_DB.prepare(DEVICE_REVOCATION_INSERT_QUERY).bind(
+      revocationEventId,
+      context.userId,
+      requesterDeviceId,
+      revocation.deviceId,
+      nowSeconds,
+    ),
+    env.ELY_DB.prepare(DEVICE_REVOKE_QUERY).bind(nowSeconds, context.userId, revocation.deviceId),
+  ]);
+
+  const revokedDevice = await deviceRowById(env, context.userId, revocation.deviceId);
+  if (revokedDevice === null) {
+    throw new DevicePersistenceError("device_revocation_missing");
+  }
+  return revokedDeviceDocument(context.userId, requesterDeviceId, revokedDevice);
 }
 
-async function deviceApprovalRequest(request: Request): Promise<DeviceApprovalRequest> {
-  const value = await deviceRequestBody(request, "device_approval");
-  assertOnlyFields(value, ["version", "device_id", "idempotency_key"]);
-  if (value.version !== 1) {
-    throw new DeviceSchemaError("device_approval_version_invalid");
-  }
-
-  return {
-    deviceId: deviceIdValue(value.device_id, "device_id"),
-    idempotencyKey: idempotencyKeyValue(value.idempotency_key),
-  };
+function deviceRevocationEventId(userId: string, idempotencyKey: string): string {
+  return `device-revoke:${userId}:${idempotencyKey}`;
 }
 
 async function existingApprovalDocument(
@@ -373,126 +351,47 @@ async function existingApprovalDocument(
   };
 }
 
-function approvedDeviceDocument(
-  userId: string,
-  approvedByDeviceId: string,
-  row: DeviceRow,
-): DeviceApprovalDocument {
-  const device = deviceDocument(row, approvedByDeviceId);
-  if (device.approval_status !== "approved" || device.approved_at === null) {
-    throw new DevicePersistenceError("device_approval_missing");
+async function existingRevocationDocument(
+  env: Env,
+  context: AuthContext,
+  revocation: DeviceRevocationRequest,
+  requesterDeviceId: string,
+  row: DeviceRevocationRow,
+): Promise<DeviceRevocationDocument> {
+  const revokedDeviceId = deviceIdValue(row.subject_id, "subject_id");
+  const revokedByDeviceId = deviceIdValue(row.actor_device_id, "actor_device_id");
+  if (
+    revokedDeviceId !== revocation.deviceId ||
+    revokedByDeviceId !== requesterDeviceId ||
+    row.outcome !== "success"
+  ) {
+    throw new DevicePermissionError("device_revocation_replay_mismatch");
   }
+
+  const revokedDevice = await deviceRowById(env, context.userId, revokedDeviceId);
+  if (revokedDevice === null) {
+    throw new DevicePersistenceError("device_revocation_missing");
+  }
+
   return {
-    version: 1,
-    user_id: userId,
-    approved_by_device_id: approvedByDeviceId,
-    approved_at: device.approved_at,
-    device,
+    ...revokedDeviceDocument(context.userId, requesterDeviceId, revokedDevice),
+    revoked_at: timestamp(row.created_at, "created_at"),
   };
 }
 
-function currentDeviceId(context: AuthContext): string {
-  if (context.deviceId === undefined) {
-    throw new DevicePermissionError("device_context_required");
+async function assertApprovedRequester(
+  env: Env,
+  userId: string,
+  requesterDeviceId: string,
+): Promise<void> {
+  const requester = await env.ELY_DB.prepare(APPROVED_DEVICE_QUERY)
+    .bind(userId, requesterDeviceId)
+    .first<DeviceRow>();
+  if (requester === null) {
+    throw new DevicePermissionError("requester_device_unapproved");
   }
-  return context.deviceId;
 }
 
 async function deviceRowById(env: Env, userId: string, deviceId: string): Promise<DeviceRow | null> {
   return env.ELY_DB.prepare(DEVICE_BY_ID_QUERY).bind(userId, deviceId).first<DeviceRow>();
-}
-
-async function deviceRequestBody(request: Request, label: string): Promise<DeviceRequestBody> {
-  let value: unknown;
-  try {
-    value = await request.json();
-  } catch {
-    throw new DeviceSchemaError(`${label}_json_invalid`);
-  }
-  if (!isRecord(value)) {
-    throw new DeviceSchemaError(`${label}_must_be_object`);
-  }
-  return value;
-}
-
-function deviceDocument(row: DeviceRow, currentDeviceId: string | undefined): DeviceDocument {
-  const deviceId = deviceIdValue(row.device_id, "device_id");
-  return {
-    device_id: deviceId,
-    public_key: publicKeyValue(row.public_key),
-    device_name: deviceText(row.device_name, "device_name"),
-    platform: deviceText(row.platform, "platform"),
-    approval_status: approvalStatus(row.approval_status),
-    created_at: timestamp(row.created_at, "created_at"),
-    approved_at: nullableTimestamp(row.approved_at, "approved_at"),
-    last_active_at: nullableTimestamp(row.last_active_at, "last_active_at"),
-    revoked_at: nullableTimestamp(row.revoked_at, "revoked_at"),
-    current: currentDeviceId === deviceId,
-  };
-}
-
-function deviceIdValue(value: unknown, label: string): string {
-  if (typeof value !== "string" || !DEVICE_ID_PATTERN.test(value)) {
-    throw new DeviceSchemaError(`${label}_invalid`);
-  }
-  return value;
-}
-
-function publicKeyValue(value: unknown): string {
-  if (typeof value !== "string" || !PUBLIC_KEY_PATTERN.test(value)) {
-    throw new DeviceSchemaError("public_key_invalid");
-  }
-  return value.toLowerCase();
-}
-
-function deviceText(value: unknown, label: string): string {
-  if (typeof value !== "string") {
-    throw new DeviceSchemaError(`${label}_invalid`);
-  }
-  const trimmed = value.trim();
-  if (!DEVICE_TEXT_PATTERN.test(trimmed)) {
-    throw new DeviceSchemaError(`${label}_invalid`);
-  }
-  return trimmed;
-}
-
-function approvalStatus(value: unknown): DeviceDocument["approval_status"] {
-  if (typeof value !== "string" || !APPROVAL_STATUS.has(value)) {
-    throw new DeviceSchemaError("approval_status_invalid");
-  }
-  return value as DeviceDocument["approval_status"];
-}
-
-function idempotencyKeyValue(value: unknown): string {
-  if (typeof value !== "string" || !/^[a-zA-Z0-9._:-]{16,128}$/.test(value)) {
-    throw new DeviceSchemaError("idempotency_key_invalid");
-  }
-  return value;
-}
-
-function nullableTimestamp(value: unknown, label: string): number | null {
-  if (value === null) {
-    return null;
-  }
-  return timestamp(value, label);
-}
-
-function timestamp(value: unknown, label: string): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
-    throw new DeviceSchemaError(`${label}_invalid`);
-  }
-  return value;
-}
-
-function assertOnlyFields(value: DeviceRequestBody, fields: string[]): void {
-  const allowed = new Set(fields);
-  for (const field of Object.keys(value)) {
-    if (!allowed.has(field)) {
-      throw new DeviceSchemaError(`unexpected_field:${field}`);
-    }
-  }
-}
-
-function isRecord(value: unknown): value is DeviceRequestBody {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
