@@ -172,6 +172,10 @@ impl ServoHost for SoftwareServoHost {
 
     fn paint(&mut self, webview_id: &WebViewId) -> Result<(), ServoHostError> {
         let webview = self.webview(webview_id)?;
+        self.rendering_context
+            .make_current()
+            .map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
+        self.rendering_context.prepare_for_rendering();
         webview.webview.paint();
         self.rendering_context.present();
         webview.delegate.mark_frame_presented();
