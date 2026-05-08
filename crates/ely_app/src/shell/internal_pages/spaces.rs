@@ -6,7 +6,7 @@ use gpui::{
     px, rgb,
 };
 use gpui_component::{
-    IconName, Sizable, StyledExt,
+    Disableable, IconName, Sizable, StyledExt,
     button::{Button, ButtonVariants},
     scroll::ScrollableElement,
 };
@@ -132,13 +132,21 @@ fn render_spaces_list(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) ->
         .border_t_1()
         .border_color(rgb(colors::HAIRLINE))
         .children(snapshot.spaces.iter().enumerate().map(|(index, space)| {
-            render_space_row(index, space, snapshot, space.id() == &snapshot.active_space_id, cx)
+            render_space_row(
+                index,
+                snapshot.spaces.len(),
+                space,
+                snapshot,
+                space.id() == &snapshot.active_space_id,
+                cx,
+            )
         }))
         .into_any_element()
 }
 
 fn render_space_row(
     index: usize,
+    space_count: usize,
     space: &Space,
     snapshot: &BrowserSnapshot,
     active: bool,
@@ -179,11 +187,72 @@ fn render_space_row(
                     ),
             ),
         )
-        .child(render_space_action(index, space_id, active, cx))
+        .child(render_space_actions(index, space_count, space_id, active, cx))
         .into_any_element()
 }
 
-fn render_space_action(
+fn render_space_actions(
+    index: usize,
+    space_count: usize,
+    space_id: SpaceId,
+    active: bool,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let can_move_up = index > 0;
+    let can_move_down = index + 1 < space_count;
+
+    div()
+        .flex()
+        .items_center()
+        .gap_2()
+        .child(render_space_order_button(
+            ("move-space-up", index),
+            space_id.clone(),
+            IconName::ArrowUp,
+            "Move Space Up",
+            can_move_up,
+            true,
+            cx,
+        ))
+        .child(render_space_order_button(
+            ("move-space-down", index),
+            space_id.clone(),
+            IconName::ArrowDown,
+            "Move Space Down",
+            can_move_down,
+            false,
+            cx,
+        ))
+        .child(render_space_switch_action(index, space_id, active, cx))
+        .into_any_element()
+}
+
+fn render_space_order_button(
+    id: (&'static str, usize),
+    space_id: SpaceId,
+    icon: IconName,
+    tooltip: &'static str,
+    enabled: bool,
+    moves_up: bool,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    Button::new(id)
+        .small()
+        .ghost()
+        .icon(icon)
+        .tooltip(tooltip)
+        .disabled(!enabled)
+        .on_click(cx.listener(move |shell, _, _, cx| {
+            if moves_up {
+                shell.move_space_up(&space_id, cx);
+            } else {
+                shell.move_space_down(&space_id, cx);
+            }
+        }))
+        .into_any_element()
+}
+
+fn render_space_switch_action(
     index: usize,
     space_id: SpaceId,
     active: bool,

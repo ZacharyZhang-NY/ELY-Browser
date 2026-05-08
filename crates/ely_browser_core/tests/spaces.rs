@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, CoreError, InitialBrowserConfig};
-use ely_domain::{ArchivePolicy, DEFAULT_SIDEBAR_WIDTH_PX, ProfileId, ProfileKind};
+use ely_domain::{ArchivePolicy, DEFAULT_SIDEBAR_WIDTH_PX, ProfileId, ProfileKind, SpaceId};
 
 #[test]
 fn created_space_binds_current_profile_as_default() -> Result<(), Box<dyn Error>> {
@@ -84,6 +84,49 @@ fn snapshot_orders_spaces_by_sort_key() -> Result<(), Box<dyn Error>> {
 
     assert_eq!(snapshot.spaces[0].id(), &research_space_id);
     assert_eq!(snapshot.spaces[1].id(), &work_space_id);
+    Ok(())
+}
+
+#[test]
+fn moving_spaces_updates_visible_order() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let work_space_id = core.snapshot()?.active_space_id;
+    let research_space_id = core.create_space("Research", "R", 0x9fc9a2)?;
+    let personal_space_id = core.create_space("Personal", "P", 0x8eb7d4)?;
+
+    core.set_space_sort_key(&work_space_id, 20)?;
+    core.set_space_sort_key(&research_space_id, 10)?;
+    core.set_space_sort_key(&personal_space_id, 30)?;
+
+    assert!(core.move_space_up(&work_space_id)?);
+    assert_eq!(
+        ordered_space_ids(&core)?,
+        vec![work_space_id.clone(), research_space_id.clone(), personal_space_id.clone()]
+    );
+
+    assert!(core.move_space_down(&work_space_id)?);
+    assert_eq!(
+        ordered_space_ids(&core)?,
+        vec![research_space_id, work_space_id, personal_space_id]
+    );
+    Ok(())
+}
+
+#[test]
+fn moving_boundary_or_missing_space_is_safe() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let work_space_id = core.snapshot()?.active_space_id;
+
+    assert!(!core.move_space_up(&work_space_id)?);
+    assert!(!core.move_space_down(&work_space_id)?);
+
+    let missing_space_id = SpaceId::new();
+    let error = match core.move_space_up(&missing_space_id) {
+        Err(error) => error,
+        Ok(_) => return Err("moving a missing space should fail".into()),
+    };
+
+    assert_eq!(error, CoreError::SpaceNotFound { id: missing_space_id });
     Ok(())
 }
 
@@ -185,4 +228,8 @@ fn active_space_updated_at(
     };
 
     Ok(space.updated_at())
+}
+
+fn ordered_space_ids(core: &BrowserCore) -> Result<Vec<SpaceId>, Box<dyn Error>> {
+    Ok(core.snapshot()?.spaces.iter().map(|space| space.id().clone()).collect())
 }

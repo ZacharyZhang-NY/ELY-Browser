@@ -20,6 +20,7 @@ mod plugins;
 mod profiles;
 mod reading_list;
 mod site_permissions;
+mod spaces;
 mod splits;
 mod sync;
 mod tab_groups;
