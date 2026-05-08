@@ -89,6 +89,28 @@ impl BookmarkEntry {
     pub fn added_at(&self) -> SystemTime {
         self.added_at
     }
+
+    pub fn set_collection_name(
+        &mut self,
+        collection_name: impl Into<String>,
+    ) -> Result<(), DomainError> {
+        self.collection_name = non_empty_text("bookmark collection", collection_name.into())?;
+        Ok(())
+    }
+
+    pub fn set_tags(&mut self, tags: Vec<String>) -> Result<(), DomainError> {
+        self.tags = normalize_tags(tags)?;
+        Ok(())
+    }
+
+    pub fn set_note(&mut self, note: impl Into<String>) -> Result<(), DomainError> {
+        self.note = Some(non_empty_text("bookmark note", note.into())?);
+        Ok(())
+    }
+
+    pub fn clear_note(&mut self) {
+        self.note = None;
+    }
 }
 
 fn non_empty_text(field: &'static str, value: String) -> Result<String, DomainError> {
@@ -97,4 +119,8 @@ fn non_empty_text(field: &'static str, value: String) -> Result<String, DomainEr
         return Err(DomainError::EmptyField { field });
     }
     Ok(trimmed.to_string())
+}
+
+fn normalize_tags(tags: Vec<String>) -> Result<Vec<String>, DomainError> {
+    tags.into_iter().map(|tag| non_empty_text("bookmark tag", tag)).collect()
 }

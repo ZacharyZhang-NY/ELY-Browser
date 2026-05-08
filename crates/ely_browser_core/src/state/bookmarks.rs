@@ -31,6 +31,38 @@ impl BrowserCore {
         Ok(bookmark_id)
     }
 
+    pub fn set_bookmark_collection_name(
+        &mut self,
+        bookmark_id: &BookmarkId,
+        collection_name: impl Into<String>,
+    ) -> Result<(), CoreError> {
+        self.bookmark_mut(bookmark_id)?.set_collection_name(collection_name)?;
+        Ok(())
+    }
+
+    pub fn set_bookmark_tags(
+        &mut self,
+        bookmark_id: &BookmarkId,
+        tags: Vec<String>,
+    ) -> Result<(), CoreError> {
+        self.bookmark_mut(bookmark_id)?.set_tags(tags)?;
+        Ok(())
+    }
+
+    pub fn set_bookmark_note(
+        &mut self,
+        bookmark_id: &BookmarkId,
+        note: impl Into<String>,
+    ) -> Result<(), CoreError> {
+        self.bookmark_mut(bookmark_id)?.set_note(note)?;
+        Ok(())
+    }
+
+    pub fn clear_bookmark_note(&mut self, bookmark_id: &BookmarkId) -> Result<(), CoreError> {
+        self.bookmark_mut(bookmark_id)?.clear_note();
+        Ok(())
+    }
+
     pub(super) fn find_bookmark_match(&self, query: &str) -> Option<UrlText> {
         let normalized_query = query.trim().to_lowercase();
         if normalized_query.is_empty() {
@@ -51,6 +83,13 @@ impl BrowserCore {
             .filter(|bookmark| bookmark.profile_id() == &self.active_profile_id)
             .cloned()
             .collect()
+    }
+
+    fn bookmark_mut(&mut self, bookmark_id: &BookmarkId) -> Result<&mut BookmarkEntry, CoreError> {
+        self.bookmarks
+            .iter_mut()
+            .find(|bookmark| bookmark.id() == bookmark_id)
+            .ok_or_else(|| CoreError::BookmarkNotFound { id: bookmark_id.clone() })
     }
 }
 

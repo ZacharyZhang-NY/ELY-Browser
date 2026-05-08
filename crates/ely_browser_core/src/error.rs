@@ -1,4 +1,6 @@
-use ely_domain::{DomainError, DownloadId, PluginId, ProfileId, SpaceId, SplitId, TabId};
+use ely_domain::{
+    BookmarkId, DomainError, DownloadId, PluginId, ProfileId, SpaceId, SplitId, TabId,
+};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -8,6 +10,9 @@ pub enum CoreError {
 
     #[error("tab not found: {id}")]
     TabNotFound { id: TabId },
+
+    #[error("bookmark not found: {id}")]
+    BookmarkNotFound { id: BookmarkId },
 
     #[error("space not found: {id}")]
     SpaceNotFound { id: SpaceId },

@@ -1,7 +1,7 @@
 use std::error::Error;
 
-use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{CommandIntent, CommandScope, ProfileKind, UrlText};
+use ely_browser_core::{BrowserCore, CoreError, InitialBrowserConfig};
+use ely_domain::{BookmarkId, CommandIntent, CommandScope, DomainError, ProfileKind, UrlText};
 
 #[test]
 fn bookmark_active_tab_records_current_context() -> Result<(), Box<dyn Error>> {
@@ -42,6 +42,68 @@ fn bookmark_active_tab_reuses_existing_bookmark() -> Result<(), Box<dyn Error>> 
 }
 
 #[test]
+fn bookmark_metadata_updates_collection_tags_and_note() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com/research")?);
+    let bookmark_id = core.bookmark_active_tab()?;
+
+    core.set_bookmark_collection_name(&bookmark_id, "Research")?;
+    core.set_bookmark_tags(&bookmark_id, vec![" rust ".to_string(), "gpui".to_string()])?;
+    core.set_bookmark_note(&bookmark_id, " Read with Servo notes ")?;
+    let snapshot = core.snapshot()?;
+    let [bookmark] = snapshot.bookmarks.as_slice() else {
+        return Err(format!("expected 1 bookmark, got {}", snapshot.bookmarks.len()).into());
+    };
+
+    assert_eq!(bookmark.collection_name(), "Research");
+    assert_eq!(bookmark.tags(), &["rust".to_string(), "gpui".to_string()]);
+    assert_eq!(bookmark.note(), Some("Read with Servo notes"));
+
+    core.clear_bookmark_note(&bookmark_id)?;
+    let snapshot = core.snapshot()?;
+    assert_eq!(snapshot.bookmarks[0].note(), None);
+    Ok(())
+}
+
+#[test]
+fn bookmark_metadata_rejects_empty_fields() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com/research")?);
+    let bookmark_id = core.bookmark_active_tab()?;
+
+    let Err(collection_error) = core.set_bookmark_collection_name(&bookmark_id, " ") else {
+        return Err("expected empty bookmark collection error".into());
+    };
+    assert_eq!(
+        collection_error,
+        CoreError::Domain(DomainError::EmptyField { field: "bookmark collection" })
+    );
+    let Err(tag_error) =
+        core.set_bookmark_tags(&bookmark_id, vec!["rust".to_string(), " ".to_string()])
+    else {
+        return Err("expected empty bookmark tag error".into());
+    };
+    assert_eq!(tag_error, CoreError::Domain(DomainError::EmptyField { field: "bookmark tag" }));
+    let Err(note_error) = core.set_bookmark_note(&bookmark_id, " ") else {
+        return Err("expected empty bookmark note error".into());
+    };
+    assert_eq!(note_error, CoreError::Domain(DomainError::EmptyField { field: "bookmark note" }));
+    Ok(())
+}
+
+#[test]
+fn bookmark_metadata_requires_known_bookmark() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let unknown_bookmark_id = BookmarkId::new();
+
+    let Err(bookmark_error) = core.set_bookmark_note(&unknown_bookmark_id, "Read later") else {
+        return Err("expected unknown bookmark error".into());
+    };
+    assert_eq!(bookmark_error, CoreError::BookmarkNotFound { id: unknown_bookmark_id });
+    Ok(())
+}
+
+#[test]
 fn bookmarks_scoped_search_opens_matching_bookmark() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     core.open_tab(UrlText::parse("https://example.com/research")?);
@@ -61,6 +123,31 @@ fn bookmarks_scoped_search_opens_matching_bookmark() -> Result<(), Box<dyn Error
     );
     assert_eq!(active_tab.url().as_str(), "https://example.com/research");
     assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn bookmarks_scoped_search_matches_metadata() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com/research")?);
+    let bookmark_id = core.bookmark_active_tab()?;
+
+    core.set_bookmark_collection_name(&bookmark_id, "Research")?;
+    core.set_bookmark_tags(&bookmark_id, vec!["gpui".to_string()])?;
+    core.set_bookmark_note(&bookmark_id, "Servo embed reference")?;
+
+    core.set_command_query("@bookmarks gpui");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(
+        intent,
+        Some(CommandIntent::ScopedSearch {
+            scope: CommandScope::Bookmarks,
+            query: "gpui".to_string()
+        })
+    );
+    assert_eq!(active_tab.url().as_str(), "https://example.com/research");
     Ok(())
 }
 
