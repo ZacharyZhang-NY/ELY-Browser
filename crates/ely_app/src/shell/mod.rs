@@ -4,7 +4,7 @@ mod plugins;
 mod render;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{CommandIntent, SpaceId, TabId, UrlText};
+use ely_domain::{CommandIntent, ProfileId, SpaceId, TabId, UrlText};
 use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscription, Window};
 use gpui_component::input::{InputEvent, InputState, SelectAll};
 
@@ -160,6 +160,20 @@ impl ElyShell {
     fn select_space(&mut self, space_id: &SpaceId, window: &mut Window, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state
             && core.select_space(space_id).is_ok()
+        {
+            self.sync_address_input(window, cx);
+            cx.notify();
+        }
+    }
+
+    fn select_profile(
+        &mut self,
+        profile_id: &ProfileId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.select_profile(profile_id).is_ok()
         {
             self.sync_address_input(window, cx);
             cx.notify();

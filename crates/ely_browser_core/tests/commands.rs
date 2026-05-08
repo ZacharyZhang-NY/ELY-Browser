@@ -168,7 +168,9 @@ fn new_profile_command_creates_and_selects_named_profile() -> Result<(), Box<dyn
     let active_tab = core.active_tab()?;
 
     assert_eq!(intent, Some(CommandIntent::Command("new-profile Personal".to_string())));
+    assert_eq!(snapshot.profiles.len(), 2);
     assert_eq!(snapshot.active_profile_name, "Personal");
+    assert_eq!(snapshot.active_profile_id, active_tab.profile_id().clone());
     assert_ne!(active_tab.profile_id(), &default_profile_id);
     assert_eq!(active_tab.url().as_str(), "ely://new-tab");
     assert_eq!(snapshot.command_query, "");
