@@ -312,6 +312,9 @@ mod tests {
 
     use super::PluginPackageReader;
     use crate::services::plugin_package_fixtures::{sign_package_in_place, write_signed_package};
+    use crate::services::plugin_signatures::{
+        PluginSignatureVerificationError, PluginSignatureVerifier, TrustedPluginSigningKeys,
+    };
 
     #[test]
     fn reads_verified_directory_package() -> Result<(), Box<dyn Error>> {
@@ -322,6 +325,48 @@ mod tests {
 
         assert_eq!(manifest.id().as_str(), "com.elydora.verified");
         assert_eq!(manifest.name(), "Verified Plugin");
+        Ok(())
+    }
+
+    #[test]
+    fn reads_package_with_trusted_signing_key() -> Result<(), Box<dyn Error>> {
+        let package = write_package("trusted", b"wasm component")?;
+        let manifest = package_manifest(package.as_path())?;
+        let trusted_keys = TrustedPluginSigningKeys::from_entries([(
+            manifest.signature().key_id().to_string(),
+            manifest.signature().public_key().to_string(),
+        )])?;
+
+        PluginSignatureVerifier::verify_with_trusted_keys(
+            package.as_path(),
+            &manifest,
+            &trusted_keys,
+        )?;
+
+        assert_eq!(manifest.id().as_str(), "com.elydora.trusted");
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_package_with_untrusted_signing_key() -> Result<(), Box<dyn Error>> {
+        let package = write_package("untrusted", b"wasm component")?;
+        let trusted_keys = TrustedPluginSigningKeys::from_entries(Vec::<(&str, &str)>::new())?;
+
+        let manifest = package_manifest(package.as_path())?;
+
+        let error = PluginSignatureVerifier::verify_with_trusted_keys(
+            package.as_path(),
+            &manifest,
+            &trusted_keys,
+        )
+        .err()
+        .ok_or_else(|| std::io::Error::other("trusted package verification succeeded"))?;
+
+        assert!(matches!(
+            error,
+            PluginSignatureVerificationError::UntrustedPublicKey { key_id }
+                if key_id == "elydora-alpha-plugins"
+        ));
         Ok(())
     }
 
@@ -394,6 +439,13 @@ mod tests {
 
     fn write_package(name: &str, component: &[u8]) -> Result<PathBuf, Box<dyn Error>> {
         write_signed_package(temp_root()?.as_path(), name, component)
+    }
+
+    fn package_manifest(
+        path: &std::path::Path,
+    ) -> Result<ely_domain::PluginManifest, Box<dyn Error>> {
+        let manifest = fs::read_to_string(path.join("plugin.toml"))?;
+        Ok(ely_domain::PluginManifest::from_toml(manifest.as_str())?)
     }
 
     fn temp_root() -> Result<PathBuf, Box<dyn Error>> {

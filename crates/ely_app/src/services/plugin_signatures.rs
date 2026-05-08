@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     ffi::OsStr,
     fs,
     io::{self, Read},
@@ -21,6 +22,18 @@ pub enum PluginSignatureVerificationError {
     #[error("plugin signature verification failed for key {key_id}")]
     VerificationFailed { key_id: String },
 
+    #[error("trusted plugin signing key id is invalid: {value}")]
+    InvalidTrustedKeyId { value: String },
+
+    #[error("trusted plugin signing public key is invalid: {value}")]
+    InvalidTrustedPublicKey { value: String },
+
+    #[error("trusted plugin signing key is duplicated: {key_id}")]
+    DuplicateTrustedKey { key_id: String },
+
+    #[error("plugin signing key is not trusted: {key_id}")]
+    UntrustedPublicKey { key_id: String },
+
     #[error("failed to read plugin package entry {entry}: {path}")]
     ReadFailed { entry: &'static str, path: PathBuf, source: io::Error },
 
@@ -34,13 +47,66 @@ pub enum PluginSignatureVerificationError {
     UnsupportedEntry { path: PathBuf },
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TrustedPluginSigningKeys {
+    keys: BTreeMap<String, String>,
+}
+
 pub struct PluginSignatureVerifier;
+
+impl TrustedPluginSigningKeys {
+    pub fn from_entries<I, K, P>(entries: I) -> Result<Self, PluginSignatureVerificationError>
+    where
+        I: IntoIterator<Item = (K, P)>,
+        K: Into<String>,
+        P: Into<String>,
+    {
+        let mut keys = BTreeMap::new();
+        for (key_id, public_key) in entries {
+            let key_id = trusted_key_id(key_id.into())?;
+            let public_key = trusted_public_key(public_key.into())?;
+            if keys.insert(key_id.clone(), public_key).is_some() {
+                return Err(PluginSignatureVerificationError::DuplicateTrustedKey { key_id });
+            }
+        }
+
+        Ok(Self { keys })
+    }
+
+    pub fn require_manifest(
+        &self,
+        manifest: &PluginManifest,
+    ) -> Result<(), PluginSignatureVerificationError> {
+        let signature = manifest.signature();
+        match self.keys.get(signature.key_id()) {
+            Some(public_key) if public_key == signature.public_key() => Ok(()),
+            _ => Err(PluginSignatureVerificationError::UntrustedPublicKey {
+                key_id: signature.key_id().to_string(),
+            }),
+        }
+    }
+
+    fn from_manifest(manifest: &PluginManifest) -> Result<Self, PluginSignatureVerificationError> {
+        let signature = manifest.signature();
+        Self::from_entries([(signature.key_id().to_string(), signature.public_key().to_string())])
+    }
+}
 
 impl PluginSignatureVerifier {
     pub fn verify(
         package_root: &Path,
         manifest: &PluginManifest,
     ) -> Result<(), PluginSignatureVerificationError> {
+        let trusted_keys = TrustedPluginSigningKeys::from_manifest(manifest)?;
+        Self::verify_with_trusted_keys(package_root, manifest, &trusted_keys)
+    }
+
+    pub fn verify_with_trusted_keys(
+        package_root: &Path,
+        manifest: &PluginManifest,
+        trusted_keys: &TrustedPluginSigningKeys,
+    ) -> Result<(), PluginSignatureVerificationError> {
+        trusted_keys.require_manifest(manifest)?;
         let key_id = manifest.signature().key_id().to_string();
         let public_key =
             decode_hex_array::<32>(manifest.signature().public_key()).ok_or_else(|| {
@@ -88,6 +154,26 @@ pub(crate) fn signing_payload(
     append_field(&mut payload, "signature_public_key", manifest.signature().public_key());
     append_field(&mut payload, "package_files_sha256", package_files_hash(package_root)?.as_str());
     Ok(payload)
+}
+
+fn trusted_key_id(value: String) -> Result<String, PluginSignatureVerificationError> {
+    let value = value.trim().to_string();
+    let valid = (3..=128).contains(&value.len())
+        && value.chars().all(|ch| {
+            ch.is_ascii_lowercase() || ch.is_ascii_digit() || matches!(ch, '.' | '-' | '_')
+        });
+    if !valid {
+        return Err(PluginSignatureVerificationError::InvalidTrustedKeyId { value });
+    }
+    Ok(value)
+}
+
+fn trusted_public_key(value: String) -> Result<String, PluginSignatureVerificationError> {
+    let value = value.trim().to_ascii_lowercase();
+    if decode_hex_array::<32>(value.as_str()).is_none() {
+        return Err(PluginSignatureVerificationError::InvalidTrustedPublicKey { value });
+    }
+    Ok(value)
 }
 
 fn package_files_hash(package_root: &Path) -> Result<String, PluginSignatureVerificationError> {
