@@ -47,6 +47,50 @@ impl BrowserCore {
         Ok(())
     }
 
+    pub fn ungroup_active_tab(&mut self) -> Result<bool, CoreError> {
+        let active_tab_id = self.active_tab_id.clone();
+        let Some(_) = self.active_tab_group_id()? else {
+            return Ok(false);
+        };
+        self.clear_tab_group(&active_tab_id)?;
+        Ok(true)
+    }
+
+    pub fn toggle_active_tab_group_collapsed(&mut self) -> Result<Option<bool>, CoreError> {
+        let Some(group_id) = self.active_tab_group_id()? else {
+            return Ok(None);
+        };
+        self.toggle_tab_group_collapsed(&group_id).map(Some)
+    }
+
+    pub fn set_active_tab_group_collapsed(
+        &mut self,
+        collapsed: bool,
+    ) -> Result<Option<()>, CoreError> {
+        let Some(group_id) = self.active_tab_group_id()? else {
+            return Ok(None);
+        };
+        self.set_tab_group_collapsed(&group_id, collapsed)?;
+        Ok(Some(()))
+    }
+
+    pub fn toggle_tab_group_collapsed(&mut self, group_id: &TabGroupId) -> Result<bool, CoreError> {
+        let group = self.tab_group_mut(group_id)?;
+        let collapsed = !group.collapsed();
+        group.set_collapsed(collapsed);
+        Ok(collapsed)
+    }
+
+    pub fn set_tab_group_collapsed(
+        &mut self,
+        group_id: &TabGroupId,
+        collapsed: bool,
+    ) -> Result<(), CoreError> {
+        let group = self.tab_group_mut(group_id)?;
+        group.set_collapsed(collapsed);
+        Ok(())
+    }
+
     pub(super) fn visible_tab_groups(&self) -> Vec<TabGroup> {
         let mut groups = self
             .tab_groups
@@ -96,5 +140,24 @@ impl BrowserCore {
             .map(TabGroup::sort_key)
             .max()
             .map_or(0, |sort_key| sort_key.saturating_add(1))
+    }
+
+    fn active_tab_group_id(&self) -> Result<Option<TabGroupId>, CoreError> {
+        let tab = self.active_tab()?;
+        let Some(group_id) = tab.group_id().cloned() else {
+            return Ok(None);
+        };
+        if self.tab_groups.iter().any(|group| group.id() == &group_id) {
+            return Ok(Some(group_id));
+        }
+
+        Err(CoreError::TabGroupNotFound { id: group_id })
+    }
+
+    fn tab_group_mut(&mut self, group_id: &TabGroupId) -> Result<&mut TabGroup, CoreError> {
+        self.tab_groups
+            .iter_mut()
+            .find(|group| group.id() == group_id)
+            .ok_or_else(|| CoreError::TabGroupNotFound { id: group_id.clone() })
     }
 }

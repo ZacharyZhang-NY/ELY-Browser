@@ -8,6 +8,7 @@ mod reading_list;
 mod render;
 mod site_permissions;
 mod splits;
+mod tab_groups;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
 use ely_domain::{

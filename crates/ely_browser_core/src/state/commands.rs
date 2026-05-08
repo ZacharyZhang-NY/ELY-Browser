@@ -156,6 +156,16 @@ impl BrowserCore {
                 Ok(true)
             }
             "save-split-view" | "save split view" => Ok(self.save_active_split_view()?.is_some()),
+            "toggle-tab-group" | "toggle tab group" => {
+                Ok(self.toggle_active_tab_group_collapsed()?.is_some())
+            }
+            "collapse-tab-group" | "collapse tab group" => {
+                Ok(self.set_active_tab_group_collapsed(true)?.is_some())
+            }
+            "expand-tab-group" | "expand tab group" => {
+                Ok(self.set_active_tab_group_collapsed(false)?.is_some())
+            }
+            "ungroup-tab" | "ungroup tab" => self.ungroup_active_tab(),
             "downloads" | "open-downloads" | "open downloads" => {
                 self.open_tab(downloads_url()?);
                 Ok(true)

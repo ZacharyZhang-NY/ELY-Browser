@@ -102,3 +102,85 @@ fn group_tab_command_groups_active_tab() -> Result<(), Box<dyn Error>> {
     assert_eq!(snapshot.command_query, "");
     Ok(())
 }
+
+#[test]
+fn tab_group_collapse_commands_update_active_group() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let group_id = core.group_active_tab("Research")?;
+
+    core.set_command_query(">collapse-tab-group");
+    let collapse_intent = core.submit_command()?;
+    let collapsed_snapshot = core.snapshot()?;
+
+    assert_eq!(collapse_intent, Some(CommandIntent::Command("collapse-tab-group".to_string())));
+    assert_eq!(
+        collapsed_snapshot
+            .tab_groups
+            .iter()
+            .find(|group| group.id() == &group_id)
+            .map(|group| { group.collapsed() }),
+        Some(true)
+    );
+    assert_eq!(collapsed_snapshot.command_query, "");
+
+    core.set_command_query(">expand-tab-group");
+    let expand_intent = core.submit_command()?;
+    let expanded_snapshot = core.snapshot()?;
+
+    assert_eq!(expand_intent, Some(CommandIntent::Command("expand-tab-group".to_string())));
+    assert_eq!(
+        expanded_snapshot
+            .tab_groups
+            .iter()
+            .find(|group| group.id() == &group_id)
+            .map(|group| { group.collapsed() }),
+        Some(false)
+    );
+    assert_eq!(expanded_snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn toggle_active_tab_group_collapsed_returns_next_state() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.group_active_tab("Research")?;
+
+    assert_eq!(core.toggle_active_tab_group_collapsed()?, Some(true));
+    assert_eq!(core.toggle_active_tab_group_collapsed()?, Some(false));
+    Ok(())
+}
+
+#[test]
+fn ungroup_tab_command_clears_active_tab_group() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.group_active_tab("Research")?;
+
+    core.set_command_query(">ungroup-tab");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+    let active_tab = snapshot
+        .tabs
+        .iter()
+        .find(|tab| tab.id() == &snapshot.active_tab_id)
+        .ok_or(CoreError::MissingActiveTab)?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("ungroup-tab".to_string())));
+    assert_eq!(active_tab.group_id(), None);
+    assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn tab_group_command_preserves_query_without_active_group() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let active_tab_id = core.active_tab()?.id().clone();
+
+    core.set_command_query(">toggle-tab-group");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("toggle-tab-group".to_string())));
+    assert_eq!(snapshot.active_tab_id, active_tab_id);
+    assert_eq!(snapshot.command_query, ">toggle-tab-group");
+    Ok(())
+}
