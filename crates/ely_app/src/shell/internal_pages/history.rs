@@ -445,6 +445,7 @@ mod tests {
             tab.id().clone(),
             "example.com",
             UrlText::parse("https://example.com/research")?,
+            None,
             UNIX_EPOCH,
         );
 
@@ -473,6 +474,7 @@ mod tests {
             tab.id().clone(),
             "example.com",
             UrlText::parse("https://example.com/closed")?,
+            None,
             UNIX_EPOCH,
         );
         let archived_tab = ArchivedTab::new(tab, ArchiveSource::ManualClose);

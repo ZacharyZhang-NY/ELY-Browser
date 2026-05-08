@@ -279,22 +279,27 @@ impl BrowserCore {
         tab_id: &TabId,
         favicon_key: impl Into<String>,
     ) -> Result<(), CoreError> {
-        let tab = self
+        let favicon_key = favicon_key.into();
+        let tab_index = self
             .tabs
-            .iter_mut()
-            .find(|tab| tab.id() == tab_id)
+            .iter()
+            .position(|tab| tab.id() == tab_id)
             .ok_or_else(|| CoreError::TabNotFound { id: tab_id.clone() })?;
-        tab.set_favicon_key(favicon_key)?;
+        self.tabs[tab_index].set_favicon_key(favicon_key.clone())?;
+        let tab = self.tabs[tab_index].clone();
+        self.set_history_favicon_key_for_tab(&tab, favicon_key);
         Ok(())
     }
 
     pub fn clear_tab_favicon_key(&mut self, tab_id: &TabId) -> Result<(), CoreError> {
-        let tab = self
+        let tab_index = self
             .tabs
-            .iter_mut()
-            .find(|tab| tab.id() == tab_id)
+            .iter()
+            .position(|tab| tab.id() == tab_id)
             .ok_or_else(|| CoreError::TabNotFound { id: tab_id.clone() })?;
-        tab.clear_favicon_key();
+        self.tabs[tab_index].clear_favicon_key();
+        let tab = self.tabs[tab_index].clone();
+        self.clear_history_favicon_key_for_tab(&tab);
         Ok(())
     }
 

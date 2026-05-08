@@ -9,6 +9,7 @@ pub struct HistoryEntry {
     source_tab_id: TabId,
     title: String,
     url: UrlText,
+    favicon_key: Option<String>,
     visited_at: SystemTime,
     visit_count: u32,
 }
@@ -21,6 +22,7 @@ impl HistoryEntry {
         source_tab_id: TabId,
         title: impl Into<String>,
         url: UrlText,
+        favicon_key: Option<String>,
         visited_at: SystemTime,
     ) -> Self {
         Self {
@@ -29,6 +31,7 @@ impl HistoryEntry {
             source_tab_id,
             title: title.into(),
             url,
+            favicon_key,
             visited_at,
             visit_count: 1,
         }
@@ -38,10 +41,14 @@ impl HistoryEntry {
         &mut self,
         source_tab_id: TabId,
         title: impl Into<String>,
+        favicon_key: Option<&str>,
         visited_at: SystemTime,
     ) {
         self.source_tab_id = source_tab_id;
         self.title = title.into();
+        if let Some(favicon_key) = favicon_key {
+            self.favicon_key = Some(favicon_key.to_string());
+        }
         self.visited_at = visited_at;
         self.visit_count = self.visit_count.saturating_add(1);
     }
@@ -69,6 +76,19 @@ impl HistoryEntry {
     #[must_use]
     pub fn url(&self) -> &UrlText {
         &self.url
+    }
+
+    #[must_use]
+    pub fn favicon_key(&self) -> Option<&str> {
+        self.favicon_key.as_deref()
+    }
+
+    pub fn set_favicon_key(&mut self, favicon_key: impl Into<String>) {
+        self.favicon_key = Some(favicon_key.into());
+    }
+
+    pub fn clear_favicon_key(&mut self) {
+        self.favicon_key = None;
     }
 
     #[must_use]

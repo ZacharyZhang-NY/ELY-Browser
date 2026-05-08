@@ -26,6 +26,31 @@ fn navigation_records_profile_and_space_history() -> Result<(), Box<dyn Error>> 
 }
 
 #[test]
+fn history_entry_updates_favicon_key_after_navigation() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let tab_id = core.open_tab(UrlText::parse("https://example.com/research")?);
+
+    core.set_tab_favicon_key(&tab_id, "favicons/example.ico")?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(snapshot.history_entries[0].favicon_key(), Some("favicons/example.ico"));
+    Ok(())
+}
+
+#[test]
+fn history_entry_clears_favicon_key_with_source_tab() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let tab_id = core.open_tab(UrlText::parse("https://example.com/research")?);
+
+    core.set_tab_favicon_key(&tab_id, "favicons/example.ico")?;
+    core.clear_tab_favicon_key(&tab_id)?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(snapshot.history_entries[0].favicon_key(), None);
+    Ok(())
+}
+
+#[test]
 fn repeated_history_visits_increment_count_in_active_context() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     core.open_tab(UrlText::parse("https://example.com/research")?);

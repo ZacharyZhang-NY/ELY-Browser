@@ -44,7 +44,7 @@ impl BrowserCore {
                 && entry.space_id() == tab.space_id()
                 && entry.url() == tab.url()
         }) {
-            entry.record_visit(tab.id().clone(), tab.title(), visited_at);
+            entry.record_visit(tab.id().clone(), tab.title(), tab.favicon_key(), visited_at);
             return;
         }
 
@@ -54,8 +54,34 @@ impl BrowserCore {
             tab.id().clone(),
             tab.title(),
             tab.url().clone(),
+            tab.favicon_key().map(ToOwned::to_owned),
             visited_at,
         ));
+    }
+
+    pub(super) fn set_history_favicon_key_for_tab(
+        &mut self,
+        tab: &BrowserTab,
+        favicon_key: impl Into<String>,
+    ) {
+        let favicon_key = favicon_key.into();
+        if let Some(entry) = self.history_entries.iter_mut().find(|entry| {
+            entry.profile_id() == tab.profile_id()
+                && entry.space_id() == tab.space_id()
+                && entry.url() == tab.url()
+        }) {
+            entry.set_favicon_key(favicon_key);
+        }
+    }
+
+    pub(super) fn clear_history_favicon_key_for_tab(&mut self, tab: &BrowserTab) {
+        if let Some(entry) = self.history_entries.iter_mut().find(|entry| {
+            entry.profile_id() == tab.profile_id()
+                && entry.space_id() == tab.space_id()
+                && entry.url() == tab.url()
+        }) {
+            entry.clear_favicon_key();
+        }
     }
 
     pub(super) fn find_history_match(&self, query: &str) -> Option<UrlText> {
