@@ -23,6 +23,7 @@ pub struct ElyShell {
     command_input: Entity<InputState>,
     last_intent: Option<CommandIntent>,
     download_file_error: Option<String>,
+    download_clear_confirmation: bool,
     _command_subscription: Subscription,
 }
 
@@ -79,6 +80,7 @@ impl ElyShell {
             command_input,
             last_intent: None,
             download_file_error: None,
+            download_clear_confirmation: false,
             _command_subscription: command_subscription,
         }
     }
@@ -247,6 +249,25 @@ impl ElyShell {
         {
             cx.notify();
         }
+    }
+
+    fn request_clear_active_profile_downloads(&mut self, cx: &mut Context<Self>) {
+        self.download_clear_confirmation = true;
+        cx.notify();
+    }
+
+    fn cancel_clear_active_profile_downloads(&mut self, cx: &mut Context<Self>) {
+        self.download_clear_confirmation = false;
+        cx.notify();
+    }
+
+    fn clear_active_profile_downloads(&mut self, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state {
+            core.clear_downloads_for_active_profile();
+        }
+        self.download_clear_confirmation = false;
+        self.download_file_error = None;
+        cx.notify();
     }
 
     fn open_download_file(&mut self, download_id: &DownloadId, cx: &mut Context<Self>) {

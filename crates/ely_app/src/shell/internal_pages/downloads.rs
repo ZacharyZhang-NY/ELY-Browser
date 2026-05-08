@@ -58,9 +58,35 @@ impl ElyShell {
                                 .flex_col()
                                 .items_end()
                                 .gap_1()
-                                .child(div().text_xs().text_color(rgb(colors::MUTED)).child(
-                                    format!("{} downloads", snapshot.download_entries.len()),
-                                ))
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_2()
+                                        .child(
+                                            div().text_xs().text_color(rgb(colors::MUTED)).child(
+                                                format!(
+                                                    "{} downloads",
+                                                    snapshot.download_entries.len()
+                                                ),
+                                            ),
+                                        )
+                                        .when(!snapshot.download_entries.is_empty(), |this| {
+                                            this.child(
+                                                Button::new("clear-downloads")
+                                                    .ghost()
+                                                    .xsmall()
+                                                    .icon(IconName::Delete)
+                                                    .tooltip("Clear Downloads")
+                                                    .on_click(cx.listener(|shell, _, _, cx| {
+                                                        shell
+                                                            .request_clear_active_profile_downloads(
+                                                                cx,
+                                                            );
+                                                    })),
+                                            )
+                                        }),
+                                )
                                 .child(
                                     div()
                                         .flex()
@@ -78,8 +104,61 @@ impl ElyShell {
                 .when_some(self.download_file_error.clone(), |this, message| {
                     this.child(render_download_file_error(message))
                 })
+                .when(
+                    self.download_clear_confirmation && !snapshot.download_entries.is_empty(),
+                    |this| this.child(self.render_download_clear_confirmation(snapshot, cx)),
+                )
                 .child(self.render_downloads_list(snapshot, cx)),
         )
+    }
+
+    fn render_download_clear_confirmation(
+        &mut self,
+        snapshot: &BrowserSnapshot,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .rounded_md()
+            .border_1()
+            .border_color(rgb(colors::HAIRLINE))
+            .px_3()
+            .py_2()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_3()
+            .child(div().min_w_0().text_xs().text_color(rgb(colors::BODY)).truncate().child(
+                format!(
+                    "Clear {} downloads for {}?",
+                    snapshot.download_entries.len(),
+                    snapshot.active_profile_name
+                ),
+            ))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        Button::new("cancel-clear-downloads")
+                            .ghost()
+                            .xsmall()
+                            .label("Cancel")
+                            .on_click(cx.listener(|shell, _, _, cx| {
+                                shell.cancel_clear_active_profile_downloads(cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("confirm-clear-downloads")
+                            .danger()
+                            .xsmall()
+                            .label("Clear")
+                            .on_click(cx.listener(|shell, _, _, cx| {
+                                shell.clear_active_profile_downloads(cx);
+                            })),
+                    ),
+            )
+            .into_any_element()
     }
 
     fn render_downloads_list(
