@@ -9,10 +9,11 @@
 │ Pinned                       │                                               │
 │   [pin] New Tab              │                                               │
 │ Space                        │  ┌─────────────────────────────────────────┐  │
-│   Work                       │  │ New Tab                                 │  │
-│                              │  │ Clean browser surface for the current   │  │
-│ Tabs                         │  │ Space and Profile.                      │  │
-│   ● New Tab                  │  └─────────────────────────────────────────┘  │
+│   W Work                     │  │ New Tab                                 │  │
+│   R Research                 │  │ Clean browser surface for the current   │  │
+│                              │  │ Space and Profile.                      │  │
+│ Tabs                         │  └─────────────────────────────────────────┘  │
+│   ● New Tab                  │                                               │
 │ Archive                      │                                               │
 │   ↶ servo.org                │                                               │
 │                              │                                               │
@@ -21,6 +22,6 @@
 └──────────────────────────────┴───────────────────────────────────────────────┘
 ```
 
-Motion register: productive. Command, tab, and archive restore interactions use immediate state
-changes with hover/press feedback through GPUI styles; future pane transitions should use
+Motion register: productive. Command, space, tab, and archive restore interactions use immediate
+state changes with hover/press feedback through GPUI styles; future pane transitions should use
 transform/opacity and respect reduced-motion settings.

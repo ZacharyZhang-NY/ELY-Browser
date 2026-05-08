@@ -1,12 +1,15 @@
+use std::collections::BTreeMap;
+
 use ely_domain::{
     ArchiveSource, ArchivedTab, BrowserTab, CommandIntent, CommandScope, DomainError, Profile,
     ProfileId, ProfileKind, Space, SpaceId, TabId, UrlText,
 };
-use url::Url;
 
-use crate::CoreError;
+use crate::{
+    CoreError,
+    navigation::{new_space_name, search_url, space_icon, tab_matches_query, tab_title},
+};
 
-const DEFAULT_SEARCH_URL: &str = "https://duckduckgo.com/";
 const DEFAULT_FAVORITE_LIMIT: usize = 12;
 
 #[derive(Clone, Debug)]
@@ -34,7 +37,9 @@ pub struct BrowserSnapshot {
     pub favorites: Vec<BrowserTab>,
     pub pinned_tabs: Vec<BrowserTab>,
     pub archived_tabs: Vec<ArchivedTab>,
+    pub spaces: Vec<Space>,
     pub active_tab_id: TabId,
+    pub active_space_id: SpaceId,
     pub active_space_name: String,
     pub active_profile_name: String,
     pub command_query: String,
@@ -49,6 +54,7 @@ pub struct BrowserCore {
     active_space_id: SpaceId,
     active_profile_id: ProfileId,
     active_tab_id: TabId,
+    active_tabs_by_space: BTreeMap<SpaceId, TabId>,
     command_query: String,
     new_tab_url: UrlText,
 }
@@ -58,18 +64,24 @@ impl BrowserCore {
         let space = Space::new(config.space_name, config.space_icon, 0xf54e00);
         let profile = Profile::new(config.profile_name, 0x26251e, ProfileKind::Standard);
         let new_tab_url = config.initial_url;
+        let active_space_id = space.id().clone();
+        let active_profile_id = profile.id().clone();
         let tab = BrowserTab::new(
             TabId::new(),
-            space.id().clone(),
-            profile.id().clone(),
+            active_space_id.clone(),
+            active_profile_id.clone(),
             "New Tab",
             new_tab_url.clone(),
         );
+        let active_tab_id = tab.id().clone();
+        let mut active_tabs_by_space = BTreeMap::new();
+        active_tabs_by_space.insert(active_space_id.clone(), active_tab_id.clone());
 
         Ok(Self {
-            active_space_id: space.id().clone(),
-            active_profile_id: profile.id().clone(),
-            active_tab_id: tab.id().clone(),
+            active_space_id,
+            active_profile_id,
+            active_tab_id,
+            active_tabs_by_space,
             spaces: vec![space],
             profiles: vec![profile],
             tabs: vec![tab],
@@ -89,7 +101,63 @@ impl BrowserCore {
             .map_or(self.tabs.len(), |index| index + 1);
         self.tabs.insert(insert_index, tab);
         self.active_tab_id = tab_id.clone();
+        self.active_tabs_by_space.insert(self.active_space_id.clone(), tab_id.clone());
         tab_id
+    }
+
+    pub fn create_space(
+        &mut self,
+        name: impl Into<String>,
+        icon: impl Into<String>,
+        accent_hex: u32,
+    ) -> Result<SpaceId, CoreError> {
+        let space = Space::new(name, icon, accent_hex);
+        let space_id = space.id().clone();
+        let tab = self.build_tab_for(
+            space_id.clone(),
+            self.active_profile_id.clone(),
+            self.new_tab_url.clone(),
+        );
+        let tab_id = tab.id().clone();
+
+        self.spaces.push(space);
+        self.tabs.push(tab);
+        self.active_tabs_by_space.insert(space_id.clone(), tab_id.clone());
+        self.select_tab(&tab_id)?;
+        Ok(space_id)
+    }
+
+    pub fn select_space(&mut self, space_id: &SpaceId) -> Result<TabId, CoreError> {
+        if !self.spaces.iter().any(|space| space.id() == space_id) {
+            return Err(CoreError::SpaceNotFound { id: space_id.clone() });
+        }
+
+        if let Some(tab_id) = self
+            .active_tabs_by_space
+            .get(space_id)
+            .filter(|tab_id| self.tab_belongs_to_space(tab_id, space_id))
+            .cloned()
+        {
+            self.select_tab(&tab_id)?;
+            return Ok(tab_id);
+        }
+
+        if let Some(tab_id) =
+            self.tabs.iter().find(|tab| tab.space_id() == space_id).map(|tab| tab.id().clone())
+        {
+            self.select_tab(&tab_id)?;
+            return Ok(tab_id);
+        }
+
+        let tab = self.build_tab_for(
+            space_id.clone(),
+            self.active_profile_id.clone(),
+            self.new_tab_url.clone(),
+        );
+        let tab_id = tab.id().clone();
+        self.tabs.push(tab);
+        self.select_tab(&tab_id)?;
+        Ok(tab_id)
     }
 
     pub fn close_active_tab(&mut self) -> Result<TabId, CoreError> {
@@ -106,20 +174,33 @@ impl BrowserCore {
         let was_active = &self.active_tab_id == tab_id;
 
         let closed_tab = self.tabs.remove(close_index);
+        let closed_space_id = closed_tab.space_id().clone();
+        let closed_profile_id = closed_tab.profile_id().clone();
+        let was_space_active_tab = self.active_tabs_by_space.get(&closed_space_id) == Some(tab_id);
         self.archived_tabs.push(ArchivedTab::new(closed_tab, ArchiveSource::ManualClose));
 
-        if self.tabs.is_empty() {
-            let tab = self.build_tab(self.new_tab_url.clone());
-            let replacement_id = tab.id().clone();
-            self.tabs.push(tab);
-            self.active_tab_id = replacement_id.clone();
-            return Ok(replacement_id);
+        if let Some(next_tab_id) = self.nearest_tab_in_space(&closed_space_id, close_index) {
+            if was_space_active_tab {
+                self.active_tabs_by_space.insert(closed_space_id, next_tab_id.clone());
+            }
+            if was_active {
+                self.select_tab(&next_tab_id)?;
+            }
+            return Ok(self.active_tab_id.clone());
         }
 
+        let tab = self.build_tab_for(
+            closed_space_id.clone(),
+            closed_profile_id,
+            self.new_tab_url.clone(),
+        );
+        let replacement_id = tab.id().clone();
+        self.tabs.insert(close_index.min(self.tabs.len()), tab);
+        self.active_tabs_by_space.insert(closed_space_id, replacement_id.clone());
+
         if was_active {
-            let next_index = close_index.min(self.tabs.len() - 1);
-            let next_tab_id = self.tabs[next_index].id().clone();
-            self.select_tab(&next_tab_id)?;
+            self.select_tab(&replacement_id)?;
+            return Ok(replacement_id);
         }
 
         Ok(self.active_tab_id.clone())
@@ -180,10 +261,14 @@ impl BrowserCore {
             .iter()
             .find(|tab| tab.id() == tab_id)
             .ok_or_else(|| CoreError::TabNotFound { id: tab_id.clone() })?;
+        let active_space_id = tab.space_id().clone();
+        let active_profile_id = tab.profile_id().clone();
+        let active_tab_id = tab.id().clone();
 
-        self.active_tab_id = tab.id().clone();
-        self.active_space_id = tab.space_id().clone();
-        self.active_profile_id = tab.profile_id().clone();
+        self.active_tab_id = active_tab_id.clone();
+        self.active_space_id = active_space_id.clone();
+        self.active_profile_id = active_profile_id;
+        self.active_tabs_by_space.insert(active_space_id, active_tab_id);
         Ok(())
     }
 
@@ -280,8 +365,10 @@ impl BrowserCore {
             favorites: self.favorites(),
             pinned_tabs: self.pinned_tabs(),
             archived_tabs: self.archived_tabs.clone(),
-            tabs: self.tabs.clone(),
+            spaces: self.spaces.clone(),
+            tabs: self.visible_tabs(),
             active_tab_id: self.active_tab_id.clone(),
+            active_space_id: self.active_space_id.clone(),
             active_space_name: active_space.name().to_string(),
             active_profile_name: active_profile.name().to_string(),
             command_query: self.command_query.clone(),
@@ -296,16 +383,31 @@ impl BrowserCore {
     }
 
     fn select_tab_by_offset(&mut self, offset: isize) -> Result<TabId, CoreError> {
-        let active_index = self.active_tab_index()?;
-        let tab_count = self.tabs.len() as isize;
+        let visible_tab_ids = self
+            .tabs
+            .iter()
+            .filter(|tab| tab.space_id() == &self.active_space_id)
+            .map(|tab| tab.id().clone())
+            .collect::<Vec<_>>();
+        let active_index = visible_tab_ids
+            .iter()
+            .position(|tab_id| tab_id == &self.active_tab_id)
+            .ok_or(CoreError::MissingActiveTab)?;
+        let tab_count = visible_tab_ids.len() as isize;
         let next_index = (active_index as isize + offset).rem_euclid(tab_count) as usize;
-        let next_tab_id = self.tabs[next_index].id().clone();
+        let next_tab_id = visible_tab_ids[next_index].clone();
         self.select_tab(&next_tab_id)?;
         Ok(next_tab_id)
     }
 
     fn submit_named_command(&mut self, command: &str) -> Result<bool, CoreError> {
-        match command.trim().to_ascii_lowercase().as_str() {
+        let command = command.trim();
+        if let Some(name) = new_space_name(command) {
+            self.create_space(name.to_string(), space_icon(name), 0xf54e00)?;
+            return Ok(true);
+        }
+
+        match command.to_ascii_lowercase().as_str() {
             "new-tab" => {
                 self.open_tab(self.new_tab_url.clone());
                 Ok(true)
@@ -344,9 +446,14 @@ impl BrowserCore {
     fn pinned_tabs(&self) -> Vec<BrowserTab> {
         self.tabs
             .iter()
+            .filter(|tab| tab.space_id() == &self.active_space_id)
             .filter(|tab| tab.flags().pinned && !tab.flags().favorite)
             .cloned()
             .collect()
+    }
+
+    fn visible_tabs(&self) -> Vec<BrowserTab> {
+        self.tabs.iter().filter(|tab| tab.space_id() == &self.active_space_id).cloned().collect()
     }
 
     fn find_tab_match(&self, query: &str) -> Option<TabId> {
@@ -358,34 +465,24 @@ impl BrowserCore {
     }
 
     fn build_tab(&self, url: UrlText) -> BrowserTab {
+        self.build_tab_for(self.active_space_id.clone(), self.active_profile_id.clone(), url)
+    }
+
+    fn build_tab_for(&self, space_id: SpaceId, profile_id: ProfileId, url: UrlText) -> BrowserTab {
         let title = tab_title(&url);
-        BrowserTab::new(
-            TabId::new(),
-            self.active_space_id.clone(),
-            self.active_profile_id.clone(),
-            title,
-            url,
-        )
-    }
-}
-
-fn tab_title(url: &UrlText) -> String {
-    if url.as_str() == "ely://new-tab" {
-        return "New Tab".to_string();
+        BrowserTab::new(TabId::new(), space_id, profile_id, title, url)
     }
 
-    url.display_host()
-}
+    fn nearest_tab_in_space(&self, space_id: &SpaceId, start_index: usize) -> Option<TabId> {
+        self.tabs
+            .iter()
+            .skip(start_index)
+            .chain(self.tabs.iter().take(start_index))
+            .find(|tab| tab.space_id() == space_id)
+            .map(|tab| tab.id().clone())
+    }
 
-fn tab_matches_query(tab: &BrowserTab, normalized_query: &str) -> bool {
-    tab.title().to_lowercase().contains(normalized_query)
-        || tab.url().as_str().to_lowercase().contains(normalized_query)
-        || tab.display_url().to_lowercase().contains(normalized_query)
-}
-
-fn search_url(query: &str) -> Result<UrlText, CoreError> {
-    let mut url = Url::parse(DEFAULT_SEARCH_URL)
-        .map_err(|_| DomainError::InvalidUrl { value: DEFAULT_SEARCH_URL.to_string() })?;
-    url.query_pairs_mut().append_pair("q", query);
-    UrlText::parse(url.to_string()).map_err(CoreError::from)
+    fn tab_belongs_to_space(&self, tab_id: &TabId, space_id: &SpaceId) -> bool {
+        self.tabs.iter().any(|tab| tab.id() == tab_id && tab.space_id() == space_id)
+    }
 }

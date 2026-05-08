@@ -1,7 +1,7 @@
 mod render;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{CommandIntent, TabId, UrlText};
+use ely_domain::{CommandIntent, SpaceId, TabId, UrlText};
 use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscription, Window};
 use gpui_component::input::{InputEvent, InputState, SelectAll};
 
@@ -11,7 +11,7 @@ use crate::{
 };
 
 enum ShellState {
-    Ready(BrowserCore),
+    Ready(Box<BrowserCore>),
     StartupError(String),
 }
 
@@ -66,7 +66,7 @@ impl ElyShell {
                 _ => ely_domain::DomainError::InvalidCommand,
             })
         }) {
-            Ok(core) => ShellState::Ready(core),
+            Ok(core) => ShellState::Ready(Box::new(core)),
             Err(error) => ShellState::StartupError(error.to_string()),
         };
 
@@ -100,6 +100,15 @@ impl ElyShell {
     fn select_tab(&mut self, tab_id: &TabId, window: &mut Window, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state
             && core.select_tab(tab_id).is_ok()
+        {
+            self.sync_address_input(window, cx);
+            cx.notify();
+        }
+    }
+
+    fn select_space(&mut self, space_id: &SpaceId, window: &mut Window, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.select_space(space_id).is_ok()
         {
             self.sync_address_input(window, cx);
             cx.notify();

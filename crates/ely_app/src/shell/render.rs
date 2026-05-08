@@ -1,6 +1,6 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{ELY_THEME, colors, spacing};
-use ely_domain::{ArchiveSource, ArchivedTab, BrowserTab};
+use ely_domain::{ArchiveSource, ArchivedTab, BrowserTab, Space};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
     StatefulInteractiveElement, Styled, Window, div, px, rgb,
@@ -157,16 +157,9 @@ impl ElyShell {
                 }),
             )
             .child(section_label("Space"))
-            .child(
-                div()
-                    .rounded_md()
-                    .bg(rgb(colors::SURFACE_CARD))
-                    .border_1()
-                    .border_color(rgb(colors::HAIRLINE))
-                    .px_3()
-                    .py_2()
-                    .child(snapshot.active_space_name.clone()),
-            )
+            .children(snapshot.spaces.iter().map(|space| {
+                self.render_space_row(space, space.id() == &snapshot.active_space_id, cx)
+            }))
             .child(section_label("Tabs"))
             .children(
                 snapshot
@@ -192,6 +185,44 @@ impl ElyShell {
                     .text_color(rgb(colors::BODY))
                     .child(snapshot.active_profile_name.clone()),
             )
+            .into_any_element()
+    }
+
+    fn render_space_row(
+        &mut self,
+        space: &Space,
+        active: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let space_id = space.id().clone();
+        let background = if active { colors::SURFACE_CARD } else { colors::CANVAS };
+        let border = if active { colors::HAIRLINE_STRONG } else { colors::HAIRLINE };
+
+        div()
+            .id(SharedString::from(format!("space-{}", space.id().as_str())))
+            .rounded_md()
+            .border_1()
+            .border_color(rgb(border))
+            .bg(rgb(background))
+            .px_3()
+            .py_2()
+            .gap_2()
+            .flex()
+            .items_center()
+            .cursor_pointer()
+            .hover(|style| style.bg(rgb(colors::SURFACE_CARD)))
+            .active(|style| style.opacity(0.82))
+            .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.select_space(&space_id, window, cx);
+            }))
+            .child(
+                div()
+                    .text_xs()
+                    .font_semibold()
+                    .text_color(rgb(colors::PRIMARY))
+                    .child(space.icon().to_string()),
+            )
+            .child(div().text_sm().font_semibold().child(space.name().to_string()))
             .into_any_element()
     }
 

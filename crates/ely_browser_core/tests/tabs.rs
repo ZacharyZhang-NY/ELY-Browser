@@ -245,6 +245,56 @@ fn search_command_opens_default_search_url() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn switching_spaces_restores_each_space_active_tab() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let work_snapshot = core.snapshot()?;
+    let work_space_id = work_snapshot.active_space_id;
+    let work_tab_id = work_snapshot.active_tab_id;
+
+    let research_space_id = core.create_space("Research", "R", 0xf54e00)?;
+    let research_new_tab_id = core.active_tab()?.id().clone();
+    let servo_tab_id = core.open_tab(UrlText::parse("https://servo.org")?);
+
+    core.select_space(&work_space_id)?;
+    let work_snapshot = core.snapshot()?;
+
+    assert_eq!(work_snapshot.active_tab_id, work_tab_id);
+    assert_eq!(work_snapshot.active_space_id, work_space_id);
+    assert_eq!(work_snapshot.tabs.len(), 1);
+    assert_eq!(work_snapshot.tabs[0].id(), &work_tab_id);
+
+    core.select_space(&research_space_id)?;
+    let research_snapshot = core.snapshot()?;
+    let research_ids =
+        research_snapshot.tabs.iter().map(|tab| tab.id().clone()).collect::<Vec<_>>();
+
+    assert_eq!(research_snapshot.active_tab_id, servo_tab_id);
+    assert_eq!(research_snapshot.active_space_id, research_space_id);
+    assert_eq!(research_ids, vec![research_new_tab_id, servo_tab_id]);
+    Ok(())
+}
+
+#[test]
+fn closing_active_tab_selects_neighbor_in_same_space() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let work_tab_id = core.active_tab()?.id().clone();
+    core.create_space("Research", "R", 0xf54e00)?;
+    let research_tab_id = core.active_tab()?.id().clone();
+    let servo_tab_id = core.open_tab(UrlText::parse("https://servo.org")?);
+
+    let active_tab_id = core.close_active_tab()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(active_tab_id, research_tab_id);
+    assert_eq!(snapshot.active_tab_id, research_tab_id);
+    assert_eq!(snapshot.tabs.len(), 1);
+    assert_eq!(snapshot.tabs[0].id(), &research_tab_id);
+    assert!(snapshot.tabs.iter().all(|tab| tab.id() != &work_tab_id));
+    assert_eq!(snapshot.archived_tabs[0].tab().id(), &servo_tab_id);
+    Ok(())
+}
+
+#[test]
 fn toggles_active_tab_favorite() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
 
