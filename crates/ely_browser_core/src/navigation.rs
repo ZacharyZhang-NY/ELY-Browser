@@ -106,6 +106,10 @@ pub(crate) fn history_url() -> Result<UrlText, CoreError> {
     internal_page_url("ely://history")
 }
 
+pub(crate) fn archive_url() -> Result<UrlText, CoreError> {
+    internal_page_url("ely://archive")
+}
+
 pub(crate) fn task_manager_url() -> Result<UrlText, CoreError> {
     internal_page_url("ely://task-manager")
 }
