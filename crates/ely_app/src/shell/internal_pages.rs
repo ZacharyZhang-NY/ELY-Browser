@@ -8,6 +8,7 @@ mod plugin_details;
 mod plugins;
 mod profiles;
 mod reading_list;
+mod settings;
 mod site_settings;
 mod sync;
 mod task_manager;
@@ -45,6 +46,7 @@ impl ElyShell {
                 self.render_site_settings_page(snapshot, url, cx)
             }
             "ely://about" => self.render_about_page(snapshot),
+            "ely://settings" => self.render_settings_page(snapshot, cx),
             "ely://settings/plugins" => self.render_plugins_page(snapshot, cx),
             "ely://settings/profiles" => self.render_profiles_page(snapshot, cx),
             "ely://settings/sync" => self.render_sync_page(snapshot),
