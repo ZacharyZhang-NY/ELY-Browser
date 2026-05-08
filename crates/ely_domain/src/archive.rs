@@ -17,7 +17,8 @@ pub struct ArchivedTab {
 
 impl ArchivedTab {
     #[must_use]
-    pub fn new(tab: BrowserTab, source: ArchiveSource) -> Self {
+    pub fn new(mut tab: BrowserTab, source: ArchiveSource) -> Self {
+        tab.mark_archived();
         Self { tab, archived_at: SystemTime::now(), source }
     }
 
@@ -38,6 +39,8 @@ impl ArchivedTab {
 
     #[must_use]
     pub fn into_tab(self) -> BrowserTab {
-        self.tab
+        let mut tab = self.tab;
+        tab.mark_ready();
+        tab
     }
 }

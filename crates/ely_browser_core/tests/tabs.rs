@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, CoreError, InitialBrowserConfig};
-use ely_domain::{CommandIntent, CommandScope, UrlText};
+use ely_domain::{CommandIntent, CommandScope, TabState, UrlText};
 
 #[test]
 fn opens_new_tab_below_active_tab() -> Result<(), Box<dyn Error>> {
@@ -38,6 +38,7 @@ fn closes_active_tab_and_selects_next_neighbor() -> Result<(), Box<dyn Error>> {
     assert_eq!(snapshot.active_tab_id, active_tab_id);
     assert_eq!(snapshot.archived_tabs.len(), 1);
     assert_eq!(snapshot.archived_tabs[0].tab().id(), &second_tab_id);
+    assert_eq!(snapshot.archived_tabs[0].tab().state(), &TabState::Archived);
     Ok(())
 }
 
@@ -69,7 +70,12 @@ fn restores_last_archived_tab() -> Result<(), Box<dyn Error>> {
     assert_eq!(restored_tab_id, closed_tab_id);
     assert_eq!(snapshot.active_tab_id, closed_tab_id);
     assert!(snapshot.archived_tabs.is_empty());
-    assert!(snapshot.tabs.iter().any(|tab| tab.id() == &closed_tab_id));
+    let restored_tab = snapshot
+        .tabs
+        .iter()
+        .find(|tab| tab.id() == &closed_tab_id)
+        .ok_or(CoreError::MissingActiveTab)?;
+    assert_eq!(restored_tab.state(), &TabState::Ready);
     Ok(())
 }
 

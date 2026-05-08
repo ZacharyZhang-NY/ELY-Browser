@@ -85,6 +85,14 @@ impl BrowserTab {
         &self.state
     }
 
+    pub fn mark_archived(&mut self) {
+        self.state = TabState::Archived;
+    }
+
+    pub fn mark_ready(&mut self) {
+        self.state = TabState::Ready;
+    }
+
     #[must_use]
     pub fn flags(&self) -> &TabFlags {
         &self.flags
