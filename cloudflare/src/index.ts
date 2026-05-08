@@ -1,5 +1,6 @@
 import type { Env } from "./bindings.js";
-import { withPublicApiControls } from "./api_controls.js";
+import { withAuthenticatedApiControls, withPublicApiControls } from "./api_controls.js";
+import { DeviceSchemaError, deviceListDocument } from "./devices.js";
 import {
   PluginRegistrySchemaError,
   parsePluginRegistryDocument,
@@ -32,6 +33,20 @@ export default {
 
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
+  if (url.pathname === "/api/devices") {
+    return withAuthenticatedApiControls(request, env, "devices.list", ["GET"], async (context) => {
+      try {
+        return jsonResponse(await deviceListDocument(env, context), 200, {
+          "Cache-Control": "no-store",
+        });
+      } catch (error) {
+        if (error instanceof DeviceSchemaError) {
+          return jsonResponse({ error: "devices_invalid" }, 500, { "Cache-Control": "no-store" });
+        }
+        throw error;
+      }
+    });
+  }
   if (url.pathname === "/api/plugins/signing-keys") {
     return withPublicApiControls(request, env, "plugins.signing_keys", ["GET"], () =>
       handlePublicSigningKeys(env),
