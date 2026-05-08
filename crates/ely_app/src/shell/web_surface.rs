@@ -7,20 +7,19 @@ use gpui::{
     rgb,
 };
 use gpui_component::StyledExt;
-use image::{ImageBuffer, Rgba, imageops::FilterType};
+use image::{ImageBuffer, Rgba};
 use thiserror::Error;
 
 use crate::services::servo_sidecar::{
     ServoSidecarClient, ServoSidecarError, SidecarSnapshot, SidecarSnapshotRequest,
 };
 
-use super::ElyShell;
+use super::{ElyShell, web_surface_image::renderable_image_buffer};
 use ely_design_system::{colors, spacing};
-
-const WEB_SURFACE_IMAGE_MAX_EDGE: u32 = 1024;
 
 pub(super) struct WebSurfaceStore {
     client: WebSurfaceClient,
+    pending_viewport_sizes: BTreeMap<TabId, WebSurfaceSize>,
     viewport_sizes: BTreeMap<TabId, WebSurfaceSize>,
     states: BTreeMap<TabId, WebSurfaceState>,
 }
@@ -29,6 +28,7 @@ impl WebSurfaceStore {
     pub(super) fn new() -> Self {
         Self {
             client: WebSurfaceClient::new(),
+            pending_viewport_sizes: BTreeMap::new(),
             viewport_sizes: BTreeMap::new(),
             states: BTreeMap::new(),
         }
@@ -65,7 +65,11 @@ impl WebSurfaceStore {
 
         self.states.insert(
             tab.id().clone(),
-            WebSurfaceState::Loading { requested_url: requested_url.clone(), size },
+            WebSurfaceState::Loading {
+                requested_url: requested_url.clone(),
+                size,
+                previous_frame: self.previous_ready_frame(tab.id(), requested_url.as_str()),
+            },
         );
 
         Some(WebSurfaceRequest {
@@ -83,9 +87,11 @@ impl WebSurfaceStore {
 
     fn has_current_state(&self, tab_id: &TabId, requested_url: &str, size: WebSurfaceSize) -> bool {
         match self.states.get(tab_id) {
-            Some(WebSurfaceState::Loading { requested_url: current_url, size: current_size }) => {
-                current_url == requested_url && *current_size == size
-            }
+            Some(WebSurfaceState::Loading {
+                requested_url: current_url,
+                size: current_size,
+                ..
+            }) => current_url == requested_url && *current_size == size,
             Some(WebSurfaceState::Ready(frame)) => {
                 frame.requested_url == requested_url && frame.size() == size
             }
@@ -101,7 +107,11 @@ impl WebSurfaceStore {
     fn is_loading(&self, tab_id: &TabId, requested_url: &str, size: WebSurfaceSize) -> bool {
         matches!(
             self.states.get(tab_id),
-            Some(WebSurfaceState::Loading { requested_url: current_url, size: current_size })
+            Some(WebSurfaceState::Loading {
+                requested_url: current_url,
+                size: current_size,
+                ..
+            })
                 if current_url == requested_url && *current_size == size
         )
     }
@@ -114,6 +124,18 @@ impl WebSurfaceStore {
         )
     }
 
+    fn previous_ready_frame(&self, tab_id: &TabId, requested_url: &str) -> Option<WebSurfaceFrame> {
+        match self.states.get(tab_id) {
+            Some(WebSurfaceState::Ready(frame)) if frame.requested_url == requested_url => {
+                Some(frame.clone())
+            }
+            Some(WebSurfaceState::Loading {
+                requested_url: current_url, previous_frame, ..
+            }) if current_url == requested_url => previous_frame.clone(),
+            _ => None,
+        }
+    }
+
     fn finish(&mut self, tab_id: TabId, state: WebSurfaceState) {
         self.states.insert(tab_id, state);
     }
@@ -123,10 +145,23 @@ impl WebSurfaceStore {
             return false;
         };
 
-        if self.viewport_sizes.get(tab_id) == Some(&size) {
+        let Some(current_size) = self.viewport_sizes.get(tab_id).copied() else {
+            self.viewport_sizes.insert(tab_id.clone(), size);
+            self.pending_viewport_sizes.remove(tab_id);
+            return true;
+        };
+
+        if current_size == size {
+            self.pending_viewport_sizes.remove(tab_id);
             return false;
         }
 
+        if self.pending_viewport_sizes.get(tab_id) != Some(&size) {
+            self.pending_viewport_sizes.insert(tab_id.clone(), size);
+            return false;
+        }
+
+        self.pending_viewport_sizes.remove(tab_id);
         self.viewport_sizes.insert(tab_id.clone(), size);
         true
     }
@@ -155,7 +190,7 @@ struct WebSurfaceRequest {
 }
 
 enum WebSurfaceState {
-    Loading { requested_url: String, size: WebSurfaceSize },
+    Loading { requested_url: String, size: WebSurfaceSize, previous_frame: Option<WebSurfaceFrame> },
     Ready(WebSurfaceFrame),
     Failed { requested_url: String, size: WebSurfaceSize, message: String },
 }
@@ -175,6 +210,7 @@ impl WebSurfaceSize {
     }
 }
 
+#[derive(Clone)]
 struct WebSurfaceFrame {
     requested_url: String,
     loaded_url: Option<String>,
@@ -246,7 +282,10 @@ impl ElyShell {
             Some(WebSurfaceState::Failed { message, .. }) => {
                 render_failed_web_surface(tab, message.as_str(), state_entity)
             }
-            Some(WebSurfaceState::Loading { .. }) | None => {
+            Some(WebSurfaceState::Loading { previous_frame: Some(frame), .. }) => {
+                render_ready_web_surface(frame, tab, state_entity)
+            }
+            Some(WebSurfaceState::Loading { previous_frame: None, .. }) | None => {
                 render_loading_web_surface(tab, state_entity)
             }
         }
@@ -452,31 +491,6 @@ fn viewport_dimension(pixels: Pixels) -> Option<u32> {
     }
 
     Some(value as u32)
-}
-
-fn renderable_image_buffer(
-    buffer: ImageBuffer<Rgba<u8>, Vec<u8>>,
-) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
-    let largest_edge = buffer.width().max(buffer.height());
-    if largest_edge <= WEB_SURFACE_IMAGE_MAX_EDGE {
-        return buffer;
-    }
-
-    image::imageops::resize(
-        &buffer,
-        scaled_image_dimension(buffer.width(), largest_edge),
-        scaled_image_dimension(buffer.height(), largest_edge),
-        FilterType::Triangle,
-    )
-}
-
-fn scaled_image_dimension(dimension: u32, largest_edge: u32) -> u32 {
-    let numerator = u64::from(dimension) * u64::from(WEB_SURFACE_IMAGE_MAX_EDGE);
-    let rounded = (numerator + u64::from(largest_edge / 2)) / u64::from(largest_edge);
-    match u32::try_from(rounded.max(1)) {
-        Ok(value) => value,
-        Err(_) => WEB_SURFACE_IMAGE_MAX_EDGE,
-    }
 }
 
 pub(super) fn is_external_web_url(url: &str) -> bool {
