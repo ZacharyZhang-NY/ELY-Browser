@@ -40,6 +40,8 @@ impl BrowserCore {
             return Ok(tab_id);
         }
 
+        self.detach_tab_from_split(&tab_id);
+        let tab_index = self.active_tab_index()?;
         self.tabs[tab_index].move_to_space(space_id.clone());
         self.active_tabs_by_space.insert(space_id.clone(), tab_id.clone());
         self.active_tabs_by_space_profile.remove(&(source_space_id.clone(), profile_id.clone()));
@@ -82,10 +84,12 @@ impl BrowserCore {
             .ok_or_else(|| CoreError::TabNotFound { id: tab_id.clone() })?;
         let was_active = &self.active_tab_id == tab_id;
 
-        let closed_tab = self.tabs.remove(close_index);
+        let mut closed_tab = self.tabs.remove(close_index);
         let closed_space_id = closed_tab.space_id().clone();
         let closed_profile_id = closed_tab.profile_id().clone();
         let was_space_active_tab = self.active_tabs_by_space.get(&closed_space_id) == Some(tab_id);
+        closed_tab.clear_split_id();
+        self.detach_tab_from_split(tab_id);
         self.active_tabs_by_space_profile
             .remove(&(closed_space_id.clone(), closed_profile_id.clone()));
         self.archived_tabs.push(ArchivedTab::new(closed_tab, ArchiveSource::ManualClose));
@@ -270,7 +274,7 @@ impl BrowserCore {
         Ok(next_tab_id)
     }
 
-    fn active_tab_index(&self) -> Result<usize, CoreError> {
+    pub(super) fn active_tab_index(&self) -> Result<usize, CoreError> {
         self.tabs
             .iter()
             .position(|tab| tab.id() == &self.active_tab_id)

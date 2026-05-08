@@ -121,6 +121,10 @@ impl BrowserCore {
                 self.open_tab(self.new_tab_url.clone());
                 Ok(true)
             }
+            "split-right" | "split right" => {
+                self.split_active_tab_right()?;
+                Ok(true)
+            }
             "downloads" | "open-downloads" | "open downloads" => {
                 self.open_tab(downloads_url()?);
                 Ok(true)

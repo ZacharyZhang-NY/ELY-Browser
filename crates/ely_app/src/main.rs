@@ -23,6 +23,7 @@ actions!(
         RestoreClosedTab,
         SelectNextTab,
         SelectPreviousTab,
+        SplitRight,
         ToggleFavoriteTab,
         TogglePinnedTab,
     ]
@@ -35,6 +36,8 @@ fn main() {
         cx.bind_keys([
             KeyBinding::new("cmd-t", OpenNewTab, None),
             KeyBinding::new("ctrl-t", OpenNewTab, None),
+            KeyBinding::new("cmd-\\", SplitRight, None),
+            KeyBinding::new("ctrl-\\", SplitRight, None),
             KeyBinding::new("cmd-shift-j", OpenDownloads, None),
             KeyBinding::new("ctrl-shift-j", OpenDownloads, None),
             KeyBinding::new("cmd-y", OpenHistory, None),
@@ -72,6 +75,7 @@ fn main() {
                 name: "File".into(),
                 items: vec![
                     MenuItem::action("New Tab", OpenNewTab),
+                    MenuItem::action("Split Right", SplitRight),
                     MenuItem::separator(),
                     MenuItem::action("Command Mode", FocusCommandMode),
                     MenuItem::separator(),

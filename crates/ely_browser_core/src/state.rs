@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use ely_domain::{
     ArchivedTab, BookmarkEntry, BrowserTab, DomainError, DownloadEntry, DownloadPolicy,
     HistoryEntry, Profile, ProfileId, ProfileKind, ReadingListEntry, SitePermissionAuditEvent,
-    SitePermissionEntry, Space, SpaceId, SyncStatus, TabId, UrlText,
+    SitePermissionEntry, Space, SpaceId, SplitLayout, SyncStatus, TabId, UrlText,
 };
 
 use crate::CoreError;
@@ -16,6 +16,7 @@ mod plugins;
 mod profiles;
 mod reading_list;
 mod site_permissions;
+mod splits;
 mod sync;
 mod tabs;
 
@@ -52,6 +53,7 @@ pub struct BrowserSnapshot {
     pub site_permission_audit_events: Vec<SitePermissionAuditEvent>,
     pub download_entries: Vec<DownloadEntry>,
     pub history_entries: Vec<HistoryEntry>,
+    pub split_layouts: Vec<SplitLayout>,
     pub installed_plugins: Vec<InstalledPlugin>,
     pub plugin_audit_events: Vec<PluginAuditEvent>,
     pub spaces: Vec<Space>,
@@ -78,6 +80,7 @@ pub struct BrowserCore {
     site_permission_audit_events: Vec<SitePermissionAuditEvent>,
     download_entries: Vec<DownloadEntry>,
     history_entries: Vec<HistoryEntry>,
+    split_layouts: Vec<SplitLayout>,
     installed_plugins: Vec<InstalledPlugin>,
     plugin_audit_events: Vec<PluginAuditEvent>,
     active_space_id: SpaceId,
@@ -126,6 +129,7 @@ impl BrowserCore {
             site_permission_audit_events: Vec::new(),
             download_entries: Vec::new(),
             history_entries: Vec::new(),
+            split_layouts: Vec::new(),
             installed_plugins: Vec::new(),
             plugin_audit_events: Vec::new(),
             command_query: String::new(),
@@ -211,6 +215,7 @@ impl BrowserCore {
             site_permission_audit_events: self.visible_site_permission_audit_events(),
             download_entries: self.visible_downloads(),
             history_entries: self.visible_history(),
+            split_layouts: self.visible_split_layouts(),
             installed_plugins: self.installed_plugins.clone(),
             plugin_audit_events: self.plugin_audit_events.clone(),
             spaces: self.spaces.clone(),

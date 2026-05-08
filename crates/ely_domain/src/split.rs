@@ -1,5 +1,7 @@
 use crate::{SplitId, TabId};
 
+pub const MAX_SPLIT_PANES: usize = 4;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SplitAxis {
     Horizontal,
@@ -56,5 +58,30 @@ impl SplitLayout {
     #[must_use]
     pub fn panes(&self) -> &[SplitPane] {
         &self.panes
+    }
+
+    #[must_use]
+    pub fn contains_tab(&self, tab_id: &TabId) -> bool {
+        self.panes.iter().any(|pane| pane.tab_id() == tab_id)
+    }
+
+    #[must_use]
+    pub fn pane_count(&self) -> usize {
+        self.panes.len()
+    }
+
+    pub fn add_pane(&mut self, pane: SplitPane) -> bool {
+        if self.panes.len() >= MAX_SPLIT_PANES || self.contains_tab(pane.tab_id()) {
+            return false;
+        }
+
+        self.panes.push(pane);
+        true
+    }
+
+    pub fn remove_tab(&mut self, tab_id: &TabId) -> bool {
+        let original_len = self.panes.len();
+        self.panes.retain(|pane| pane.tab_id() != tab_id);
+        self.panes.len() != original_len
     }
 }

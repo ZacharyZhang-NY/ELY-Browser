@@ -38,7 +38,7 @@ pub use site_permission::{
     SitePermissionEntry, SitePermissionFeature,
 };
 pub use space::{ArchivePolicy, Space};
-pub use split::{SplitAxis, SplitLayout, SplitPane};
+pub use split::{MAX_SPLIT_PANES, SplitAxis, SplitLayout, SplitPane};
 pub use sync::{
     SyncConnectionState, SyncObjectKind, SyncObjectState, SyncObjectStatus, SyncStatus,
 };

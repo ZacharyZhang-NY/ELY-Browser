@@ -1,4 +1,4 @@
-use ely_domain::{DomainError, DownloadId, PluginId, ProfileId, SpaceId, TabId};
+use ely_domain::{DomainError, DownloadId, PluginId, ProfileId, SpaceId, SplitId, TabId};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -11,6 +11,9 @@ pub enum CoreError {
 
     #[error("space not found: {id}")]
     SpaceNotFound { id: SpaceId },
+
+    #[error("split not found: {id}")]
+    SplitNotFound { id: SplitId },
 
     #[error("profile not found: {id}")]
     ProfileNotFound { id: ProfileId },
@@ -32,6 +35,9 @@ pub enum CoreError {
 
     #[error("favorite limit reached: {limit}")]
     FavoriteLimitReached { limit: usize },
+
+    #[error("split pane limit reached: {limit}")]
+    SplitPaneLimitReached { limit: usize },
 
     #[error("browser state has no archived tabs")]
     NoArchivedTabs,

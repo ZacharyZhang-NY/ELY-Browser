@@ -46,6 +46,7 @@ impl ElyShell {
             .on_action(cx.listener(Self::on_restore_closed_tab))
             .on_action(cx.listener(Self::on_select_next_tab))
             .on_action(cx.listener(Self::on_select_previous_tab))
+            .on_action(cx.listener(Self::on_split_right))
             .on_action(cx.listener(Self::on_toggle_favorite_tab))
             .on_action(cx.listener(Self::on_toggle_pinned_tab))
             .bg(rgb(ELY_THEME.canvas))
@@ -59,7 +60,7 @@ impl ElyShell {
                     .flex_1()
                     .overflow_hidden()
                     .child(self.render_sidebar(&snapshot, cx))
-                    .child(self.render_web_canvas(&active_tab, &snapshot, cx)),
+                    .child(self.render_content_area(&snapshot, &active_tab, cx)),
             )
             .into_any_element()
     }

@@ -114,4 +114,12 @@ impl BrowserTab {
     pub fn split_id(&self) -> Option<&SplitId> {
         self.split_id.as_ref()
     }
+
+    pub fn set_split_id(&mut self, split_id: SplitId) {
+        self.split_id = Some(split_id);
+    }
+
+    pub fn clear_split_id(&mut self) {
+        self.split_id = None;
+    }
 }

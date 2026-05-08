@@ -3,6 +3,7 @@ mod internal_pages;
 mod plugins;
 mod render;
 mod site_permissions;
+mod splits;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
 use ely_domain::{CommandIntent, ProfileId, SpaceId, TabId, UrlText};
