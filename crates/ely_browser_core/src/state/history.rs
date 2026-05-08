@@ -38,12 +38,22 @@ impl BrowserCore {
             return;
         }
 
+        let visited_at = SystemTime::now();
+        if let Some(entry) = self.history_entries.iter_mut().find(|entry| {
+            entry.profile_id() == tab.profile_id()
+                && entry.space_id() == tab.space_id()
+                && entry.url() == tab.url()
+        }) {
+            entry.record_visit(tab.title(), visited_at);
+            return;
+        }
+
         self.history_entries.push(HistoryEntry::new(
             tab.profile_id().clone(),
             tab.space_id().clone(),
             tab.title(),
             tab.url().clone(),
-            SystemTime::now(),
+            visited_at,
         ));
     }
 

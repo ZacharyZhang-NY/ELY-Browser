@@ -20,6 +20,54 @@ fn navigation_records_profile_and_space_history() -> Result<(), Box<dyn Error>> 
     assert_eq!(snapshot.history_entries[0].space_id(), &active_space_id);
     assert_eq!(snapshot.history_entries[0].title(), "example.com");
     assert_eq!(snapshot.history_entries[0].url().as_str(), "https://example.com/research");
+    assert_eq!(snapshot.history_entries[0].visit_count(), 1);
+    Ok(())
+}
+
+#[test]
+fn repeated_history_visits_increment_count_in_active_context() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com/research")?);
+    core.open_tab(UrlText::parse("https://example.com/research")?);
+
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(snapshot.history_entries.len(), 1);
+    assert_eq!(snapshot.history_entries[0].url().as_str(), "https://example.com/research");
+    assert_eq!(snapshot.history_entries[0].visit_count(), 2);
+    Ok(())
+}
+
+#[test]
+fn repeated_history_visits_stay_scoped_by_space_and_profile() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let work_space_id = core.snapshot()?.active_space_id;
+    let default_profile_id = core.snapshot()?.active_profile_id;
+
+    core.open_tab(UrlText::parse("https://example.com/research")?);
+
+    let research_space_id = core.create_space("Research", "R", 0xf54e00)?;
+    core.open_tab(UrlText::parse("https://example.com/research")?);
+
+    core.select_space(&work_space_id)?;
+    let personal_profile_id = core.create_profile("Personal", 0x26251e, ProfileKind::Standard)?;
+    core.open_tab(UrlText::parse("https://example.com/research")?);
+
+    core.select_profile(&default_profile_id)?;
+    let work_snapshot = core.snapshot()?;
+    assert_eq!(work_snapshot.history_entries.len(), 1);
+    assert_eq!(work_snapshot.history_entries[0].visit_count(), 1);
+
+    core.select_space(&research_space_id)?;
+    let research_snapshot = core.snapshot()?;
+    assert_eq!(research_snapshot.history_entries.len(), 1);
+    assert_eq!(research_snapshot.history_entries[0].visit_count(), 1);
+
+    core.select_space(&work_space_id)?;
+    core.select_profile(&personal_profile_id)?;
+    let personal_snapshot = core.snapshot()?;
+    assert_eq!(personal_snapshot.history_entries.len(), 1);
+    assert_eq!(personal_snapshot.history_entries[0].visit_count(), 1);
     Ok(())
 }
 
@@ -211,7 +259,8 @@ fn history_scoped_search_opens_recent_matching_entry() -> Result<(), Box<dyn Err
     );
     assert_eq!(active_tab.url().as_str(), "https://example.com/research");
     assert_eq!(snapshot.command_query, "");
-    assert_eq!(snapshot.history_entries.len(), 2);
+    assert_eq!(snapshot.history_entries.len(), 1);
+    assert_eq!(snapshot.history_entries[0].visit_count(), 2);
     Ok(())
 }
 

@@ -9,6 +9,7 @@ pub struct HistoryEntry {
     title: String,
     url: UrlText,
     visited_at: SystemTime,
+    visit_count: u32,
 }
 
 impl HistoryEntry {
@@ -20,7 +21,13 @@ impl HistoryEntry {
         url: UrlText,
         visited_at: SystemTime,
     ) -> Self {
-        Self { profile_id, space_id, title: title.into(), url, visited_at }
+        Self { profile_id, space_id, title: title.into(), url, visited_at, visit_count: 1 }
+    }
+
+    pub fn record_visit(&mut self, title: impl Into<String>, visited_at: SystemTime) {
+        self.title = title.into();
+        self.visited_at = visited_at;
+        self.visit_count = self.visit_count.saturating_add(1);
     }
 
     #[must_use]
@@ -46,5 +53,10 @@ impl HistoryEntry {
     #[must_use]
     pub fn visited_at(&self) -> SystemTime {
         self.visited_at
+    }
+
+    #[must_use]
+    pub fn visit_count(&self) -> u32 {
+        self.visit_count
     }
 }

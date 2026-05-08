@@ -281,10 +281,18 @@ fn render_history_row(
                 )
                 .child(
                     div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
                         .text_xs()
-                        .truncate()
                         .text_color(rgb(colors::MUTED))
-                        .child(entry.url().display_url()),
+                        .child(div().min_w_0().truncate().child(entry.url().display_url()))
+                        .child(div().text_color(rgb(colors::MUTED_SOFT)).child("-"))
+                        .child(
+                            div()
+                                .text_color(rgb(colors::MUTED_SOFT))
+                                .child(visit_count_label(entry.visit_count())),
+                        ),
                 ),
         )
         .child(
@@ -316,4 +324,11 @@ fn render_history_row(
                 }),
         )
         .into_any_element()
+}
+
+fn visit_count_label(visit_count: u32) -> String {
+    match visit_count {
+        1 => "1 visit".to_string(),
+        count => format!("{count} visits"),
+    }
 }
