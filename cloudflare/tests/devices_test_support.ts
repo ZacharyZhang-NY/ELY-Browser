@@ -14,6 +14,8 @@ export interface TestEnvOptions {
   d1?: RecordedD1Database;
   kvEntries?: [string, string][];
   kvReads?: string[];
+  r2Gets?: string[];
+  r2Objects?: [string, ArrayBuffer][];
   r2Puts?: RecordedR2Put[];
 }
 
@@ -45,7 +47,7 @@ export function testEnv(options: TestEnvOptions): Env {
         return Promise.resolve(values.get(key) ?? null);
       },
     },
-    ELY_STORAGE: testR2Bucket(options.r2Puts),
+    ELY_STORAGE: testR2Bucket(options.r2Puts, options.r2Objects, options.r2Gets),
     ELY_RATE_LIMITER: {
       limit(): Promise<{ success: boolean }> {
         return Promise.resolve({ success: true });
@@ -119,13 +121,28 @@ function testD1PreparedStatement(
   };
 }
 
-function testR2Bucket(puts: RecordedR2Put[] = []): Env["ELY_STORAGE"] {
+function testR2Bucket(
+  puts: RecordedR2Put[] = [],
+  objects: [string, ArrayBuffer][] = [],
+  gets: string[] = [],
+): Env["ELY_STORAGE"] {
+  const values = new Map(objects);
   return {
-    get() {
-      return Promise.resolve(null);
+    get(key: string) {
+      gets.push(key);
+      const value = values.get(key);
+      if (value === undefined) {
+        return Promise.resolve(null);
+      }
+      return Promise.resolve({
+        arrayBuffer() {
+          return Promise.resolve(value);
+        },
+      });
     },
     put(key: string, value: ArrayBuffer, options: ElyR2PutOptions = {}) {
       puts.push({ key, payload: value, options });
+      values.set(key, value);
       return Promise.resolve({
         arrayBuffer() {
           return Promise.resolve(value);
