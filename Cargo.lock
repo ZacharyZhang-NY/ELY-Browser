@@ -2286,6 +2286,8 @@ version = "0.1.0"
 dependencies = [
  "dpi",
  "ely_domain",
+ "serde",
+ "serde_json",
  "servo",
  "thiserror 2.0.18",
  "url",
