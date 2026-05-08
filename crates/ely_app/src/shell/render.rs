@@ -11,6 +11,7 @@ use gpui_component::{
     input::Input,
 };
 
+use super::sidebar::{collapsed_sidebar_active, render_command_bar_identity};
 use super::{ElyShell, ShellState};
 
 impl Render for ElyShell {
@@ -36,6 +37,7 @@ impl ElyShell {
             Ok(sidebar_width) => sidebar_width,
             Err(message) => return render_error(message),
         };
+        let sidebar_collapsed = collapsed_sidebar_active(sidebar_width);
 
         div()
             .size_full()
@@ -54,17 +56,24 @@ impl ElyShell {
             .on_action(cx.listener(Self::on_split_right))
             .on_action(cx.listener(Self::on_toggle_favorite_tab))
             .on_action(cx.listener(Self::on_toggle_pinned_tab))
+            .on_action(cx.listener(Self::on_toggle_sidebar))
             .bg(rgb(ELY_THEME.canvas))
             .text_color(rgb(ELY_THEME.ink))
             .flex()
             .flex_col()
-            .child(self.render_command_bar(&snapshot, &active_tab, sidebar_width, cx))
+            .child(self.render_command_bar(
+                &snapshot,
+                &active_tab,
+                sidebar_width,
+                sidebar_collapsed,
+                cx,
+            ))
             .child(
                 div()
                     .flex()
                     .flex_1()
                     .overflow_hidden()
-                    .child(self.render_sidebar(&snapshot, sidebar_width, cx))
+                    .child(self.render_sidebar(&snapshot, sidebar_width, sidebar_collapsed, cx))
                     .child(self.render_content_area(&snapshot, &active_tab, cx)),
             )
             .into_any_element()
@@ -75,6 +84,7 @@ impl ElyShell {
         snapshot: &BrowserSnapshot,
         active_tab: &BrowserTab,
         sidebar_width: f32,
+        sidebar_collapsed: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let favorite_icon =
@@ -91,20 +101,7 @@ impl ElyShell {
             .items_center()
             .border_b_1()
             .border_color(rgb(colors::HAIRLINE))
-            .child(
-                div()
-                    .w(px(sidebar_width - spacing::XL))
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(div().text_size(px(18.0)).font_semibold().child("ELY Browser"))
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(colors::MUTED))
-                            .child(snapshot.active_space_name.clone()),
-                    ),
-            )
+            .child(render_command_bar_identity(snapshot, sidebar_width, sidebar_collapsed))
             .child(
                 div()
                     .flex_1()
@@ -149,8 +146,13 @@ impl ElyShell {
         &mut self,
         snapshot: &BrowserSnapshot,
         sidebar_width: f32,
+        sidebar_collapsed: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        if sidebar_collapsed {
+            return self.render_compact_sidebar(snapshot, sidebar_width, cx);
+        }
+
         div()
             .w(px(sidebar_width))
             .h_full()

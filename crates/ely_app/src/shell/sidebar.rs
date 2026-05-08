@@ -1,0 +1,215 @@
+use ely_browser_core::BrowserSnapshot;
+use ely_design_system::{colors, spacing};
+use ely_domain::{
+    ArchivedTab, BrowserTab, COLLAPSED_SIDEBAR_WIDTH_PX, DEFAULT_SIDEBAR_WIDTH_PX, Space,
+};
+use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, Window, div, px, rgb};
+use gpui_component::{
+    IconName, Selectable, Sizable, StyledExt,
+    button::{Button, ButtonVariants},
+};
+
+use super::{ElyShell, ShellState};
+use crate::ToggleSidebar;
+
+impl ElyShell {
+    pub(super) fn on_toggle_sidebar(
+        &mut self,
+        _: &ToggleSidebar,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.toggle_sidebar_width(cx);
+    }
+
+    pub(super) fn render_compact_sidebar(
+        &mut self,
+        snapshot: &BrowserSnapshot,
+        sidebar_width: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .w(px(sidebar_width))
+            .h_full()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap_2()
+            .p_2()
+            .border_r_1()
+            .border_color(rgb(colors::HAIRLINE))
+            .bg(rgb(colors::CANVAS))
+            .children(snapshot.favorites.iter().enumerate().map(|(index, tab)| {
+                self.render_compact_tab_button(
+                    ("compact-favorite", index),
+                    tab,
+                    tab.id() == &snapshot.active_tab_id,
+                    IconName::Star,
+                    cx,
+                )
+            }))
+            .children(snapshot.pinned_tabs.iter().enumerate().map(|(index, tab)| {
+                self.render_compact_tab_button(
+                    ("compact-pinned", index),
+                    tab,
+                    tab.id() == &snapshot.active_tab_id,
+                    IconName::Asterisk,
+                    cx,
+                )
+            }))
+            .children(snapshot.spaces.iter().enumerate().map(|(index, space)| {
+                self.render_compact_space_button(
+                    index,
+                    space,
+                    space.id() == &snapshot.active_space_id,
+                    cx,
+                )
+            }))
+            .children(snapshot.tabs.iter().enumerate().map(|(index, tab)| {
+                self.render_compact_tab_button(
+                    ("compact-tab", index),
+                    tab,
+                    tab.id() == &snapshot.active_tab_id,
+                    IconName::Globe,
+                    cx,
+                )
+            }))
+            .children(snapshot.archived_tabs.iter().rev().enumerate().map(
+                |(index, archived_tab)| {
+                    self.render_compact_archived_button(index, archived_tab, cx)
+                },
+            ))
+            .into_any_element()
+    }
+
+    fn toggle_sidebar_width(&mut self, cx: &mut Context<Self>) {
+        let ShellState::Ready(core) = &mut self.state else {
+            return;
+        };
+        let Ok(snapshot) = core.snapshot() else {
+            return;
+        };
+        let Some(active_space) =
+            snapshot.spaces.iter().find(|space| space.id() == &snapshot.active_space_id)
+        else {
+            return;
+        };
+
+        let next_width = if active_space.sidebar_width_px() <= COLLAPSED_SIDEBAR_WIDTH_PX {
+            DEFAULT_SIDEBAR_WIDTH_PX
+        } else {
+            COLLAPSED_SIDEBAR_WIDTH_PX
+        };
+
+        if core.set_space_sidebar_width(&snapshot.active_space_id, next_width).is_ok() {
+            cx.notify();
+        }
+    }
+
+    fn render_compact_space_button(
+        &mut self,
+        index: usize,
+        space: &Space,
+        active: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let space_id = space.id().clone();
+        Button::new(("compact-space", index))
+            .ghost()
+            .small()
+            .selected(active)
+            .label(space.icon().to_string())
+            .tooltip(space.name().to_string())
+            .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.select_space(&space_id, window, cx);
+            }))
+            .into_any_element()
+    }
+
+    fn render_compact_tab_button(
+        &mut self,
+        id: (&'static str, usize),
+        tab: &BrowserTab,
+        active: bool,
+        icon: IconName,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let tab_id = tab.id().clone();
+        Button::new(id)
+            .ghost()
+            .small()
+            .selected(active)
+            .icon(icon)
+            .tooltip(tab.title().to_string())
+            .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.select_tab(&tab_id, window, cx);
+            }))
+            .into_any_element()
+    }
+
+    fn render_compact_archived_button(
+        &mut self,
+        index: usize,
+        archived_tab: &ArchivedTab,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let tab = archived_tab.tab();
+        let tab_id = tab.id().clone();
+        Button::new(("compact-archive", index))
+            .ghost()
+            .small()
+            .icon(IconName::Undo2)
+            .tooltip(tab.title().to_string())
+            .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.restore_archived_tab(&tab_id, window, cx);
+            }))
+            .into_any_element()
+    }
+}
+
+pub(super) fn render_command_bar_identity(
+    snapshot: &BrowserSnapshot,
+    sidebar_width: f32,
+    sidebar_collapsed: bool,
+) -> AnyElement {
+    let width = sidebar_width - spacing::XL;
+    if sidebar_collapsed {
+        return div()
+            .w(px(width))
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                div()
+                    .size(px(28.0))
+                    .rounded_md()
+                    .bg(rgb(colors::PRIMARY))
+                    .text_color(rgb(colors::CANVAS))
+                    .text_xs()
+                    .font_semibold()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child("ELY"),
+            )
+            .into_any_element();
+    }
+
+    div()
+        .w(px(width))
+        .flex()
+        .items_center()
+        .gap_2()
+        .child(div().text_size(px(18.0)).font_semibold().child("ELY Browser"))
+        .child(
+            div()
+                .text_xs()
+                .text_color(rgb(colors::MUTED))
+                .child(snapshot.active_space_name.clone()),
+        )
+        .into_any_element()
+}
+
+pub(super) fn collapsed_sidebar_active(sidebar_width: f32) -> bool {
+    sidebar_width <= f32::from(COLLAPSED_SIDEBAR_WIDTH_PX)
+}

@@ -6,6 +6,7 @@ mod notes;
 mod plugins;
 mod reading_list;
 mod render;
+mod sidebar;
 mod site_permissions;
 mod splits;
 mod tab_groups;

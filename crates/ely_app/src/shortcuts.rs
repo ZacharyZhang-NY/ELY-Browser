@@ -5,7 +5,7 @@ use gpui::{App, KeyBinding};
 use crate::{
     CloseCurrentTab, FocusAddressBar, FocusCommandMode, OpenDownloads, OpenHistory, OpenNewTab,
     OpenSettings, OpenTaskManager, Quit, RestoreClosedTab, SelectNextTab, SelectPreviousTab,
-    SplitRight, ToggleFavoriteTab,
+    SplitRight, ToggleFavoriteTab, ToggleSidebar,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -33,6 +33,7 @@ pub(crate) enum ShortcutAction {
     SelectNextTab,
     SelectPreviousTab,
     SplitRight,
+    ToggleSidebar,
     ToggleFavoriteTab,
     OpenDownloads,
     OpenHistory,
@@ -52,6 +53,7 @@ impl ShortcutAction {
             Self::SelectNextTab => "Next Tab",
             Self::SelectPreviousTab => "Previous Tab",
             Self::SplitRight => "Split Right",
+            Self::ToggleSidebar => "Toggle Sidebar",
             Self::ToggleFavoriteTab => "Toggle Favorite",
             Self::OpenDownloads => "Open Downloads",
             Self::OpenHistory => "Open History",
@@ -70,6 +72,7 @@ impl ShortcutAction {
             | Self::SelectNextTab
             | Self::SelectPreviousTab
             | Self::SplitRight
+            | Self::ToggleSidebar
             | Self::ToggleFavoriteTab => "Tabs",
             Self::OpenDownloads | Self::OpenHistory => "Library",
             Self::OpenSettings | Self::OpenTaskManager => "System",
@@ -87,6 +90,7 @@ impl ShortcutAction {
             Self::SelectNextTab => None,
             Self::SelectPreviousTab => None,
             Self::SplitRight => Some(">split-right"),
+            Self::ToggleSidebar => None,
             Self::ToggleFavoriteTab => Some(">favorite"),
             Self::OpenDownloads => Some(">open-downloads"),
             Self::OpenHistory => Some(">open-history"),
@@ -126,6 +130,7 @@ pub(crate) const SHORTCUT_ACTIONS: &[ShortcutAction] = &[
     ShortcutAction::SelectNextTab,
     ShortcutAction::SelectPreviousTab,
     ShortcutAction::SplitRight,
+    ShortcutAction::ToggleSidebar,
     ShortcutAction::ToggleFavoriteTab,
     ShortcutAction::OpenDownloads,
     ShortcutAction::OpenHistory,
@@ -139,6 +144,8 @@ pub(crate) const SHORTCUT_BINDINGS: &[ShortcutBinding] = &[
     shortcut(ShortcutAction::OpenNewTab, ShortcutPlatform::WindowsLinux, "ctrl-t"),
     shortcut(ShortcutAction::SplitRight, ShortcutPlatform::Macos, "cmd-\\"),
     shortcut(ShortcutAction::SplitRight, ShortcutPlatform::WindowsLinux, "ctrl-\\"),
+    shortcut(ShortcutAction::ToggleSidebar, ShortcutPlatform::Macos, "cmd-b"),
+    shortcut(ShortcutAction::ToggleSidebar, ShortcutPlatform::WindowsLinux, "ctrl-b"),
     shortcut(ShortcutAction::OpenDownloads, ShortcutPlatform::Macos, "cmd-shift-j"),
     shortcut(ShortcutAction::OpenDownloads, ShortcutPlatform::WindowsLinux, "ctrl-shift-j"),
     shortcut(ShortcutAction::OpenHistory, ShortcutPlatform::Macos, "cmd-y"),
@@ -240,6 +247,7 @@ impl ShortcutBinding {
             ShortcutAction::ToggleFavoriteTab => {
                 KeyBinding::new(self.keystroke, ToggleFavoriteTab, None)
             }
+            ShortcutAction::ToggleSidebar => KeyBinding::new(self.keystroke, ToggleSidebar, None),
         }
     }
 }
@@ -287,6 +295,19 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(bindings, vec!["Cmd + ,".to_string(), "Ctrl + ,".to_string()]);
+    }
+
+    #[test]
+    fn toggle_sidebar_shortcut_has_platform_bindings() {
+        let bindings = bindings_for_action(ShortcutAction::ToggleSidebar, ShortcutPlatform::Macos)
+            .chain(bindings_for_action(
+                ShortcutAction::ToggleSidebar,
+                ShortcutPlatform::WindowsLinux,
+            ))
+            .map(|binding| binding.display_keystroke())
+            .collect::<Vec<_>>();
+
+        assert_eq!(bindings, vec!["Cmd + B".to_string(), "Ctrl + B".to_string()]);
     }
 
     #[test]

@@ -28,6 +28,7 @@ actions!(
         SplitRight,
         ToggleFavoriteTab,
         TogglePinnedTab,
+        ToggleSidebar,
     ]
 );
 
@@ -52,6 +53,7 @@ fn main() {
                     MenuItem::action("Split Right", SplitRight),
                     MenuItem::separator(),
                     MenuItem::action("Command Mode", FocusCommandMode),
+                    MenuItem::action("Toggle Sidebar", ToggleSidebar),
                     MenuItem::separator(),
                     MenuItem::action("Close Tab", CloseCurrentTab),
                     MenuItem::separator(),

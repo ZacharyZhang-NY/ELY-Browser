@@ -3,6 +3,7 @@ use std::time::{Duration, SystemTime};
 use crate::{ProfileId, SpaceId};
 
 pub const DEFAULT_SIDEBAR_WIDTH_PX: u16 = 280;
+pub const COLLAPSED_SIDEBAR_WIDTH_PX: u16 = 56;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ArchivePolicy {
