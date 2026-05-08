@@ -16,6 +16,12 @@ pub(super) struct PendingPluginInstall {
     high_risk_permissions: Vec<PluginPermission>,
 }
 
+#[derive(Clone, Debug)]
+pub(super) struct PendingPluginUninstall {
+    plugin_id: PluginId,
+    plugin_name: String,
+}
+
 impl PendingPluginInstall {
     fn new(package: VerifiedPluginPackage, high_risk_permissions: Vec<PluginPermission>) -> Self {
         Self { package, high_risk_permissions }
@@ -27,6 +33,20 @@ impl PendingPluginInstall {
 
     pub(super) fn high_risk_permissions(&self) -> &[PluginPermission] {
         &self.high_risk_permissions
+    }
+}
+
+impl PendingPluginUninstall {
+    fn new(plugin_id: PluginId, plugin_name: String) -> Self {
+        Self { plugin_id, plugin_name }
+    }
+
+    pub(super) fn plugin_id(&self) -> &PluginId {
+        &self.plugin_id
+    }
+
+    pub(super) fn plugin_name(&self) -> &str {
+        &self.plugin_name
     }
 }
 
@@ -86,6 +106,31 @@ impl ElyShell {
         cx.notify();
     }
 
+    pub(super) fn request_plugin_uninstall(
+        &mut self,
+        plugin_id: PluginId,
+        plugin_name: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.pending_plugin_uninstall = Some(PendingPluginUninstall::new(plugin_id, plugin_name));
+        self.plugin_install_error = None;
+        cx.notify();
+    }
+
+    pub(super) fn cancel_plugin_uninstall(&mut self, cx: &mut Context<Self>) {
+        self.pending_plugin_uninstall = None;
+        cx.notify();
+    }
+
+    pub(super) fn confirm_plugin_uninstall(&mut self, cx: &mut Context<Self>) {
+        let Some(pending) = self.pending_plugin_uninstall.take() else {
+            cx.notify();
+            return;
+        };
+
+        self.uninstall_plugin(pending.plugin_id, cx);
+    }
+
     pub(super) fn set_plugin_enabled(
         &mut self,
         plugin_id: PluginId,
@@ -101,6 +146,19 @@ impl ElyShell {
                 };
                 action.map_err(|error| error.to_string())
             }
+            ShellState::StartupError(message) => Err(message.clone()),
+        };
+
+        self.plugin_install_error = result.err();
+        cx.notify();
+    }
+
+    fn uninstall_plugin(&mut self, plugin_id: PluginId, cx: &mut Context<Self>) {
+        let result = match &mut self.state {
+            ShellState::Ready(core) => PluginPackageStore::application()
+                .and_then(|store| store.remove_plugin(&plugin_id))
+                .map_err(|error| error.to_string())
+                .and_then(|_| core.uninstall_plugin(&plugin_id).map_err(|error| error.to_string())),
             ShellState::StartupError(message) => Err(message.clone()),
         };
 

@@ -96,6 +96,40 @@ fn records_plugin_enable_disable_audit_events() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn uninstalls_plugin_and_records_audit_event() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let plugin_id =
+        core.install_plugin(plugin_manifest("com.elydora.reader", &["page:metadata"])?, false)?;
+
+    core.uninstall_plugin(&plugin_id)?;
+    let snapshot = core.snapshot()?;
+
+    assert!(snapshot.installed_plugins.is_empty());
+    assert_eq!(snapshot.plugin_audit_events.len(), 2);
+    assert_eq!(snapshot.plugin_audit_events[1].plugin_id(), &plugin_id);
+    assert_eq!(snapshot.plugin_audit_events[1].action(), &PluginAuditAction::Uninstalled);
+    Ok(())
+}
+
+#[test]
+fn allows_reinstall_after_plugin_uninstall() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let plugin_id =
+        core.install_plugin(plugin_manifest("com.elydora.reader", &["page:metadata"])?, false)?;
+    core.uninstall_plugin(&plugin_id)?;
+
+    let reinstalled_id =
+        core.install_plugin(plugin_manifest("com.elydora.reader", &["page:metadata"])?, false)?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(reinstalled_id, plugin_id);
+    assert_eq!(snapshot.installed_plugins.len(), 1);
+    assert_eq!(snapshot.plugin_audit_events.len(), 3);
+    assert_eq!(snapshot.plugin_audit_events[2].action(), &PluginAuditAction::Installed);
+    Ok(())
+}
+
+#[test]
 fn rejects_unknown_plugin_state_change() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let plugin_id = PluginId::parse("com.elydora.missing")?;

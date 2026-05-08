@@ -9,7 +9,7 @@ use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscriptio
 use gpui_component::input::{InputEvent, InputState, SelectAll};
 
 use downloads::PendingDownloadFileAction;
-use plugins::PendingPluginInstall;
+use plugins::{PendingPluginInstall, PendingPluginUninstall};
 
 use crate::{
     CloseCurrentTab, FocusAddressBar, FocusCommandMode, OpenDownloads, OpenHistory, OpenNewTab,
@@ -32,6 +32,7 @@ pub struct ElyShell {
     download_security_confirmation: Option<PendingDownloadFileAction>,
     plugin_install_error: Option<String>,
     pending_plugin_install: Option<PendingPluginInstall>,
+    pending_plugin_uninstall: Option<PendingPluginUninstall>,
     _command_subscription: Subscription,
 }
 
@@ -92,6 +93,7 @@ impl ElyShell {
             download_security_confirmation: None,
             plugin_install_error: None,
             pending_plugin_install: None,
+            pending_plugin_uninstall: None,
             _command_subscription: command_subscription,
         }
     }

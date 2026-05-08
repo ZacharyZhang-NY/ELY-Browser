@@ -19,6 +19,7 @@ pub enum PluginAuditAction {
     Installed,
     Enabled,
     Disabled,
+    Uninstalled,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -116,6 +117,18 @@ impl BrowserCore {
     pub fn disable_plugin(&mut self, plugin_id: &PluginId) -> Result<(), CoreError> {
         self.plugin_mut(plugin_id)?.set_enabled(false);
         self.record_plugin_audit_event(plugin_id.clone(), PluginAuditAction::Disabled);
+        Ok(())
+    }
+
+    pub fn uninstall_plugin(&mut self, plugin_id: &PluginId) -> Result<(), CoreError> {
+        let plugin_index = self
+            .installed_plugins
+            .iter()
+            .position(|plugin| plugin.id() == plugin_id)
+            .ok_or_else(|| CoreError::PluginNotFound { id: plugin_id.clone() })?;
+
+        self.installed_plugins.remove(plugin_index);
+        self.record_plugin_audit_event(plugin_id.clone(), PluginAuditAction::Uninstalled);
         Ok(())
     }
 

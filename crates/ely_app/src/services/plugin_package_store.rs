@@ -5,7 +5,7 @@ use std::{
 };
 
 use directories::ProjectDirs;
-use ely_domain::PluginManifest;
+use ely_domain::{PluginId, PluginManifest};
 use thiserror::Error;
 
 use super::plugin_packages::{PluginPackageError, PluginPackageReader, VerifiedPluginPackage};
@@ -58,6 +58,9 @@ pub enum PluginPackageStoreError {
 
     #[error("failed to clean plugin package staging directory: {path}")]
     CleanupFailed { path: PathBuf, source: io::Error },
+
+    #[error("failed to remove plugin package directory: {path}")]
+    RemoveDirectoryFailed { path: PathBuf, source: io::Error },
 
     #[error("system clock is unavailable for plugin package staging")]
     ClockUnavailable { source: SystemTimeError },
@@ -135,6 +138,15 @@ impl PluginPackageStore {
             staged_package.package_hash().to_string(),
             destination,
         ))
+    }
+
+    pub fn remove_plugin(&self, plugin_id: &PluginId) -> Result<(), PluginPackageStoreError> {
+        let path = self.root.join(plugin_id.as_str());
+        match fs::remove_dir_all(path.as_path()) {
+            Ok(()) => Ok(()),
+            Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(source) => Err(PluginPackageStoreError::RemoveDirectoryFailed { path, source }),
+        }
     }
 
     fn package_path(&self, package: &VerifiedPluginPackage) -> PathBuf {
@@ -293,6 +305,21 @@ mod tests {
             .ok_or_else(|| std::io::Error::other("corrupt stored package was accepted"))?;
 
         assert!(matches!(error, PluginPackageStoreError::InvalidStoredPackage { .. }));
+        Ok(())
+    }
+
+    #[test]
+    fn removes_stored_packages_for_plugin() -> Result<(), Box<dyn Error>> {
+        let tree = TempTree::new("remove")?;
+        let source_package = write_package(tree.path(), "verified", b"wasm component")?;
+        let package = PluginPackageReader::read_directory_package(source_package.as_path())?;
+        let store = PluginPackageStore::new(tree.path().join("store"));
+        let stored_package = store.store(&package)?;
+
+        store.remove_plugin(package.manifest().id())?;
+
+        assert!(!stored_package.path.exists());
+        assert!(!tree.path().join("store").join("com.elydora.verified").exists());
         Ok(())
     }
 

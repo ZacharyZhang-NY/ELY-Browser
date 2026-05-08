@@ -9,7 +9,7 @@ use gpui_component::{
     scroll::ScrollableElement,
 };
 
-use super::super::plugins::PendingPluginInstall;
+use super::super::plugins::{PendingPluginInstall, PendingPluginUninstall};
 use super::{ElyShell, render_canvas_surface};
 
 impl ElyShell {
@@ -92,6 +92,9 @@ impl ElyShell {
                 .when_some(self.pending_plugin_install.clone(), |this, pending| {
                     this.child(render_plugin_install_confirmation(&pending, cx))
                 })
+                .when_some(self.pending_plugin_uninstall.clone(), |this, pending| {
+                    this.child(render_plugin_uninstall_confirmation(&pending, cx))
+                })
                 .child(render_plugin_list(snapshot, cx))
                 .child(render_plugin_audit_list(snapshot)),
         )
@@ -171,6 +174,68 @@ fn render_plugin_install_confirmation(
         .into_any_element()
 }
 
+fn render_plugin_uninstall_confirmation(
+    pending: &PendingPluginUninstall,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    div()
+        .rounded_md()
+        .border_1()
+        .border_color(rgb(colors::ERROR))
+        .px_3()
+        .py_2()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap_3()
+        .child(
+            div()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    div()
+                        .text_xs()
+                        .font_semibold()
+                        .text_color(rgb(colors::ERROR))
+                        .child(format!("Confirm uninstall for {}", pending.plugin_name())),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .truncate()
+                        .text_color(rgb(colors::MUTED))
+                        .child(pending.plugin_id().as_str().to_string()),
+                ),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    Button::new("cancel-plugin-uninstall")
+                        .ghost()
+                        .xsmall()
+                        .label("Cancel")
+                        .on_click(cx.listener(|shell, _, _, cx| {
+                            shell.cancel_plugin_uninstall(cx);
+                        })),
+                )
+                .child(
+                    Button::new("confirm-plugin-uninstall")
+                        .danger()
+                        .xsmall()
+                        .label("Uninstall")
+                        .on_click(cx.listener(|shell, _, _, cx| {
+                            shell.confirm_plugin_uninstall(cx);
+                        })),
+                ),
+        )
+        .into_any_element()
+}
+
 fn render_plugin_list(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
     if snapshot.installed_plugins.is_empty() {
         return div()
@@ -208,6 +273,7 @@ fn render_plugin_row(
     let status_color = if plugin.enabled() { colors::SUCCESS } else { colors::MUTED };
     let status_label = if plugin.enabled() { "Enabled" } else { "Disabled" };
     let plugin_id = plugin.id().clone();
+    let plugin_name = plugin.manifest().name().to_string();
     let target_enabled = !plugin.enabled();
 
     div()
@@ -250,7 +316,14 @@ fn render_plugin_row(
                 .child(format!("{} permissions", plugin.manifest().permissions().len()))
                 .child(format!("{high_risk_count} high risk"))
                 .child(div().text_color(rgb(status_color)).child(status_label))
-                .child(render_plugin_state_button(index, plugin, plugin_id, target_enabled, cx)),
+                .child(render_plugin_state_button(
+                    index,
+                    plugin,
+                    plugin_id.clone(),
+                    target_enabled,
+                    cx,
+                ))
+                .child(render_plugin_uninstall_button(index, plugin_id, plugin_name, cx)),
         )
         .into_any_element()
 }
@@ -279,6 +352,24 @@ fn render_plugin_state_button(
     } else {
         button.primary().into_any_element()
     }
+}
+
+fn render_plugin_uninstall_button(
+    index: usize,
+    plugin_id: PluginId,
+    plugin_name: String,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    Button::new(("uninstall-plugin", index))
+        .danger()
+        .xsmall()
+        .icon(IconName::Delete)
+        .label("Remove")
+        .tooltip("Uninstall Plugin")
+        .on_click(cx.listener(move |shell, _, _, cx| {
+            shell.request_plugin_uninstall(plugin_id.clone(), plugin_name.clone(), cx);
+        }))
+        .into_any_element()
 }
 
 fn render_plugin_audit_list(snapshot: &BrowserSnapshot) -> AnyElement {
@@ -332,6 +423,7 @@ fn plugin_audit_action_label(action: &PluginAuditAction) -> &'static str {
         PluginAuditAction::Installed => "Installed",
         PluginAuditAction::Enabled => "Enabled",
         PluginAuditAction::Disabled => "Disabled",
+        PluginAuditAction::Uninstalled => "Uninstalled",
     }
 }
 
