@@ -2,7 +2,7 @@ mod internal_pages;
 mod render;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{CommandIntent, SpaceId, TabId, UrlText};
+use ely_domain::{CommandIntent, DownloadId, SpaceId, TabId, UrlText};
 use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscription, Window};
 use gpui_component::input::{InputEvent, InputState, SelectAll};
 
@@ -210,6 +210,38 @@ impl ElyShell {
     fn toggle_active_tab_pinned(&mut self, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state
             && core.toggle_active_tab_pinned().is_ok()
+        {
+            cx.notify();
+        }
+    }
+
+    fn pause_download(&mut self, download_id: &DownloadId, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.pause_download(download_id).is_ok()
+        {
+            cx.notify();
+        }
+    }
+
+    fn resume_download(&mut self, download_id: &DownloadId, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.resume_download(download_id).is_ok()
+        {
+            cx.notify();
+        }
+    }
+
+    fn cancel_download(&mut self, download_id: &DownloadId, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.cancel_download(download_id).is_ok()
+        {
+            cx.notify();
+        }
+    }
+
+    fn retry_download(&mut self, download_id: &DownloadId, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.retry_download(download_id).is_ok()
         {
             cx.notify();
         }

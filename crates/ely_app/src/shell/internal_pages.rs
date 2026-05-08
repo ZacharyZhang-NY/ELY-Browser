@@ -19,7 +19,7 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         match tab.url().as_str() {
-            "ely://downloads" => self.render_downloads_page(snapshot),
+            "ely://downloads" => self.render_downloads_page(snapshot, cx),
             "ely://history" => self.render_history_page(snapshot, cx),
             "ely://archive" => self.render_archive_page(snapshot, cx),
             _ => render_default_page(tab),
