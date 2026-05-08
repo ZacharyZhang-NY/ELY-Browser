@@ -20,6 +20,7 @@ pub(super) struct WebSurfaceFrame {
     height: u32,
     scroll_offset: WebSurfaceScrollOffset,
     click_point: Option<WebSurfaceClickPoint>,
+    typed_text: Option<String>,
     pub(super) image: Arc<RenderImage>,
 }
 
@@ -28,6 +29,7 @@ impl WebSurfaceFrame {
         requested_url: String,
         scroll_offset: WebSurfaceScrollOffset,
         click_point: Option<WebSurfaceClickPoint>,
+        typed_text: Option<String>,
         snapshot: SidecarSnapshot,
     ) -> Result<Self, WebSurfaceError> {
         let width = snapshot.width();
@@ -50,6 +52,7 @@ impl WebSurfaceFrame {
             height,
             scroll_offset,
             click_point,
+            typed_text,
             image: Arc::new(RenderImage::new([image::Frame::new(image_buffer)])),
         })
     }
@@ -63,9 +66,12 @@ impl WebSurfaceFrame {
     }
 
     pub(super) fn detail_label(&self) -> String {
-        let detail = self.scroll_offset.detail_label(self.size());
-        match self.click_point {
-            Some(click_point) => format!("{detail} {}", click_point.detail_label()),
+        let mut detail = self.scroll_offset.detail_label(self.size());
+        if let Some(click_point) = self.click_point {
+            detail = format!("{detail} {}", click_point.detail_label());
+        }
+        match self.typed_text.as_ref() {
+            Some(typed_text) => format!("{detail} text={}b", typed_text.len()),
             None => detail,
         }
     }
@@ -80,6 +86,10 @@ impl WebSurfaceFrame {
 
     pub(super) fn click_point(&self) -> Option<WebSurfaceClickPoint> {
         self.click_point
+    }
+
+    pub(super) fn typed_text(&self) -> Option<&str> {
+        self.typed_text.as_deref()
     }
 }
 

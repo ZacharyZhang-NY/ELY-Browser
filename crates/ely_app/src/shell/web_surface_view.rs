@@ -156,7 +156,7 @@ fn render_input_overlay(
         .absolute()
         .size_full()
         .occlude()
-        .capture_any_mouse_up(move |event, _window, cx| {
+        .capture_any_mouse_up(move |event, window, cx| {
             if event.button != MouseButton::Left {
                 return;
             }
@@ -165,6 +165,7 @@ fn render_input_overlay(
                     click_tab_id.clone(),
                     click_url.clone(),
                     event.position,
+                    window,
                     cx,
                 );
             });

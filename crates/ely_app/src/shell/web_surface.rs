@@ -1,22 +1,18 @@
 use std::collections::BTreeMap;
 
 use ely_domain::{BrowserTab, TabId};
-use gpui::{AnyElement, Bounds, Context, Pixels, Point};
+use gpui::{Bounds, Pixels, Point};
 
-use crate::services::servo_sidecar::{ServoSidecarError, SidecarSnapshot, SidecarSnapshotRequest};
+use crate::services::servo_sidecar::SidecarSnapshotRequest;
 
 use super::{
-    ElyShell,
     web_surface_frame::WebSurfaceFrame,
     web_surface_geometry::{
         WebSurfaceClickPoint, WebSurfaceScrollDelta, WebSurfaceScrollOffset, WebSurfaceSize,
     },
     web_surface_state::{
-        WebSurfaceClickState, WebSurfaceClient, WebSurfaceRequest, WebSurfaceScrollState,
-        WebSurfaceState,
-    },
-    web_surface_view::{
-        render_failed_web_surface, render_loading_web_surface, render_ready_web_surface,
+        WebSurfaceClickState, WebSurfaceClient, WebSurfaceKeyboardFocusState, WebSurfaceRequest,
+        WebSurfaceScrollState, WebSurfaceState, WebSurfaceTextInputState,
     },
 };
 
@@ -24,7 +20,9 @@ pub(super) struct WebSurfaceStore {
     client: WebSurfaceClient,
     pending_viewport_sizes: BTreeMap<TabId, WebSurfaceSize>,
     click_points: BTreeMap<TabId, WebSurfaceClickState>,
+    keyboard_focus: Option<WebSurfaceKeyboardFocusState>,
     scroll_offsets: BTreeMap<TabId, WebSurfaceScrollState>,
+    typed_texts: BTreeMap<TabId, WebSurfaceTextInputState>,
     viewport_bounds: BTreeMap<TabId, Bounds<Pixels>>,
     viewport_sizes: BTreeMap<TabId, WebSurfaceSize>,
     states: BTreeMap<TabId, WebSurfaceState>,
@@ -36,18 +34,20 @@ impl WebSurfaceStore {
             client: WebSurfaceClient::new(),
             pending_viewport_sizes: BTreeMap::new(),
             click_points: BTreeMap::new(),
+            keyboard_focus: None,
             scroll_offsets: BTreeMap::new(),
+            typed_texts: BTreeMap::new(),
             viewport_bounds: BTreeMap::new(),
             viewport_sizes: BTreeMap::new(),
             states: BTreeMap::new(),
         }
     }
 
-    fn state(&self, tab_id: &TabId) -> Option<&WebSurfaceState> {
+    pub(super) fn state(&self, tab_id: &TabId) -> Option<&WebSurfaceState> {
         self.states.get(tab_id)
     }
 
-    fn prepare_request(&mut self, tab: &BrowserTab) -> Option<WebSurfaceRequest> {
+    pub(super) fn prepare_request(&mut self, tab: &BrowserTab) -> Option<WebSurfaceRequest> {
         if !is_external_web_url(tab.url().as_str()) {
             return None;
         }
@@ -56,10 +56,19 @@ impl WebSurfaceStore {
         let requested_url = tab.url().as_str().to_string();
         let scroll_offset = self.scroll_offset_for(tab.id(), requested_url.as_str());
         let click_point = self.click_point_for(tab.id(), requested_url.as_str(), scroll_offset);
+        let typed_text =
+            self.typed_text_for(tab.id(), requested_url.as_str(), scroll_offset, click_point);
         if self.is_loading_requested_url(tab.id(), requested_url.as_str()) {
             return None;
         }
-        if self.has_current_state(tab.id(), &requested_url, size, scroll_offset, click_point) {
+        if self.has_current_state(
+            tab.id(),
+            &requested_url,
+            size,
+            scroll_offset,
+            click_point,
+            typed_text.as_deref(),
+        ) {
             return None;
         }
 
@@ -73,6 +82,7 @@ impl WebSurfaceStore {
                         size,
                         scroll_offset,
                         click_point,
+                        typed_text: typed_text.clone(),
                         message: message.clone(),
                     },
                 );
@@ -87,6 +97,7 @@ impl WebSurfaceStore {
                 size,
                 scroll_offset,
                 click_point,
+                typed_text: typed_text.clone(),
                 previous_frame: self.previous_ready_frame(tab.id(), requested_url.as_str()),
             },
         );
@@ -97,6 +108,9 @@ impl WebSurfaceStore {
         if let Some(click_point) = click_point {
             snapshot_request = snapshot_request.with_click_point(click_point.x(), click_point.y());
         }
+        if let Some(typed_text) = typed_text.clone() {
+            snapshot_request = snapshot_request.with_typed_text(typed_text);
+        }
 
         Some(WebSurfaceRequest {
             tab_id: tab.id().clone(),
@@ -104,6 +118,7 @@ impl WebSurfaceStore {
             size,
             scroll_offset,
             click_point,
+            typed_text,
             client,
             snapshot_request,
         })
@@ -116,6 +131,7 @@ impl WebSurfaceStore {
         size: WebSurfaceSize,
         scroll_offset: WebSurfaceScrollOffset,
         click_point: Option<WebSurfaceClickPoint>,
+        typed_text: Option<&str>,
     ) -> bool {
         match self.states.get(tab_id) {
             Some(WebSurfaceState::Loading {
@@ -123,42 +139,48 @@ impl WebSurfaceStore {
                 size: current_size,
                 scroll_offset: current_scroll_offset,
                 click_point: current_click_point,
+                typed_text: current_typed_text,
                 ..
             }) => {
                 current_url == requested_url
                     && *current_size == size
                     && *current_scroll_offset == scroll_offset
                     && *current_click_point == click_point
+                    && current_typed_text.as_deref() == typed_text
             }
             Some(WebSurfaceState::Ready(frame)) => {
                 frame.requested_url == requested_url
                     && frame.size() == size
                     && frame.scroll_offset() == scroll_offset
                     && frame.click_point() == click_point
+                    && frame.typed_text() == typed_text
             }
             Some(WebSurfaceState::Failed {
                 requested_url: current_url,
                 size: current_size,
                 scroll_offset: current_scroll_offset,
                 click_point: current_click_point,
+                typed_text: current_typed_text,
                 ..
             }) => {
                 current_url == requested_url
                     && *current_size == size
                     && *current_scroll_offset == scroll_offset
                     && *current_click_point == click_point
+                    && current_typed_text.as_deref() == typed_text
             }
             None => false,
         }
     }
 
-    fn is_loading(
+    pub(super) fn is_loading(
         &self,
         tab_id: &TabId,
         requested_url: &str,
         size: WebSurfaceSize,
         scroll_offset: WebSurfaceScrollOffset,
         click_point: Option<WebSurfaceClickPoint>,
+        typed_text: Option<&str>,
     ) -> bool {
         matches!(
             self.states.get(tab_id),
@@ -167,12 +189,14 @@ impl WebSurfaceStore {
                 size: current_size,
                 scroll_offset: current_scroll_offset,
                 click_point: current_click_point,
+                typed_text: current_typed_text,
                 ..
             })
                 if current_url == requested_url
                     && *current_size == size
                     && *current_scroll_offset == scroll_offset
                     && *current_click_point == click_point
+                    && current_typed_text.as_deref() == typed_text
         )
     }
 
@@ -196,11 +220,11 @@ impl WebSurfaceStore {
         }
     }
 
-    fn finish(&mut self, tab_id: TabId, state: WebSurfaceState) {
+    pub(super) fn finish(&mut self, tab_id: TabId, state: WebSurfaceState) {
         self.states.insert(tab_id, state);
     }
 
-    fn record_scroll_delta(
+    pub(super) fn record_scroll_delta(
         &mut self,
         tab_id: &TabId,
         requested_url: &str,
@@ -225,10 +249,12 @@ impl WebSurfaceStore {
 
         state.offset = next_offset;
         self.click_points.remove(tab_id);
+        self.typed_texts.remove(tab_id);
+        self.keyboard_focus = None;
         true
     }
 
-    fn record_viewport_size(&mut self, tab_id: &TabId, bounds: Bounds<Pixels>) -> bool {
+    pub(super) fn record_viewport_size(&mut self, tab_id: &TabId, bounds: Bounds<Pixels>) -> bool {
         let Some(size) = WebSurfaceSize::from_bounds(bounds) else {
             return false;
         };
@@ -255,7 +281,7 @@ impl WebSurfaceStore {
         true
     }
 
-    fn record_click_point(
+    pub(super) fn record_click_point(
         &mut self,
         tab_id: &TabId,
         requested_url: &str,
@@ -273,11 +299,57 @@ impl WebSurfaceStore {
             scroll_offset: self.scroll_offset_for(tab_id, requested_url),
             point,
         };
+        self.keyboard_focus = Some(WebSurfaceKeyboardFocusState {
+            tab_id: tab_id.clone(),
+            requested_url: requested_url.to_string(),
+            scroll_offset: state.scroll_offset,
+            click_point: state.point,
+        });
         if self.click_points.get(tab_id) == Some(&state) {
             return false;
         }
 
+        self.typed_texts.remove(tab_id);
         self.click_points.insert(tab_id.clone(), state);
+        true
+    }
+
+    pub(super) fn record_typed_text(
+        &mut self,
+        tab_id: &TabId,
+        requested_url: &str,
+        text: &str,
+    ) -> bool {
+        if text.is_empty() {
+            return false;
+        }
+        let Some(focus) = self.keyboard_focus.as_ref() else {
+            return false;
+        };
+        if focus.tab_id != *tab_id || focus.requested_url != requested_url {
+            return false;
+        }
+
+        let entry =
+            self.typed_texts.entry(tab_id.clone()).or_insert_with(|| WebSurfaceTextInputState {
+                requested_url: requested_url.to_string(),
+                scroll_offset: focus.scroll_offset,
+                click_point: focus.click_point,
+                text: String::new(),
+            });
+        if entry.requested_url != requested_url
+            || entry.scroll_offset != focus.scroll_offset
+            || entry.click_point != focus.click_point
+        {
+            *entry = WebSurfaceTextInputState {
+                requested_url: requested_url.to_string(),
+                scroll_offset: focus.scroll_offset,
+                click_point: focus.click_point,
+                text: String::new(),
+            };
+        }
+
+        entry.text.push_str(text);
         true
     }
 
@@ -302,150 +374,69 @@ impl WebSurfaceStore {
             })
             .map(|state| state.point)
     }
-}
 
-impl ElyShell {
-    pub(super) fn render_external_web_canvas(
-        &mut self,
-        tab: &BrowserTab,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        self.ensure_external_web_frame(tab, cx);
-
-        let state_entity = cx.entity().clone();
-        match self.web_surfaces.state(tab.id()) {
-            Some(WebSurfaceState::Ready(frame)) => {
-                render_ready_web_surface(frame, tab, state_entity)
-            }
-            Some(WebSurfaceState::Failed { message, .. }) => {
-                render_failed_web_surface(tab, message.as_str(), state_entity)
-            }
-            Some(WebSurfaceState::Loading { previous_frame: Some(frame), .. }) => {
-                render_ready_web_surface(frame, tab, state_entity)
-            }
-            Some(WebSurfaceState::Loading { previous_frame: None, .. }) | None => {
-                render_loading_web_surface(tab, state_entity)
-            }
-        }
-    }
-
-    fn ensure_external_web_frame(&mut self, tab: &BrowserTab, cx: &mut Context<Self>) {
-        let Some(request) = self.web_surfaces.prepare_request(tab) else {
-            return;
-        };
-
-        let WebSurfaceRequest {
-            tab_id,
-            requested_url,
-            size,
-            scroll_offset,
-            click_point,
-            client,
-            snapshot_request,
-        } = request;
-        cx.spawn(async move |shell, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { client.snapshot(snapshot_request) })
-                .await;
-
-            _ = shell.update(cx, |shell, cx| {
-                shell.handle_external_web_frame_result(
-                    tab_id,
-                    requested_url,
-                    size,
-                    scroll_offset,
-                    click_point,
-                    result,
-                );
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    fn handle_external_web_frame_result(
-        &mut self,
-        tab_id: TabId,
-        requested_url: String,
-        size: WebSurfaceSize,
+    fn typed_text_for(
+        &self,
+        tab_id: &TabId,
+        requested_url: &str,
         scroll_offset: WebSurfaceScrollOffset,
         click_point: Option<WebSurfaceClickPoint>,
-        result: Result<SidecarSnapshot, ServoSidecarError>,
-    ) {
-        if !self.web_surfaces.is_loading(
-            &tab_id,
-            requested_url.as_str(),
-            size,
-            scroll_offset,
-            click_point,
-        ) {
-            return;
-        }
-
-        let state = match result {
-            Ok(snapshot) => match WebSurfaceFrame::from_snapshot(
-                requested_url.clone(),
-                scroll_offset,
-                click_point,
-                snapshot,
-            ) {
-                Ok(frame) => WebSurfaceState::Ready(frame),
-                Err(error) => WebSurfaceState::Failed {
-                    requested_url,
-                    size,
-                    scroll_offset,
-                    click_point,
-                    message: error.to_string(),
-                },
-            },
-            Err(error) => WebSurfaceState::Failed {
-                requested_url,
-                size,
-                scroll_offset,
-                click_point,
-                message: error.to_string(),
-            },
-        };
-        self.web_surfaces.finish(tab_id, state);
-    }
-
-    pub(super) fn record_external_web_viewport(
-        &mut self,
-        tab_id: TabId,
-        bounds: Bounds<Pixels>,
-        cx: &mut Context<Self>,
-    ) {
-        if self.web_surfaces.record_viewport_size(&tab_id, bounds) {
-            cx.notify();
-        }
-    }
-
-    pub(super) fn scroll_external_web_viewport(
-        &mut self,
-        tab_id: TabId,
-        requested_url: String,
-        delta: gpui::Point<Pixels>,
-        cx: &mut Context<Self>,
-    ) {
-        if self.web_surfaces.record_scroll_delta(&tab_id, requested_url.as_str(), delta) {
-            cx.notify();
-        }
-    }
-
-    pub(super) fn click_external_web_viewport(
-        &mut self,
-        tab_id: TabId,
-        requested_url: String,
-        position: Point<Pixels>,
-        cx: &mut Context<Self>,
-    ) {
-        if self.web_surfaces.record_click_point(&tab_id, requested_url.as_str(), position) {
-            cx.notify();
-        }
+    ) -> Option<String> {
+        let click_point = click_point?;
+        self.typed_texts
+            .get(tab_id)
+            .filter(|state| {
+                state.requested_url == requested_url
+                    && state.scroll_offset == scroll_offset
+                    && state.click_point == click_point
+                    && !state.text.is_empty()
+            })
+            .map(|state| state.text.clone())
     }
 }
 
 pub(super) fn is_external_web_url(url: &str) -> bool {
     url.starts_with("https://") || url.starts_with("http://")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use ely_domain::{BrowserTab, ProfileId, SpaceId, TabId, UrlText};
+    use gpui::{Bounds, point, px, size};
+
+    use super::WebSurfaceStore;
+
+    #[test]
+    fn typed_text_enters_snapshot_request_after_clicked_viewport() -> Result<(), Box<dyn Error>> {
+        let mut store = WebSurfaceStore::new();
+        let tab = web_tab("https://example.com/form")?;
+
+        let bounds = Bounds::new(point(px(0.0), px(0.0)), size(px(640.0), px(480.0)));
+        assert!(store.record_viewport_size(tab.id(), bounds));
+        assert!(store.record_click_point(
+            tab.id(),
+            tab.url().as_str(),
+            point(px(160.0), px(120.0))
+        ));
+        assert!(store.record_typed_text(tab.id(), tab.url().as_str(), "e"));
+        assert!(store.record_typed_text(tab.id(), tab.url().as_str(), "l"));
+
+        let request = store.prepare_request(&tab).ok_or("missing web surface request")?;
+
+        assert_eq!(request.typed_text.as_deref(), Some("el"));
+        assert_eq!(request.snapshot_request.typed_text_for_test(), Some("el"));
+        Ok(())
+    }
+
+    fn web_tab(url: &str) -> Result<BrowserTab, Box<dyn Error>> {
+        Ok(BrowserTab::new(
+            TabId::new(),
+            SpaceId::new(),
+            ProfileId::new(),
+            "Web",
+            UrlText::parse(url)?,
+        ))
+    }
 }

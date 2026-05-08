@@ -25,6 +25,21 @@ pub(super) struct WebSurfaceClickState {
     pub(super) point: WebSurfaceClickPoint,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct WebSurfaceKeyboardFocusState {
+    pub(super) tab_id: TabId,
+    pub(super) requested_url: String,
+    pub(super) scroll_offset: WebSurfaceScrollOffset,
+    pub(super) click_point: WebSurfaceClickPoint,
+}
+
+pub(super) struct WebSurfaceTextInputState {
+    pub(super) requested_url: String,
+    pub(super) scroll_offset: WebSurfaceScrollOffset,
+    pub(super) click_point: WebSurfaceClickPoint,
+    pub(super) text: String,
+}
+
 pub(super) enum WebSurfaceClient {
     Ready(ServoSidecarClient),
     Unavailable(String),
@@ -45,6 +60,7 @@ pub(super) struct WebSurfaceRequest {
     pub(super) size: WebSurfaceSize,
     pub(super) scroll_offset: WebSurfaceScrollOffset,
     pub(super) click_point: Option<WebSurfaceClickPoint>,
+    pub(super) typed_text: Option<String>,
     pub(super) client: ServoSidecarClient,
     pub(super) snapshot_request: SidecarSnapshotRequest,
 }
@@ -55,6 +71,7 @@ pub(super) enum WebSurfaceState {
         size: WebSurfaceSize,
         scroll_offset: WebSurfaceScrollOffset,
         click_point: Option<WebSurfaceClickPoint>,
+        typed_text: Option<String>,
         previous_frame: Option<WebSurfaceFrame>,
     },
     Ready(WebSurfaceFrame),
@@ -63,6 +80,7 @@ pub(super) enum WebSurfaceState {
         size: WebSurfaceSize,
         scroll_offset: WebSurfaceScrollOffset,
         click_point: Option<WebSurfaceClickPoint>,
+        typed_text: Option<String>,
         message: String,
     },
 }

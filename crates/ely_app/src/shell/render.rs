@@ -42,6 +42,7 @@ impl ElyShell {
         div()
             .size_full()
             .track_focus(&self.focus_handle)
+            .capture_key_down(cx.listener(Self::on_external_web_key_down))
             .on_action(cx.listener(Self::on_close_current_tab))
             .on_action(cx.listener(Self::on_focus_address_bar))
             .on_action(cx.listener(Self::on_focus_command_mode))

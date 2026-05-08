@@ -86,6 +86,9 @@ impl ServoSidecarClient {
                 .arg("--click-y")
                 .arg(click_point.y.to_string());
         }
+        if let Some(typed_text) = request.typed_text.as_deref() {
+            command.arg("--type-text").arg(typed_text);
+        }
 
         let mut child = command
             .stdout(Stdio::piped())
@@ -120,12 +123,13 @@ pub struct SidecarSnapshotRequest {
     scroll_x: i32,
     scroll_y: i32,
     click_point: Option<SidecarClickPoint>,
+    typed_text: Option<String>,
 }
 
 impl SidecarSnapshotRequest {
     #[must_use]
     pub fn new(url: UrlText, width: u32, height: u32) -> Self {
-        Self { url, width, height, scroll_x: 0, scroll_y: 0, click_point: None }
+        Self { url, width, height, scroll_x: 0, scroll_y: 0, click_point: None, typed_text: None }
     }
 
     #[must_use]
@@ -139,6 +143,17 @@ impl SidecarSnapshotRequest {
     pub fn with_click_point(mut self, x: u32, y: u32) -> Self {
         self.click_point = Some(SidecarClickPoint { x, y });
         self
+    }
+
+    #[must_use]
+    pub fn with_typed_text(mut self, typed_text: String) -> Self {
+        self.typed_text = Some(typed_text);
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn typed_text_for_test(&self) -> Option<&str> {
+        self.typed_text.as_deref()
     }
 }
 
