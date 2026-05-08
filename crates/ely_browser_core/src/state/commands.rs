@@ -176,6 +176,17 @@ impl BrowserCore {
             "detach-split-pane" | "detach split pane" | "detach-pane" | "detach pane" => {
                 self.detach_active_split_pane()
             }
+            "swap-split-pane" | "swap split pane" | "swap-pane" | "swap pane" => {
+                self.swap_active_split_pane()
+            }
+            "swap-split-pane-left"
+            | "swap split pane left"
+            | "swap-pane-left"
+            | "swap pane left" => self.swap_active_split_pane_previous(),
+            "swap-split-pane-right"
+            | "swap split pane right"
+            | "swap-pane-right"
+            | "swap pane right" => self.swap_active_split_pane_next(),
             "duplicate-split-pane"
             | "duplicate split pane"
             | "duplicate-pane"

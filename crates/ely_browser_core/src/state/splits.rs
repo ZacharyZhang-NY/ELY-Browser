@@ -130,6 +130,20 @@ impl BrowserCore {
         Ok(Some(duplicated_tab_id))
     }
 
+    pub fn swap_active_split_pane(&mut self) -> Result<bool, CoreError> {
+        self.swap_active_split_pane_by(|layout, tab_id| {
+            layout.swap_tab_with_next(tab_id) || layout.swap_tab_with_previous(tab_id)
+        })
+    }
+
+    pub fn swap_active_split_pane_previous(&mut self) -> Result<bool, CoreError> {
+        self.swap_active_split_pane_by(SplitLayout::swap_tab_with_previous)
+    }
+
+    pub fn swap_active_split_pane_next(&mut self) -> Result<bool, CoreError> {
+        self.swap_active_split_pane_by(SplitLayout::swap_tab_with_next)
+    }
+
     pub fn split_active_tab_right(&mut self) -> Result<SplitId, CoreError> {
         let active_index = self.active_tab_index()?;
         let active_tab_id = self.tabs[active_index].id().clone();
@@ -154,6 +168,35 @@ impl BrowserCore {
         self.tabs.insert(insert_index, new_tab);
         self.select_tab(&new_tab_id)?;
         Ok(split_id)
+    }
+
+    fn swap_active_split_pane_by(
+        &mut self,
+        swap_pane: impl FnOnce(&mut SplitLayout, &TabId) -> bool,
+    ) -> Result<bool, CoreError> {
+        let active_tab = self.active_tab()?;
+        let active_tab_id = active_tab.id().clone();
+        let Some(split_id) = active_tab.split_id().cloned() else {
+            return Ok(false);
+        };
+
+        let swapped = {
+            let layout = self
+                .split_layouts
+                .iter_mut()
+                .find(|layout| layout.id() == &split_id)
+                .ok_or_else(|| CoreError::SplitNotFound { id: split_id.clone() })?;
+            if !layout.contains_tab(&active_tab_id) {
+                return Err(CoreError::TabNotFound { id: active_tab_id });
+            }
+
+            swap_pane(layout, &active_tab_id)
+        };
+        if swapped {
+            self.refresh_saved_split_title(&split_id)?;
+        }
+
+        Ok(swapped)
     }
 
     pub(super) fn detach_tab_from_split(&mut self, tab_id: &TabId) {

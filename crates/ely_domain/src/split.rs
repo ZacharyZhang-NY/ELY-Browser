@@ -109,6 +109,30 @@ impl SplitLayout {
         true
     }
 
+    pub fn swap_tab_with_previous(&mut self, tab_id: &TabId) -> bool {
+        let Some(index) = self.pane_index(tab_id) else {
+            return false;
+        };
+        if index == 0 {
+            return false;
+        }
+
+        self.panes.swap(index - 1, index);
+        true
+    }
+
+    pub fn swap_tab_with_next(&mut self, tab_id: &TabId) -> bool {
+        let Some(index) = self.pane_index(tab_id) else {
+            return false;
+        };
+        if index + 1 >= self.panes.len() {
+            return false;
+        }
+
+        self.panes.swap(index, index + 1);
+        true
+    }
+
     pub fn remove_tab(&mut self, tab_id: &TabId) -> bool {
         let original_len = self.panes.len();
         self.panes.retain(|pane| pane.tab_id() != tab_id);
@@ -118,5 +142,9 @@ impl SplitLayout {
     pub fn save(&mut self, title: impl Into<String>) {
         self.title = title.into();
         self.saved = true;
+    }
+
+    fn pane_index(&self, tab_id: &TabId) -> Option<usize> {
+        self.panes.iter().position(|pane| pane.tab_id() == tab_id)
     }
 }
