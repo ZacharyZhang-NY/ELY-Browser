@@ -10,6 +10,7 @@ use std::{
 pub(super) const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
 const SIDECAR_TIMEOUT: Duration = Duration::from_secs(45);
 const SIDECAR_POLL_INTERVAL: Duration = Duration::from_millis(20);
+const SIDECAR_COMMAND_COOLDOWN: Duration = Duration::from_millis(750);
 const SIDECAR_RETRY_INTERVAL: Duration = Duration::from_millis(250);
 static SIDECAR_COMMAND_LOCK: Mutex<()> = Mutex::new(());
 pub(super) const PRD_SITE_COMPATIBILITY_CASES: &[PrdSiteCompatibilityCase] = &[
@@ -357,11 +358,14 @@ fn run_sidecar_snapshot(
     let started_at = Instant::now();
     loop {
         if child.try_wait()?.is_some() {
-            return child.wait_with_output().map_err(Into::into);
+            let output = child.wait_with_output()?;
+            thread::sleep(SIDECAR_COMMAND_COOLDOWN);
+            return Ok(output);
         }
 
         if started_at.elapsed() >= SIDECAR_TIMEOUT {
             terminate_child(child)?;
+            thread::sleep(SIDECAR_COMMAND_COOLDOWN);
             return Err(format!(
                 "timed out rendering {site_url} at {}x{}",
                 size.width, size.height
