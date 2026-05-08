@@ -1,6 +1,6 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
-use ely_domain::{BrowserTab, HistoryEntry};
+use ely_domain::{ArchiveSource, ArchivedTab, BrowserTab, HistoryEntry};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, div, px, rgb,
@@ -18,6 +18,7 @@ impl ElyShell {
     ) -> AnyElement {
         match tab.url().as_str() {
             "ely://history" => self.render_history_page(snapshot, cx),
+            "ely://archive" => self.render_archive_page(snapshot, cx),
             _ => render_default_page(tab),
         }
     }
@@ -81,7 +82,7 @@ impl ElyShell {
                 .pt_5()
                 .text_sm()
                 .text_color(rgb(colors::MUTED))
-                .child("No history entries for this Space and Profile.")
+                .child("History is empty for this Space and Profile.")
                 .into_any_element();
         }
 
@@ -151,6 +152,137 @@ impl ElyShell {
             .child(div().text_color(rgb(colors::MUTED_SOFT)).child(IconName::ExternalLink))
             .into_any_element()
     }
+
+    fn render_archive_page(
+        &mut self,
+        snapshot: &BrowserSnapshot,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        render_canvas_surface(
+            div()
+                .size_full()
+                .p_8()
+                .flex()
+                .flex_col()
+                .gap_5()
+                .child(
+                    div()
+                        .flex()
+                        .items_end()
+                        .justify_between()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .text_size(px(26.0))
+                                        .text_color(rgb(colors::INK))
+                                        .child("Archived Tabs"),
+                                )
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(rgb(colors::MUTED))
+                                        .child("All Spaces"),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(rgb(colors::MUTED))
+                                .child(format!("{} archived", snapshot.archived_tabs.len())),
+                        ),
+                )
+                .child(self.render_archive_list(snapshot, cx)),
+        )
+    }
+
+    fn render_archive_list(
+        &mut self,
+        snapshot: &BrowserSnapshot,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        if snapshot.archived_tabs.is_empty() {
+            return div()
+                .flex_1()
+                .border_t_1()
+                .border_color(rgb(colors::HAIRLINE))
+                .pt_5()
+                .text_sm()
+                .text_color(rgb(colors::MUTED))
+                .child("Archive is empty.")
+                .into_any_element();
+        }
+
+        div()
+            .flex_1()
+            .flex()
+            .flex_col()
+            .overflow_y_scrollbar()
+            .border_t_1()
+            .border_color(rgb(colors::HAIRLINE))
+            .children(
+                snapshot
+                    .archived_tabs
+                    .iter()
+                    .rev()
+                    .enumerate()
+                    .map(|(index, archived_tab)| self.render_archive_row(index, archived_tab, cx)),
+            )
+            .into_any_element()
+    }
+
+    fn render_archive_row(
+        &mut self,
+        index: usize,
+        archived_tab: &ArchivedTab,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let tab = archived_tab.tab();
+        let tab_id = tab.id().clone();
+
+        div()
+            .id(SharedString::from(format!("archive-{index}")))
+            .py_3()
+            .border_b_1()
+            .border_color(rgb(colors::HAIRLINE))
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_4()
+            .cursor_pointer()
+            .hover(|style| style.bg(rgb(colors::CANVAS_SOFT)))
+            .active(|style| style.opacity(0.82))
+            .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.restore_archived_tab(&tab_id, window, cx);
+            }))
+            .child(
+                div()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_semibold()
+                            .truncate()
+                            .text_color(rgb(colors::INK))
+                            .child(tab.title().to_string()),
+                    )
+                    .child(div().text_xs().truncate().text_color(rgb(colors::MUTED)).child(
+                        format!(
+                            "{} - {}",
+                            tab.display_url(),
+                            archive_source_label(archived_tab.source())
+                        ),
+                    )),
+            )
+            .child(div().text_color(rgb(colors::MUTED_SOFT)).child(IconName::Undo2))
+            .into_any_element()
+    }
 }
 
 fn render_default_page(tab: &BrowserTab) -> AnyElement {
@@ -193,5 +325,12 @@ fn render_tab_status(tab: &BrowserTab) -> String {
     match tab.url().as_str() {
         "ely://new-tab" => "Ready".to_string(),
         url => url.to_string(),
+    }
+}
+
+fn archive_source_label(source: &ArchiveSource) -> &'static str {
+    match source {
+        ArchiveSource::ManualClose => "Closed",
+        ArchiveSource::AutoArchive => "Auto archived",
     }
 }

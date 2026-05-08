@@ -18,6 +18,7 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
         "ely://new-tab" => Some("New Tab"),
         "ely://downloads" => Some("Downloads"),
         "ely://history" => Some("History"),
+        "ely://archive" => Some("Archived Tabs"),
         "ely://settings" => Some("Settings"),
         "ely://settings/plugins" => Some("Plugin Settings"),
         "ely://settings/profiles" => Some("Profile Settings"),
