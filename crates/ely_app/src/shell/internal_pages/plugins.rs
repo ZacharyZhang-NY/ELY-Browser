@@ -1,5 +1,6 @@
 use ely_browser_core::{BrowserSnapshot, InstalledPlugin, PluginAuditAction, PluginAuditEvent};
 use ely_design_system::colors;
+use ely_domain::PluginId;
 use gpui::prelude::FluentBuilder;
 use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, px, rgb};
 use gpui_component::{
@@ -91,7 +92,7 @@ impl ElyShell {
                 .when_some(self.pending_plugin_install.clone(), |this, pending| {
                     this.child(render_plugin_install_confirmation(&pending, cx))
                 })
-                .child(render_plugin_list(snapshot))
+                .child(render_plugin_list(snapshot, cx))
                 .child(render_plugin_audit_list(snapshot)),
         )
     }
@@ -170,7 +171,7 @@ fn render_plugin_install_confirmation(
         .into_any_element()
 }
 
-fn render_plugin_list(snapshot: &BrowserSnapshot) -> AnyElement {
+fn render_plugin_list(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
     if snapshot.installed_plugins.is_empty() {
         return div()
             .border_t_1()
@@ -182,19 +183,32 @@ fn render_plugin_list(snapshot: &BrowserSnapshot) -> AnyElement {
             .into_any_element();
     }
 
+    let rows = snapshot
+        .installed_plugins
+        .iter()
+        .enumerate()
+        .map(|(index, plugin)| render_plugin_row(index, plugin, cx))
+        .collect::<Vec<_>>();
+
     div()
         .flex()
         .flex_col()
         .border_t_1()
         .border_color(rgb(colors::HAIRLINE))
-        .children(snapshot.installed_plugins.iter().map(render_plugin_row))
+        .children(rows)
         .into_any_element()
 }
 
-fn render_plugin_row(plugin: &InstalledPlugin) -> AnyElement {
+fn render_plugin_row(
+    index: usize,
+    plugin: &InstalledPlugin,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
     let high_risk_count = plugin.manifest().high_risk_permissions().count();
     let status_color = if plugin.enabled() { colors::SUCCESS } else { colors::MUTED };
     let status_label = if plugin.enabled() { "Enabled" } else { "Disabled" };
+    let plugin_id = plugin.id().clone();
+    let target_enabled = !plugin.enabled();
 
     div()
         .py_3()
@@ -235,9 +249,36 @@ fn render_plugin_row(plugin: &InstalledPlugin) -> AnyElement {
                 .text_color(rgb(colors::MUTED))
                 .child(format!("{} permissions", plugin.manifest().permissions().len()))
                 .child(format!("{high_risk_count} high risk"))
-                .child(div().text_color(rgb(status_color)).child(status_label)),
+                .child(div().text_color(rgb(status_color)).child(status_label))
+                .child(render_plugin_state_button(index, plugin, plugin_id, target_enabled, cx)),
         )
         .into_any_element()
+}
+
+fn render_plugin_state_button(
+    index: usize,
+    plugin: &InstalledPlugin,
+    plugin_id: PluginId,
+    target_enabled: bool,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let label = if plugin.enabled() { "Disable" } else { "Enable" };
+    let tooltip = if plugin.enabled() { "Disable Plugin" } else { "Enable Plugin" };
+    let icon = if plugin.enabled() { IconName::CircleX } else { IconName::Check };
+    let button = Button::new(("set-plugin-enabled", index))
+        .xsmall()
+        .icon(icon)
+        .label(label)
+        .tooltip(tooltip)
+        .on_click(cx.listener(move |shell, _, _, cx| {
+            shell.set_plugin_enabled(plugin_id.clone(), target_enabled, cx);
+        }));
+
+    if plugin.enabled() {
+        button.danger().into_any_element()
+    } else {
+        button.primary().into_any_element()
+    }
 }
 
 fn render_plugin_audit_list(snapshot: &BrowserSnapshot) -> AnyElement {

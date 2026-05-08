@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use ely_domain::{PluginManifest, PluginPermission};
+use ely_domain::{PluginId, PluginManifest, PluginPermission};
 use gpui::{Context, PathPromptOptions, Window};
 
 use crate::services::{
@@ -83,6 +83,28 @@ impl ElyShell {
 
     pub(super) fn cancel_plugin_install(&mut self, cx: &mut Context<Self>) {
         self.pending_plugin_install = None;
+        cx.notify();
+    }
+
+    pub(super) fn set_plugin_enabled(
+        &mut self,
+        plugin_id: PluginId,
+        enabled: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let result = match &mut self.state {
+            ShellState::Ready(core) => {
+                let action = if enabled {
+                    core.enable_plugin(&plugin_id)
+                } else {
+                    core.disable_plugin(&plugin_id)
+                };
+                action.map_err(|error| error.to_string())
+            }
+            ShellState::StartupError(message) => Err(message.clone()),
+        };
+
+        self.plugin_install_error = result.err();
         cx.notify();
     }
 
