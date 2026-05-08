@@ -103,7 +103,8 @@ fn render_sidebar_tabs_header(snapshot: &BrowserSnapshot, active_space: &Space) 
                 .text_color(rgb(colors::MUTED))
                 .child(IconName::LayoutDashboard)
                 .child(format!(
-                    "{} / {}",
+                    "{} / {} / {}",
+                    sidebar_width_label(active_space),
                     archive_policy_label(active_space.archive_policy()),
                     snapshot.favorite_limit.label()
                 )),
@@ -127,7 +128,51 @@ fn render_sidebar_tabs_settings(
         .flex_col()
         .gap_4()
         .child(render_archive_policy_section(active_space, cx))
+        .child(render_sidebar_width_section(active_space))
         .child(render_favorite_limit_section(snapshot.favorite_limit, cx))
+        .into_any_element()
+}
+
+fn render_sidebar_width_section(active_space: &Space) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap_3()
+        .pt_4()
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap_4()
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(
+                            div()
+                                .text_sm()
+                                .font_semibold()
+                                .text_color(rgb(colors::INK))
+                                .child("Sidebar Width"),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(rgb(colors::MUTED))
+                                .child("Current Space sidebar width."),
+                        ),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .font_semibold()
+                        .text_color(rgb(colors::MUTED))
+                        .child(sidebar_width_label(active_space)),
+                ),
+        )
         .into_any_element()
 }
 
@@ -231,6 +276,10 @@ fn render_favorite_limit_section(
             }),
         )
         .into_any_element()
+}
+
+fn sidebar_width_label(space: &Space) -> String {
+    format!("{} px", space.sidebar_width_px())
 }
 
 fn render_archive_policy_option(

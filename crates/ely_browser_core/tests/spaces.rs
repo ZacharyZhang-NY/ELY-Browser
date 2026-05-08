@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, CoreError, InitialBrowserConfig};
-use ely_domain::{ArchivePolicy, ProfileId, ProfileKind};
+use ely_domain::{ArchivePolicy, DEFAULT_SIDEBAR_WIDTH_PX, ProfileId, ProfileKind};
 
 #[test]
 fn created_space_binds_current_profile_as_default() -> Result<(), Box<dyn Error>> {
@@ -33,6 +33,21 @@ fn created_space_records_creation_timestamps() -> Result<(), Box<dyn Error>> {
     };
 
     assert_eq!(research_space.created_at(), research_space.updated_at());
+    Ok(())
+}
+
+#[test]
+fn created_space_uses_default_sidebar_width() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let research_space_id = core.create_space("Research", "R", 0x9fc9a2)?;
+    let snapshot = core.snapshot()?;
+    let Some(research_space) =
+        snapshot.spaces.iter().find(|space| space.id() == &research_space_id)
+    else {
+        return Err("missing research space".into());
+    };
+
+    assert_eq!(research_space.sidebar_width_px(), DEFAULT_SIDEBAR_WIDTH_PX);
     Ok(())
 }
 
@@ -73,8 +88,27 @@ fn space_settings_refresh_updated_at() -> Result<(), Box<dyn Error>> {
     core.set_space_default_profile(&work_space_id, &research_profile_id)?;
     let after_profile_update = active_space_updated_at(&core, &work_space_id)?;
 
+    core.set_space_sidebar_width(&work_space_id, 320)?;
+    let after_sidebar_update = active_space_updated_at(&core, &work_space_id)?;
+
     assert!(after_archive_update > before_update);
     assert!(after_profile_update > after_archive_update);
+    assert!(after_sidebar_update > after_profile_update);
+    Ok(())
+}
+
+#[test]
+fn space_sidebar_width_updates_selected_space() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let work_space_id = core.snapshot()?.active_space_id;
+
+    core.set_space_sidebar_width(&work_space_id, 320)?;
+    let snapshot = core.snapshot()?;
+    let Some(work_space) = snapshot.spaces.iter().find(|space| space.id() == &work_space_id) else {
+        return Err("missing work space".into());
+    };
+
+    assert_eq!(work_space.sidebar_width_px(), 320);
     Ok(())
 }
 

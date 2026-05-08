@@ -252,6 +252,20 @@ impl BrowserCore {
         Ok(())
     }
 
+    pub fn set_space_sidebar_width(
+        &mut self,
+        space_id: &SpaceId,
+        sidebar_width_px: u16,
+    ) -> Result<(), CoreError> {
+        let space = self
+            .spaces
+            .iter_mut()
+            .find(|space| space.id() == space_id)
+            .ok_or_else(|| CoreError::SpaceNotFound { id: space_id.clone() })?;
+        space.set_sidebar_width_px(sidebar_width_px);
+        Ok(())
+    }
+
     pub fn set_search_engine(&mut self, search_engine: SearchEngine) {
         self.search_engine = search_engine;
     }

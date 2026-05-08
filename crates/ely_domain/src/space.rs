@@ -2,6 +2,8 @@ use std::time::{Duration, SystemTime};
 
 use crate::{ProfileId, SpaceId};
 
+pub const DEFAULT_SIDEBAR_WIDTH_PX: u16 = 280;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ArchivePolicy {
     Manual,
@@ -16,6 +18,7 @@ pub struct Space {
     accent_hex: u32,
     default_profile_id: ProfileId,
     archive_policy: ArchivePolicy,
+    sidebar_width_px: u16,
     created_at: SystemTime,
     updated_at: SystemTime,
 }
@@ -36,6 +39,7 @@ impl Space {
             accent_hex,
             default_profile_id,
             archive_policy: ArchivePolicy::Manual,
+            sidebar_width_px: DEFAULT_SIDEBAR_WIDTH_PX,
             created_at,
             updated_at: created_at,
         }
@@ -78,6 +82,16 @@ impl Space {
 
     pub fn set_archive_policy(&mut self, archive_policy: ArchivePolicy) {
         self.archive_policy = archive_policy;
+        self.record_update();
+    }
+
+    #[must_use]
+    pub fn sidebar_width_px(&self) -> u16 {
+        self.sidebar_width_px
+    }
+
+    pub fn set_sidebar_width_px(&mut self, sidebar_width_px: u16) {
+        self.sidebar_width_px = sidebar_width_px;
         self.record_update();
     }
 

@@ -32,6 +32,11 @@ impl ElyShell {
         active_tab: BrowserTab,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let sidebar_width = match active_sidebar_width(&snapshot) {
+            Ok(sidebar_width) => sidebar_width,
+            Err(message) => return render_error(message),
+        };
+
         div()
             .size_full()
             .track_focus(&self.focus_handle)
@@ -53,13 +58,13 @@ impl ElyShell {
             .text_color(rgb(ELY_THEME.ink))
             .flex()
             .flex_col()
-            .child(self.render_command_bar(&snapshot, &active_tab, cx))
+            .child(self.render_command_bar(&snapshot, &active_tab, sidebar_width, cx))
             .child(
                 div()
                     .flex()
                     .flex_1()
                     .overflow_hidden()
-                    .child(self.render_sidebar(&snapshot, cx))
+                    .child(self.render_sidebar(&snapshot, sidebar_width, cx))
                     .child(self.render_content_area(&snapshot, &active_tab, cx)),
             )
             .into_any_element()
@@ -69,6 +74,7 @@ impl ElyShell {
         &mut self,
         snapshot: &BrowserSnapshot,
         active_tab: &BrowserTab,
+        sidebar_width: f32,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let favorite_icon =
@@ -87,7 +93,7 @@ impl ElyShell {
             .border_color(rgb(colors::HAIRLINE))
             .child(
                 div()
-                    .w(px(spacing::SIDEBAR_WIDTH - spacing::XL))
+                    .w(px(sidebar_width - spacing::XL))
                     .flex()
                     .items_center()
                     .gap_2()
@@ -139,9 +145,14 @@ impl ElyShell {
             .into_any_element()
     }
 
-    fn render_sidebar(&mut self, snapshot: &BrowserSnapshot, cx: &mut Context<Self>) -> AnyElement {
+    fn render_sidebar(
+        &mut self,
+        snapshot: &BrowserSnapshot,
+        sidebar_width: f32,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         div()
-            .w(px(spacing::SIDEBAR_WIDTH))
+            .w(px(sidebar_width))
             .h_full()
             .flex()
             .flex_col()
@@ -418,6 +429,16 @@ fn render_error(message: String) -> AnyElement {
 
 fn section_label(label: &'static str) -> impl IntoElement {
     div().text_xs().font_semibold().text_color(rgb(colors::MUTED)).child(label)
+}
+
+fn active_sidebar_width(snapshot: &BrowserSnapshot) -> Result<f32, String> {
+    let Some(active_space) =
+        snapshot.spaces.iter().find(|space| space.id() == &snapshot.active_space_id)
+    else {
+        return Err("Active Space is unavailable.".to_string());
+    };
+
+    Ok(f32::from(active_space.sidebar_width_px()))
 }
 
 fn archive_source_label(source: &ArchiveSource) -> &'static str {
