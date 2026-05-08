@@ -1,3 +1,4 @@
+mod internal_pages;
 mod render;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
@@ -97,9 +98,13 @@ impl ElyShell {
     }
 
     fn open_internal_tab(&mut self, url_text: &str, window: &mut Window, cx: &mut Context<Self>) {
-        if let ShellState::Ready(core) = &mut self.state
-            && let Ok(url) = UrlText::parse(url_text)
-        {
+        if let Ok(url) = UrlText::parse(url_text) {
+            self.open_url(url, window, cx);
+        }
+    }
+
+    fn open_url(&mut self, url: UrlText, window: &mut Window, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state {
             core.open_tab(url);
             self.sync_address_input(window, cx);
             self.focus_address_bar(window, cx);

@@ -58,7 +58,7 @@ impl ElyShell {
                     .flex_1()
                     .overflow_hidden()
                     .child(self.render_sidebar(&snapshot, cx))
-                    .child(render_web_canvas(&active_tab)),
+                    .child(self.render_web_canvas(&active_tab, &snapshot, cx)),
             )
             .into_any_element()
     }
@@ -409,36 +409,6 @@ impl ElyShell {
     }
 }
 
-fn render_web_canvas(tab: &BrowserTab) -> AnyElement {
-    div()
-        .flex_1()
-        .h_full()
-        .p_6()
-        .bg(rgb(colors::CANVAS_SOFT))
-        .child(
-            div()
-                .size_full()
-                .rounded_lg()
-                .border_1()
-                .border_color(rgb(colors::HAIRLINE))
-                .bg(rgb(colors::SURFACE_CARD))
-                .p_8()
-                .flex()
-                .flex_col()
-                .gap_4()
-                .child(
-                    div()
-                        .text_size(px(26.0))
-                        .text_color(rgb(colors::INK))
-                        .child(tab.title().to_string()),
-                )
-                .child(
-                    div().text_sm().text_color(rgb(colors::MUTED)).child(render_tab_status(tab)),
-                ),
-        )
-        .into_any_element()
-}
-
 fn render_error(message: String) -> AnyElement {
     div()
         .size_full()
@@ -453,13 +423,6 @@ fn render_error(message: String) -> AnyElement {
 
 fn section_label(label: &'static str) -> impl IntoElement {
     div().text_xs().font_semibold().text_color(rgb(colors::MUTED)).child(label)
-}
-
-fn render_tab_status(tab: &BrowserTab) -> String {
-    match tab.url().as_str() {
-        "ely://new-tab" => "Ready".to_string(),
-        url => url.to_string(),
-    }
 }
 
 fn archive_source_label(source: &ArchiveSource) -> &'static str {
