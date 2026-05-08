@@ -66,6 +66,29 @@ fn bookmark_metadata_updates_collection_tags_and_note() -> Result<(), Box<dyn Er
 }
 
 #[test]
+fn bookmark_metadata_batch_update_is_atomic() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com/research")?);
+    let bookmark_id = core.bookmark_active_tab()?;
+
+    let Err(error) = core.update_bookmark_metadata(
+        &bookmark_id,
+        "Research",
+        vec!["rust".to_string(), " ".to_string()],
+        Some("Read later".to_string()),
+    ) else {
+        return Err("expected invalid bookmark metadata error".into());
+    };
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(error, CoreError::Domain(DomainError::EmptyField { field: "bookmark tag" }));
+    assert_eq!(snapshot.bookmarks[0].collection_name(), "Work");
+    assert!(snapshot.bookmarks[0].tags().is_empty());
+    assert_eq!(snapshot.bookmarks[0].note(), None);
+    Ok(())
+}
+
+#[test]
 fn bookmark_metadata_rejects_empty_fields() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     core.open_tab(UrlText::parse("https://example.com/research")?);

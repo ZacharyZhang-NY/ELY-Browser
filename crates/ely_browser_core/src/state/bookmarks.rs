@@ -63,6 +63,28 @@ impl BrowserCore {
         Ok(())
     }
 
+    pub fn update_bookmark_metadata(
+        &mut self,
+        bookmark_id: &BookmarkId,
+        collection_name: impl Into<String>,
+        tags: Vec<String>,
+        note: Option<String>,
+    ) -> Result<(), CoreError> {
+        let bookmark = self.bookmark_mut(bookmark_id)?;
+        let mut updated_bookmark = bookmark.clone();
+
+        updated_bookmark.set_collection_name(collection_name)?;
+        updated_bookmark.set_tags(tags)?;
+        if let Some(note) = note {
+            updated_bookmark.set_note(note)?;
+        } else {
+            updated_bookmark.clear_note();
+        }
+
+        *bookmark = updated_bookmark;
+        Ok(())
+    }
+
     pub(super) fn find_bookmark_match(&self, query: &str) -> Option<UrlText> {
         let normalized_query = query.trim().to_lowercase();
         if normalized_query.is_empty() {

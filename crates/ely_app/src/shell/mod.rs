@@ -1,3 +1,4 @@
+mod bookmarks;
 mod downloads;
 mod history;
 mod internal_pages;
@@ -15,6 +16,7 @@ use ely_domain::{
 use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscription, Window};
 use gpui_component::input::{InputEvent, InputState, SelectAll};
 
+use bookmarks::PendingBookmarkEdit;
 use downloads::PendingDownloadFileAction;
 use history::{PendingHistoryDomainClear, PendingHistoryTimeClear};
 use plugins::{PendingPluginInstall, PendingPluginUninstall};
@@ -42,6 +44,8 @@ pub struct ElyShell {
     pending_history_domain_clear: Option<PendingHistoryDomainClear>,
     pending_history_time_clear: Option<PendingHistoryTimeClear>,
     site_permissions_clear_confirmation: Option<ProfileId>,
+    pending_bookmark_edit: Option<PendingBookmarkEdit>,
+    bookmark_edit_error: Option<String>,
     plugin_install_error: Option<String>,
     pending_plugin_install: Option<PendingPluginInstall>,
     pending_plugin_uninstall: Option<PendingPluginUninstall>,
@@ -107,6 +111,8 @@ impl ElyShell {
             pending_history_domain_clear: None,
             pending_history_time_clear: None,
             site_permissions_clear_confirmation: None,
+            pending_bookmark_edit: None,
+            bookmark_edit_error: None,
             plugin_install_error: None,
             pending_plugin_install: None,
             pending_plugin_uninstall: None,
