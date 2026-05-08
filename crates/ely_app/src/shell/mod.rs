@@ -3,6 +3,7 @@ mod downloads;
 mod history;
 mod internal_pages;
 mod plugins;
+mod reading_list;
 mod render;
 mod site_permissions;
 mod splits;

@@ -1,5 +1,6 @@
 use ely_domain::{
-    BookmarkId, DomainError, DownloadId, PluginId, ProfileId, SpaceId, SplitId, TabId,
+    BookmarkId, DomainError, DownloadId, PluginId, ProfileId, ReadingListId, SpaceId, SplitId,
+    TabId,
 };
 use thiserror::Error;
 
@@ -25,6 +26,9 @@ pub enum CoreError {
 
     #[error("download not found: {id}")]
     DownloadNotFound { id: DownloadId },
+
+    #[error("reading list entry not found: {id}")]
+    ReadingListEntryNotFound { id: ReadingListId },
 
     #[error("download target path is unavailable: {id}")]
     DownloadTargetPathUnavailable { id: DownloadId },

@@ -1,7 +1,9 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{CommandIntent, CommandScope, ProfileKind, ReadingProgress, UrlText};
+use ely_domain::{
+    CommandIntent, CommandScope, ProfileKind, ReadingListId, ReadingProgress, UrlText,
+};
 
 #[test]
 fn save_active_tab_records_reading_list_context() -> Result<(), Box<dyn Error>> {
@@ -38,6 +40,33 @@ fn save_active_tab_reuses_existing_reading_list_entry() -> Result<(), Box<dyn Er
 
     assert_eq!(first_id, second_id);
     assert_eq!(core.snapshot()?.reading_list.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn reading_list_progress_updates_entry() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com/long-read")?);
+    let entry_id = core.save_active_tab_to_reading_list()?;
+
+    core.set_reading_list_progress(&entry_id, ReadingProgress::Finished)?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(snapshot.reading_list[0].id(), &entry_id);
+    assert_eq!(snapshot.reading_list[0].progress(), &ReadingProgress::Finished);
+    Ok(())
+}
+
+#[test]
+fn missing_reading_list_progress_update_returns_error() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let missing_id = ReadingListId::new();
+
+    let Err(error) = core.set_reading_list_progress(&missing_id, ReadingProgress::Finished) else {
+        return Err("expected missing reading list entry error".into());
+    };
+
+    assert_eq!(error, ely_browser_core::CoreError::ReadingListEntryNotFound { id: missing_id });
     Ok(())
 }
 

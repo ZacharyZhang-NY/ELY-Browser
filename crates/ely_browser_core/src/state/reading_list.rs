@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use ely_domain::{ReadingListEntry, ReadingListId, UrlText};
+use ely_domain::{ReadingListEntry, ReadingListId, ReadingProgress, UrlText};
 
 use crate::CoreError;
 
@@ -27,6 +27,15 @@ impl BrowserCore {
         Ok(entry_id)
     }
 
+    pub fn set_reading_list_progress(
+        &mut self,
+        entry_id: &ReadingListId,
+        progress: ReadingProgress,
+    ) -> Result<(), CoreError> {
+        self.reading_list_entry_mut(entry_id)?.set_progress(progress);
+        Ok(())
+    }
+
     pub(super) fn find_reading_list_match(&self, query: &str) -> Option<UrlText> {
         let normalized_query = query.trim().to_lowercase();
         if normalized_query.is_empty() {
@@ -47,6 +56,16 @@ impl BrowserCore {
             .filter(|entry| entry.profile_id() == &self.active_profile_id)
             .cloned()
             .collect()
+    }
+
+    fn reading_list_entry_mut(
+        &mut self,
+        entry_id: &ReadingListId,
+    ) -> Result<&mut ReadingListEntry, CoreError> {
+        self.reading_list
+            .iter_mut()
+            .find(|entry| entry.id() == entry_id)
+            .ok_or_else(|| CoreError::ReadingListEntryNotFound { id: entry_id.clone() })
     }
 }
 

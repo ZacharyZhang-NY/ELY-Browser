@@ -1,12 +1,16 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::{ReadingListEntry, ReadingProgress};
+use ely_domain::{ReadingListEntry, ReadingListId, ReadingProgress};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, div, px, rgb,
 };
-use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
+use gpui_component::{
+    IconName, Sizable, StyledExt,
+    button::{Button, ButtonVariants},
+    scroll::ScrollableElement,
+};
 
 use super::{ElyShell, render_canvas_surface};
 
@@ -58,19 +62,23 @@ impl ElyShell {
                     .reading_list
                     .iter()
                     .rev()
-                    .map(|entry| self.render_reading_list_row(snapshot, entry, cx)),
+                    .enumerate()
+                    .map(|(index, entry)| self.render_reading_list_row(index, snapshot, entry, cx)),
             )
             .into_any_element()
     }
 
     fn render_reading_list_row(
         &mut self,
+        index: usize,
         snapshot: &BrowserSnapshot,
         entry: &ReadingListEntry,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let url = entry.source_url().clone();
         let space_name = reading_list_space_name(snapshot, entry);
+        let entry_id = entry.id().clone();
+        let progress = *entry.progress();
 
         div()
             .id(SharedString::from(format!("reading-{}", entry.id().as_str())))
@@ -81,18 +89,20 @@ impl ElyShell {
             .items_center()
             .justify_between()
             .gap_4()
-            .cursor_pointer()
-            .hover(|style| style.bg(rgb(colors::CANVAS_SOFT)))
-            .active(|style| style.opacity(0.82))
-            .on_click(cx.listener(move |shell, _, window, cx| {
-                shell.open_url(url.clone(), window, cx);
-            }))
             .child(
                 div()
+                    .id(SharedString::from(format!("reading-open-{}", entry.id().as_str())))
                     .min_w_0()
+                    .flex_1()
                     .flex()
                     .items_center()
                     .gap_3()
+                    .cursor_pointer()
+                    .hover(|style| style.bg(rgb(colors::CANVAS_SOFT)))
+                    .active(|style| style.opacity(0.82))
+                    .on_click(cx.listener(move |shell, _, window, cx| {
+                        shell.open_url(url.clone(), window, cx);
+                    }))
                     .child(div().text_color(rgb(colors::MUTED_SOFT)).child(IconName::Inbox))
                     .child(
                         div()
@@ -132,6 +142,7 @@ impl ElyShell {
                     })
                     .child(progress_label(entry.progress())),
             )
+            .child(render_progress_action(index, entry_id, progress, cx))
             .into_any_element()
     }
 }
@@ -172,9 +183,31 @@ fn reading_list_space_name(snapshot: &BrowserSnapshot, entry: &ReadingListEntry)
 }
 
 fn progress_label(progress: &ReadingProgress) -> &'static str {
-    match progress {
-        ReadingProgress::Unread => "Unread",
-    }
+    progress.label()
+}
+
+fn render_progress_action(
+    index: usize,
+    entry_id: ReadingListId,
+    progress: ReadingProgress,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let next_progress = progress.toggled();
+    let icon = match progress {
+        ReadingProgress::Unread => IconName::CircleCheck,
+        ReadingProgress::Finished => IconName::Undo2,
+    };
+
+    Button::new(("reading-progress", index))
+        .ghost()
+        .xsmall()
+        .icon(icon)
+        .label(progress.action_label())
+        .tooltip(progress.action_label())
+        .on_click(cx.listener(move |shell, _, _, cx| {
+            shell.set_reading_list_progress(&entry_id, next_progress, cx);
+        }))
+        .into_any_element()
 }
 
 fn reading_list_count_label(count: usize) -> String {

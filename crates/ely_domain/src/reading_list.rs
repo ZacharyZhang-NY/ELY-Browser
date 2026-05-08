@@ -2,9 +2,36 @@ use std::time::SystemTime;
 
 use crate::{DomainError, ProfileId, ReadingListId, SpaceId, UrlText};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReadingProgress {
     Unread,
+    Finished,
+}
+
+impl ReadingProgress {
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Unread => "Unread",
+            Self::Finished => "Read",
+        }
+    }
+
+    #[must_use]
+    pub fn action_label(self) -> &'static str {
+        match self {
+            Self::Unread => "Mark Read",
+            Self::Finished => "Mark Unread",
+        }
+    }
+
+    #[must_use]
+    pub fn toggled(self) -> Self {
+        match self {
+            Self::Unread => Self::Finished,
+            Self::Finished => Self::Unread,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -72,6 +99,10 @@ impl ReadingListEntry {
     #[must_use]
     pub fn progress(&self) -> &ReadingProgress {
         &self.progress
+    }
+
+    pub fn set_progress(&mut self, progress: ReadingProgress) {
+        self.progress = progress;
     }
 
     #[must_use]
