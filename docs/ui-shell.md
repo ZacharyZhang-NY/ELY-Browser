@@ -180,3 +180,17 @@ Group close archives every tab in the active group and removes the empty group r
 │   example.com                │                                               │
 └──────────────────────────────┴───────────────────────────────────────────────┘
 ```
+
+Group archive uses the explicit archive command for the same active group flow:
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ELY Browser   [ >archive-tab-group.......................... ] [pin] [*] [+] │
+├──────────────────────────────┬───────────────────────────────────────────────┤
+│ Tabs                         │  servo.org                                    │
+│   New Tab                    │  https://servo.org                            │
+│ Archive                      │  Docs tabs archived as ManualClose            │
+│   example.com                │                                               │
+│   example.com                │                                               │
+└──────────────────────────────┴───────────────────────────────────────────────┘
+```
