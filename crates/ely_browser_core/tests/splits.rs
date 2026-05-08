@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{CommandIntent, SplitAxis};
+use ely_domain::{CommandIntent, SplitAxis, UrlText};
 
 #[test]
 fn split_right_creates_two_pane_layout() -> Result<(), Box<dyn Error>> {
@@ -72,6 +72,82 @@ fn save_split_view_command_preserves_query_without_active_split() -> Result<(), 
     assert!(snapshot.split_layouts.is_empty());
     assert_eq!(snapshot.active_tab_id, active_tab_id);
     assert_eq!(snapshot.command_query, ">save-split-view");
+    Ok(())
+}
+
+#[test]
+fn close_active_tab_archives_saved_split_view() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let remaining_tab_id = core.active_tab()?.id().clone();
+    core.open_tab(UrlText::parse("https://example.com/saved-split")?);
+    core.split_active_tab_right()?;
+    core.save_active_split_view()?;
+
+    let active_tab_id = core.close_active_tab()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(active_tab_id, remaining_tab_id);
+    assert_eq!(snapshot.active_tab_id, remaining_tab_id);
+    assert!(snapshot.split_layouts.is_empty());
+    assert_eq!(snapshot.tabs.len(), 1);
+    assert_eq!(snapshot.archived_tabs.len(), 2);
+    assert!(snapshot.archived_tabs.iter().all(|archived| archived.tab().split_id().is_none()));
+    Ok(())
+}
+
+#[test]
+fn close_saved_split_member_archives_entire_saved_split_view() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let remaining_tab_id = core.active_tab()?.id().clone();
+    core.open_tab(UrlText::parse("https://example.com/saved-split")?);
+    core.split_active_tab_right()?;
+    core.save_active_split_view()?;
+    let left_pane_id = core.snapshot()?.split_layouts[0].panes()[0].tab_id().clone();
+
+    let active_tab_id = core.close_tab(&left_pane_id)?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(active_tab_id, remaining_tab_id);
+    assert!(snapshot.split_layouts.is_empty());
+    assert_eq!(snapshot.tabs.len(), 1);
+    assert_eq!(snapshot.archived_tabs.len(), 2);
+    Ok(())
+}
+
+#[test]
+fn close_split_view_command_archives_active_saved_split_view() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let remaining_tab_id = core.active_tab()?.id().clone();
+    core.open_tab(UrlText::parse("https://example.com/saved-split")?);
+    core.split_active_tab_right()?;
+    core.save_active_split_view()?;
+
+    core.set_command_query(">close-split-view");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("close-split-view".to_string())));
+    assert_eq!(snapshot.active_tab_id, remaining_tab_id);
+    assert!(snapshot.split_layouts.is_empty());
+    assert_eq!(snapshot.archived_tabs.len(), 2);
+    assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn close_split_view_command_preserves_query_without_saved_split() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.split_active_tab_right()?;
+    let active_tab_id = core.active_tab()?.id().clone();
+
+    core.set_command_query(">close-split-view");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("close-split-view".to_string())));
+    assert_eq!(snapshot.active_tab_id, active_tab_id);
+    assert_eq!(snapshot.split_layouts.len(), 1);
+    assert_eq!(snapshot.command_query, ">close-split-view");
     Ok(())
 }
 

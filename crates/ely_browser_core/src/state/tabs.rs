@@ -72,11 +72,19 @@ impl BrowserCore {
     }
 
     pub fn close_active_tab(&mut self) -> Result<TabId, CoreError> {
+        if let Some(active_tab_id) = self.close_active_saved_split_view()? {
+            return Ok(active_tab_id);
+        }
+
         let tab_id = self.active_tab_id.clone();
         self.close_tab(&tab_id)
     }
 
     pub fn close_tab(&mut self, tab_id: &TabId) -> Result<TabId, CoreError> {
+        if let Some(split_id) = self.saved_split_id_for_tab(tab_id) {
+            return self.close_saved_split_view(&split_id);
+        }
+
         let close_index = self
             .tabs
             .iter()
@@ -285,7 +293,11 @@ impl BrowserCore {
         self.build_tab_for(self.active_space_id.clone(), self.active_profile_id.clone(), url)
     }
 
-    fn nearest_tab_in_space(&self, space_id: &SpaceId, start_index: usize) -> Option<TabId> {
+    pub(super) fn nearest_tab_in_space(
+        &self,
+        space_id: &SpaceId,
+        start_index: usize,
+    ) -> Option<TabId> {
         self.tabs
             .iter()
             .skip(start_index)
@@ -294,7 +306,7 @@ impl BrowserCore {
             .map(|tab| tab.id().clone())
     }
 
-    fn nearest_tab_in_space_profile(
+    pub(super) fn nearest_tab_in_space_profile(
         &self,
         space_id: &SpaceId,
         profile_id: &ProfileId,

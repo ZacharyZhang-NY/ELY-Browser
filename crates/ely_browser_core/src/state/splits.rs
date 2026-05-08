@@ -1,10 +1,56 @@
-use ely_domain::{MAX_SPLIT_PANES, SplitAxis, SplitId, SplitLayout, SplitPane, TabId};
+use ely_domain::{
+    ArchiveSource, ArchivedTab, MAX_SPLIT_PANES, ProfileId, SpaceId, SplitAxis, SplitId,
+    SplitLayout, SplitPane, TabId,
+};
 
 use crate::CoreError;
 
 use super::BrowserCore;
 
 impl BrowserCore {
+    pub fn close_active_saved_split_view(&mut self) -> Result<Option<TabId>, CoreError> {
+        let Some(split_id) = self.active_tab()?.split_id().cloned() else {
+            return Ok(None);
+        };
+        if !self.saved_split_exists(&split_id) {
+            return Ok(None);
+        }
+
+        self.close_saved_split_view(&split_id).map(Some)
+    }
+
+    pub fn close_saved_split_view(&mut self, split_id: &SplitId) -> Result<TabId, CoreError> {
+        let pane_ids = self.saved_split_pane_ids(split_id)?;
+        self.validate_split_panes_are_open(&pane_ids)?;
+
+        let first_close_index = self.first_split_tab_index(&pane_ids)?;
+        let first_tab = self.tabs.get(first_close_index).ok_or(CoreError::MissingActiveTab)?;
+        let closed_space_id = first_tab.space_id().clone();
+        let closed_profile_id = first_tab.profile_id().clone();
+        let was_active = pane_ids.contains(&self.active_tab_id);
+        let was_space_active = self
+            .active_tabs_by_space
+            .get(&closed_space_id)
+            .is_some_and(|tab_id| pane_ids.contains(tab_id));
+        let was_profile_active = self
+            .active_tabs_by_space_profile
+            .get(&(closed_space_id.clone(), closed_profile_id.clone()))
+            .is_some_and(|tab_id| pane_ids.contains(tab_id));
+
+        let archived_tabs = self.remove_split_tabs(&pane_ids)?;
+        self.archived_tabs.extend(archived_tabs);
+        self.split_layouts.retain(|layout| layout.id() != split_id);
+
+        self.reselect_after_split_close(
+            closed_space_id,
+            closed_profile_id,
+            first_close_index,
+            was_active,
+            was_space_active,
+            was_profile_active,
+        )
+    }
+
     pub fn save_active_split_view(&mut self) -> Result<Option<SplitId>, CoreError> {
         let Some(split_id) = self.active_tab()?.split_id().cloned() else {
             return Ok(None);
@@ -136,5 +182,105 @@ impl BrowserCore {
             [title] => format!("Split View: {title}"),
             [first, second, ..] => format!("Split View: {first} + {second}"),
         })
+    }
+
+    pub(super) fn saved_split_id_for_tab(&self, tab_id: &TabId) -> Option<SplitId> {
+        let split_id =
+            self.tabs.iter().find(|tab| tab.id() == tab_id).and_then(|tab| tab.split_id())?;
+        self.saved_split_exists(split_id).then(|| split_id.clone())
+    }
+
+    fn saved_split_exists(&self, split_id: &SplitId) -> bool {
+        self.split_layouts.iter().any(|layout| layout.id() == split_id && layout.saved())
+    }
+
+    fn saved_split_pane_ids(&self, split_id: &SplitId) -> Result<Vec<TabId>, CoreError> {
+        self.split_layouts
+            .iter()
+            .find(|layout| layout.id() == split_id && layout.saved())
+            .map(|layout| layout.panes().iter().map(|pane| pane.tab_id().clone()).collect())
+            .ok_or_else(|| CoreError::SplitNotFound { id: split_id.clone() })
+    }
+
+    fn validate_split_panes_are_open(&self, pane_ids: &[TabId]) -> Result<(), CoreError> {
+        if let Some(missing_tab_id) =
+            pane_ids.iter().find(|tab_id| !self.tabs.iter().any(|tab| tab.id() == *tab_id))
+        {
+            return Err(CoreError::TabNotFound { id: missing_tab_id.clone() });
+        }
+
+        Ok(())
+    }
+
+    fn first_split_tab_index(&self, pane_ids: &[TabId]) -> Result<usize, CoreError> {
+        self.tabs
+            .iter()
+            .position(|tab| pane_ids.contains(tab.id()))
+            .ok_or(CoreError::MissingActiveTab)
+    }
+
+    fn remove_split_tabs(&mut self, pane_ids: &[TabId]) -> Result<Vec<ArchivedTab>, CoreError> {
+        let mut archived_tabs = Vec::with_capacity(pane_ids.len());
+        for pane_id in pane_ids {
+            let tab_index = self
+                .tabs
+                .iter()
+                .position(|tab| tab.id() == pane_id)
+                .ok_or_else(|| CoreError::TabNotFound { id: pane_id.clone() })?;
+            let mut tab = self.tabs.remove(tab_index);
+            tab.clear_split_id();
+            archived_tabs.push(ArchivedTab::new(tab, ArchiveSource::ManualClose));
+        }
+
+        Ok(archived_tabs)
+    }
+
+    fn reselect_after_split_close(
+        &mut self,
+        closed_space_id: SpaceId,
+        closed_profile_id: ProfileId,
+        start_index: usize,
+        was_active: bool,
+        was_space_active: bool,
+        was_profile_active: bool,
+    ) -> Result<TabId, CoreError> {
+        if let Some(next_tab_id) = self.nearest_tab_in_space(&closed_space_id, start_index) {
+            if was_space_active {
+                self.active_tabs_by_space.insert(closed_space_id.clone(), next_tab_id.clone());
+            }
+            if was_profile_active {
+                self.active_tabs_by_space_profile
+                    .remove(&(closed_space_id.clone(), closed_profile_id.clone()));
+                if let Some(next_profile_tab_id) = self.nearest_tab_in_space_profile(
+                    &closed_space_id,
+                    &closed_profile_id,
+                    start_index,
+                ) {
+                    self.active_tabs_by_space_profile
+                        .insert((closed_space_id, closed_profile_id), next_profile_tab_id);
+                }
+            }
+            if was_active {
+                self.select_tab(&next_tab_id)?;
+            }
+            return Ok(self.active_tab_id.clone());
+        }
+
+        let replacement = self.build_tab_for(
+            closed_space_id.clone(),
+            closed_profile_id.clone(),
+            self.new_tab_url.clone(),
+        );
+        let replacement_id = replacement.id().clone();
+        self.tabs.insert(start_index.min(self.tabs.len()), replacement);
+        self.active_tabs_by_space.insert(closed_space_id.clone(), replacement_id.clone());
+        self.active_tabs_by_space_profile
+            .insert((closed_space_id, closed_profile_id), replacement_id.clone());
+
+        if was_active {
+            self.select_tab(&replacement_id)?;
+        }
+
+        Ok(self.active_tab_id.clone())
     }
 }

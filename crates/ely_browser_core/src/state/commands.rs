@@ -182,6 +182,9 @@ impl BrowserCore {
                 self.close_active_tab()?;
                 Ok(true)
             }
+            "close-split-view" | "close split view" => {
+                Ok(self.close_active_saved_split_view()?.is_some())
+            }
             "favorite" | "toggle-favorite" => {
                 self.toggle_active_tab_favorite()?;
                 Ok(true)
