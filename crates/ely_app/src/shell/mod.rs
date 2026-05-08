@@ -6,7 +6,7 @@ use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscriptio
 use gpui_component::input::{InputEvent, InputState, SelectAll};
 
 use crate::{
-    CloseCurrentTab, FocusAddressBar, OpenNewTab, RestoreClosedTab, SelectNextTab,
+    CloseCurrentTab, FocusAddressBar, OpenDownloads, OpenNewTab, RestoreClosedTab, SelectNextTab,
     SelectPreviousTab, ToggleFavoriteTab, TogglePinnedTab,
 };
 
@@ -82,6 +82,17 @@ impl ElyShell {
     fn open_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state
             && let Ok(url) = UrlText::parse("ely://new-tab")
+        {
+            core.open_tab(url);
+            self.sync_address_input(window, cx);
+            self.focus_address_bar(window, cx);
+            cx.notify();
+        }
+    }
+
+    fn open_downloads(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && let Ok(url) = UrlText::parse("ely://downloads")
         {
             core.open_tab(url);
             self.sync_address_input(window, cx);
@@ -201,6 +212,15 @@ impl ElyShell {
 
     fn on_open_new_tab(&mut self, _: &OpenNewTab, window: &mut Window, cx: &mut Context<Self>) {
         self.open_new_tab(window, cx);
+    }
+
+    fn on_open_downloads(
+        &mut self,
+        _: &OpenDownloads,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_downloads(window, cx);
     }
 
     fn on_restore_closed_tab(

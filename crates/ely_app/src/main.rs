@@ -12,6 +12,7 @@ actions!(
     [
         CloseCurrentTab,
         FocusAddressBar,
+        OpenDownloads,
         OpenNewTab,
         Quit,
         RestoreClosedTab,
@@ -29,6 +30,8 @@ fn main() {
         cx.bind_keys([
             KeyBinding::new("cmd-t", OpenNewTab, None),
             KeyBinding::new("ctrl-t", OpenNewTab, None),
+            KeyBinding::new("cmd-shift-j", OpenDownloads, None),
+            KeyBinding::new("ctrl-shift-j", OpenDownloads, None),
             KeyBinding::new("cmd-l", FocusAddressBar, None),
             KeyBinding::new("ctrl-l", FocusAddressBar, None),
             KeyBinding::new("cmd-w", CloseCurrentTab, None),
@@ -62,6 +65,8 @@ fn main() {
                     MenuItem::action("Close Tab", CloseCurrentTab),
                     MenuItem::separator(),
                     MenuItem::action("Restore Closed Tab", RestoreClosedTab),
+                    MenuItem::separator(),
+                    MenuItem::action("Open Downloads", OpenDownloads),
                     MenuItem::separator(),
                     MenuItem::action("Toggle Pin", TogglePinnedTab),
                 ],

@@ -37,6 +37,7 @@ impl ElyShell {
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::on_close_current_tab))
             .on_action(cx.listener(Self::on_focus_address_bar))
+            .on_action(cx.listener(Self::on_open_downloads))
             .on_action(cx.listener(Self::on_open_new_tab))
             .on_action(cx.listener(Self::on_restore_closed_tab))
             .on_action(cx.listener(Self::on_select_next_tab))

@@ -50,6 +50,23 @@ fn new_tab_command_opens_new_tab() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn open_downloads_command_opens_downloads_page() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query(">open-downloads");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("open-downloads".to_string())));
+    assert_eq!(snapshot.tabs.len(), 2);
+    assert_eq!(active_tab.title(), "Downloads");
+    assert_eq!(active_tab.url().as_str(), "ely://downloads");
+    assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
 fn new_space_command_creates_and_selects_named_space() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
 

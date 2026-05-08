@@ -6,11 +6,19 @@ use crate::CoreError;
 const DEFAULT_SEARCH_URL: &str = "https://duckduckgo.com/";
 
 pub(crate) fn tab_title(url: &UrlText) -> String {
-    if url.as_str() == "ely://new-tab" {
-        return "New Tab".to_string();
+    if let Some(title) = internal_page_title(url.as_str()) {
+        return title.to_string();
     }
 
     url.display_host()
+}
+
+fn internal_page_title(url: &str) -> Option<&'static str> {
+    match url {
+        "ely://new-tab" => Some("New Tab"),
+        "ely://downloads" => Some("Downloads"),
+        _ => None,
+    }
 }
 
 pub(crate) fn tab_matches_query(tab: &BrowserTab, normalized_query: &str) -> bool {
@@ -58,4 +66,8 @@ pub(crate) fn search_url(query: &str) -> Result<UrlText, CoreError> {
         .map_err(|_| DomainError::InvalidUrl { value: DEFAULT_SEARCH_URL.to_string() })?;
     url.query_pairs_mut().append_pair("q", query);
     UrlText::parse(url.to_string()).map_err(CoreError::from)
+}
+
+pub(crate) fn downloads_url() -> Result<UrlText, CoreError> {
+    UrlText::parse("ely://downloads").map_err(CoreError::from)
 }

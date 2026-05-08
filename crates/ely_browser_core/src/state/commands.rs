@@ -3,8 +3,8 @@ use ely_domain::{CommandIntent, CommandScope, ProfileId, ProfileKind, SpaceId};
 use crate::{
     CoreError,
     navigation::{
-        move_tab_space_name, new_profile_name, new_space_name, search_url, space_icon,
-        switch_profile_name,
+        downloads_url, move_tab_space_name, new_profile_name, new_space_name, search_url,
+        space_icon, switch_profile_name,
     },
 };
 
@@ -83,6 +83,10 @@ impl BrowserCore {
         match command.to_ascii_lowercase().as_str() {
             "new-tab" => {
                 self.open_tab(self.new_tab_url.clone());
+                Ok(true)
+            }
+            "downloads" | "open-downloads" | "open downloads" => {
+                self.open_tab(downloads_url()?);
                 Ok(true)
             }
             "close-tab" => {
