@@ -5,7 +5,7 @@ use std::{error::Error, thread, time::Duration};
 use ely_domain::{ProfileId, TabId, UrlText};
 use ely_servo_host::{
     KeyboardTextRequest, MouseClickRequest, NavigationRequest, ScrollRequest, ServoHost,
-    ServoHostError, ServoSurfaceSize, SoftwareServoHost, WebViewState,
+    ServoHostError, ServoSurfaceSize, SoftwareServoHost, TouchTapRequest, WebViewState,
 };
 
 const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
@@ -14,6 +14,7 @@ const PRD_SITE_COMPATIBILITY_CASES: &[PrdSiteCompatibilityCase] = &[
     PrdSiteCompatibilityCase { url: "https://servo.org", title_fragment: "Servo" },
 ];
 const CLICK_PROBE_URL: &str = "data:text/html,%3C!doctype%20html%3E%3Ctitle%3EClick%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23f7f7f7%3B%7Dbutton%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A220px%3Bheight%3A90px%3Bfont%3A28px%20sans-serif%3Bbackground%3A%23ffffff%3Bcolor%3A%23111111%3B%7D%3C%2Fstyle%3E%3Cbutton%20onclick%3D%22document.body.style.background%3D%27%230039ff%27%3Bdocument.title%3D%27Clicked%27%3Bthis.textContent%3D%27Clicked%27%3B%22%3ETap%3C%2Fbutton%3E";
+const TOUCH_PROBE_URL: &str = "data:text/html,%3C%21doctype%20html%3E%3Ctitle%3ETouch%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23f7f7f7%3B%7Dbutton%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A220px%3Bheight%3A90px%3Bfont%3A28px%20sans-serif%3Bbackground%3A%23ffffff%3Bcolor%3A%23111111%3Btouch-action%3Amanipulation%3B%7D%3C%2Fstyle%3E%3Cbutton%20ontouchstart%3D%22document.body.dataset.touch%3D%27start%27%3B%22%20onclick%3D%22document.body.style.background%3D%27%230039ff%27%3Bdocument.title%3D%27Touched%27%3Bthis.textContent%3D%27Touched%27%3B%22%3ETap%3C%2Fbutton%3E";
 const TEXT_PROBE_URL: &str = "data:text/html,%3C!doctype%20html%3E%3Ctitle%3EText%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23f7f7f7%3Bfont%3A28px%20sans-serif%3B%7Dinput%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A260px%3Bheight%3A70px%3Bfont%3A28px%20sans-serif%3B%7Doutput%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A180px%3Bfont%3A32px%20sans-serif%3B%7D%3C%2Fstyle%3E%3Cinput%20id%3Dq%20autofocus%20oninput%3D%22document.body.style.background%3D%27%230039ff%27%3Bdocument.getElementById%28%27out%27%29.textContent%3Dthis.value%3B%22%3E%3Coutput%20id%3Dout%3Eempty%3C%2Foutput%3E";
 const TEXT_PROBE_VALUE: &str = "ely42";
 
@@ -53,6 +54,20 @@ fn manages_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
     let snapshot = wait_for_rendered_webview(&mut host, &webview_id, Some(previous_frame_hash))?;
     assert_eq!(snapshot.state(), &WebViewState::Complete, "snapshot: {snapshot:?}");
     assert_rendered_frame_has_content(&host, "data:text/html clicked", 1)?;
+    assert_ne!(host.last_rendered_frame()?.sample_hash(), previous_frame_hash);
+
+    let tab_id = TabId::new();
+    let url = UrlText::parse(TOUCH_PROBE_URL)?;
+    host.navigate(NavigationRequest { webview_id: webview_id.clone(), tab_id, url })?;
+    let snapshot = wait_for_rendered_webview(&mut host, &webview_id, None)?;
+    assert_eq!(snapshot.state(), &WebViewState::Complete, "snapshot: {snapshot:?}");
+    assert_rendered_frame_has_content(&host, "data:text/html touch", 1)?;
+
+    let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
+    host.touch_tap(TouchTapRequest { webview_id: webview_id.clone(), x: 160, y: 120 })?;
+    let snapshot = wait_for_rendered_webview(&mut host, &webview_id, Some(previous_frame_hash))?;
+    assert_eq!(snapshot.state(), &WebViewState::Complete, "snapshot: {snapshot:?}");
+    assert_rendered_frame_has_content(&host, "data:text/html touched", 1)?;
     assert_ne!(host.last_rendered_frame()?.sample_hash(), previous_frame_hash);
 
     let tab_id = TabId::new();

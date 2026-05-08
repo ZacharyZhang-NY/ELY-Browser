@@ -9,7 +9,8 @@ use std::{
 use ely_domain::{ProfileId, TabId, UrlText};
 use ely_servo_host::{
     KeyboardTextRequest, MouseClickRequest, NavigationRequest, RenderedFrame, ScrollRequest,
-    ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, WebViewSnapshot, WebViewState,
+    ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, TouchTapRequest,
+    WebViewSnapshot, WebViewState,
 };
 use serde::Serialize;
 use thiserror::Error;
@@ -37,6 +38,7 @@ struct SnapshotArgs {
     scroll_x: i32,
     scroll_y: i32,
     click_point: Option<ClickPoint>,
+    touch_point: Option<ClickPoint>,
     typed_text: Option<String>,
 }
 
@@ -76,6 +78,9 @@ enum SidecarError {
 
     #[error("--click-x and --click-y must be provided together")]
     IncompleteClickPoint,
+
+    #[error("--touch-x and --touch-y must be provided together")]
+    IncompleteTouchPoint,
 
     #[error("rgba output path is empty")]
     EmptyRgbaOutputPath,
@@ -119,6 +124,8 @@ fn parse_snapshot_args(
     let mut scroll_y = 0;
     let mut click_x = None;
     let mut click_y = None;
+    let mut touch_x = None;
+    let mut touch_y = None;
     let mut typed_text = None;
 
     while let Some(name) = args.next() {
@@ -153,6 +160,18 @@ fn parse_snapshot_args(
                     next_argument(&mut args, "--click-y")?,
                 )?)
             }
+            "--touch-x" => {
+                touch_x = Some(parse_click_coordinate(
+                    "--touch-x",
+                    next_argument(&mut args, "--touch-x")?,
+                )?)
+            }
+            "--touch-y" => {
+                touch_y = Some(parse_click_coordinate(
+                    "--touch-y",
+                    next_argument(&mut args, "--touch-y")?,
+                )?)
+            }
             "--type-text" => typed_text = Some(next_argument(&mut args, "--type-text")?),
             _ => return Err(SidecarError::UnknownArgument { value: name }),
         }
@@ -163,6 +182,11 @@ fn parse_snapshot_args(
         (None, None) => None,
         _ => return Err(SidecarError::IncompleteClickPoint),
     };
+    let touch_point = match (touch_x, touch_y) {
+        (Some(x), Some(y)) => Some(ClickPoint { x, y }),
+        (None, None) => None,
+        _ => return Err(SidecarError::IncompleteTouchPoint),
+    };
 
     Ok(SnapshotArgs {
         url: url.ok_or(SidecarError::MissingRequiredArgument { name: "--url" })?,
@@ -172,6 +196,7 @@ fn parse_snapshot_args(
         scroll_x,
         scroll_y,
         click_point,
+        touch_point,
         typed_text,
     })
 }
@@ -229,6 +254,8 @@ fn run_snapshot(args: SnapshotArgs) -> Result<(), SidecarError> {
         apply_scroll_if_requested(&mut host, &webview_id, &args, snapshot)?;
     let (snapshot, click_changed_frame) =
         apply_click_if_requested(&mut host, &webview_id, &args, snapshot)?;
+    let (snapshot, touch_changed_frame) =
+        apply_touch_if_requested(&mut host, &webview_id, &args, snapshot)?;
     let (snapshot, text_changed_frame) =
         apply_text_if_requested(&mut host, &webview_id, &args, snapshot)?;
     let frame = host.last_rendered_frame()?;
@@ -242,6 +269,7 @@ fn run_snapshot(args: SnapshotArgs) -> Result<(), SidecarError> {
             &frame,
             scroll_changed_frame,
             click_changed_frame,
+            touch_changed_frame,
             text_changed_frame,
         ),
     )?;
@@ -282,6 +310,25 @@ fn apply_click_if_requested(
         webview_id: webview_id.clone(),
         x: click_point.x,
         y: click_point.y,
+    })?;
+    wait_for_changed_or_settled_frame(host, webview_id, previous_frame_hash)
+}
+
+fn apply_touch_if_requested(
+    host: &mut SoftwareServoHost,
+    webview_id: &ely_domain::WebViewId,
+    args: &SnapshotArgs,
+    snapshot: WebViewSnapshot,
+) -> Result<(WebViewSnapshot, bool), SidecarError> {
+    let Some(touch_point) = args.touch_point else {
+        return Ok((snapshot, false));
+    };
+
+    let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
+    host.touch_tap(TouchTapRequest {
+        webview_id: webview_id.clone(),
+        x: touch_point.x,
+        y: touch_point.y,
     })?;
     wait_for_changed_or_settled_frame(host, webview_id, previous_frame_hash)
 }
@@ -390,6 +437,9 @@ struct SnapshotReport {
     click_x: Option<u32>,
     click_y: Option<u32>,
     click_changed_frame: bool,
+    touch_x: Option<u32>,
+    touch_y: Option<u32>,
+    touch_changed_frame: bool,
     typed_text_byte_count: usize,
     text_changed_frame: bool,
 }
@@ -401,6 +451,7 @@ impl SnapshotReport {
         frame: &RenderedFrame,
         scroll_changed_frame: bool,
         click_changed_frame: bool,
+        touch_changed_frame: bool,
         text_changed_frame: bool,
     ) -> Self {
         Self {
@@ -422,6 +473,9 @@ impl SnapshotReport {
             click_x: args.click_point.map(|point| point.x),
             click_y: args.click_point.map(|point| point.y),
             click_changed_frame,
+            touch_x: args.touch_point.map(|point| point.x),
+            touch_y: args.touch_point.map(|point| point.y),
+            touch_changed_frame,
             typed_text_byte_count: args.typed_text.as_ref().map_or(0, String::len),
             text_changed_frame,
         }

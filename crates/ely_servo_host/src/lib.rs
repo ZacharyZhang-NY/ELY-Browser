@@ -9,7 +9,7 @@ pub use error::ServoHostError;
 pub use host::{
     KeyboardTextRequest, MouseClickRequest, NavigationRequest, PermissionDecision,
     PermissionRequest, RenderedFrame, RenderedFrameSummary, ScrollRequest, ServoHost,
-    WebViewSnapshot, WebViewState,
+    TouchTapRequest, WebViewSnapshot, WebViewState,
 };
 #[cfg(feature = "servo-engine")]
 pub use runtime::{ServoSurfaceSize, SoftwareServoHost};

@@ -14,14 +14,15 @@ use servo::{
     DeviceIntPoint, DeviceIntRect, DeviceIntSize, DevicePoint, DeviceVector2D, EventLoopWaker,
     InputEvent, Key, KeyState, KeyboardEvent, LoadStatus, Location, Modifiers, MouseButton,
     MouseButtonAction, MouseButtonEvent, MouseMoveEvent, RenderingContext, Scroll, Servo,
-    ServoBuilder, WebView, WebViewBuilder, WebViewDelegate, WebViewPoint, WebViewVector,
+    ServoBuilder, TouchEvent, TouchEventType, TouchId, WebView, WebViewBuilder, WebViewDelegate,
+    WebViewPoint, WebViewVector,
 };
 use url::Url;
 
 use crate::{
     KeyboardTextRequest, MouseClickRequest, NavigationRequest, PermissionDecision,
-    PermissionRequest, RenderedFrame, ScrollRequest, ServoHost, ServoHostError, WebViewSnapshot,
-    WebViewState, keyboard::keyboard_code_for_character,
+    PermissionRequest, RenderedFrame, ScrollRequest, ServoHost, ServoHostError, TouchTapRequest,
+    WebViewSnapshot, WebViewState, keyboard::keyboard_code_for_character,
 };
 
 static SERVO_RUNTIME_STARTED: AtomicBool = AtomicBool::new(false);
@@ -183,6 +184,22 @@ impl ServoHost for SoftwareServoHost {
             MouseButton::Left,
             point,
         )));
+        Ok(())
+    }
+
+    fn touch_tap(&mut self, request: TouchTapRequest) -> Result<(), ServoHostError> {
+        let webview = self
+            .webviews
+            .get(&request.webview_id)
+            .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
+
+        let point = WebViewPoint::Device(DevicePoint::new(request.x as f32, request.y as f32));
+        let touch_id = TouchId(1);
+        for event_type in [TouchEventType::Down, TouchEventType::Up] {
+            webview.webview.notify_input_event(InputEvent::Touch(TouchEvent::new(
+                event_type, touch_id, point,
+            )));
+        }
         Ok(())
     }
 
