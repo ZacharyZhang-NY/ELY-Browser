@@ -5,7 +5,10 @@ use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window, div, px, rgb,
 };
-use gpui_component::{IconName, StyledExt};
+use gpui_component::{
+    IconName, Sizable, StyledExt,
+    button::{Button, ButtonVariants},
+};
 
 use super::{ElyShell, ShellState};
 use crate::SplitRight;
@@ -47,6 +50,57 @@ impl ElyShell {
         self.split_right(window, cx);
     }
 
+    pub(super) fn swap_active_split_pane(&mut self, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.swap_active_split_pane().is_ok_and(|swapped| swapped)
+        {
+            cx.notify();
+        }
+    }
+
+    pub(super) fn duplicate_active_split_pane(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.duplicate_active_split_pane().is_ok_and(|tab_id| tab_id.is_some())
+        {
+            self.sync_address_input(window, cx);
+            cx.notify();
+        }
+    }
+
+    pub(super) fn detach_active_split_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.detach_active_split_pane().is_ok_and(|detached| detached)
+        {
+            self.sync_address_input(window, cx);
+            cx.notify();
+        }
+    }
+
+    pub(super) fn save_active_split_view(&mut self, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.save_active_split_view().is_ok_and(|split_id| split_id.is_some())
+        {
+            cx.notify();
+        }
+    }
+
+    pub(super) fn close_active_saved_split_view(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.close_active_saved_split_view().is_ok_and(|tab_id| tab_id.is_some())
+        {
+            self.sync_address_input(window, cx);
+            cx.notify();
+        }
+    }
+
     fn render_split_canvas(
         &mut self,
         snapshot: &BrowserSnapshot,
@@ -70,31 +124,29 @@ impl ElyShell {
             .min_w_0()
             .p_3()
             .gap_3()
+            .flex()
+            .flex_col()
             .overflow_hidden()
             .bg(rgb(colors::CANVAS));
+        let pane_area = div().flex_1().min_h_0().gap_3().overflow_hidden();
 
-        match layout.axis() {
-            SplitAxis::Horizontal => body
-                .flex()
-                .children(
-                    panes
-                        .into_iter()
-                        .enumerate()
-                        .map(|(index, tab)| self.render_split_pane(index, tab, snapshot, cx)),
-                )
-                .into_any_element(),
-            SplitAxis::Vertical => body
-                .flex()
-                .flex_col()
-                .children(
-                    panes
-                        .into_iter()
-                        .enumerate()
-                        .map(|(index, tab)| self.render_split_pane(index, tab, snapshot, cx)),
-                )
-                .into_any_element(),
-            SplitAxis::Grid => self.render_split_grid(body, panes, snapshot, cx).into_any_element(),
-        }
+        let panes = match layout.axis() {
+            SplitAxis::Horizontal => pane_area.flex().children(
+                panes
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, tab)| self.render_split_pane(index, tab, snapshot, cx)),
+            ),
+            SplitAxis::Vertical => pane_area.flex().flex_col().children(
+                panes
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, tab)| self.render_split_pane(index, tab, snapshot, cx)),
+            ),
+            SplitAxis::Grid => self.render_split_grid(pane_area, panes, snapshot, cx),
+        };
+
+        body.child(panes).child(self.render_split_controls(cx)).into_any_element()
     }
 
     fn render_split_grid(
@@ -180,6 +232,83 @@ impl ElyShell {
                     .min_h_0()
                     .overflow_hidden()
                     .child(self.render_web_canvas(tab, snapshot, cx)),
+            )
+            .into_any_element()
+    }
+
+    fn render_split_controls(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .min_h(px(36.0))
+            .px_2()
+            .gap_2()
+            .flex()
+            .items_center()
+            .justify_center()
+            .border_1()
+            .border_color(rgb(colors::HAIRLINE))
+            .rounded_md()
+            .bg(rgb(colors::CANVAS_SOFT))
+            .child(
+                div()
+                    .text_xs()
+                    .font_semibold()
+                    .text_color(rgb(colors::MUTED))
+                    .child("Split Controls"),
+            )
+            .child(
+                Button::new("swap-split-pane-control")
+                    .ghost()
+                    .xsmall()
+                    .icon(IconName::ArrowRight)
+                    .label("Swap")
+                    .tooltip("Swap Pane")
+                    .on_click(cx.listener(|shell, _, _, cx| {
+                        shell.swap_active_split_pane(cx);
+                    })),
+            )
+            .child(
+                Button::new("duplicate-split-pane-control")
+                    .ghost()
+                    .xsmall()
+                    .icon(IconName::Copy)
+                    .label("Duplicate")
+                    .tooltip("Duplicate Pane")
+                    .on_click(cx.listener(|shell, _, window, cx| {
+                        shell.duplicate_active_split_pane(window, cx);
+                    })),
+            )
+            .child(
+                Button::new("detach-split-pane-control")
+                    .ghost()
+                    .xsmall()
+                    .icon(IconName::PanelRightOpen)
+                    .label("Detach")
+                    .tooltip("Detach Pane")
+                    .on_click(cx.listener(|shell, _, window, cx| {
+                        shell.detach_active_split_pane(window, cx);
+                    })),
+            )
+            .child(
+                Button::new("save-split-view-control")
+                    .ghost()
+                    .xsmall()
+                    .icon(IconName::Check)
+                    .label("Save")
+                    .tooltip("Save Split View")
+                    .on_click(cx.listener(|shell, _, _, cx| {
+                        shell.save_active_split_view(cx);
+                    })),
+            )
+            .child(
+                Button::new("close-split-view-control")
+                    .ghost()
+                    .xsmall()
+                    .icon(IconName::Close)
+                    .label("Close")
+                    .tooltip("Close Saved Split View")
+                    .on_click(cx.listener(|shell, _, window, cx| {
+                        shell.close_active_saved_split_view(window, cx);
+                    })),
             )
             .into_any_element()
     }
