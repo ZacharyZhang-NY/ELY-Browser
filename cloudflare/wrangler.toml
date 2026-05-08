@@ -2,5 +2,21 @@ name = "ely-browser-cloud"
 main = "src/index.ts"
 compatibility_date = "2026-05-08"
 
+[[kv_namespaces]]
+binding = "ELY_KV"
+id = "5eff92ba31c94fcf83e1b6d5e79ce070"
+
 [vars]
 ELY_ENVIRONMENT = "local"
+
+[[analytics_engine_datasets]]
+binding = "ELY_API_AUDIT"
+dataset = "ely_api_audit"
+
+[[ratelimits]]
+name = "ELY_RATE_LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 600
+  period = 60

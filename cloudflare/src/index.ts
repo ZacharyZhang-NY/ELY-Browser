@@ -1,4 +1,5 @@
 import type { Env } from "./bindings.js";
+import { withPublicApiControls } from "./api_controls.js";
 import {
   PluginRegistrySchemaError,
   parsePluginRegistryDocument,
@@ -21,6 +22,7 @@ import {
   parsePublicSigningKeysDocument,
   publicSigningKeysKvKey,
 } from "./signing_keys.js";
+import { jsonResponse } from "./responses.js";
 
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
@@ -31,32 +33,36 @@ export default {
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === "/api/plugins/signing-keys") {
-    return handlePublicSigningKeys(request, env);
+    return withPublicApiControls(request, env, "plugins.signing_keys", ["GET"], () =>
+      handlePublicSigningKeys(env),
+    );
   }
   const pluginRoute = parsePluginRoute(url.pathname);
   if (pluginRoute !== null) {
-    return handlePluginRoute(request, env, pluginRoute);
+    return withPublicApiControls(request, env, pluginRoute.auditRoute, ["GET"], () =>
+      handlePluginRoute(env, pluginRoute),
+    );
   }
   if (url.pathname === "/api/releases/manifest") {
-    return handleReleaseManifest(request, env);
+    return withPublicApiControls(request, env, "releases.manifest", ["GET"], () =>
+      handleReleaseManifest(env),
+    );
   }
   if (url.pathname === "/api/releases/signature") {
-    return handleReleaseSignature(request, env, url);
+    return withPublicApiControls(request, env, "releases.signature", ["GET"], () =>
+      handleReleaseSignature(env, url),
+    );
   }
 
   return jsonResponse({ error: "not_found" }, 404);
 }
 
 type PluginRoute =
-  | { kind: "catalog" }
-  | { kind: "details"; pluginId: string }
-  | { kind: "package"; pluginId: string };
+  | { kind: "catalog"; auditRoute: "plugins.catalog" }
+  | { kind: "details"; auditRoute: "plugins.details"; pluginId: string }
+  | { kind: "package"; auditRoute: "plugins.package"; pluginId: string };
 
-async function handlePublicSigningKeys(request: Request, env: Env): Promise<Response> {
-  if (request.method !== "GET") {
-    return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET" });
-  }
-
+async function handlePublicSigningKeys(env: Env): Promise<Response> {
   const kvKey = publicSigningKeysKvKey(env.ELY_ENVIRONMENT);
   const value = await env.ELY_KV.get(kvKey);
   if (value === null) {
@@ -77,14 +83,9 @@ async function handlePublicSigningKeys(request: Request, env: Env): Promise<Resp
 }
 
 async function handlePluginRoute(
-  request: Request,
   env: Env,
   route: PluginRoute,
 ): Promise<Response> {
-  if (request.method !== "GET") {
-    return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET" });
-  }
-
   const kvKey = pluginRegistryKvKey(env.ELY_ENVIRONMENT);
   const value = await env.ELY_KV.get(kvKey);
   if (value === null) {
@@ -118,11 +119,7 @@ async function handlePluginRoute(
   }
 }
 
-async function handleReleaseManifest(request: Request, env: Env): Promise<Response> {
-  if (request.method !== "GET") {
-    return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET" });
-  }
-
+async function handleReleaseManifest(env: Env): Promise<Response> {
   const kvKey = releaseManifestKvKey(env.ELY_ENVIRONMENT);
   const value = await env.ELY_KV.get(kvKey);
   if (value === null) {
@@ -143,14 +140,9 @@ async function handleReleaseManifest(request: Request, env: Env): Promise<Respon
 }
 
 async function handleReleaseSignature(
-  request: Request,
   env: Env,
   url: URL,
 ): Promise<Response> {
-  if (request.method !== "GET") {
-    return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET" });
-  }
-
   let query;
   try {
     query = parseReleaseSignatureQuery(url.searchParams);
@@ -186,7 +178,7 @@ async function handleReleaseSignature(
 
 function parsePluginRoute(pathname: string): PluginRoute | null {
   if (pathname === "/api/plugins") {
-    return { kind: "catalog" };
+    return { kind: "catalog", auditRoute: "plugins.catalog" };
   }
 
   if (!pathname.startsWith("/api/plugins/")) {
@@ -199,14 +191,14 @@ function parsePluginRoute(pathname: string): PluginRoute | null {
     if (pluginId === null) {
       return null;
     }
-    return { kind: "details", pluginId };
+    return { kind: "details", auditRoute: "plugins.details", pluginId };
   }
   if (segments.length === 5 && segments[4] === "package") {
     const pluginId = pluginRouteId(segments[3]);
     if (pluginId === null) {
       return null;
     }
-    return { kind: "package", pluginId };
+    return { kind: "package", auditRoute: "plugins.package", pluginId };
   }
 
   return null;
@@ -228,19 +220,4 @@ function pluginRouteId(segment: string | undefined): string | null {
 
 function publicPluginCacheHeaders(): Record<string, string> {
   return { "Cache-Control": "public, max-age=300, stale-while-revalidate=60" };
-}
-
-function jsonResponse(
-  body: unknown,
-  status: number,
-  headers: Record<string, string> = {},
-): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "X-Content-Type-Options": "nosniff",
-      ...headers,
-    },
-  });
 }

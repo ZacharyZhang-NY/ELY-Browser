@@ -346,6 +346,14 @@ function testEnv(
         return Promise.resolve(values.get(key) ?? null);
       },
     },
+    ELY_RATE_LIMITER: {
+      limit(): Promise<{ success: boolean }> {
+        return Promise.resolve({ success: true });
+      },
+    },
+    ELY_API_AUDIT: {
+      writeDataPoint(): void {},
+    },
   };
 }
 
