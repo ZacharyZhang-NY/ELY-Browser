@@ -13,8 +13,8 @@ use plugins::{PendingPluginInstall, PendingPluginUninstall};
 
 use crate::{
     CloseCurrentTab, FocusAddressBar, FocusCommandMode, OpenDownloads, OpenHistory, OpenNewTab,
-    OpenSettings, RestoreClosedTab, SelectNextTab, SelectPreviousTab, ToggleFavoriteTab,
-    TogglePinnedTab,
+    OpenSettings, OpenTaskManager, RestoreClosedTab, SelectNextTab, SelectPreviousTab,
+    ToggleFavoriteTab, TogglePinnedTab,
 };
 
 enum ShellState {
@@ -112,6 +112,10 @@ impl ElyShell {
 
     fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.open_internal_tab("ely://settings", window, cx);
+    }
+
+    fn open_task_manager(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_internal_tab("ely://task-manager", window, cx);
     }
 
     fn open_internal_tab(&mut self, url_text: &str, window: &mut Window, cx: &mut Context<Self>) {
@@ -292,6 +296,15 @@ impl ElyShell {
 
     fn on_open_settings(&mut self, _: &OpenSettings, window: &mut Window, cx: &mut Context<Self>) {
         self.open_settings(window, cx);
+    }
+
+    fn on_open_task_manager(
+        &mut self,
+        _: &OpenTaskManager,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_task_manager(window, cx);
     }
 
     fn on_restore_closed_tab(

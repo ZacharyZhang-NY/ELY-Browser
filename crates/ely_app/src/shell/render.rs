@@ -42,6 +42,7 @@ impl ElyShell {
             .on_action(cx.listener(Self::on_open_history))
             .on_action(cx.listener(Self::on_open_new_tab))
             .on_action(cx.listener(Self::on_open_settings))
+            .on_action(cx.listener(Self::on_open_task_manager))
             .on_action(cx.listener(Self::on_restore_closed_tab))
             .on_action(cx.listener(Self::on_select_next_tab))
             .on_action(cx.listener(Self::on_select_previous_tab))

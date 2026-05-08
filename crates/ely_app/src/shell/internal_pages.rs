@@ -7,6 +7,7 @@ mod plugins;
 mod profiles;
 mod reading_list;
 mod sync;
+mod task_manager;
 
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
@@ -32,6 +33,7 @@ impl ElyShell {
             "ely://downloads" => self.render_downloads_page(snapshot, cx),
             "ely://history" => self.render_history_page(snapshot, cx),
             "ely://archive" => self.render_archive_page(snapshot, cx),
+            "ely://task-manager" => self.render_task_manager_page(snapshot),
             "ely://about" => self.render_about_page(snapshot),
             "ely://settings/plugins" => self.render_plugins_page(snapshot, cx),
             "ely://settings/profiles" => self.render_profiles_page(snapshot, cx),

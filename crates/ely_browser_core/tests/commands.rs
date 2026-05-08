@@ -82,6 +82,21 @@ fn open_history_command_opens_history_page() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn open_task_manager_command_opens_task_manager_page() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query(">open-task-manager");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("open-task-manager".to_string())));
+    assert_eq!(active_tab.title(), "Task Manager");
+    assert_eq!(active_tab.url().as_str(), "ely://task-manager");
+    assert_eq!(core.snapshot()?.command_query, "");
+    Ok(())
+}
+
+#[test]
 fn open_about_command_opens_about_page() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
 

@@ -21,6 +21,7 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
         "ely://downloads" => Some("Downloads"),
         "ely://history" => Some("History"),
         "ely://archive" => Some("Archived Tabs"),
+        "ely://task-manager" => Some("Task Manager"),
         "ely://about" => Some("About ELY Browser"),
         "ely://settings" => Some("Settings"),
         "ely://settings/plugins" => Some("Plugin Settings"),
@@ -96,6 +97,10 @@ pub(crate) fn reading_list_url() -> Result<UrlText, CoreError> {
 
 pub(crate) fn history_url() -> Result<UrlText, CoreError> {
     internal_page_url("ely://history")
+}
+
+pub(crate) fn task_manager_url() -> Result<UrlText, CoreError> {
+    internal_page_url("ely://task-manager")
 }
 
 pub(crate) fn about_url() -> Result<UrlText, CoreError> {
