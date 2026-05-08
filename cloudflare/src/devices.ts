@@ -24,11 +24,47 @@ const DEVICE_LIST_QUERY = `
     COALESCE(last_active_at, approved_at, created_at) DESC,
     device_id ASC
 `;
+const DEVICE_REGISTER_QUERY = `
+  INSERT INTO user_devices (
+    user_id,
+    device_id,
+    public_key,
+    device_name,
+    platform,
+    approval_status,
+    created_at,
+    approved_at,
+    last_active_at,
+    revoked_at,
+    idempotency_key
+  ) VALUES (?, ?, ?, ?, ?, 'pending', ?, NULL, ?, NULL, ?)
+  ON CONFLICT(user_id, idempotency_key) DO NOTHING
+`;
+const DEVICE_BY_IDEMPOTENCY_KEY_QUERY = `
+  SELECT
+    device_id,
+    public_key,
+    device_name,
+    platform,
+    approval_status,
+    created_at,
+    approved_at,
+    last_active_at,
+    revoked_at
+  FROM user_devices
+  WHERE user_id = ? AND idempotency_key = ?
+`;
 
 export interface DeviceListDocument {
   version: 1;
   user_id: string;
   devices: DeviceDocument[];
+}
+
+export interface DeviceRegistrationDocument {
+  version: 1;
+  user_id: string;
+  device: DeviceDocument;
 }
 
 export interface DeviceDocument {
@@ -56,10 +92,34 @@ interface DeviceRow {
   revoked_at: unknown;
 }
 
+interface DeviceRegistrationRequest {
+  deviceId: string;
+  publicKey: string;
+  deviceName: string;
+  platform: string;
+  idempotencyKey: string;
+}
+
+type DeviceRegistrationBody = Record<string, unknown>;
+
 export class DeviceSchemaError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "DeviceSchemaError";
+  }
+}
+
+export class DevicePermissionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DevicePermissionError";
+  }
+}
+
+export class DevicePersistenceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DevicePersistenceError";
   }
 }
 
@@ -71,11 +131,79 @@ export async function deviceListDocument(
   return {
     version: 1,
     user_id: context.userId,
-    devices: result.results.map((row) => deviceDocument(row, context)),
+    devices: result.results.map((row) => deviceDocument(row, context.deviceId)),
   };
 }
 
-function deviceDocument(row: DeviceRow, context: AuthContext): DeviceDocument {
+export async function registerDeviceDocument(
+  request: Request,
+  env: Env,
+  context: AuthContext,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): Promise<DeviceRegistrationDocument> {
+  const registration = await deviceRegistrationRequest(request);
+  if (context.deviceId !== undefined && context.deviceId !== registration.deviceId) {
+    throw new DevicePermissionError("device_context_mismatch");
+  }
+
+  await env.ELY_DB.prepare(DEVICE_REGISTER_QUERY)
+    .bind(
+      context.userId,
+      registration.deviceId,
+      registration.publicKey,
+      registration.deviceName,
+      registration.platform,
+      nowSeconds,
+      nowSeconds,
+      registration.idempotencyKey,
+    )
+    .run();
+  const row = await env.ELY_DB.prepare(DEVICE_BY_IDEMPOTENCY_KEY_QUERY)
+    .bind(context.userId, registration.idempotencyKey)
+    .first<DeviceRow>();
+  if (row === null) {
+    throw new DevicePersistenceError("device_registration_missing");
+  }
+
+  return {
+    version: 1,
+    user_id: context.userId,
+    device: deviceDocument(row, registration.deviceId),
+  };
+}
+
+async function deviceRegistrationRequest(request: Request): Promise<DeviceRegistrationRequest> {
+  let value: unknown;
+  try {
+    value = await request.json();
+  } catch {
+    throw new DeviceSchemaError("device_registration_json_invalid");
+  }
+  if (!isRecord(value)) {
+    throw new DeviceSchemaError("device_registration_must_be_object");
+  }
+  assertOnlyFields(value, [
+    "version",
+    "device_id",
+    "public_key",
+    "device_name",
+    "platform",
+    "idempotency_key",
+  ]);
+  if (value.version !== 1) {
+    throw new DeviceSchemaError("device_registration_version_invalid");
+  }
+
+  return {
+    deviceId: deviceIdValue(value.device_id, "device_id"),
+    publicKey: publicKeyValue(value.public_key),
+    deviceName: deviceText(value.device_name, "device_name"),
+    platform: deviceText(value.platform, "platform"),
+    idempotencyKey: idempotencyKeyValue(value.idempotency_key),
+  };
+}
+
+function deviceDocument(row: DeviceRow, currentDeviceId: string | undefined): DeviceDocument {
   const deviceId = deviceIdValue(row.device_id, "device_id");
   return {
     device_id: deviceId,
@@ -87,7 +215,7 @@ function deviceDocument(row: DeviceRow, context: AuthContext): DeviceDocument {
     approved_at: nullableTimestamp(row.approved_at, "approved_at"),
     last_active_at: nullableTimestamp(row.last_active_at, "last_active_at"),
     revoked_at: nullableTimestamp(row.revoked_at, "revoked_at"),
-    current: context.deviceId === deviceId,
+    current: currentDeviceId === deviceId,
   };
 }
 
@@ -123,6 +251,13 @@ function approvalStatus(value: unknown): DeviceDocument["approval_status"] {
   return value as DeviceDocument["approval_status"];
 }
 
+function idempotencyKeyValue(value: unknown): string {
+  if (typeof value !== "string" || !/^[a-zA-Z0-9._:-]{16,128}$/.test(value)) {
+    throw new DeviceSchemaError("idempotency_key_invalid");
+  }
+  return value;
+}
+
 function nullableTimestamp(value: unknown, label: string): number | null {
   if (value === null) {
     return null;
@@ -135,4 +270,17 @@ function timestamp(value: unknown, label: string): number {
     throw new DeviceSchemaError(`${label}_invalid`);
   }
   return value;
+}
+
+function assertOnlyFields(value: DeviceRegistrationBody, fields: string[]): void {
+  const allowed = new Set(fields);
+  for (const field of Object.keys(value)) {
+    if (!allowed.has(field)) {
+      throw new DeviceSchemaError(`unexpected_field:${field}`);
+    }
+  }
+}
+
+function isRecord(value: unknown): value is DeviceRegistrationBody {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

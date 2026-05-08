@@ -13,6 +13,7 @@ import { handleRequest } from "../src/index.js";
 
 const ACCESS_TOKEN = "D".repeat(48);
 const PUBLIC_KEY = "a".repeat(64);
+const IDEMPOTENCY_KEY = "device-register-0001";
 
 describe("device routes", () => {
   it("returns authenticated user devices from D1", async () => {
@@ -154,6 +155,133 @@ describe("device routes", () => {
     assert.equal(response.status, 500);
     assert.deepEqual(await response.json(), { error: "devices_invalid" });
   });
+
+  it("registers the current device as a pending idempotent D1 write", async () => {
+    const tokenHash = await authTokenHash(ACCESS_TOKEN);
+    const d1 = testD1Database([
+      {
+        device_id: "device-01",
+        public_key: PUBLIC_KEY.toUpperCase(),
+        device_name: "MacBook Pro",
+        platform: "macOS",
+        approval_status: "pending",
+        created_at: 1_780_000_100,
+        approved_at: null,
+        last_active_at: 1_780_000_100,
+        revoked_at: null,
+      },
+    ]);
+
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/devices/register", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${ACCESS_TOKEN}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(deviceRegistrationBody()),
+      }),
+      testEnv({
+        d1,
+        kvEntries: [[authSessionCacheKvKey("local", tokenHash), sessionDocument()]],
+      }),
+    );
+
+    assert.equal(response.status, 201);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await response.json(), {
+      version: 1,
+      user_id: "user-01",
+      device: {
+        device_id: "device-01",
+        public_key: PUBLIC_KEY,
+        device_name: "MacBook Pro",
+        platform: "macOS",
+        approval_status: "pending",
+        created_at: 1_780_000_100,
+        approved_at: null,
+        last_active_at: 1_780_000_100,
+        revoked_at: null,
+        current: true,
+      },
+    });
+    assert.ok(d1.queries[0]?.includes("INSERT INTO user_devices"));
+    assert.ok(d1.queries[0]?.includes("ON CONFLICT(user_id, idempotency_key) DO NOTHING"));
+    assert.ok(d1.queries[1]?.includes("WHERE user_id = ? AND idempotency_key = ?"));
+    assert.deepEqual(d1.binds[0]?.slice(0, 5), [
+      "user-01",
+      "device-01",
+      PUBLIC_KEY,
+      "MacBook Pro",
+      "macOS",
+    ]);
+    assert.equal(typeof d1.binds[0]?.[5], "number");
+    assert.equal(typeof d1.binds[0]?.[6], "number");
+    assert.equal(d1.binds[0]?.[7], IDEMPOTENCY_KEY);
+    assert.deepEqual(d1.binds[1], ["user-01", IDEMPOTENCY_KEY]);
+  });
+
+  it("rejects invalid device registration payloads before D1 writes", async () => {
+    const tokenHash = await authTokenHash(ACCESS_TOKEN);
+    const d1 = testD1Database([]);
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/devices/register", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${ACCESS_TOKEN}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ ...deviceRegistrationBody(), idempotency_key: "short" }),
+      }),
+      testEnv({
+        d1,
+        kvEntries: [[authSessionCacheKvKey("local", tokenHash), sessionDocument()]],
+      }),
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: "invalid_device_registration" });
+    assert.deepEqual(d1.queries, []);
+  });
+
+  it("rejects registration for a different authenticated device before D1 writes", async () => {
+    const tokenHash = await authTokenHash(ACCESS_TOKEN);
+    const d1 = testD1Database([]);
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/devices/register", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${ACCESS_TOKEN}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ ...deviceRegistrationBody(), device_id: "device-02" }),
+      }),
+      testEnv({
+        d1,
+        kvEntries: [[authSessionCacheKvKey("local", tokenHash), sessionDocument()]],
+      }),
+    );
+
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { error: "device_context_mismatch" });
+    assert.deepEqual(d1.queries, []);
+  });
+
+  it("rejects unauthenticated device registration before D1 writes", async () => {
+    const d1 = testD1Database([]);
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/devices/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(deviceRegistrationBody()),
+      }),
+      testEnv({ d1 }),
+    );
+
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: "authorization_missing" });
+    assert.deepEqual(d1.queries, []);
+  });
 });
 
 interface TestEnvOptions {
@@ -220,8 +348,8 @@ function testD1PreparedStatement(rows: unknown[], binds: unknown[][]): ElyD1Prep
       binds.push(values);
       return this;
     },
-    first() {
-      return Promise.resolve(null);
+    first<T>() {
+      return Promise.resolve((rows[0] as T | undefined) ?? null);
     },
     all<T>() {
       return Promise.resolve({ results: rows as T[] });
@@ -229,6 +357,17 @@ function testD1PreparedStatement(rows: unknown[], binds: unknown[][]): ElyD1Prep
     run() {
       return Promise.resolve({});
     },
+  };
+}
+
+function deviceRegistrationBody(): Record<string, unknown> {
+  return {
+    version: 1,
+    device_id: "device-01",
+    public_key: PUBLIC_KEY,
+    device_name: "MacBook Pro",
+    platform: "macOS",
+    idempotency_key: IDEMPOTENCY_KEY,
   };
 }
 

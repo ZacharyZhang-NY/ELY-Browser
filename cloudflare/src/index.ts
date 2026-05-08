@@ -1,6 +1,12 @@
 import type { Env } from "./bindings.js";
 import { withAuthenticatedApiControls, withPublicApiControls } from "./api_controls.js";
-import { DeviceSchemaError, deviceListDocument } from "./devices.js";
+import {
+  DevicePermissionError,
+  DevicePersistenceError,
+  DeviceSchemaError,
+  deviceListDocument,
+  registerDeviceDocument,
+} from "./devices.js";
 import {
   PluginRegistrySchemaError,
   parsePluginRegistryDocument,
@@ -46,6 +52,44 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
         throw error;
       }
     });
+  }
+  if (url.pathname === "/api/devices/register") {
+    return withAuthenticatedApiControls(
+      request,
+      env,
+      "devices.register",
+      ["POST"],
+      async (context) => {
+        try {
+          return jsonResponse(await registerDeviceDocument(request, env, context), 201, {
+            "Cache-Control": "no-store",
+          });
+        } catch (error) {
+          if (error instanceof DevicePermissionError) {
+            return jsonResponse(
+              { error: "device_context_mismatch" },
+              403,
+              { "Cache-Control": "no-store" },
+            );
+          }
+          if (error instanceof DeviceSchemaError) {
+            return jsonResponse(
+              { error: "invalid_device_registration" },
+              400,
+              { "Cache-Control": "no-store" },
+            );
+          }
+          if (error instanceof DevicePersistenceError) {
+            return jsonResponse(
+              { error: "device_registration_failed" },
+              500,
+              { "Cache-Control": "no-store" },
+            );
+          }
+          throw error;
+        }
+      },
+    );
   }
   if (url.pathname === "/api/plugins/signing-keys") {
     return withPublicApiControls(request, env, "plugins.signing_keys", ["GET"], () =>
