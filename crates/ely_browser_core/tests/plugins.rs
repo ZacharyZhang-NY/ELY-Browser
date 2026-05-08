@@ -1,7 +1,7 @@
 use std::{error::Error, io};
 
 use ely_browser_core::{BrowserCore, CoreError, InitialBrowserConfig, PluginAuditAction};
-use ely_domain::{PluginId, PluginManifest};
+use ely_domain::{CommandIntent, CommandScope, PluginId, PluginManifest};
 
 #[test]
 fn installs_standard_plugin_and_records_audit_event() -> Result<(), Box<dyn Error>> {
@@ -143,6 +143,48 @@ fn rejects_unknown_plugin_state_change() -> Result<(), Box<dyn Error>> {
         error,
         CoreError::PluginNotFound { id } if id.as_str() == "com.elydora.missing"
     ));
+    Ok(())
+}
+
+#[test]
+fn plugin_scoped_search_opens_installed_plugin_detail() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.install_plugin(plugin_manifest("com.elydora.reader", &["page:metadata"])?, false)?;
+
+    core.set_command_query("@plugins reader");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(
+        intent,
+        Some(CommandIntent::ScopedSearch {
+            scope: CommandScope::Plugins,
+            query: "reader".to_string()
+        })
+    );
+    assert_eq!(active_tab.title(), "Plugin Details");
+    assert_eq!(active_tab.url().as_str(), "ely://plugin/com.elydora.reader");
+    assert_eq!(core.snapshot()?.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn plugin_scoped_search_preserves_query_without_match() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query("@plugins missing");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(
+        intent,
+        Some(CommandIntent::ScopedSearch {
+            scope: CommandScope::Plugins,
+            query: "missing".to_string()
+        })
+    );
+    assert_eq!(active_tab.url().as_str(), "ely://new-tab");
+    assert_eq!(core.snapshot()?.command_query, "@plugins missing");
     Ok(())
 }
 

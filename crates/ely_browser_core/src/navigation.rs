@@ -1,4 +1,4 @@
-use ely_domain::{BrowserTab, DomainError, UrlText};
+use ely_domain::{BrowserTab, DomainError, PluginId, UrlText};
 use url::Url;
 
 use crate::CoreError;
@@ -22,6 +22,8 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
         "ely://history" => Some("History"),
         "ely://archive" => Some("Archived Tabs"),
         "ely://task-manager" => Some("Task Manager"),
+        "ely://plugins" => Some("Plugin Marketplace"),
+        url if plugin_detail_route_id(url).is_some() => Some("Plugin Details"),
         "ely://about" => Some("About ELY Browser"),
         "ely://settings" => Some("Settings"),
         "ely://settings/plugins" => Some("Plugin Settings"),
@@ -103,6 +105,15 @@ pub(crate) fn task_manager_url() -> Result<UrlText, CoreError> {
     internal_page_url("ely://task-manager")
 }
 
+pub(crate) fn plugins_url() -> Result<UrlText, CoreError> {
+    internal_page_url("ely://plugins")
+}
+
+pub(crate) fn plugin_detail_url(plugin_id: &PluginId) -> Result<UrlText, CoreError> {
+    let route = format!("ely://plugin/{}", plugin_id.as_str());
+    internal_page_url(&route)
+}
+
 pub(crate) fn about_url() -> Result<UrlText, CoreError> {
     internal_page_url("ely://about")
 }
@@ -141,4 +152,9 @@ fn settings_page_route(query: &str) -> Option<&'static str> {
 
 fn internal_page_url(value: &str) -> Result<UrlText, CoreError> {
     UrlText::parse(value).map_err(CoreError::from)
+}
+
+fn plugin_detail_route_id(url: &str) -> Option<&str> {
+    let plugin_id = url.strip_prefix("ely://plugin/")?;
+    (!plugin_id.is_empty() && !plugin_id.contains('/')).then_some(plugin_id)
 }

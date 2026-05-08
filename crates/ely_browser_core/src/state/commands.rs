@@ -4,8 +4,9 @@ use crate::{
     CoreError,
     navigation::{
         about_url, bookmarks_url, downloads_url, history_url, move_tab_space_name,
-        new_profile_name, new_space_name, reading_list_url, search_url, settings_page_url,
-        settings_url, space_icon, switch_profile_name, sync_status_url, task_manager_url,
+        new_profile_name, new_space_name, plugin_detail_url, plugins_url, reading_list_url,
+        search_url, settings_page_url, settings_url, space_icon, switch_profile_name,
+        sync_status_url, task_manager_url,
     },
 };
 
@@ -65,6 +66,12 @@ impl BrowserCore {
             }
             CommandIntent::ScopedSearch { scope: CommandScope::Settings, query } => {
                 if let Some(url) = settings_page_url(query)? {
+                    self.open_tab(url);
+                    self.command_query.clear();
+                }
+            }
+            CommandIntent::ScopedSearch { scope: CommandScope::Plugins, query } => {
+                if let Some(url) = self.find_plugin_match(query)? {
                     self.open_tab(url);
                     self.command_query.clear();
                 }
@@ -130,6 +137,15 @@ impl BrowserCore {
                 self.open_tab(task_manager_url()?);
                 Ok(true)
             }
+            "plugins"
+            | "open-plugins"
+            | "open plugins"
+            | "plugin-marketplace"
+            | "open-plugin-marketplace"
+            | "open plugin marketplace" => {
+                self.open_tab(plugins_url()?);
+                Ok(true)
+            }
             "about" | "open-about" | "open about" => {
                 self.open_tab(about_url()?);
                 Ok(true)
@@ -185,5 +201,22 @@ impl BrowserCore {
             .iter()
             .find(|profile| profile.name().to_lowercase().contains(&query))
             .map(|profile| profile.id().clone())
+    }
+
+    fn find_plugin_match(&self, query: &str) -> Result<Option<ely_domain::UrlText>, CoreError> {
+        let query = query.trim().to_lowercase();
+        if query.is_empty() {
+            return Ok(None);
+        }
+
+        self.installed_plugins
+            .iter()
+            .find(|plugin| {
+                plugin.id().as_str().to_lowercase().contains(&query)
+                    || plugin.manifest().name().to_lowercase().contains(&query)
+                    || plugin.manifest().description().to_lowercase().contains(&query)
+            })
+            .map(|plugin| plugin_detail_url(plugin.id()))
+            .transpose()
     }
 }

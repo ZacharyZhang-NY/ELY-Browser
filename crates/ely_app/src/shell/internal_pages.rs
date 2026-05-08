@@ -3,6 +3,8 @@ mod bookmarks;
 mod download_actions;
 mod download_labels;
 mod downloads;
+mod plugin_catalog;
+mod plugin_details;
 mod plugins;
 mod profiles;
 mod reading_list;
@@ -34,6 +36,10 @@ impl ElyShell {
             "ely://history" => self.render_history_page(snapshot, cx),
             "ely://archive" => self.render_archive_page(snapshot, cx),
             "ely://task-manager" => self.render_task_manager_page(snapshot),
+            "ely://plugins" => self.render_plugin_catalog_page(snapshot, cx),
+            url if url.starts_with("ely://plugin/") => {
+                self.render_plugin_detail_page(snapshot, url, cx)
+            }
             "ely://about" => self.render_about_page(snapshot),
             "ely://settings/plugins" => self.render_plugins_page(snapshot, cx),
             "ely://settings/profiles" => self.render_profiles_page(snapshot, cx),

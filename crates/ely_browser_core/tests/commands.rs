@@ -97,6 +97,21 @@ fn open_task_manager_command_opens_task_manager_page() -> Result<(), Box<dyn Err
 }
 
 #[test]
+fn open_plugins_command_opens_plugin_marketplace_page() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query(">plugins");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("plugins".to_string())));
+    assert_eq!(active_tab.title(), "Plugin Marketplace");
+    assert_eq!(active_tab.url().as_str(), "ely://plugins");
+    assert_eq!(core.snapshot()?.command_query, "");
+    Ok(())
+}
+
+#[test]
 fn open_about_command_opens_about_page() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
 
