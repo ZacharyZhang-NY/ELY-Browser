@@ -347,6 +347,7 @@ function testEnv(
         return Promise.resolve(values.get(key) ?? null);
       },
     },
+    ELY_STORAGE: testR2Bucket(),
     ELY_RATE_LIMITER: {
       limit(): Promise<{ success: boolean }> {
         return Promise.resolve({ success: true });
@@ -354,6 +355,21 @@ function testEnv(
     },
     ELY_API_AUDIT: {
       writeDataPoint(): void {},
+    },
+  };
+}
+
+function testR2Bucket(): Env["ELY_STORAGE"] {
+  return {
+    get() {
+      return Promise.resolve(null);
+    },
+    put() {
+      return Promise.resolve({
+        arrayBuffer() {
+          return Promise.resolve(new ArrayBuffer(0));
+        },
+      });
     },
   };
 }

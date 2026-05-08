@@ -103,6 +103,7 @@ function testEnv(options: TestEnvOptions = {}): Env {
         return Promise.resolve(values.get(key) ?? null);
       },
     },
+    ELY_STORAGE: testR2Bucket(),
     ELY_RATE_LIMITER: {
       limit(input: { key: string }): Promise<{ success: boolean }> {
         options.rateLimitKeys?.push(input.key);
@@ -115,6 +116,21 @@ function testEnv(options: TestEnvOptions = {}): Env {
           options.auditEvents?.push(event);
         }
       },
+    },
+  };
+}
+
+function testR2Bucket(): Env["ELY_STORAGE"] {
+  return {
+    get() {
+      return Promise.resolve(null);
+    },
+    put() {
+      return Promise.resolve({
+        arrayBuffer() {
+          return Promise.resolve(new ArrayBuffer(0));
+        },
+      });
     },
   };
 }

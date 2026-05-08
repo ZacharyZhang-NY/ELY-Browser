@@ -2,6 +2,21 @@ export interface ElyKvNamespace {
   get(key: string): Promise<string | null>;
 }
 
+export interface ElyR2Object {
+  arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+export interface ElyR2PutOptions {
+  httpMetadata?: { contentType?: string };
+  customMetadata?: Record<string, string>;
+  sha256?: ArrayBuffer;
+}
+
+export interface ElyR2Bucket {
+  get(key: string): Promise<ElyR2Object | null>;
+  put(key: string, value: ArrayBuffer, options?: ElyR2PutOptions): Promise<ElyR2Object>;
+}
+
 export interface ElyD1PreparedStatement {
   bind(...values: unknown[]): ElyD1PreparedStatement;
   first<T = unknown>(): Promise<T | null>;
@@ -32,6 +47,7 @@ export interface ElyAnalyticsDataset {
 export interface Env {
   ELY_DB: ElyD1Database;
   ELY_KV: ElyKvNamespace;
+  ELY_STORAGE: ElyR2Bucket;
   ELY_RATE_LIMITER: ElyRateLimit;
   ELY_API_AUDIT: ElyAnalyticsDataset;
   ELY_ENVIRONMENT: string;

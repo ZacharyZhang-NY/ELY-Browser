@@ -8,6 +8,10 @@ database_name = "elydora-db"
 database_id = "6cf37748-b5ff-4765-ba91-69f3780dcbd7"
 migrations_dir = "migrations"
 
+[[r2_buckets]]
+binding = "ELY_STORAGE"
+bucket_name = "ely-browser-storage"
+
 [[kv_namespaces]]
 binding = "ELY_KV"
 id = "5eff92ba31c94fcf83e1b6d5e79ce070"
