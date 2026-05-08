@@ -4,6 +4,7 @@ mod download;
 mod error;
 mod history;
 mod identifiers;
+mod plugin;
 mod profile;
 mod space;
 mod split;
@@ -19,6 +20,10 @@ pub use download::{
 pub use error::DomainError;
 pub use history::HistoryEntry;
 pub use identifiers::{DownloadId, ProfileId, SpaceId, SplitId, TabId, WebViewId};
+pub use plugin::{
+    PluginContributionPoint, PluginId, PluginManifest, PluginPermission, PluginSignature,
+    PluginSignatureAlgorithm,
+};
 pub use profile::{Profile, ProfileKind};
 pub use space::{ArchivePolicy, Space};
 pub use split::{SplitAxis, SplitLayout, SplitPane};
