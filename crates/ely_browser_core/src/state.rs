@@ -23,6 +23,7 @@ mod site_permissions;
 mod spaces;
 mod splits;
 mod sync;
+mod tab_group_order;
 mod tab_groups;
 mod tab_lifecycle;
 mod tab_order;

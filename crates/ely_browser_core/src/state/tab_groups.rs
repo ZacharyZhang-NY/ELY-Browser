@@ -384,7 +384,7 @@ impl BrowserCore {
         Ok(space_id)
     }
 
-    fn active_tab_group_id(&self) -> Result<Option<TabGroupId>, CoreError> {
+    pub(super) fn active_tab_group_id(&self) -> Result<Option<TabGroupId>, CoreError> {
         let tab = self.active_tab()?;
         let Some(group_id) = tab.group_id().cloned() else {
             return Ok(None);

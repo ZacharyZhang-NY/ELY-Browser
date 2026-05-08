@@ -118,6 +118,20 @@ Group color updates the active group accent:
 └──────────────────────────────┴───────────────────────────────────────────────┘
 ```
 
+Group ordering moves the active group within the Space:
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ELY Browser   [ >move-tab-group-up......................... ] [pin] [*] [+] │
+├──────────────────────────────┬───────────────────────────────────────────────┤
+│ Tabs                         │  example.com                                  │
+│   [folder] Research          │  https://example.com/b                        │
+│     1 tabs - Expanded        │                                               │
+│   [folder] Docs              │  Group order: Research, Docs                  │
+│     1 tabs - Expanded        │                                               │
+└──────────────────────────────┴───────────────────────────────────────────────┘
+```
+
 Group sleep applies the sleeping state to every tab in the active group:
 
 ```text

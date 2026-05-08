@@ -219,6 +219,12 @@ impl BrowserCore {
                 Ok(self.set_active_tab_group_collapsed(false)?.is_some())
             }
             "ungroup-tab" | "ungroup tab" => self.ungroup_active_tab(),
+            "move-tab-group-up" | "move tab group up" | "tab-group-up" | "tab group up" => {
+                self.move_active_tab_group_up()
+            }
+            "move-tab-group-down" | "move tab group down" | "tab-group-down" | "tab group down" => {
+                self.move_active_tab_group_down()
+            }
             "sleep-tab-group" | "sleep tab group" | "discard-tab-group" | "discard tab group" => {
                 Ok(self.discard_active_tab_group()?.is_some())
             }
