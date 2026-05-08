@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use crate::{ProfileId, SpaceId, SplitId, TabId, UrlText};
+use crate::{DomainError, ProfileId, SpaceId, SplitId, TabId, UrlText};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TabState {
@@ -26,6 +26,7 @@ pub struct BrowserTab {
     profile_id: ProfileId,
     title: String,
     url: UrlText,
+    favicon_key: Option<String>,
     parent_tab_id: Option<TabId>,
     state: TabState,
     flags: TabFlags,
@@ -52,6 +53,7 @@ impl BrowserTab {
             profile_id,
             title: title.into(),
             url,
+            favicon_key: None,
             parent_tab_id: None,
             state: TabState::Ready,
             flags: TabFlags::default(),
@@ -98,6 +100,26 @@ impl BrowserTab {
     #[must_use]
     pub fn url(&self) -> &UrlText {
         &self.url
+    }
+
+    #[must_use]
+    pub fn favicon_key(&self) -> Option<&str> {
+        self.favicon_key.as_deref()
+    }
+
+    pub fn set_favicon_key(&mut self, favicon_key: impl Into<String>) -> Result<(), DomainError> {
+        let favicon_key = favicon_key.into();
+        let favicon_key = favicon_key.trim();
+        if favicon_key.is_empty() {
+            return Err(DomainError::EmptyField { field: "favicon_key" });
+        }
+
+        self.favicon_key = Some(favicon_key.to_string());
+        Ok(())
+    }
+
+    pub fn clear_favicon_key(&mut self) {
+        self.favicon_key = None;
     }
 
     #[must_use]

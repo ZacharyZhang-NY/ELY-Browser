@@ -274,6 +274,30 @@ impl BrowserCore {
         Ok(())
     }
 
+    pub fn set_tab_favicon_key(
+        &mut self,
+        tab_id: &TabId,
+        favicon_key: impl Into<String>,
+    ) -> Result<(), CoreError> {
+        let tab = self
+            .tabs
+            .iter_mut()
+            .find(|tab| tab.id() == tab_id)
+            .ok_or_else(|| CoreError::TabNotFound { id: tab_id.clone() })?;
+        tab.set_favicon_key(favicon_key)?;
+        Ok(())
+    }
+
+    pub fn clear_tab_favicon_key(&mut self, tab_id: &TabId) -> Result<(), CoreError> {
+        let tab = self
+            .tabs
+            .iter_mut()
+            .find(|tab| tab.id() == tab_id)
+            .ok_or_else(|| CoreError::TabNotFound { id: tab_id.clone() })?;
+        tab.clear_favicon_key();
+        Ok(())
+    }
+
     pub fn active_tab(&self) -> Result<&BrowserTab, CoreError> {
         self.tabs
             .iter()
