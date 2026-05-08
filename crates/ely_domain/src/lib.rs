@@ -8,6 +8,7 @@ mod plugin;
 mod profile;
 mod space;
 mod split;
+mod sync;
 mod tab;
 mod url_text;
 
@@ -27,5 +28,8 @@ pub use plugin::{
 pub use profile::{Profile, ProfileKind};
 pub use space::{ArchivePolicy, Space};
 pub use split::{SplitAxis, SplitLayout, SplitPane};
+pub use sync::{
+    SyncConnectionState, SyncObjectKind, SyncObjectState, SyncObjectStatus, SyncStatus,
+};
 pub use tab::{BrowserTab, TabFlags, TabState};
 pub use url_text::UrlText;

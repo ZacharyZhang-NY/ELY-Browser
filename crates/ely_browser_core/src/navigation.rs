@@ -90,6 +90,10 @@ pub(crate) fn settings_url() -> Result<UrlText, CoreError> {
     internal_page_url("ely://settings")
 }
 
+pub(crate) fn sync_url() -> Result<UrlText, CoreError> {
+    internal_page_url("ely://settings/sync")
+}
+
 pub(crate) fn settings_page_url(query: &str) -> Result<Option<UrlText>, CoreError> {
     let normalized_query = query.trim().to_ascii_lowercase();
     let Some(url) = settings_page_route(&normalized_query) else {

@@ -97,6 +97,21 @@ fn open_settings_command_opens_settings_page() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn open_sync_status_command_opens_sync_settings_page() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query(">open-sync-status");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("open-sync-status".to_string())));
+    assert_eq!(active_tab.title(), "Sync Settings");
+    assert_eq!(active_tab.url().as_str(), "ely://settings/sync");
+    assert_eq!(core.snapshot()?.command_query, "");
+    Ok(())
+}
+
+#[test]
 fn settings_scoped_search_opens_matching_settings_page() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
 

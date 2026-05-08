@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use ely_domain::{
     ArchivedTab, BrowserTab, DomainError, DownloadEntry, DownloadPolicy, HistoryEntry, Profile,
-    ProfileId, ProfileKind, Space, SpaceId, TabId, UrlText,
+    ProfileId, ProfileKind, Space, SpaceId, SyncStatus, TabId, UrlText,
 };
 
 use crate::CoreError;
@@ -12,6 +12,7 @@ mod downloads;
 mod history;
 mod plugins;
 mod profiles;
+mod sync;
 mod tabs;
 
 pub use plugins::{InstalledPlugin, PluginAuditAction, PluginAuditEvent};
@@ -47,6 +48,7 @@ pub struct BrowserSnapshot {
     pub plugin_audit_events: Vec<PluginAuditEvent>,
     pub spaces: Vec<Space>,
     pub profiles: Vec<Profile>,
+    pub sync_status: SyncStatus,
     pub active_tab_id: TabId,
     pub active_space_id: SpaceId,
     pub active_profile_id: ProfileId,
@@ -201,6 +203,7 @@ impl BrowserCore {
             plugin_audit_events: self.plugin_audit_events.clone(),
             spaces: self.spaces.clone(),
             profiles: self.profiles.clone(),
+            sync_status: self.sync_status(),
             tabs: self.visible_tabs(),
             active_tab_id: self.active_tab_id.clone(),
             active_space_id: self.active_space_id.clone(),

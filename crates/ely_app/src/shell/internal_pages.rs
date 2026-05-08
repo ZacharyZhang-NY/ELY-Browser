@@ -3,6 +3,7 @@ mod download_labels;
 mod downloads;
 mod plugins;
 mod profiles;
+mod sync;
 
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
@@ -28,6 +29,7 @@ impl ElyShell {
             "ely://archive" => self.render_archive_page(snapshot, cx),
             "ely://settings/plugins" => self.render_plugins_page(snapshot, cx),
             "ely://settings/profiles" => self.render_profiles_page(snapshot, cx),
+            "ely://settings/sync" => self.render_sync_page(snapshot),
             _ => render_default_page(tab),
         }
     }

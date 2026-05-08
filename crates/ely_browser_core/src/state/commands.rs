@@ -4,7 +4,7 @@ use crate::{
     CoreError,
     navigation::{
         downloads_url, history_url, move_tab_space_name, new_profile_name, new_space_name,
-        search_url, settings_page_url, settings_url, space_icon, switch_profile_name,
+        search_url, settings_page_url, settings_url, space_icon, switch_profile_name, sync_url,
     },
 };
 
@@ -107,6 +107,10 @@ impl BrowserCore {
             }
             "settings" | "open-settings" | "open settings" => {
                 self.open_tab(settings_url()?);
+                Ok(true)
+            }
+            "sync" | "open-sync-status" | "open sync status" => {
+                self.open_tab(sync_url()?);
                 Ok(true)
             }
             "close-tab" => {
