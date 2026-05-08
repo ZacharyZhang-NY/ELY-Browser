@@ -30,6 +30,17 @@ pub(crate) fn new_space_name(command: &str) -> Option<&str> {
     None
 }
 
+pub(crate) fn move_tab_space_name(command: &str) -> Option<&str> {
+    let normalized_command = command.to_ascii_lowercase();
+    for prefix in ["move-tab ", "move tab ", "move-tab-to-space ", "move tab to space "] {
+        if normalized_command.starts_with(prefix) {
+            let name = command[prefix.len()..].trim();
+            return (!name.is_empty()).then_some(name);
+        }
+    }
+    None
+}
+
 pub(crate) fn space_icon(name: &str) -> String {
     name.chars().next().map_or_else(String::new, |value| value.to_string())
 }

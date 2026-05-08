@@ -117,6 +117,49 @@ fn spaces_scoped_search_preserves_query_without_match() -> Result<(), Box<dyn Er
 }
 
 #[test]
+fn move_tab_command_moves_active_tab_to_named_space() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let work_space_id = core.snapshot()?.active_space_id;
+    let research_space_id = core.create_space("Research", "R", 0xf54e00)?;
+    core.select_space(&work_space_id)?;
+    let moved_tab_id = core.open_tab(UrlText::parse("https://example.com")?);
+
+    core.set_command_query(">move-tab Research");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("move-tab Research".to_string())));
+    assert_eq!(snapshot.active_space_id, research_space_id);
+    assert_eq!(snapshot.active_tab_id, moved_tab_id);
+    assert_eq!(active_tab.space_id(), &snapshot.active_space_id);
+    assert_eq!(active_tab.url().as_str(), "https://example.com");
+    assert_eq!(snapshot.command_query, "");
+
+    core.select_space(&work_space_id)?;
+    let work_snapshot = core.snapshot()?;
+    assert!(work_snapshot.tabs.iter().all(|tab| tab.id() != &moved_tab_id));
+    Ok(())
+}
+
+#[test]
+fn move_tab_command_preserves_query_without_matching_space() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let active_tab_id = core.open_tab(UrlText::parse("https://example.com")?);
+    let active_space_id = core.snapshot()?.active_space_id;
+
+    core.set_command_query(">move-tab Missing");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("move-tab Missing".to_string())));
+    assert_eq!(snapshot.active_tab_id, active_tab_id);
+    assert_eq!(snapshot.active_space_id, active_space_id);
+    assert_eq!(snapshot.command_query, ">move-tab Missing");
+    Ok(())
+}
+
+#[test]
 fn close_tab_command_closes_active_tab() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let first_tab_id = core.active_tab()?.id().clone();

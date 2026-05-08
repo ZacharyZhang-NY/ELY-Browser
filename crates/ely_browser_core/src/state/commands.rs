@@ -1,8 +1,8 @@
-use ely_domain::{CommandIntent, CommandScope};
+use ely_domain::{CommandIntent, CommandScope, SpaceId};
 
 use crate::{
     CoreError,
-    navigation::{new_space_name, search_url, space_icon},
+    navigation::{move_tab_space_name, new_space_name, search_url, space_icon},
 };
 
 use super::BrowserCore;
@@ -36,12 +36,7 @@ impl BrowserCore {
                 }
             }
             CommandIntent::ScopedSearch { scope: CommandScope::Spaces, query } => {
-                let query = query.trim().to_lowercase();
-                if let Some(space_id) = self.spaces.iter().find_map(|space| {
-                    (space.name().to_lowercase().contains(&query)
-                        || space.icon().to_lowercase().contains(&query))
-                    .then(|| space.id().clone())
-                }) {
+                if let Some(space_id) = self.find_space_match(query) {
                     self.select_space(&space_id)?;
                     self.command_query.clear();
                 }
@@ -61,6 +56,13 @@ impl BrowserCore {
         let command = command.trim();
         if let Some(name) = new_space_name(command) {
             self.create_space(name.to_string(), space_icon(name), 0xf54e00)?;
+            return Ok(true);
+        }
+        if let Some(name) = move_tab_space_name(command) {
+            let Some(space_id) = self.find_space_match(name) else {
+                return Ok(false);
+            };
+            self.move_active_tab_to_space(&space_id)?;
             return Ok(true);
         }
 
@@ -87,5 +89,14 @@ impl BrowserCore {
             }
             _ => Ok(false),
         }
+    }
+
+    fn find_space_match(&self, query: &str) -> Option<SpaceId> {
+        let query = query.trim().to_lowercase();
+        self.spaces.iter().find_map(|space| {
+            (space.name().to_lowercase().contains(&query)
+                || space.icon().to_lowercase().contains(&query))
+            .then(|| space.id().clone())
+        })
     }
 }

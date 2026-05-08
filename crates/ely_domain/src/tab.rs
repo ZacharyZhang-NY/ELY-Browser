@@ -106,6 +106,10 @@ impl BrowserTab {
         self.flags.pinned = pinned;
     }
 
+    pub fn move_to_space(&mut self, space_id: SpaceId) {
+        self.space_id = space_id;
+    }
+
     #[must_use]
     pub fn split_id(&self) -> Option<&SplitId> {
         self.split_id.as_ref()

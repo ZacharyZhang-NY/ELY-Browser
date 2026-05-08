@@ -162,6 +162,38 @@ impl BrowserCore {
         Ok(tab_id)
     }
 
+    pub fn move_active_tab_to_space(&mut self, space_id: &SpaceId) -> Result<TabId, CoreError> {
+        if !self.spaces.iter().any(|space| space.id() == space_id) {
+            return Err(CoreError::SpaceNotFound { id: space_id.clone() });
+        }
+
+        let tab_index = self.active_tab_index()?;
+        let tab_id = self.active_tab_id.clone();
+        let source_space_id = self.tabs[tab_index].space_id().clone();
+        if &source_space_id == space_id {
+            return Ok(tab_id);
+        }
+
+        self.tabs[tab_index].move_to_space(space_id.clone());
+        self.active_tabs_by_space.insert(space_id.clone(), tab_id.clone());
+
+        if let Some(next_tab_id) = self.nearest_tab_in_space(&source_space_id, tab_index) {
+            self.active_tabs_by_space.insert(source_space_id, next_tab_id);
+        } else {
+            let tab = self.build_tab_for(
+                source_space_id.clone(),
+                self.active_profile_id.clone(),
+                self.new_tab_url.clone(),
+            );
+            let replacement_id = tab.id().clone();
+            self.tabs.insert(tab_index, tab);
+            self.active_tabs_by_space.insert(source_space_id, replacement_id);
+        }
+
+        self.select_tab(&tab_id)?;
+        Ok(tab_id)
+    }
+
     pub fn close_active_tab(&mut self) -> Result<TabId, CoreError> {
         let tab_id = self.active_tab_id.clone();
         self.close_tab(&tab_id)
