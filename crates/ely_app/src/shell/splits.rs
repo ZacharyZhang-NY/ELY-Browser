@@ -6,7 +6,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window, div, px, rgb,
 };
 use gpui_component::{
-    IconName, Sizable, StyledExt,
+    IconName, Selectable, Sizable, StyledExt,
     button::{Button, ButtonVariants},
 };
 
@@ -101,6 +101,14 @@ impl ElyShell {
         }
     }
 
+    pub(super) fn set_active_split_axis(&mut self, axis: SplitAxis, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.set_active_split_axis(axis).is_ok_and(|split_id| split_id.is_some())
+        {
+            cx.notify();
+        }
+    }
+
     fn render_split_canvas(
         &mut self,
         snapshot: &BrowserSnapshot,
@@ -130,23 +138,23 @@ impl ElyShell {
             .bg(rgb(colors::CANVAS));
         let pane_area = div().flex_1().min_h_0().gap_3().overflow_hidden();
 
+        let compact_canvas = layout.axis() == &SplitAxis::Vertical && layout.pane_count() >= 4;
         let panes = match layout.axis() {
             SplitAxis::Horizontal => pane_area.flex().children(
                 panes
                     .into_iter()
                     .enumerate()
-                    .map(|(index, tab)| self.render_split_pane(index, tab, snapshot, cx)),
+                    .map(|(index, tab)| self.render_split_pane(index, tab, snapshot, false, cx)),
             ),
-            SplitAxis::Vertical => pane_area.flex().flex_col().children(
-                panes
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, tab)| self.render_split_pane(index, tab, snapshot, cx)),
-            ),
+            SplitAxis::Vertical => {
+                pane_area.flex().flex_col().children(panes.into_iter().enumerate().map(
+                    |(index, tab)| self.render_split_pane(index, tab, snapshot, compact_canvas, cx),
+                ))
+            }
             SplitAxis::Grid => self.render_split_grid(pane_area, panes, snapshot, cx),
         };
 
-        body.child(panes).child(self.render_split_controls(cx)).into_any_element()
+        body.child(panes).child(self.render_split_controls(layout.axis(), cx)).into_any_element()
     }
 
     fn render_split_grid(
@@ -160,7 +168,7 @@ impl ElyShell {
             div().flex().flex_1().min_h(px(180.0)).gap_3().children(row.iter().enumerate().map(
                 |(column_index, tab)| {
                     let pane_index = row_index * 2 + column_index;
-                    self.render_split_pane(pane_index, tab, snapshot, cx)
+                    self.render_split_pane(pane_index, tab, snapshot, false, cx)
                 },
             ))
         }))
@@ -171,6 +179,7 @@ impl ElyShell {
         index: usize,
         tab: &BrowserTab,
         snapshot: &BrowserSnapshot,
+        compact_canvas: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let active = tab.id() == &snapshot.active_tab_id;
@@ -226,17 +235,19 @@ impl ElyShell {
                             .child(tab.title().to_string()),
                     ),
             )
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_hidden()
-                    .child(self.render_web_canvas(tab, snapshot, cx)),
-            )
+            .child(div().flex_1().min_h_0().overflow_hidden().child(if compact_canvas {
+                render_compact_split_canvas(tab)
+            } else {
+                self.render_web_canvas(tab, snapshot, cx)
+            }))
             .into_any_element()
     }
 
-    fn render_split_controls(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_split_controls(
+        &mut self,
+        active_axis: &SplitAxis,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         div()
             .min_h(px(36.0))
             .px_2()
@@ -254,6 +265,43 @@ impl ElyShell {
                     .font_semibold()
                     .text_color(rgb(colors::MUTED))
                     .child("Split Controls"),
+            )
+            .child(
+                div()
+                    .gap_1()
+                    .flex()
+                    .items_center()
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_semibold()
+                            .text_color(rgb(colors::MUTED))
+                            .child("Layout"),
+                    )
+                    .child(self.render_split_axis_button(
+                        "split-axis-horizontal-control",
+                        SplitAxis::Horizontal,
+                        active_axis,
+                        IconName::PanelRight,
+                        "Horizontal",
+                        cx,
+                    ))
+                    .child(self.render_split_axis_button(
+                        "split-axis-vertical-control",
+                        SplitAxis::Vertical,
+                        active_axis,
+                        IconName::PanelBottom,
+                        "Vertical",
+                        cx,
+                    ))
+                    .child(self.render_split_axis_button(
+                        "split-axis-grid-control",
+                        SplitAxis::Grid,
+                        active_axis,
+                        IconName::LayoutDashboard,
+                        "Grid",
+                        cx,
+                    )),
             )
             .child(
                 Button::new("swap-split-pane-control")
@@ -310,6 +358,29 @@ impl ElyShell {
                         shell.close_active_saved_split_view(window, cx);
                     })),
             )
+            .into_any_element()
+    }
+
+    fn render_split_axis_button(
+        &mut self,
+        id: &'static str,
+        axis: SplitAxis,
+        active_axis: &SplitAxis,
+        icon: IconName,
+        label: &'static str,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let selected = active_axis == &axis;
+        Button::new(id)
+            .ghost()
+            .xsmall()
+            .selected(selected)
+            .icon(icon)
+            .label(label)
+            .tooltip(format!("{label} Split Layout"))
+            .on_click(cx.listener(move |shell, _, _, cx| {
+                shell.set_active_split_axis(axis.clone(), cx);
+            }))
             .into_any_element()
     }
 
@@ -374,4 +445,52 @@ fn active_split_layout<'a>(
 ) -> Option<&'a SplitLayout> {
     let split_id = active_tab.split_id()?;
     snapshot.split_layouts.iter().find(|layout| layout.id() == split_id)
+}
+
+fn render_compact_split_canvas(tab: &BrowserTab) -> AnyElement {
+    div()
+        .flex_1()
+        .min_h_0()
+        .p_2()
+        .bg(rgb(colors::CANVAS_SOFT))
+        .child(
+            div()
+                .size_full()
+                .min_h_0()
+                .rounded_md()
+                .border_1()
+                .border_color(rgb(colors::HAIRLINE))
+                .bg(rgb(colors::SURFACE_CARD))
+                .px_3()
+                .py_2()
+                .gap_2()
+                .flex()
+                .items_center()
+                .child(div().text_color(rgb(colors::MUTED)).child(IconName::Globe))
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div()
+                                .truncate()
+                                .text_sm()
+                                .font_semibold()
+                                .child(tab.title().to_string()),
+                        )
+                        .child(
+                            div()
+                                .truncate()
+                                .text_xs()
+                                .text_color(rgb(colors::MUTED))
+                                .child(split_canvas_status(tab)),
+                        ),
+                ),
+        )
+        .into_any_element()
+}
+
+fn split_canvas_status(tab: &BrowserTab) -> String {
+    if tab.url().as_str() == "ely://new-tab" { "Ready".to_string() } else { tab.display_url() }
 }
