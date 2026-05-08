@@ -8,8 +8,8 @@ mod splits;
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
 use ely_domain::{
     ArchivePolicy, CommandIntent, DownloadPolicy, FavoriteLimit, HistoryRecordingPolicy,
-    NewTabDestination, ProfileId, SearchEngine, SpaceId, SyncObjectKind, SyncObjectPolicy, TabId,
-    UrlText,
+    NewTabDestination, ProfileId, ProfileSyncPolicy, SearchEngine, SpaceId, SyncObjectKind,
+    SyncObjectPolicy, TabId, UrlText,
 };
 use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscription, Window};
 use gpui_component::input::{InputEvent, InputState, SelectAll};
@@ -306,6 +306,19 @@ impl ElyShell {
     ) {
         if let ShellState::Ready(core) = &mut self.state
             && core.set_active_profile_download_policy(policy).is_ok()
+        {
+            cx.notify();
+        }
+    }
+
+    fn set_profile_sync_policy(
+        &mut self,
+        profile_id: &ProfileId,
+        sync_policy: ProfileSyncPolicy,
+        cx: &mut Context<Self>,
+    ) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.set_profile_sync_policy(profile_id, sync_policy).is_ok()
         {
             cx.notify();
         }

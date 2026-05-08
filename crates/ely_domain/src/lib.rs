@@ -38,7 +38,7 @@ pub use plugin::{
     PluginSignature, PluginSignatureAlgorithm,
 };
 pub use privacy::HistoryRecordingPolicy;
-pub use profile::{Profile, ProfileKind};
+pub use profile::{Profile, ProfileKind, ProfileSyncPolicy};
 pub use reading_list::{ReadingListEntry, ReadingProgress};
 pub use search::SearchEngine;
 pub use site_permission::{

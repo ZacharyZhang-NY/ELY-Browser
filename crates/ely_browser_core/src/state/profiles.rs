@@ -1,4 +1,4 @@
-use ely_domain::{DownloadPolicy, Profile, ProfileId, ProfileKind, TabId};
+use ely_domain::{DownloadPolicy, Profile, ProfileId, ProfileKind, ProfileSyncPolicy, TabId};
 
 use crate::CoreError;
 
@@ -88,5 +88,20 @@ impl BrowserCore {
     ) -> Result<(), CoreError> {
         let profile_id = self.active_profile_id.clone();
         self.set_profile_download_policy(&profile_id, download_policy)
+    }
+
+    pub fn set_profile_sync_policy(
+        &mut self,
+        profile_id: &ProfileId,
+        sync_policy: ProfileSyncPolicy,
+    ) -> Result<(), CoreError> {
+        let profile = self
+            .profiles
+            .iter_mut()
+            .find(|profile| profile.id() == profile_id)
+            .ok_or_else(|| CoreError::ProfileNotFound { id: profile_id.clone() })?;
+
+        profile.set_sync_policy(sync_policy);
+        Ok(())
     }
 }

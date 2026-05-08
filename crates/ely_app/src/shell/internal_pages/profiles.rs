@@ -1,12 +1,14 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::{DownloadDestination, DownloadPolicy, Profile, ProfileId, ProfileKind};
+use ely_domain::{
+    DownloadDestination, DownloadPolicy, Profile, ProfileId, ProfileKind, ProfileSyncPolicy,
+};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div,
     px, rgb,
 };
 use gpui_component::{
-    IconName, Sizable, StyledExt,
+    IconName, Selectable, Sizable, StyledExt,
     button::{Button, ButtonVariants},
     scroll::ScrollableElement,
 };
@@ -81,6 +83,8 @@ fn render_profile_row(
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let profile_id = profile.id().clone();
+    let sync_profile_id = profile.id().clone();
+    let sync_policy = profile.sync_policy();
 
     div()
         .id(SharedString::from(format!("profile-{}", profile.id().as_str())))
@@ -121,7 +125,14 @@ fn render_profile_row(
                         ),
                 ),
         )
-        .child(render_profile_action(index, profile_id, active, cx))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_3()
+                .child(render_profile_sync_action(index, sync_profile_id, sync_policy, cx))
+                .child(render_profile_action(index, profile_id, active, cx)),
+        )
         .into_any_element()
 }
 
@@ -163,11 +174,33 @@ fn render_profile_action(
         .into_any_element()
 }
 
+fn render_profile_sync_action(
+    index: usize,
+    profile_id: ProfileId,
+    sync_policy: ProfileSyncPolicy,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let next_policy = sync_policy.toggled();
+    let paused = sync_policy == ProfileSyncPolicy::Paused;
+
+    Button::new(("profile-sync-policy", index))
+        .ghost()
+        .xsmall()
+        .selected(paused)
+        .label(sync_policy.action_label())
+        .tooltip(sync_policy.label())
+        .on_click(cx.listener(move |shell, _, _, cx| {
+            shell.set_profile_sync_policy(&profile_id, next_policy, cx);
+        }))
+        .into_any_element()
+}
+
 fn profile_detail_label(profile: &Profile) -> String {
     format!(
-        "{} - {}",
+        "{} - {} - {}",
         profile_kind_label(profile.kind()),
-        download_policy_label(profile.download_policy())
+        download_policy_label(profile.download_policy()),
+        profile.sync_policy().label()
     )
 }
 

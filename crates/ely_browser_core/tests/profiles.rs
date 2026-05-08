@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{CommandIntent, ProfileKind, UrlText};
+use ely_domain::{CommandIntent, ProfileKind, ProfileSyncPolicy, UrlText};
 
 #[test]
 fn new_private_profile_command_creates_private_profile() -> Result<(), Box<dyn Error>> {
@@ -43,5 +43,29 @@ fn private_profiles_do_not_record_history() -> Result<(), Box<dyn Error>> {
     core.select_profile(&private_profile_id)?;
     let private_snapshot = core.snapshot()?;
     assert!(private_snapshot.history_entries.is_empty());
+    Ok(())
+}
+
+#[test]
+fn profile_sync_policy_can_pause_one_profile() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let default_profile_id = core.snapshot()?.active_profile_id;
+    let research_profile_id = core.create_profile("Research", 0x9fc9a2, ProfileKind::Standard)?;
+
+    core.set_profile_sync_policy(&research_profile_id, ProfileSyncPolicy::Paused)?;
+    let snapshot = core.snapshot()?;
+    let Some(default_profile) =
+        snapshot.profiles.iter().find(|profile| profile.id() == &default_profile_id)
+    else {
+        return Err("missing default profile".into());
+    };
+    let Some(research_profile) =
+        snapshot.profiles.iter().find(|profile| profile.id() == &research_profile_id)
+    else {
+        return Err("missing research profile".into());
+    };
+
+    assert_eq!(default_profile.sync_policy(), ProfileSyncPolicy::Enabled);
+    assert_eq!(research_profile.sync_policy(), ProfileSyncPolicy::Paused);
     Ok(())
 }
