@@ -13,6 +13,12 @@ const RATE_LIMIT_WINDOW_SECONDS = 60;
 export type ApiHandler = () => Promise<Response>;
 export type AuthenticatedApiHandler = (context: AuthContext) => Promise<Response>;
 
+const APPROVED_DEVICE_QUERY = `
+  SELECT device_id
+  FROM user_devices
+  WHERE user_id = ? AND device_id = ? AND approval_status = 'approved' AND revoked_at IS NULL
+`;
+
 export async function withPublicApiControls(
   request: Request,
   env: Env,
@@ -101,6 +107,37 @@ export async function withAuthenticatedApiControls(
     recordApiAuditEvent(request, env, route, internalErrorResponse(), "exception", context);
     throw error;
   }
+}
+
+export async function withApprovedDeviceApiControls(
+  request: Request,
+  env: Env,
+  route: string,
+  allowedMethods: readonly string[],
+  handler: AuthenticatedApiHandler,
+): Promise<Response> {
+  return withAuthenticatedApiControls(request, env, route, allowedMethods, async (context) => {
+    if (context.deviceId === undefined) {
+      return jsonResponse({ error: "device_context_required" }, 403, {
+        "Cache-Control": "no-store",
+      });
+    }
+
+    const row = await env.ELY_DB.prepare(APPROVED_DEVICE_QUERY)
+      .bind(context.userId, context.deviceId)
+      .first<ApprovedDeviceRow>();
+    if (row === null) {
+      return jsonResponse({ error: "device_not_approved" }, 403, {
+        "Cache-Control": "no-store",
+      });
+    }
+
+    return handler(context);
+  });
+}
+
+interface ApprovedDeviceRow {
+  device_id: unknown;
 }
 
 function rateLimitKey(environment: string, route: string): string {

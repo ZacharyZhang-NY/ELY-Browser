@@ -1,5 +1,9 @@
 import type { Env } from "./bindings.js";
-import { withAuthenticatedApiControls, withPublicApiControls } from "./api_controls.js";
+import {
+  withApprovedDeviceApiControls,
+  withAuthenticatedApiControls,
+  withPublicApiControls,
+} from "./api_controls.js";
 import {
   DevicePermissionError,
   DevicePersistenceError,
@@ -31,6 +35,7 @@ import {
   parsePublicSigningKeysDocument,
   publicSigningKeysKvKey,
 } from "./signing_keys.js";
+import { SyncRequestError, SyncSchemaError, syncPullDocument } from "./sync_pull.js";
 import { jsonResponse } from "./responses.js";
 
 export default {
@@ -160,6 +165,37 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
           if (error instanceof DevicePersistenceError) {
             return jsonResponse(
               { error: "device_revocation_failed" },
+              500,
+              { "Cache-Control": "no-store" },
+            );
+          }
+          throw error;
+        }
+      },
+    );
+  }
+  if (url.pathname === "/api/sync/pull") {
+    return withApprovedDeviceApiControls(
+      request,
+      env,
+      "sync.pull",
+      ["GET"],
+      async (context) => {
+        try {
+          return jsonResponse(await syncPullDocument(url, env, context), 200, {
+            "Cache-Control": "no-store",
+          });
+        } catch (error) {
+          if (error instanceof SyncRequestError) {
+            return jsonResponse(
+              { error: "invalid_sync_pull" },
+              400,
+              { "Cache-Control": "no-store" },
+            );
+          }
+          if (error instanceof SyncSchemaError) {
+            return jsonResponse(
+              { error: "sync_pull_invalid" },
               500,
               { "Cache-Control": "no-store" },
             );
