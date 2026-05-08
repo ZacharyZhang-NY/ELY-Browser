@@ -2,6 +2,12 @@ name = "ely-browser-cloud"
 main = "src/index.ts"
 compatibility_date = "2026-05-08"
 
+[[d1_databases]]
+binding = "ELY_DB"
+database_name = "elydora-db"
+database_id = "6cf37748-b5ff-4765-ba91-69f3780dcbd7"
+migrations_dir = "migrations"
+
 [[kv_namespaces]]
 binding = "ELY_KV"
 id = "5eff92ba31c94fcf83e1b6d5e79ce070"

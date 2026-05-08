@@ -341,6 +341,7 @@ function testEnv(
 
   return {
     ELY_ENVIRONMENT: "local",
+    ELY_DB: testD1Database(),
     ELY_KV: {
       get(key: string): Promise<string | null> {
         return Promise.resolve(values.get(key) ?? null);
@@ -374,6 +375,37 @@ function releaseManifestDocument(): string {
       },
     ],
   });
+}
+
+function testD1Database(): Env["ELY_DB"] {
+  return {
+    prepare() {
+      return testD1PreparedStatement();
+    },
+    batch() {
+      return Promise.resolve([]);
+    },
+    exec() {
+      return Promise.resolve({});
+    },
+  };
+}
+
+function testD1PreparedStatement(): ReturnType<Env["ELY_DB"]["prepare"]> {
+  return {
+    bind() {
+      return this;
+    },
+    first() {
+      return Promise.resolve(null);
+    },
+    all() {
+      return Promise.resolve({ results: [] });
+    },
+    run() {
+      return Promise.resolve({});
+    },
+  };
 }
 
 function pluginRegistryDocument(): string {

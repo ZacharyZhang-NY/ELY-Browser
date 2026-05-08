@@ -96,6 +96,7 @@ function testEnv(options: TestEnvOptions = {}): Env {
 
   return {
     ELY_ENVIRONMENT: "local",
+    ELY_DB: testD1Database(),
     ELY_KV: {
       get(key: string): Promise<string | null> {
         options.kvReads?.push(key);
@@ -114,6 +115,37 @@ function testEnv(options: TestEnvOptions = {}): Env {
           options.auditEvents?.push(event);
         }
       },
+    },
+  };
+}
+
+function testD1Database(): Env["ELY_DB"] {
+  return {
+    prepare() {
+      return testD1PreparedStatement();
+    },
+    batch() {
+      return Promise.resolve([]);
+    },
+    exec() {
+      return Promise.resolve({});
+    },
+  };
+}
+
+function testD1PreparedStatement(): ReturnType<Env["ELY_DB"]["prepare"]> {
+  return {
+    bind() {
+      return this;
+    },
+    first() {
+      return Promise.resolve(null);
+    },
+    all() {
+      return Promise.resolve({ results: [] });
+    },
+    run() {
+      return Promise.resolve({});
     },
   };
 }
