@@ -81,4 +81,12 @@ impl BrowserCore {
         profile.set_download_policy(download_policy);
         Ok(())
     }
+
+    pub fn set_active_profile_download_policy(
+        &mut self,
+        download_policy: DownloadPolicy,
+    ) -> Result<(), CoreError> {
+        let profile_id = self.active_profile_id.clone();
+        self.set_profile_download_policy(&profile_id, download_policy)
+    }
 }

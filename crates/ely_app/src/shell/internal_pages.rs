@@ -2,6 +2,7 @@ mod about;
 mod bookmarks;
 mod download_actions;
 mod download_labels;
+mod download_settings;
 mod downloads;
 mod general;
 mod plugin_catalog;
@@ -57,6 +58,7 @@ impl ElyShell {
             "ely://settings/sidebar-tabs" => self.render_sidebar_tabs_page(snapshot, cx),
             "ely://settings/search" => self.render_search_page(snapshot, cx),
             "ely://settings/privacy-security" => self.render_privacy_security_page(snapshot, cx),
+            "ely://settings/downloads" => self.render_download_settings_page(snapshot, cx),
             "ely://settings/spaces" => self.render_spaces_page(snapshot, cx),
             "ely://settings/shortcuts" => self.render_shortcuts_page(snapshot),
             "ely://settings/plugins" => self.render_plugins_page(snapshot, cx),

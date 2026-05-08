@@ -177,6 +177,26 @@ fn records_active_profile_download_policy_on_started_entry() -> Result<(), Box<d
 }
 
 #[test]
+fn active_profile_download_policy_updates_started_entries() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let policy = DownloadPolicy::fixed_directory("/tmp/ely-active-downloads")?;
+
+    core.set_active_profile_download_policy(policy.clone())?;
+    core.record_download_started(
+        UrlText::parse("https://example.com/manual.pdf")?,
+        "manual.pdf",
+        Some(1024),
+    )?;
+
+    let snapshot = core.snapshot()?;
+    let entry = active_download(&core)?;
+    assert_eq!(snapshot.active_download_policy, policy);
+    assert_eq!(entry.destination(), policy.destination());
+    assert_eq!(entry.target_file_path(), Some(Path::new("/tmp/ely-active-downloads/manual.pdf")));
+    Ok(())
+}
+
+#[test]
 fn confirms_dangerous_download_security_prompt() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let download_id = core.record_download_started(

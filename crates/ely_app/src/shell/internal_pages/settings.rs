@@ -49,6 +49,12 @@ const SETTINGS_ROUTES: &[SettingsRoute] = &[
         route: "ely://settings/privacy-security",
     },
     SettingsRoute {
+        icon: IconName::Folder,
+        title: "Downloads",
+        detail: "Profile download location and save behavior.",
+        route: "ely://settings/downloads",
+    },
+    SettingsRoute {
         icon: IconName::CircleUser,
         title: "Profiles",
         detail: "Profile identity, color, and download policy.",

@@ -29,6 +29,7 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
         "ely://settings/sidebar-tabs" => Some("Sidebar & Tabs Settings"),
         "ely://settings/search" => Some("Search Settings"),
         "ely://settings/privacy-security" => Some("Privacy & Security Settings"),
+        "ely://settings/downloads" => Some("Downloads Settings"),
         "ely://settings/spaces" => Some("Space Settings"),
         "ely://settings/shortcuts" => Some("Shortcut Settings"),
         "ely://settings/plugins" => Some("Plugin Settings"),
@@ -167,6 +168,9 @@ fn settings_page_route(query: &str) -> Option<&'static str> {
         }
         "privacy" | "security" | "privacy security" | "privacy & security" | "history"
         | "history recording" => Some("ely://settings/privacy-security"),
+        "download" | "downloads" | "download settings" | "downloads settings" => {
+            Some("ely://settings/downloads")
+        }
         "space" | "spaces" | "space settings" | "spaces settings" => Some("ely://settings/spaces"),
         "shortcut" | "shortcuts" | "keyboard" | "keyboard shortcuts" => {
             Some("ely://settings/shortcuts")
