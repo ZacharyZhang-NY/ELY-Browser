@@ -23,6 +23,40 @@ fn opens_new_tab_below_active_tab() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn opened_tabs_record_active_tab_as_parent() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let first_tab_id = core.active_tab()?.id().clone();
+
+    let second_tab_id = core.open_tab(UrlText::parse("https://example.com")?);
+    let snapshot = core.snapshot()?;
+
+    let opened_tab = snapshot
+        .tabs
+        .iter()
+        .find(|tab| tab.id() == &second_tab_id)
+        .ok_or(CoreError::MissingActiveTab)?;
+    assert_eq!(opened_tab.parent_tab_id(), Some(&first_tab_id));
+    Ok(())
+}
+
+#[test]
+fn replacement_tabs_have_no_parent_tab() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let active_tab_id = core.active_tab()?.id().clone();
+
+    let replacement_tab_id = core.close_tab(&active_tab_id)?;
+    let snapshot = core.snapshot()?;
+
+    let replacement_tab = snapshot
+        .tabs
+        .iter()
+        .find(|tab| tab.id() == &replacement_tab_id)
+        .ok_or(CoreError::MissingActiveTab)?;
+    assert_eq!(replacement_tab.parent_tab_id(), None);
+    Ok(())
+}
+
+#[test]
 fn closes_active_tab_and_selects_next_neighbor() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let first_tab_id = core.active_tab()?.id().clone();

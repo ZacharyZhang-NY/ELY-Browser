@@ -26,6 +26,7 @@ pub struct BrowserTab {
     profile_id: ProfileId,
     title: String,
     url: UrlText,
+    parent_tab_id: Option<TabId>,
     state: TabState,
     flags: TabFlags,
     split_id: Option<SplitId>,
@@ -49,12 +50,19 @@ impl BrowserTab {
             profile_id,
             title: title.into(),
             url,
+            parent_tab_id: None,
             state: TabState::Ready,
             flags: TabFlags::default(),
             split_id: None,
             created_at,
             last_active_at: created_at,
         }
+    }
+
+    #[must_use]
+    pub fn with_parent_tab_id(mut self, parent_tab_id: TabId) -> Self {
+        self.parent_tab_id = Some(parent_tab_id);
+        self
     }
 
     #[must_use]
@@ -80,6 +88,11 @@ impl BrowserTab {
     #[must_use]
     pub fn url(&self) -> &UrlText {
         &self.url
+    }
+
+    #[must_use]
+    pub fn parent_tab_id(&self) -> Option<&TabId> {
+        self.parent_tab_id.as_ref()
     }
 
     #[must_use]

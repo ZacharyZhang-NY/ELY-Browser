@@ -322,6 +322,7 @@ impl BrowserCore {
 
     fn build_tab(&self, url: UrlText) -> BrowserTab {
         self.build_tab_for(self.active_space_id.clone(), self.active_profile_id.clone(), url)
+            .with_parent_tab_id(self.active_tab_id.clone())
     }
 
     pub(super) fn nearest_tab_in_space(
