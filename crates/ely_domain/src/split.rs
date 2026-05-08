@@ -57,6 +57,10 @@ impl SplitLayout {
         &self.axis
     }
 
+    pub fn set_axis(&mut self, axis: SplitAxis) {
+        self.axis = axis;
+    }
+
     #[must_use]
     pub fn panes(&self) -> &[SplitPane] {
         &self.panes

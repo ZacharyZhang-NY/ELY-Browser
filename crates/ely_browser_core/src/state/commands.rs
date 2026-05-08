@@ -1,6 +1,8 @@
 use std::time::SystemTime;
 
-use ely_domain::{ArchivePolicy, CommandIntent, CommandScope, ProfileId, ProfileKind, SpaceId};
+use ely_domain::{
+    ArchivePolicy, CommandIntent, CommandScope, ProfileId, ProfileKind, SpaceId, SplitAxis,
+};
 
 use crate::{
     CoreError,
@@ -161,6 +163,15 @@ impl BrowserCore {
             "split-right" | "split right" => {
                 self.split_active_tab_right()?;
                 Ok(true)
+            }
+            "split-horizontal" | "split horizontal" => {
+                Ok(self.set_active_split_axis(SplitAxis::Horizontal)?.is_some())
+            }
+            "split-vertical" | "split vertical" => {
+                Ok(self.set_active_split_axis(SplitAxis::Vertical)?.is_some())
+            }
+            "split-grid" | "split grid" => {
+                Ok(self.set_active_split_axis(SplitAxis::Grid)?.is_some())
             }
             "save-split-view" | "save split view" => Ok(self.save_active_split_view()?.is_some()),
             "split-tab-group" | "split tab group" | "tab-group-to-split" | "tab group to split" => {

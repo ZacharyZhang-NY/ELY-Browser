@@ -73,18 +73,45 @@ impl ElyShell {
             .overflow_hidden()
             .bg(rgb(colors::CANVAS));
 
-        let body = match layout.axis() {
-            SplitAxis::Vertical => body.flex().flex_col(),
-            SplitAxis::Horizontal | SplitAxis::Grid => body.flex(),
-        };
+        match layout.axis() {
+            SplitAxis::Horizontal => body
+                .flex()
+                .children(
+                    panes
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, tab)| self.render_split_pane(index, tab, snapshot, cx)),
+                )
+                .into_any_element(),
+            SplitAxis::Vertical => body
+                .flex()
+                .flex_col()
+                .children(
+                    panes
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, tab)| self.render_split_pane(index, tab, snapshot, cx)),
+                )
+                .into_any_element(),
+            SplitAxis::Grid => self.render_split_grid(body, panes, snapshot, cx).into_any_element(),
+        }
+    }
 
-        body.children(
-            panes
-                .into_iter()
-                .enumerate()
-                .map(|(index, tab)| self.render_split_pane(index, tab, snapshot, cx)),
-        )
-        .into_any_element()
+    fn render_split_grid(
+        &mut self,
+        body: gpui::Div,
+        panes: Vec<&BrowserTab>,
+        snapshot: &BrowserSnapshot,
+        cx: &mut Context<Self>,
+    ) -> gpui::Div {
+        body.flex().flex_col().children(panes.chunks(2).enumerate().map(|(row_index, row)| {
+            div().flex().flex_1().min_h(px(180.0)).gap_3().children(row.iter().enumerate().map(
+                |(column_index, tab)| {
+                    let pane_index = row_index * 2 + column_index;
+                    self.render_split_pane(pane_index, tab, snapshot, cx)
+                },
+            ))
+        }))
     }
 
     fn render_split_pane(

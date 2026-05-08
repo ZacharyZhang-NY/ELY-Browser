@@ -76,6 +76,77 @@ fn save_split_view_command_preserves_query_without_active_split() -> Result<(), 
 }
 
 #[test]
+fn split_axis_commands_update_active_layout() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.split_active_tab_right()?;
+
+    core.set_command_query(">split-vertical");
+    let vertical_intent = core.submit_command()?;
+    let vertical_snapshot = core.snapshot()?;
+    let vertical_layout = vertical_snapshot.split_layouts.first().ok_or("missing split layout")?;
+
+    assert_eq!(vertical_intent, Some(CommandIntent::Command("split-vertical".to_string())));
+    assert_eq!(vertical_layout.axis(), &SplitAxis::Vertical);
+    assert_eq!(vertical_snapshot.command_query, "");
+
+    core.set_command_query(">split-grid");
+    let grid_intent = core.submit_command()?;
+    let grid_snapshot = core.snapshot()?;
+    let grid_layout = grid_snapshot.split_layouts.first().ok_or("missing split layout")?;
+
+    assert_eq!(grid_intent, Some(CommandIntent::Command("split-grid".to_string())));
+    assert_eq!(grid_layout.axis(), &SplitAxis::Grid);
+    assert_eq!(grid_snapshot.command_query, "");
+
+    core.set_command_query(">split-horizontal");
+    let horizontal_intent = core.submit_command()?;
+    let horizontal_snapshot = core.snapshot()?;
+    let horizontal_layout =
+        horizontal_snapshot.split_layouts.first().ok_or("missing split layout")?;
+
+    assert_eq!(horizontal_intent, Some(CommandIntent::Command("split-horizontal".to_string())));
+    assert_eq!(horizontal_layout.axis(), &SplitAxis::Horizontal);
+    assert_eq!(horizontal_snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn split_axis_command_preserves_query_without_active_split() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let active_tab_id = core.active_tab()?.id().clone();
+
+    core.set_command_query(">split-grid");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("split-grid".to_string())));
+    assert_eq!(snapshot.active_tab_id, active_tab_id);
+    assert!(snapshot.split_layouts.is_empty());
+    assert_eq!(snapshot.command_query, ">split-grid");
+    Ok(())
+}
+
+#[test]
+fn split_grid_command_keeps_four_pane_layout() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.split_active_tab_right()?;
+    core.split_active_tab_right()?;
+    core.split_active_tab_right()?;
+
+    core.set_command_query(">split-grid");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+    let layout = snapshot.split_layouts.first().ok_or("missing split layout")?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("split-grid".to_string())));
+    assert_eq!(layout.axis(), &SplitAxis::Grid);
+    assert_eq!(layout.pane_count(), 4);
+    assert_eq!(snapshot.tabs.len(), 4);
+    assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
 fn close_active_tab_archives_saved_split_view() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let remaining_tab_id = core.active_tab()?.id().clone();

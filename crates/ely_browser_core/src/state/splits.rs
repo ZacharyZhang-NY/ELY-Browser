@@ -68,6 +68,20 @@ impl BrowserCore {
         Ok(Some(split_id))
     }
 
+    pub fn set_active_split_axis(&mut self, axis: SplitAxis) -> Result<Option<SplitId>, CoreError> {
+        let Some(split_id) = self.active_tab()?.split_id().cloned() else {
+            return Ok(None);
+        };
+        let layout = self
+            .split_layouts
+            .iter_mut()
+            .find(|layout| layout.id() == &split_id)
+            .ok_or_else(|| CoreError::SplitNotFound { id: split_id.clone() })?;
+
+        layout.set_axis(axis);
+        Ok(Some(split_id))
+    }
+
     pub fn split_active_tab_right(&mut self) -> Result<SplitId, CoreError> {
         let active_index = self.active_tab_index()?;
         let active_tab_id = self.tabs[active_index].id().clone();
