@@ -38,6 +38,7 @@ pub struct DownloadEntry {
     source_url: UrlText,
     file_name: String,
     destination: DownloadDestination,
+    target_file_path: Option<PathBuf>,
     security: DownloadSecurity,
     state: DownloadState,
     received_bytes: u64,
@@ -95,6 +96,14 @@ impl DownloadDestination {
             Self::FixedDirectory(path) => Some(path.as_path()),
         }
     }
+
+    pub fn target_file_path(&self, file_name: &str) -> Result<Option<PathBuf>, DomainError> {
+        validate_file_name(file_name)?;
+        Ok(match self {
+            Self::AskEveryTime => None,
+            Self::FixedDirectory(path) => Some(path.join(file_name)),
+        })
+    }
 }
 
 impl DownloadPolicy {
@@ -143,6 +152,7 @@ impl DownloadEntry {
             return Err(DomainError::EmptyField { field: "file_name" });
         }
         validate_file_name(file_name)?;
+        let target_file_path = destination.target_file_path(file_name)?;
 
         Ok(Self {
             id: DownloadId::new(),
@@ -150,6 +160,7 @@ impl DownloadEntry {
             source_url,
             file_name: file_name.to_string(),
             destination,
+            target_file_path,
             security: DownloadSecurity::for_file_name(file_name),
             state: DownloadState::InProgress,
             received_bytes: 0,
@@ -227,6 +238,11 @@ impl DownloadEntry {
     #[must_use]
     pub fn destination(&self) -> &DownloadDestination {
         &self.destination
+    }
+
+    #[must_use]
+    pub fn target_file_path(&self) -> Option<&Path> {
+        self.target_file_path.as_deref()
     }
 
     #[must_use]

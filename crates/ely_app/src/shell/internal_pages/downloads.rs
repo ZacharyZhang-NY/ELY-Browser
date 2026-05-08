@@ -75,6 +75,9 @@ impl ElyShell {
                                 ),
                         ),
                 )
+                .when_some(self.download_file_error.clone(), |this, message| {
+                    this.child(render_download_file_error(message))
+                })
                 .child(self.render_downloads_list(snapshot, cx)),
         )
     }
@@ -168,7 +171,7 @@ impl ElyShell {
                                         div()
                                             .min_w_0()
                                             .truncate()
-                                            .child(download_destination_label(entry.destination())),
+                                            .child(download_entry_location_label(entry)),
                                     )
                                     .when(entry.security().requires_prompt(), |this| {
                                         this.child(render_security_prompt(entry.security()))
@@ -277,6 +280,34 @@ impl ElyShell {
                     )
                 },
             )
+            .when(
+                matches!(entry.state(), DownloadState::Completed)
+                    && entry.target_file_path().is_some(),
+                |this| {
+                    let open_id = entry.id().clone();
+                    let reveal_id = entry.id().clone();
+
+                    this.child(
+                        download_action_button("open", index, IconName::ExternalLink, "Open File")
+                            .on_click(cx.listener(move |shell, _, _, cx| {
+                                shell.open_download_file(&open_id, cx);
+                            }))
+                            .into_any_element(),
+                    )
+                    .child(
+                        download_action_button(
+                            "reveal",
+                            index,
+                            IconName::FolderOpen,
+                            "Reveal in Finder",
+                        )
+                        .on_click(cx.listener(move |shell, _, _, cx| {
+                            shell.reveal_download_file(&reveal_id, cx);
+                        }))
+                        .into_any_element(),
+                    )
+                },
+            )
             .into_any_element()
     }
 }
@@ -318,6 +349,30 @@ fn download_destination_label(destination: &DownloadDestination) -> String {
         DownloadDestination::AskEveryTime => "Ask before saving".to_string(),
         DownloadDestination::FixedDirectory(path) => path.display().to_string(),
     }
+}
+
+fn download_entry_location_label(entry: &DownloadEntry) -> String {
+    match entry.target_file_path() {
+        Some(path) => path.display().to_string(),
+        None => download_destination_label(entry.destination()),
+    }
+}
+
+fn render_download_file_error(message: String) -> AnyElement {
+    div()
+        .rounded_md()
+        .border_1()
+        .border_color(rgb(colors::ERROR))
+        .px_3()
+        .py_2()
+        .flex()
+        .items_center()
+        .gap_2()
+        .text_xs()
+        .text_color(rgb(colors::ERROR))
+        .child(IconName::TriangleAlert)
+        .child(message)
+        .into_any_element()
 }
 
 fn render_security_prompt(security: &DownloadSecurity) -> AnyElement {

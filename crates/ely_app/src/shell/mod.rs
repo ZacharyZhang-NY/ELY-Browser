@@ -9,7 +9,7 @@ use gpui_component::input::{InputEvent, InputState, SelectAll};
 use crate::{
     CloseCurrentTab, FocusAddressBar, FocusCommandMode, OpenDownloads, OpenHistory, OpenNewTab,
     OpenSettings, RestoreClosedTab, SelectNextTab, SelectPreviousTab, ToggleFavoriteTab,
-    TogglePinnedTab,
+    TogglePinnedTab, services::download_files::DownloadFileAction,
 };
 
 enum ShellState {
@@ -22,6 +22,7 @@ pub struct ElyShell {
     focus_handle: FocusHandle,
     command_input: Entity<InputState>,
     last_intent: Option<CommandIntent>,
+    download_file_error: Option<String>,
     _command_subscription: Subscription,
 }
 
@@ -77,6 +78,7 @@ impl ElyShell {
             focus_handle: cx.focus_handle(),
             command_input,
             last_intent: None,
+            download_file_error: None,
             _command_subscription: command_subscription,
         }
     }
@@ -245,6 +247,32 @@ impl ElyShell {
         {
             cx.notify();
         }
+    }
+
+    fn open_download_file(&mut self, download_id: &DownloadId, cx: &mut Context<Self>) {
+        self.run_download_file_action(download_id, DownloadFileAction::Open, cx);
+    }
+
+    fn reveal_download_file(&mut self, download_id: &DownloadId, cx: &mut Context<Self>) {
+        self.run_download_file_action(download_id, DownloadFileAction::Reveal, cx);
+    }
+
+    fn run_download_file_action(
+        &mut self,
+        download_id: &DownloadId,
+        action: DownloadFileAction,
+        cx: &mut Context<Self>,
+    ) {
+        let result = match &self.state {
+            ShellState::Ready(core) => core
+                .download_target_file_path(download_id)
+                .map_err(|error| error.to_string())
+                .and_then(|path| action.run(&path).map_err(|error| error.to_string())),
+            ShellState::StartupError(message) => Err(message.clone()),
+        };
+
+        self.download_file_error = result.err();
+        cx.notify();
     }
 
     fn on_close_current_tab(

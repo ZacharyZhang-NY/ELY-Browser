@@ -1,4 +1,4 @@
-use std::time::SystemTime;
+use std::{path::PathBuf, time::SystemTime};
 
 use ely_domain::{DownloadEntry, DownloadId, UrlText};
 
@@ -70,12 +70,34 @@ impl BrowserCore {
         Ok(())
     }
 
+    pub fn download_target_file_path(
+        &self,
+        download_id: &DownloadId,
+    ) -> Result<PathBuf, CoreError> {
+        let entry = self.visible_download_entry(download_id)?;
+        entry
+            .target_file_path()
+            .map(PathBuf::from)
+            .ok_or_else(|| CoreError::DownloadTargetPathUnavailable { id: download_id.clone() })
+    }
+
     pub(super) fn visible_downloads(&self) -> Vec<DownloadEntry> {
         self.download_entries
             .iter()
             .filter(|entry| entry.profile_id() == &self.active_profile_id)
             .cloned()
             .collect()
+    }
+
+    fn visible_download_entry(
+        &self,
+        download_id: &DownloadId,
+    ) -> Result<&DownloadEntry, CoreError> {
+        self.download_entries
+            .iter()
+            .filter(|entry| entry.profile_id() == &self.active_profile_id)
+            .find(|entry| entry.id() == download_id)
+            .ok_or_else(|| CoreError::DownloadNotFound { id: download_id.clone() })
     }
 
     fn download_entry_mut(

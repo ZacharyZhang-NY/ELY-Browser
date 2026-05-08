@@ -1,3 +1,4 @@
+mod services;
 mod shell;
 
 use gpui::{

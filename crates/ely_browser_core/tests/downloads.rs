@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, path::Path};
 
 use ely_browser_core::{BrowserCore, CoreError, InitialBrowserConfig};
 use ely_domain::{
@@ -21,6 +21,7 @@ fn download_entries_stay_with_active_profile() -> Result<(), Box<dyn Error>> {
     assert_eq!(default_snapshot.download_entries.len(), 1);
     assert_eq!(default_snapshot.download_entries[0].file_name(), "report.pdf");
     assert_eq!(default_snapshot.download_entries[0].profile_id(), &default_profile_id);
+    assert_eq!(default_snapshot.download_entries[0].target_file_path(), None);
 
     core.create_profile("Personal", 0xf54e00, ProfileKind::Standard)?;
     let personal_snapshot = core.snapshot()?;
@@ -82,7 +83,48 @@ fn records_active_profile_download_policy_on_started_entry() -> Result<(), Box<d
     let entry = active_download(&core)?;
     assert_eq!(snapshot.active_download_policy, policy);
     assert_eq!(entry.destination(), policy.destination());
+    assert_eq!(entry.target_file_path(), Some(Path::new("/tmp/ely-work-downloads/installer.dmg")));
     assert_eq!(entry.security(), &DownloadSecurity::DangerousExtension);
+    Ok(())
+}
+
+#[test]
+fn returns_visible_download_target_file_path() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let profile_id = core.active_tab()?.profile_id().clone();
+    core.set_profile_download_policy(
+        &profile_id,
+        DownloadPolicy::fixed_directory("/tmp/ely-work-downloads")?,
+    )?;
+
+    let download_id = core.record_download_started(
+        UrlText::parse("https://example.com/report.pdf")?,
+        "report.pdf",
+        Some(2048),
+    )?;
+
+    assert_eq!(
+        core.download_target_file_path(&download_id)?,
+        Path::new("/tmp/ely-work-downloads/report.pdf")
+    );
+    Ok(())
+}
+
+#[test]
+fn rejects_target_path_for_ask_every_time_download() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let download_id = core.record_download_started(
+        UrlText::parse("https://example.com/report.pdf")?,
+        "report.pdf",
+        Some(2048),
+    )?;
+
+    let error = match core.download_target_file_path(&download_id) {
+        Ok(_) => return Err("download target path should require a fixed destination".into()),
+        Err(error) => error,
+    };
+
+    assert_eq!(error, CoreError::DownloadTargetPathUnavailable { id: download_id });
     Ok(())
 }
 

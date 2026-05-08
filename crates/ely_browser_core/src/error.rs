@@ -18,6 +18,9 @@ pub enum CoreError {
     #[error("download not found: {id}")]
     DownloadNotFound { id: DownloadId },
 
+    #[error("download target path is unavailable: {id}")]
+    DownloadTargetPathUnavailable { id: DownloadId },
+
     #[error("favorite limit reached: {limit}")]
     FavoriteLimitReached { limit: usize },
 
