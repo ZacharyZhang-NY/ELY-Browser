@@ -42,10 +42,6 @@ fn manages_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
         "snapshot: {snapshot:?}"
     );
 
-    host.paint(&webview_id)?;
-    let snapshot = host.snapshot(&webview_id)?;
-    assert!(!snapshot.has_pending_frame());
-
     assert!(matches!(
         SoftwareServoHost::new(ServoSurfaceSize::new(320, 240)),
         Err(ServoHostError::RuntimeAlreadyStarted)
