@@ -138,6 +138,11 @@ export async function getVerifiedObject(
   return payload;
 }
 
+export async function deleteKnownObject(bucket: ElyR2Bucket, key: string): Promise<void> {
+  assertKnownObjectKey(key);
+  await bucket.delete(key);
+}
+
 function assertKnownObjectKey(key: string): void {
   const matches = [
     /^sync-payloads\/[a-z0-9][a-z0-9-]{1,31}\/[a-f0-9]{64}\/[a-z0-9][a-z0-9._-]{0,127}\/[a-z0-9][a-z0-9._-]{0,127}\/[a-f0-9]{64}\.bin$/,

@@ -6,6 +6,7 @@ import type { ElyR2Bucket, ElyR2PutOptions } from "../src/bindings.js";
 import {
   StorageObjectError,
   crashAttachmentKey,
+  deleteKnownObject,
   exportObjectKey,
   getVerifiedObject,
   pluginAssetKey,
@@ -168,6 +169,24 @@ describe("R2 storage contracts", () => {
 
     assert.deepEqual(new Uint8Array(downloaded ?? new ArrayBuffer(0)), new Uint8Array(payload));
   });
+
+  it("deletes only known object key shapes", async () => {
+    const bucket = recordedR2Bucket();
+    const key = syncSnapshotKey({
+      region: "us-east",
+      userHash: USER_HASH,
+      snapshotId: "snapshot-01",
+    });
+
+    await deleteKnownObject(bucket, key);
+
+    assert.deepEqual(bucket.deletes, [key]);
+    await assert.rejects(
+      () => deleteKnownObject(bucket, "sync-snapshots/../bad.bin"),
+      StorageObjectError,
+    );
+    assert.deepEqual(bucket.deletes, [key]);
+  });
 });
 
 interface RecordedPut {
@@ -177,12 +196,15 @@ interface RecordedPut {
 }
 
 interface RecordedR2Bucket extends ElyR2Bucket {
+  deletes: string[];
   puts: RecordedPut[];
 }
 
 function recordedR2Bucket(payload?: ArrayBuffer): RecordedR2Bucket {
+  const deletes: string[] = [];
   const puts: RecordedPut[] = [];
   return {
+    deletes,
     puts,
     get() {
       if (payload === undefined) {
@@ -201,6 +223,10 @@ function recordedR2Bucket(payload?: ArrayBuffer): RecordedR2Bucket {
           return Promise.resolve(value);
         },
       });
+    },
+    delete(key: string) {
+      deletes.push(key);
+      return Promise.resolve();
     },
   };
 }

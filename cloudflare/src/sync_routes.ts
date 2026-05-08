@@ -9,6 +9,11 @@ import {
   syncPushDocument,
 } from "./sync_push.js";
 import {
+  SyncResetPersistenceError,
+  SyncResetRequestError,
+  syncResetDocument,
+} from "./sync_reset.js";
+import {
   SyncSnapshotConflictError,
   SyncSnapshotNotFoundError,
   SyncSnapshotPersistenceError,
@@ -34,6 +39,9 @@ export async function handleSyncRoute(
   }
   if (url.pathname === "/api/sync/status") {
     return handleSyncStatus(request, env);
+  }
+  if (url.pathname === "/api/sync/reset") {
+    return handleSyncReset(request, env);
   }
   return null;
 }
@@ -171,6 +179,38 @@ function handleSyncStatus(request: Request, env: Env): Promise<Response> {
         if (error instanceof SyncStatusSchemaError) {
           return jsonResponse(
             { error: "sync_status_invalid" },
+            500,
+            { "Cache-Control": "no-store" },
+          );
+        }
+        throw error;
+      }
+    },
+  );
+}
+
+function handleSyncReset(request: Request, env: Env): Promise<Response> {
+  return withApprovedDeviceApiControls(
+    request,
+    env,
+    "sync.reset",
+    ["POST"],
+    async (context) => {
+      try {
+        return jsonResponse(await syncResetDocument(request, env, context), 200, {
+          "Cache-Control": "no-store",
+        });
+      } catch (error) {
+        if (error instanceof SyncResetRequestError) {
+          return jsonResponse(
+            { error: "invalid_sync_reset" },
+            400,
+            { "Cache-Control": "no-store" },
+          );
+        }
+        if (error instanceof SyncResetPersistenceError) {
+          return jsonResponse(
+            { error: "sync_reset_failed" },
             500,
             { "Cache-Control": "no-store" },
           );

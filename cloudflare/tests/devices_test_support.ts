@@ -14,6 +14,7 @@ export interface TestEnvOptions {
   d1?: RecordedD1Database;
   kvEntries?: [string, string][];
   kvReads?: string[];
+  r2Deletes?: string[];
   r2Gets?: string[];
   r2Objects?: [string, ArrayBuffer][];
   r2Puts?: RecordedR2Put[];
@@ -47,7 +48,12 @@ export function testEnv(options: TestEnvOptions): Env {
         return Promise.resolve(values.get(key) ?? null);
       },
     },
-    ELY_STORAGE: testR2Bucket(options.r2Puts, options.r2Objects, options.r2Gets),
+    ELY_STORAGE: testR2Bucket(
+      options.r2Puts,
+      options.r2Objects,
+      options.r2Gets,
+      options.r2Deletes,
+    ),
     ELY_RATE_LIMITER: {
       limit(): Promise<{ success: boolean }> {
         return Promise.resolve({ success: true });
@@ -125,6 +131,7 @@ function testR2Bucket(
   puts: RecordedR2Put[] = [],
   objects: [string, ArrayBuffer][] = [],
   gets: string[] = [],
+  deletes: string[] = [],
 ): Env["ELY_STORAGE"] {
   const values = new Map(objects);
   return {
@@ -148,6 +155,11 @@ function testR2Bucket(
           return Promise.resolve(value);
         },
       });
+    },
+    delete(key: string) {
+      deletes.push(key);
+      values.delete(key);
+      return Promise.resolve();
     },
   };
 }

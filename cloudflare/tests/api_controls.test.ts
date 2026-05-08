@@ -290,6 +290,9 @@ function testR2Bucket(): Env["ELY_STORAGE"] {
         },
       });
     },
+    delete() {
+      return Promise.resolve();
+    },
   };
 }
 

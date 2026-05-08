@@ -15,6 +15,7 @@ export interface ElyR2PutOptions {
 export interface ElyR2Bucket {
   get(key: string): Promise<ElyR2Object | null>;
   put(key: string, value: ArrayBuffer, options?: ElyR2PutOptions): Promise<ElyR2Object>;
+  delete(key: string): Promise<void>;
 }
 
 export interface ElyD1PreparedStatement {
