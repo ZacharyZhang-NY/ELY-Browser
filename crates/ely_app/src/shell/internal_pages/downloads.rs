@@ -1,6 +1,6 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::{DownloadChecksum, DownloadEntry, DownloadSecurity};
+use ely_domain::{DownloadChecksum, DownloadEntry};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div,
@@ -12,6 +12,7 @@ use gpui_component::{
     scroll::ScrollableElement,
 };
 
+use super::super::PendingDownloadFileAction;
 use super::{
     ElyShell,
     download_labels::{
@@ -113,6 +114,9 @@ impl ElyShell {
                     self.download_clear_confirmation && !snapshot.download_entries.is_empty(),
                     |this| this.child(self.render_download_clear_confirmation(snapshot, cx)),
                 )
+                .when_some(self.download_security_confirmation.clone(), |this, pending_action| {
+                    this.child(self.render_download_security_confirmation(&pending_action, cx))
+                })
                 .child(self.render_downloads_list(snapshot, cx)),
         )
     }
@@ -160,6 +164,63 @@ impl ElyShell {
                             .label("Clear")
                             .on_click(cx.listener(|shell, _, _, cx| {
                                 shell.clear_active_profile_downloads(cx);
+                            })),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn render_download_security_confirmation(
+        &mut self,
+        pending_action: &PendingDownloadFileAction,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .rounded_md()
+            .border_1()
+            .border_color(rgb(colors::ERROR))
+            .px_3()
+            .py_2()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_3()
+            .child(
+                div()
+                    .min_w_0()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .text_xs()
+                    .text_color(rgb(colors::ERROR))
+                    .child(IconName::TriangleAlert)
+                    .child(div().truncate().child(format!(
+                        "Confirm {} for {}",
+                        pending_action.action_label(),
+                        pending_action.file_name()
+                    ))),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        Button::new("cancel-security-download")
+                            .ghost()
+                            .xsmall()
+                            .label("Cancel")
+                            .on_click(cx.listener(|shell, _, _, cx| {
+                                shell.cancel_download_security_prompt(cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("confirm-security-download")
+                            .danger()
+                            .xsmall()
+                            .label("Confirm")
+                            .on_click(cx.listener(|shell, _, _, cx| {
+                                shell.confirm_download_security_prompt(cx);
                             })),
                     ),
             )
@@ -258,7 +319,7 @@ impl ElyShell {
                                             .child(download_entry_location_label(entry)),
                                     )
                                     .when(entry.security().requires_prompt(), |this| {
-                                        this.child(render_security_prompt(entry.security()))
+                                        this.child(render_security_prompt(entry))
                                     })
                                     .when_some(entry.checksum(), |this, checksum| {
                                         this.child(render_checksum_label(checksum))
@@ -316,14 +377,22 @@ fn render_download_action_error(message: String) -> AnyElement {
         .into_any_element()
 }
 
-fn render_security_prompt(security: &DownloadSecurity) -> AnyElement {
+fn render_security_prompt(entry: &DownloadEntry) -> AnyElement {
+    let prompt_color =
+        if entry.requires_security_confirmation() { colors::ERROR } else { colors::SUCCESS };
+    let prompt_icon = if entry.requires_security_confirmation() {
+        IconName::TriangleAlert
+    } else {
+        IconName::CircleCheck
+    };
+
     div()
         .flex()
         .items_center()
         .gap_1()
-        .text_color(rgb(colors::ERROR))
-        .child(IconName::TriangleAlert)
-        .child(download_security_label(security))
+        .text_color(rgb(prompt_color))
+        .child(prompt_icon)
+        .child(download_security_label(entry))
         .into_any_element()
 }
 

@@ -1,6 +1,4 @@
-use ely_domain::{
-    DownloadDestination, DownloadEntry, DownloadPolicy, DownloadSecurity, DownloadState,
-};
+use ely_domain::{DownloadDestination, DownloadEntry, DownloadPolicy, DownloadState};
 
 pub(crate) fn download_state_label(state: &DownloadState) -> &'static str {
     match state {
@@ -32,11 +30,11 @@ pub(crate) fn download_entry_location_label(entry: &DownloadEntry) -> String {
     }
 }
 
-pub(crate) fn download_security_label(security: &DownloadSecurity) -> &'static str {
-    match security {
-        DownloadSecurity::Standard => "Standard",
-        DownloadSecurity::DangerousExtension => "Extension prompt required",
+pub(crate) fn download_security_label(entry: &DownloadEntry) -> &'static str {
+    if entry.requires_security_confirmation() {
+        return "Confirm before opening";
     }
+    "Extension confirmed"
 }
 
 fn download_destination_label(destination: &DownloadDestination) -> String {

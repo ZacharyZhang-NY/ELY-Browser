@@ -55,6 +55,7 @@ pub struct DownloadEntry {
     received_bytes: u64,
     total_bytes: Option<u64>,
     checksum: Option<DownloadChecksum>,
+    security_prompt_confirmed: bool,
     started_at: SystemTime,
 }
 
@@ -212,6 +213,7 @@ impl DownloadEntry {
             received_bytes: 0,
             total_bytes,
             checksum: None,
+            security_prompt_confirmed: false,
             started_at,
         })
     }
@@ -268,6 +270,12 @@ impl DownloadEntry {
         Ok(())
     }
 
+    pub fn confirm_security_prompt(&mut self) -> Result<(), DomainError> {
+        self.require_state("confirm security prompt", &[DownloadState::Completed])?;
+        self.security_prompt_confirmed = true;
+        Ok(())
+    }
+
     #[must_use]
     pub fn id(&self) -> &DownloadId {
         &self.id
@@ -301,6 +309,16 @@ impl DownloadEntry {
     #[must_use]
     pub fn security(&self) -> &DownloadSecurity {
         &self.security
+    }
+
+    #[must_use]
+    pub fn requires_security_confirmation(&self) -> bool {
+        self.security.requires_prompt() && !self.security_prompt_confirmed
+    }
+
+    #[must_use]
+    pub fn security_prompt_confirmed(&self) -> bool {
+        self.security_prompt_confirmed
     }
 
     #[must_use]

@@ -1,18 +1,18 @@
+mod downloads;
 mod internal_pages;
 mod render;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{CommandIntent, DownloadId, SpaceId, TabId, UrlText};
+use ely_domain::{CommandIntent, SpaceId, TabId, UrlText};
 use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscription, Window};
 use gpui_component::input::{InputEvent, InputState, SelectAll};
+
+use downloads::PendingDownloadFileAction;
 
 use crate::{
     CloseCurrentTab, FocusAddressBar, FocusCommandMode, OpenDownloads, OpenHistory, OpenNewTab,
     OpenSettings, RestoreClosedTab, SelectNextTab, SelectPreviousTab, ToggleFavoriteTab,
     TogglePinnedTab,
-    services::{
-        download_checksums::DownloadChecksumCalculator, download_files::DownloadFileAction,
-    },
 };
 
 enum ShellState {
@@ -27,6 +27,7 @@ pub struct ElyShell {
     last_intent: Option<CommandIntent>,
     download_action_error: Option<String>,
     download_clear_confirmation: bool,
+    download_security_confirmation: Option<PendingDownloadFileAction>,
     _command_subscription: Subscription,
 }
 
@@ -84,6 +85,7 @@ impl ElyShell {
             last_intent: None,
             download_action_error: None,
             download_clear_confirmation: false,
+            download_security_confirmation: None,
             _command_subscription: command_subscription,
         }
     }
@@ -220,102 +222,6 @@ impl ElyShell {
         {
             cx.notify();
         }
-    }
-
-    fn pause_download(&mut self, download_id: &DownloadId, cx: &mut Context<Self>) {
-        if let ShellState::Ready(core) = &mut self.state
-            && core.pause_download(download_id).is_ok()
-        {
-            cx.notify();
-        }
-    }
-
-    fn resume_download(&mut self, download_id: &DownloadId, cx: &mut Context<Self>) {
-        if let ShellState::Ready(core) = &mut self.state
-            && core.resume_download(download_id).is_ok()
-        {
-            cx.notify();
-        }
-    }
-
-    fn cancel_download(&mut self, download_id: &DownloadId, cx: &mut Context<Self>) {
-        if let ShellState::Ready(core) = &mut self.state
-            && core.cancel_download(download_id).is_ok()
-        {
-            cx.notify();
-        }
-    }
-
-    fn retry_download(&mut self, download_id: &DownloadId, cx: &mut Context<Self>) {
-        if let ShellState::Ready(core) = &mut self.state
-            && core.retry_download(download_id).is_ok()
-        {
-            cx.notify();
-        }
-    }
-
-    fn request_clear_active_profile_downloads(&mut self, cx: &mut Context<Self>) {
-        self.download_clear_confirmation = true;
-        cx.notify();
-    }
-
-    fn cancel_clear_active_profile_downloads(&mut self, cx: &mut Context<Self>) {
-        self.download_clear_confirmation = false;
-        cx.notify();
-    }
-
-    fn clear_active_profile_downloads(&mut self, cx: &mut Context<Self>) {
-        if let ShellState::Ready(core) = &mut self.state {
-            core.clear_downloads_for_active_profile();
-        }
-        self.download_clear_confirmation = false;
-        self.download_action_error = None;
-        cx.notify();
-    }
-
-    fn calculate_download_checksum(&mut self, download_id: &DownloadId, cx: &mut Context<Self>) {
-        let result = match &mut self.state {
-            ShellState::Ready(core) => core
-                .download_target_file_path(download_id)
-                .map_err(|error| error.to_string())
-                .and_then(|path| {
-                    DownloadChecksumCalculator::sha256(&path).map_err(|error| error.to_string())
-                })
-                .and_then(|checksum| {
-                    core.record_download_checksum(download_id, checksum)
-                        .map_err(|error| error.to_string())
-                }),
-            ShellState::StartupError(message) => Err(message.clone()),
-        };
-
-        self.download_action_error = result.err();
-        cx.notify();
-    }
-
-    fn open_download_file(&mut self, download_id: &DownloadId, cx: &mut Context<Self>) {
-        self.run_download_file_action(download_id, DownloadFileAction::Open, cx);
-    }
-
-    fn reveal_download_file(&mut self, download_id: &DownloadId, cx: &mut Context<Self>) {
-        self.run_download_file_action(download_id, DownloadFileAction::Reveal, cx);
-    }
-
-    fn run_download_file_action(
-        &mut self,
-        download_id: &DownloadId,
-        action: DownloadFileAction,
-        cx: &mut Context<Self>,
-    ) {
-        let result = match &self.state {
-            ShellState::Ready(core) => core
-                .download_target_file_path(download_id)
-                .map_err(|error| error.to_string())
-                .and_then(|path| action.run(&path).map_err(|error| error.to_string())),
-            ShellState::StartupError(message) => Err(message.clone()),
-        };
-
-        self.download_action_error = result.err();
-        cx.notify();
     }
 
     fn on_close_current_tab(

@@ -79,6 +79,21 @@ impl BrowserCore {
         Ok(())
     }
 
+    pub fn confirm_download_security_prompt(
+        &mut self,
+        download_id: &DownloadId,
+    ) -> Result<(), CoreError> {
+        self.download_entry_mut(download_id)?.confirm_security_prompt()?;
+        Ok(())
+    }
+
+    pub fn download_requires_security_confirmation(
+        &self,
+        download_id: &DownloadId,
+    ) -> Result<bool, CoreError> {
+        Ok(self.visible_download_entry(download_id)?.requires_security_confirmation())
+    }
+
     pub fn download_target_file_path(
         &self,
         download_id: &DownloadId,

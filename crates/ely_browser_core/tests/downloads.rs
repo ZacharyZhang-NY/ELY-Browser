@@ -171,6 +171,63 @@ fn records_active_profile_download_policy_on_started_entry() -> Result<(), Box<d
     assert_eq!(entry.destination(), policy.destination());
     assert_eq!(entry.target_file_path(), Some(Path::new("/tmp/ely-work-downloads/installer.dmg")));
     assert_eq!(entry.security(), &DownloadSecurity::DangerousExtension);
+    assert!(entry.requires_security_confirmation());
+    assert!(!entry.security_prompt_confirmed());
+    Ok(())
+}
+
+#[test]
+fn confirms_dangerous_download_security_prompt() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let download_id = core.record_download_started(
+        UrlText::parse("https://example.com/installer.dmg")?,
+        "installer.dmg",
+        Some(4096),
+    )?;
+
+    core.complete_download(&download_id, 4096)?;
+    assert!(core.download_requires_security_confirmation(&download_id)?);
+    core.confirm_download_security_prompt(&download_id)?;
+    assert!(!core.download_requires_security_confirmation(&download_id)?);
+    assert!(active_download(&core)?.security_prompt_confirmed());
+    Ok(())
+}
+
+#[test]
+fn rejects_security_prompt_confirmation_before_completion() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let download_id = core.record_download_started(
+        UrlText::parse("https://example.com/installer.dmg")?,
+        "installer.dmg",
+        Some(4096),
+    )?;
+
+    let error = match core.confirm_download_security_prompt(&download_id) {
+        Ok(()) => return Err("security prompt confirmation should require completion".into()),
+        Err(error) => error,
+    };
+
+    assert_eq!(
+        error,
+        CoreError::Domain(DomainError::InvalidDownloadTransition {
+            action: "confirm security prompt",
+            state: "in_progress"
+        })
+    );
+    Ok(())
+}
+
+#[test]
+fn standard_download_skips_security_confirmation() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let download_id = core.record_download_started(
+        UrlText::parse("https://example.com/report.pdf")?,
+        "report.pdf",
+        Some(2048),
+    )?;
+
+    core.complete_download(&download_id, 2048)?;
+    assert!(!core.download_requires_security_confirmation(&download_id)?);
     Ok(())
 }
 
