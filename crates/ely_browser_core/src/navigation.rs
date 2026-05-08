@@ -17,6 +17,8 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
     match url {
         "ely://new-tab" => Some("New Tab"),
         "ely://downloads" => Some("Downloads"),
+        "ely://history" => Some("History"),
+        "ely://settings" => Some("Settings"),
         _ => None,
     }
 }
@@ -69,5 +71,17 @@ pub(crate) fn search_url(query: &str) -> Result<UrlText, CoreError> {
 }
 
 pub(crate) fn downloads_url() -> Result<UrlText, CoreError> {
-    UrlText::parse("ely://downloads").map_err(CoreError::from)
+    internal_page_url("ely://downloads")
+}
+
+pub(crate) fn history_url() -> Result<UrlText, CoreError> {
+    internal_page_url("ely://history")
+}
+
+pub(crate) fn settings_url() -> Result<UrlText, CoreError> {
+    internal_page_url("ely://settings")
+}
+
+fn internal_page_url(value: &str) -> Result<UrlText, CoreError> {
+    UrlText::parse(value).map_err(CoreError::from)
 }

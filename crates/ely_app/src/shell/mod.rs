@@ -6,8 +6,9 @@ use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscriptio
 use gpui_component::input::{InputEvent, InputState, SelectAll};
 
 use crate::{
-    CloseCurrentTab, FocusAddressBar, FocusCommandMode, OpenDownloads, OpenNewTab,
-    RestoreClosedTab, SelectNextTab, SelectPreviousTab, ToggleFavoriteTab, TogglePinnedTab,
+    CloseCurrentTab, FocusAddressBar, FocusCommandMode, OpenDownloads, OpenHistory, OpenNewTab,
+    OpenSettings, RestoreClosedTab, SelectNextTab, SelectPreviousTab, ToggleFavoriteTab,
+    TogglePinnedTab,
 };
 
 enum ShellState {
@@ -80,19 +81,24 @@ impl ElyShell {
     }
 
     fn open_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let ShellState::Ready(core) = &mut self.state
-            && let Ok(url) = UrlText::parse("ely://new-tab")
-        {
-            core.open_tab(url);
-            self.sync_address_input(window, cx);
-            self.focus_address_bar(window, cx);
-            cx.notify();
-        }
+        self.open_internal_tab("ely://new-tab", window, cx);
     }
 
     fn open_downloads(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_internal_tab("ely://downloads", window, cx);
+    }
+
+    fn open_history(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_internal_tab("ely://history", window, cx);
+    }
+
+    fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_internal_tab("ely://settings", window, cx);
+    }
+
+    fn open_internal_tab(&mut self, url_text: &str, window: &mut Window, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state
-            && let Ok(url) = UrlText::parse("ely://downloads")
+            && let Ok(url) = UrlText::parse(url_text)
         {
             core.open_tab(url);
             self.sync_address_input(window, cx);
@@ -242,6 +248,14 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) {
         self.open_downloads(window, cx);
+    }
+
+    fn on_open_history(&mut self, _: &OpenHistory, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_history(window, cx);
+    }
+
+    fn on_open_settings(&mut self, _: &OpenSettings, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_settings(window, cx);
     }
 
     fn on_restore_closed_tab(

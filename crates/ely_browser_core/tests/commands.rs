@@ -67,6 +67,36 @@ fn open_downloads_command_opens_downloads_page() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn open_history_command_opens_history_page() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query(">open-history");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("open-history".to_string())));
+    assert_eq!(active_tab.title(), "History");
+    assert_eq!(active_tab.url().as_str(), "ely://history");
+    assert_eq!(core.snapshot()?.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn open_settings_command_opens_settings_page() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query(">open-settings");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("open-settings".to_string())));
+    assert_eq!(active_tab.title(), "Settings");
+    assert_eq!(active_tab.url().as_str(), "ely://settings");
+    assert_eq!(core.snapshot()?.command_query, "");
+    Ok(())
+}
+
+#[test]
 fn new_space_command_creates_and_selects_named_space() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
 
