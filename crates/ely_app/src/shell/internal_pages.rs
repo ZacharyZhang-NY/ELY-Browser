@@ -1,3 +1,4 @@
+mod download_actions;
 mod download_labels;
 mod downloads;
 
