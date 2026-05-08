@@ -160,7 +160,7 @@ impl BrowserCore {
         let Some(index) = self
             .archived_tabs
             .iter()
-            .rposition(|archived| tab_matches_query(archived.tab(), &normalized_query))
+            .rposition(|archived| self.archived_tab_matches_query(archived, &normalized_query))
         else {
             return Ok(None);
         };
@@ -323,5 +323,29 @@ impl BrowserCore {
             .chain(self.tabs.iter().take(start_index))
             .find(|tab| tab.space_id() == space_id && tab.profile_id() == profile_id)
             .map(|tab| tab.id().clone())
+    }
+
+    fn archived_tab_matches_query(&self, archived: &ArchivedTab, normalized_query: &str) -> bool {
+        let tab = archived.tab();
+        tab_matches_query(tab, normalized_query)
+            || self.archived_tab_space_matches_query(tab, normalized_query)
+            || self.archived_tab_profile_matches_query(tab, normalized_query)
+    }
+
+    fn archived_tab_space_matches_query(&self, tab: &BrowserTab, normalized_query: &str) -> bool {
+        self.spaces.iter().find(|space| space.id() == tab.space_id()).is_some_and(|space| {
+            space.name().to_lowercase().contains(normalized_query)
+                || space.icon().to_lowercase().contains(normalized_query)
+                || space.id().as_str().to_lowercase().contains(normalized_query)
+        })
+    }
+
+    fn archived_tab_profile_matches_query(&self, tab: &BrowserTab, normalized_query: &str) -> bool {
+        self.profiles.iter().find(|profile| profile.id() == tab.profile_id()).is_some_and(
+            |profile| {
+                profile.name().to_lowercase().contains(normalized_query)
+                    || profile.id().as_str().to_lowercase().contains(normalized_query)
+            },
+        )
     }
 }
