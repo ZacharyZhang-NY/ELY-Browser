@@ -8,6 +8,12 @@ pub enum DomainError {
     #[error("invalid URL: {value}")]
     InvalidUrl { value: String },
 
+    #[error("invalid file name: {value}")]
+    InvalidFileName { value: String },
+
+    #[error("invalid download directory: {path}")]
+    InvalidDownloadDirectory { path: String },
+
     #[error("invalid command query")]
     InvalidCommand,
 

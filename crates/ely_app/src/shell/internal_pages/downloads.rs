@@ -1,6 +1,9 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::{DownloadEntry, DownloadState};
+use ely_domain::{
+    DownloadDestination, DownloadEntry, DownloadPolicy, DownloadSecurity, DownloadState,
+};
+use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div, px, rgb,
 };
@@ -42,9 +45,25 @@ impl ElyShell {
                         )
                         .child(
                             div()
-                                .text_xs()
-                                .text_color(rgb(colors::MUTED))
-                                .child(format!("{} downloads", snapshot.download_entries.len())),
+                                .flex()
+                                .flex_col()
+                                .items_end()
+                                .gap_1()
+                                .child(div().text_xs().text_color(rgb(colors::MUTED)).child(
+                                    format!("{} downloads", snapshot.download_entries.len()),
+                                ))
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_1()
+                                        .text_xs()
+                                        .text_color(rgb(colors::MUTED))
+                                        .child(IconName::Folder)
+                                        .child(div().max_w(px(360.0)).truncate().child(
+                                            download_policy_label(&snapshot.active_download_policy),
+                                        )),
+                                ),
                         ),
                 )
                 .child(render_downloads_list(snapshot)),
@@ -120,6 +139,23 @@ fn render_download_row(index: usize, entry: &DownloadEntry) -> AnyElement {
                                 .truncate()
                                 .text_color(rgb(colors::MUTED))
                                 .child(entry.source_url().display_url()),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .text_xs()
+                                .text_color(rgb(colors::MUTED))
+                                .child(
+                                    div()
+                                        .min_w_0()
+                                        .truncate()
+                                        .child(download_destination_label(entry.destination())),
+                                )
+                                .when(entry.security().requires_prompt(), |this| {
+                                    this.child(render_security_prompt(entry.security()))
+                                }),
                         ),
                 ),
         )
@@ -162,6 +198,35 @@ fn download_size_label(entry: &DownloadEntry) -> String {
             format!("{} of {}", format_bytes(entry.received_bytes()), format_bytes(total_bytes))
         }
         None => format_bytes(entry.received_bytes()),
+    }
+}
+
+fn download_policy_label(policy: &DownloadPolicy) -> String {
+    format!("Profile path: {}", download_destination_label(policy.destination()))
+}
+
+fn download_destination_label(destination: &DownloadDestination) -> String {
+    match destination {
+        DownloadDestination::AskEveryTime => "Ask before saving".to_string(),
+        DownloadDestination::FixedDirectory(path) => path.display().to_string(),
+    }
+}
+
+fn render_security_prompt(security: &DownloadSecurity) -> AnyElement {
+    div()
+        .flex()
+        .items_center()
+        .gap_1()
+        .text_color(rgb(colors::ERROR))
+        .child(IconName::TriangleAlert)
+        .child(download_security_label(security))
+        .into_any_element()
+}
+
+fn download_security_label(security: &DownloadSecurity) -> &'static str {
+    match security {
+        DownloadSecurity::Standard => "Standard",
+        DownloadSecurity::DangerousExtension => "Extension prompt required",
     }
 }
 

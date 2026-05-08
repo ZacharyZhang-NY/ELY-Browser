@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use ely_domain::{
-    ArchivedTab, BrowserTab, DomainError, DownloadEntry, HistoryEntry, Profile, ProfileId,
-    ProfileKind, Space, SpaceId, TabId, UrlText,
+    ArchivedTab, BrowserTab, DomainError, DownloadEntry, DownloadPolicy, HistoryEntry, Profile,
+    ProfileId, ProfileKind, Space, SpaceId, TabId, UrlText,
 };
 
 use crate::CoreError;
@@ -45,6 +45,7 @@ pub struct BrowserSnapshot {
     pub active_space_id: SpaceId,
     pub active_space_name: String,
     pub active_profile_name: String,
+    pub active_download_policy: DownloadPolicy,
     pub command_query: String,
 }
 
@@ -191,8 +192,16 @@ impl BrowserCore {
             active_space_id: self.active_space_id.clone(),
             active_space_name: active_space.name().to_string(),
             active_profile_name: active_profile.name().to_string(),
+            active_download_policy: active_profile.download_policy().clone(),
             command_query: self.command_query.clone(),
         })
+    }
+
+    fn active_profile(&self) -> Result<&Profile, CoreError> {
+        self.profiles
+            .iter()
+            .find(|profile| profile.id() == &self.active_profile_id)
+            .ok_or(CoreError::MissingActiveTab)
     }
 
     fn favorites(&self) -> Vec<BrowserTab> {

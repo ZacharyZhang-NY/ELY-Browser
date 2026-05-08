@@ -1,4 +1,4 @@
-use ely_domain::{Profile, ProfileId, ProfileKind, TabId};
+use ely_domain::{DownloadPolicy, Profile, ProfileId, ProfileKind, TabId};
 
 use crate::CoreError;
 
@@ -65,5 +65,20 @@ impl BrowserCore {
         self.tabs.insert(insert_index, tab);
         self.select_tab(&tab_id)?;
         Ok(tab_id)
+    }
+
+    pub fn set_profile_download_policy(
+        &mut self,
+        profile_id: &ProfileId,
+        download_policy: DownloadPolicy,
+    ) -> Result<(), CoreError> {
+        let profile = self
+            .profiles
+            .iter_mut()
+            .find(|profile| profile.id() == profile_id)
+            .ok_or_else(|| CoreError::ProfileNotFound { id: profile_id.clone() })?;
+
+        profile.set_download_policy(download_policy);
+        Ok(())
     }
 }

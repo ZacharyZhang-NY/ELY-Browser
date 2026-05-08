@@ -12,7 +12,9 @@ mod url_text;
 
 pub use archive::{ArchiveSource, ArchivedTab};
 pub use command::{CommandIntent, CommandScope};
-pub use download::{DownloadEntry, DownloadState};
+pub use download::{
+    DownloadDestination, DownloadEntry, DownloadPolicy, DownloadSecurity, DownloadState,
+};
 pub use error::DomainError;
 pub use history::HistoryEntry;
 pub use identifiers::{DownloadId, ProfileId, SpaceId, SplitId, TabId, WebViewId};

@@ -13,10 +13,12 @@ impl BrowserCore {
         file_name: impl Into<String>,
         total_bytes: Option<u64>,
     ) -> Result<DownloadId, CoreError> {
+        let destination = self.active_profile()?.download_policy().destination().clone();
         let entry = DownloadEntry::started(
             self.active_profile_id.clone(),
             source_url,
             file_name,
+            destination,
             total_bytes,
             SystemTime::now(),
         )?;
