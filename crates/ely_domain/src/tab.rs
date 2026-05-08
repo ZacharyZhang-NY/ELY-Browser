@@ -30,6 +30,7 @@ pub struct BrowserTab {
     state: TabState,
     flags: TabFlags,
     split_id: Option<SplitId>,
+    sync_enabled: bool,
     created_at: SystemTime,
     last_active_at: SystemTime,
 }
@@ -54,6 +55,7 @@ impl BrowserTab {
             state: TabState::Ready,
             flags: TabFlags::default(),
             split_id: None,
+            sync_enabled: true,
             created_at,
             last_active_at: created_at,
         }
@@ -149,11 +151,20 @@ impl BrowserTab {
         self.split_id.as_ref()
     }
 
+    #[must_use]
+    pub fn sync_enabled(&self) -> bool {
+        self.sync_enabled
+    }
+
     pub fn set_split_id(&mut self, split_id: SplitId) {
         self.split_id = Some(split_id);
     }
 
     pub fn clear_split_id(&mut self) {
         self.split_id = None;
+    }
+
+    pub fn set_sync_enabled(&mut self, sync_enabled: bool) {
+        self.sync_enabled = sync_enabled;
     }
 }

@@ -63,3 +63,24 @@ fn sync_object_policy_pauses_object_kind() -> Result<(), Box<dyn Error>> {
     assert_eq!(spaces_status.state(), SyncObjectState::LocalOnly);
     Ok(())
 }
+
+#[test]
+fn tab_sync_status_counts_sync_enabled_tabs() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let unsynced_tab_id = core.open_tab(UrlText::parse("https://example.com/local-only")?);
+
+    core.set_tab_sync_enabled(&unsynced_tab_id, false)?;
+    let snapshot = core.snapshot()?;
+    let Some(tabs_status) =
+        snapshot.sync_status.objects().iter().find(|status| status.kind() == SyncObjectKind::Tabs)
+    else {
+        return Err("missing tabs sync status".into());
+    };
+    let Some(unsynced_tab) = snapshot.tabs.iter().find(|tab| tab.id() == &unsynced_tab_id) else {
+        return Err("missing unsynced tab".into());
+    };
+
+    assert!(!unsynced_tab.sync_enabled());
+    assert_eq!(tabs_status.local_count(), 1);
+    Ok(())
+}

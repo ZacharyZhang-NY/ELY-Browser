@@ -243,6 +243,20 @@ impl BrowserCore {
         Ok(next_pinned)
     }
 
+    pub fn set_tab_sync_enabled(
+        &mut self,
+        tab_id: &TabId,
+        sync_enabled: bool,
+    ) -> Result<(), CoreError> {
+        let tab = self
+            .tabs
+            .iter_mut()
+            .find(|tab| tab.id() == tab_id)
+            .ok_or_else(|| CoreError::TabNotFound { id: tab_id.clone() })?;
+        tab.set_sync_enabled(sync_enabled);
+        Ok(())
+    }
+
     pub fn active_tab(&self) -> Result<&BrowserTab, CoreError> {
         self.tabs
             .iter()

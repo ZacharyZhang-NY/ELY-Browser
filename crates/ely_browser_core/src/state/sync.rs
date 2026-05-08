@@ -76,7 +76,7 @@ impl BrowserCore {
             ),
             self.sync_object_status(
                 SyncObjectKind::Tabs,
-                self.tabs.len(),
+                self.sync_enabled_tab_count(),
                 SyncObjectState::LocalOnly,
             ),
             self.sync_object_status(
@@ -125,5 +125,9 @@ impl BrowserCore {
         };
 
         SyncObjectStatus::with_policy(kind, local_count, state, policy)
+    }
+
+    fn sync_enabled_tab_count(&self) -> usize {
+        self.tabs.iter().filter(|tab| tab.sync_enabled()).count()
     }
 }
