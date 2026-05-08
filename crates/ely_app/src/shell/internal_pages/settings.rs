@@ -31,6 +31,12 @@ const SETTINGS_ROUTES: &[SettingsRoute] = &[
         route: "ely://settings/profiles",
     },
     SettingsRoute {
+        icon: IconName::SquareTerminal,
+        title: "Shortcuts",
+        detail: "Registered key bindings and conflict state.",
+        route: "ely://settings/shortcuts",
+    },
+    SettingsRoute {
         icon: IconName::Globe,
         title: "Sync",
         detail: "Local sync state and object scope.",

@@ -1,12 +1,14 @@
 mod services;
 mod shell;
+mod shortcuts;
 
 use gpui::{
-    App, AppContext, Application, Bounds, Focusable, KeyBinding, Menu, MenuItem, SystemMenuType,
-    WindowBounds, WindowOptions, actions, px, size,
+    App, AppContext, Application, Bounds, Focusable, Menu, MenuItem, SystemMenuType, WindowBounds,
+    WindowOptions, actions, px, size,
 };
 use gpui_component_assets::Assets;
 use shell::ElyShell;
+use shortcuts::bind_shortcuts;
 
 actions!(
     ely_app,
@@ -33,35 +35,7 @@ fn main() {
     Application::new().with_assets(Assets).run(|cx: &mut App| {
         gpui_component::init(cx);
         cx.on_action(quit);
-        cx.bind_keys([
-            KeyBinding::new("cmd-t", OpenNewTab, None),
-            KeyBinding::new("ctrl-t", OpenNewTab, None),
-            KeyBinding::new("cmd-\\", SplitRight, None),
-            KeyBinding::new("ctrl-\\", SplitRight, None),
-            KeyBinding::new("cmd-shift-j", OpenDownloads, None),
-            KeyBinding::new("ctrl-shift-j", OpenDownloads, None),
-            KeyBinding::new("cmd-y", OpenHistory, None),
-            KeyBinding::new("ctrl-h", OpenHistory, None),
-            KeyBinding::new("cmd-escape", OpenTaskManager, None),
-            KeyBinding::new("shift-escape", OpenTaskManager, None),
-            KeyBinding::new("cmd-,", OpenSettings, None),
-            KeyBinding::new("ctrl-,", OpenSettings, None),
-            KeyBinding::new("cmd-l", FocusAddressBar, None),
-            KeyBinding::new("ctrl-l", FocusAddressBar, None),
-            KeyBinding::new("cmd-w", CloseCurrentTab, None),
-            KeyBinding::new("ctrl-w", CloseCurrentTab, None),
-            KeyBinding::new("cmd-shift-t", RestoreClosedTab, None),
-            KeyBinding::new("ctrl-shift-t", RestoreClosedTab, None),
-            KeyBinding::new("cmd-shift-f", ToggleFavoriteTab, None),
-            KeyBinding::new("ctrl-shift-f", ToggleFavoriteTab, None),
-            KeyBinding::new("cmd-shift-p", FocusCommandMode, None),
-            KeyBinding::new("ctrl-shift-p", FocusCommandMode, None),
-            KeyBinding::new("cmd-shift-]", SelectNextTab, None),
-            KeyBinding::new("ctrl-tab", SelectNextTab, None),
-            KeyBinding::new("cmd-shift-[", SelectPreviousTab, None),
-            KeyBinding::new("ctrl-shift-tab", SelectPreviousTab, None),
-            KeyBinding::new("cmd-q", Quit, None),
-        ]);
+        bind_shortcuts(cx);
         cx.set_menus(vec![
             Menu {
                 name: "ELY Browser".into(),

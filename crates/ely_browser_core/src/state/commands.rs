@@ -8,7 +8,8 @@ use crate::{
         about_url, archive_idle_days, archive_url, bookmarks_url, downloads_url, history_url,
         move_tab_space_name, new_private_profile_name, new_profile_name, new_space_name,
         plugin_detail_url, plugins_url, reading_list_url, search_url, settings_page_url,
-        settings_url, space_icon, switch_profile_name, sync_status_url, task_manager_url,
+        settings_url, shortcut_settings_url, space_icon, switch_profile_name, sync_status_url,
+        task_manager_url,
     },
 };
 
@@ -179,6 +180,10 @@ impl BrowserCore {
             }
             "settings" | "open-settings" | "open settings" => {
                 self.open_tab(settings_url()?);
+                Ok(true)
+            }
+            "shortcuts" | "open-shortcuts" | "open shortcuts" => {
+                self.open_tab(shortcut_settings_url()?);
                 Ok(true)
             }
             "sync" | "open-sync-status" | "open sync status" => {

@@ -142,6 +142,21 @@ fn open_settings_command_opens_settings_page() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn open_shortcuts_command_opens_shortcuts_page() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query(">open-shortcuts");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("open-shortcuts".to_string())));
+    assert_eq!(active_tab.title(), "Shortcut Settings");
+    assert_eq!(active_tab.url().as_str(), "ely://settings/shortcuts");
+    assert_eq!(core.snapshot()?.command_query, "");
+    Ok(())
+}
+
+#[test]
 fn open_sync_status_command_opens_sync_status_page() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
 

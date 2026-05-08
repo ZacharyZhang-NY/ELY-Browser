@@ -28,6 +28,7 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
         "ely://about" => Some("About ELY Browser"),
         "ely://settings" => Some("Settings"),
         "ely://settings/sidebar-tabs" => Some("Sidebar & Tabs Settings"),
+        "ely://settings/shortcuts" => Some("Shortcut Settings"),
         "ely://settings/plugins" => Some("Plugin Settings"),
         "ely://settings/profiles" => Some("Profile Settings"),
         "ely://settings/sync" => Some("Sync Settings"),
@@ -137,6 +138,10 @@ pub(crate) fn settings_url() -> Result<UrlText, CoreError> {
     internal_page_url("ely://settings")
 }
 
+pub(crate) fn shortcut_settings_url() -> Result<UrlText, CoreError> {
+    internal_page_url("ely://settings/shortcuts")
+}
+
 pub(crate) fn sync_status_url() -> Result<UrlText, CoreError> {
     internal_page_url("ely://sync/status")
 }
@@ -156,6 +161,9 @@ fn settings_page_route(query: &str) -> Option<&'static str> {
         "about" | "about ely browser" => Some("ely://about"),
         "sidebar" | "tabs" | "sidebar tabs" | "sidebar & tabs" => {
             Some("ely://settings/sidebar-tabs")
+        }
+        "shortcut" | "shortcuts" | "keyboard" | "keyboard shortcuts" => {
+            Some("ely://settings/shortcuts")
         }
         "sync" | "sync settings" => Some("ely://settings/sync"),
         "profile" | "profiles" | "profile settings" | "profiles settings" => {
