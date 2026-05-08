@@ -139,6 +139,67 @@ describe("worker routes", () => {
     assert.equal(response.status, 500);
     assert.deepEqual(await response.json(), { error: "release_manifest_invalid" });
   });
+
+  it("returns release signature from the release manifest cache", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://elydora.test/api/releases/signature?platform=macos&architecture=aarch64",
+      ),
+      testEnv(null, releaseManifestDocument()),
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(
+      response.headers.get("cache-control"),
+      "public, max-age=120, stale-while-revalidate=60",
+    );
+    assert.deepEqual(await response.json(), {
+      version: 1,
+      channel: "stable",
+      generated_at: "2026-05-08T00:00:00.000Z",
+      platform: "macos",
+      architecture: "aarch64",
+      release_version: "0.1.0",
+      sha256: RELEASE_SHA256,
+      signature: RELEASE_SIGNATURE,
+    });
+  });
+
+  it("rejects invalid release signature query parameters", async () => {
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/releases/signature?platform=macos"),
+      testEnv(null, releaseManifestDocument()),
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: "invalid_release_signature_query" });
+  });
+
+  it("returns not found for unmatched release signature targets", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://elydora.test/api/releases/signature?platform=macos&architecture=x86_64",
+      ),
+      testEnv(null, releaseManifestDocument()),
+    );
+
+    assert.equal(response.status, 404);
+    assert.deepEqual(await response.json(), { error: "release_signature_not_found" });
+  });
+
+  it("rejects unsupported methods on release signature", async () => {
+    const response = await handleRequest(
+      new Request(
+        "https://elydora.test/api/releases/signature?platform=macos&architecture=aarch64",
+        { method: "POST" },
+      ),
+      testEnv(null, releaseManifestDocument()),
+    );
+
+    assert.equal(response.status, 405);
+    assert.equal(response.headers.get("allow"), "GET");
+    assert.deepEqual(await response.json(), { error: "method_not_allowed" });
+  });
 });
 
 function testEnv(publicSigningKeys: string | null, releaseManifest?: string | null): Env {

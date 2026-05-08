@@ -1,8 +1,11 @@
 import type { Env } from "./bindings.js";
 import {
   ReleaseManifestSchemaError,
+  ReleaseSignatureQueryError,
   parseReleaseManifestDocument,
+  parseReleaseSignatureQuery,
   releaseManifestKvKey,
+  releaseSignatureDocument,
 } from "./release_manifests.js";
 import {
   SigningKeysSchemaError,
@@ -23,6 +26,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   }
   if (url.pathname === "/api/releases/manifest") {
     return handleReleaseManifest(request, env);
+  }
+  if (url.pathname === "/api/releases/signature") {
+    return handleReleaseSignature(request, env, url);
   }
 
   return jsonResponse({ error: "not_found" }, 404);
@@ -65,6 +71,48 @@ async function handleReleaseManifest(request: Request, env: Env): Promise<Respon
 
   try {
     const document = parseReleaseManifestDocument(value);
+    return jsonResponse(document, 200, {
+      "Cache-Control": "public, max-age=120, stale-while-revalidate=60",
+    });
+  } catch (error) {
+    if (error instanceof ReleaseManifestSchemaError) {
+      return jsonResponse({ error: "release_manifest_invalid" }, 500);
+    }
+    throw error;
+  }
+}
+
+async function handleReleaseSignature(
+  request: Request,
+  env: Env,
+  url: URL,
+): Promise<Response> {
+  if (request.method !== "GET") {
+    return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET" });
+  }
+
+  let query;
+  try {
+    query = parseReleaseSignatureQuery(url.searchParams);
+  } catch (error) {
+    if (error instanceof ReleaseSignatureQueryError) {
+      return jsonResponse({ error: "invalid_release_signature_query" }, 400);
+    }
+    throw error;
+  }
+
+  const kvKey = releaseManifestKvKey(env.ELY_ENVIRONMENT);
+  const value = await env.ELY_KV.get(kvKey);
+  if (value === null) {
+    return jsonResponse({ error: "release_manifest_unavailable" }, 503);
+  }
+
+  try {
+    const manifest = parseReleaseManifestDocument(value);
+    const document = releaseSignatureDocument(manifest, query);
+    if (document === null) {
+      return jsonResponse({ error: "release_signature_not_found" }, 404);
+    }
     return jsonResponse(document, 200, {
       "Cache-Control": "public, max-age=120, stale-while-revalidate=60",
     });

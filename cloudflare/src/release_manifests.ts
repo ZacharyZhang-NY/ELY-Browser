@@ -25,10 +25,34 @@ export interface ReleaseManifestDocument {
   artifacts: ReleaseArtifact[];
 }
 
+export interface ReleaseSignatureQuery {
+  platform: string;
+  architecture: string;
+  version?: string;
+}
+
+export interface ReleaseSignatureDocument {
+  version: 1;
+  channel: string;
+  generated_at: string;
+  platform: string;
+  architecture: string;
+  release_version: string;
+  sha256: string;
+  signature: string;
+}
+
 export class ReleaseManifestSchemaError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ReleaseManifestSchemaError";
+  }
+}
+
+export class ReleaseSignatureQueryError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReleaseSignatureQueryError";
   }
 }
 
@@ -58,6 +82,53 @@ export function parseReleaseManifestDocument(value: string): ReleaseManifestDocu
     channel: releaseChannel(stringField(parsed, "channel")),
     generated_at: isoTimestamp(stringField(parsed, "generated_at"), "generated_at"),
     artifacts: parseArtifacts(parsed.artifacts),
+  };
+}
+
+export function parseReleaseSignatureQuery(
+  searchParams: URLSearchParams,
+): ReleaseSignatureQuery {
+  const allowedFields = new Set(["platform", "architecture", "version"]);
+  for (const field of searchParams.keys()) {
+    if (!allowedFields.has(field)) {
+      throw new ReleaseSignatureQueryError(`unknown release signature query field: ${field}`);
+    }
+  }
+
+  const platform = requiredQueryField(searchParams, "platform");
+  const architecture = requiredQueryField(searchParams, "architecture");
+  const version = optionalQueryField(searchParams, "version");
+  return {
+    platform: releasePlatform(platform),
+    architecture: releaseArchitecture(architecture),
+    ...(version === undefined ? {} : { version: releaseVersion(version) }),
+  };
+}
+
+export function releaseSignatureDocument(
+  manifest: ReleaseManifestDocument,
+  query: ReleaseSignatureQuery,
+): ReleaseSignatureDocument | null {
+  const artifact = manifest.artifacts.find((value) => {
+    const targetMatches =
+      value.platform === query.platform && value.architecture === query.architecture;
+    const versionMatches = query.version === undefined || value.version === query.version;
+    return targetMatches && versionMatches;
+  });
+
+  if (artifact === undefined) {
+    return null;
+  }
+
+  return {
+    version: 1,
+    channel: manifest.channel,
+    generated_at: manifest.generated_at,
+    platform: artifact.platform,
+    architecture: artifact.architecture,
+    release_version: artifact.version,
+    sha256: artifact.sha256,
+    signature: artifact.signature,
   };
 }
 
@@ -197,4 +268,25 @@ function assertOnlyFields(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function requiredQueryField(searchParams: URLSearchParams, field: string): string {
+  const values = searchParams.getAll(field);
+  const [value] = values;
+  if (values.length !== 1 || value === undefined || value.trim() === "") {
+    throw new ReleaseSignatureQueryError(`${field} query parameter is required`);
+  }
+  return value.trim();
+}
+
+function optionalQueryField(searchParams: URLSearchParams, field: string): string | undefined {
+  const values = searchParams.getAll(field);
+  if (values.length === 0) {
+    return undefined;
+  }
+  const [value] = values;
+  if (values.length !== 1 || value === undefined || value.trim() === "") {
+    throw new ReleaseSignatureQueryError(`${field} query parameter is invalid`);
+  }
+  return value.trim();
 }

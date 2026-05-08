@@ -3,8 +3,11 @@ import { describe, it } from "node:test";
 
 import {
   ReleaseManifestSchemaError,
+  ReleaseSignatureQueryError,
   parseReleaseManifestDocument,
+  parseReleaseSignatureQuery,
   releaseManifestKvKey,
+  releaseSignatureDocument,
 } from "../src/release_manifests.js";
 
 const SHA256 = "a".repeat(64);
@@ -70,6 +73,31 @@ describe("release manifests", () => {
           validManifest({ artifacts: [{ ...validArtifact(), signature: "abcd" }] }),
         ),
       ReleaseManifestSchemaError,
+    );
+  });
+
+  it("extracts signature details for a release target", () => {
+    const manifest = parseReleaseManifestDocument(validManifest());
+    const query = parseReleaseSignatureQuery(
+      new URLSearchParams("platform=macos&architecture=aarch64&version=0.1.0"),
+    );
+
+    assert.deepEqual(releaseSignatureDocument(manifest, query), {
+      version: 1,
+      channel: "stable",
+      generated_at: "2026-05-08T00:00:00.000Z",
+      platform: "macos",
+      architecture: "aarch64",
+      release_version: "0.1.0",
+      sha256: SHA256,
+      signature: SIGNATURE,
+    });
+  });
+
+  it("rejects malformed release signature queries", () => {
+    assert.throws(
+      () => parseReleaseSignatureQuery(new URLSearchParams("platform=macos")),
+      ReleaseSignatureQueryError,
     );
   });
 });
