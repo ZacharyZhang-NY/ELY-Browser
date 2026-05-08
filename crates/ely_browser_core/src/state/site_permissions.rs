@@ -29,6 +29,11 @@ impl BrowserCore {
         self.revoke_site_permission_for_profile(&profile_id, origin, feature)
     }
 
+    pub fn clear_active_profile_site_permissions(&mut self) -> Result<usize, CoreError> {
+        let profile_id = self.active_profile_id.clone();
+        self.clear_site_permissions_for_profile(&profile_id)
+    }
+
     pub fn active_tab_site_settings_url(&self) -> Result<Option<UrlText>, CoreError> {
         let active_tab = self.active_tab()?;
         let Some(origin) = SiteOrigin::from_url(active_tab.url())? else {
@@ -104,6 +109,35 @@ impl BrowserCore {
             SitePermissionAuditAction::Revoked,
         );
         Ok(())
+    }
+
+    fn clear_site_permissions_for_profile(
+        &mut self,
+        profile_id: &ProfileId,
+    ) -> Result<usize, CoreError> {
+        self.require_profile(profile_id)?;
+        let mut revoked_permissions = Vec::new();
+
+        self.site_permissions.retain(|entry| {
+            if entry.profile_id() == profile_id {
+                revoked_permissions.push((entry.origin().clone(), entry.feature()));
+                false
+            } else {
+                true
+            }
+        });
+
+        let revoked_count = revoked_permissions.len();
+        for (origin, feature) in revoked_permissions {
+            self.record_site_permission_audit_event(
+                profile_id.clone(),
+                origin,
+                feature,
+                SitePermissionAuditAction::Revoked,
+            );
+        }
+
+        Ok(revoked_count)
     }
 
     fn require_profile(&self, profile_id: &ProfileId) -> Result<(), CoreError> {

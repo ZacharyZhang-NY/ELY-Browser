@@ -25,6 +25,12 @@ impl ElyShell {
                 .gap_5()
                 .child(render_site_permissions_header(snapshot))
                 .child(render_site_permissions_summary(snapshot))
+                .child(render_site_permissions_controls(
+                    snapshot,
+                    self.site_permissions_clear_confirmation.as_ref()
+                        == Some(&snapshot.active_profile_id),
+                    cx,
+                ))
                 .child(render_site_permissions_list(snapshot, cx)),
         )
     }
@@ -98,6 +104,102 @@ fn site_permission_metric(label: &'static str, value: usize) -> AnyElement {
         .child(div().text_xs().text_color(rgb(colors::MUTED)).child(label))
         .child(
             div().text_sm().font_semibold().text_color(rgb(colors::INK)).child(value.to_string()),
+        )
+        .into_any_element()
+}
+
+fn render_site_permissions_controls(
+    snapshot: &BrowserSnapshot,
+    confirming_clear: bool,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    if snapshot.site_permissions.is_empty() {
+        return div().into_any_element();
+    }
+
+    if confirming_clear {
+        return render_clear_confirmation(cx);
+    }
+
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap_4()
+        .child(
+            div()
+                .text_sm()
+                .text_color(rgb(colors::MUTED))
+                .child("Clear all configured permissions for this Profile."),
+        )
+        .child(
+            Button::new("request-clear-site-permissions")
+                .danger()
+                .xsmall()
+                .label("Clear Permissions")
+                .tooltip("Clear Profile Permissions")
+                .on_click(cx.listener(|shell, _, _, cx| {
+                    shell.request_clear_site_permissions_confirmation(cx);
+                })),
+        )
+        .into_any_element()
+}
+
+fn render_clear_confirmation(cx: &mut Context<ElyShell>) -> AnyElement {
+    div()
+        .rounded_md()
+        .border_1()
+        .border_color(rgb(colors::ERROR))
+        .bg(rgb(colors::CANVAS_SOFT))
+        .px_4()
+        .py_3()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap_4()
+        .child(
+            div()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    div()
+                        .text_sm()
+                        .font_semibold()
+                        .text_color(rgb(colors::INK))
+                        .child("Confirm permission clearing"),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(rgb(colors::MUTED))
+                        .child("Each cleared permission records a local audit event."),
+                ),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    Button::new("cancel-clear-site-permissions")
+                        .ghost()
+                        .xsmall()
+                        .label("Cancel")
+                        .on_click(cx.listener(|shell, _, _, cx| {
+                            shell.cancel_clear_site_permissions_confirmation(cx);
+                        })),
+                )
+                .child(
+                    Button::new("confirm-clear-site-permissions")
+                        .danger()
+                        .xsmall()
+                        .label("Clear")
+                        .on_click(cx.listener(|shell, _, _, cx| {
+                            shell.clear_active_profile_site_permissions(cx);
+                        })),
+                ),
         )
         .into_any_element()
 }

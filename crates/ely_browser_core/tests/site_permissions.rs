@@ -91,6 +91,56 @@ fn revoke_site_permission_removes_entry_and_records_audit() -> Result<(), Box<dy
 }
 
 #[test]
+fn clear_site_permissions_removes_only_active_profile_entries() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let default_profile_id = core.snapshot()?.active_profile_id;
+    let personal_profile_id = core.create_profile("Personal", 0xf54e00, ProfileKind::Standard)?;
+    let default_origin = SiteOrigin::parse("https://example.com")?;
+    let personal_origin = SiteOrigin::parse("https://personal.example")?;
+
+    core.set_site_permission(
+        personal_origin,
+        SitePermissionFeature::Notifications,
+        SitePermissionDecision::DenyAlways,
+    )?;
+    core.select_profile(&default_profile_id)?;
+    core.set_site_permission(
+        default_origin,
+        SitePermissionFeature::Camera,
+        SitePermissionDecision::AllowAlways,
+    )?;
+
+    let removed_count = core.clear_active_profile_site_permissions()?;
+    let default_snapshot = core.snapshot()?;
+    assert_eq!(removed_count, 1);
+    assert!(default_snapshot.site_permissions.is_empty());
+    assert_eq!(default_snapshot.site_permission_audit_events.len(), 2);
+    assert_eq!(
+        default_snapshot.site_permission_audit_events[1].action(),
+        &SitePermissionAuditAction::Revoked,
+    );
+
+    core.select_profile(&personal_profile_id)?;
+    let personal_snapshot = core.snapshot()?;
+    assert_eq!(personal_snapshot.site_permissions.len(), 1);
+    assert_eq!(personal_snapshot.site_permission_audit_events.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn clear_site_permissions_without_entries_is_empty_change() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    let removed_count = core.clear_active_profile_site_permissions()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(removed_count, 0);
+    assert!(snapshot.site_permissions.is_empty());
+    assert!(snapshot.site_permission_audit_events.is_empty());
+    Ok(())
+}
+
+#[test]
 fn site_settings_command_opens_active_origin() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     core.open_tab(UrlText::parse("https://example.com/path")?);
