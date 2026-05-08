@@ -8,12 +8,16 @@ use std::{
 
 use ely_domain::{ProfileId, TabId, UrlText};
 use ely_servo_host::{
-    KeyboardTextRequest, MouseClickRequest, NavigationRequest, RenderedFrame, ScrollRequest,
+    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest, ScrollRequest,
     ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, TouchTapRequest,
     WebViewSnapshot, WebViewState,
 };
-use serde::Serialize;
 use thiserror::Error;
+
+#[path = "ely_servo_sidecar/report.rs"]
+mod report;
+
+use report::{SnapshotInputChanges, SnapshotReport};
 
 const WAIT_ITERATIONS: usize = 5_000;
 const WAIT_INTERVAL: Duration = Duration::from_millis(2);
@@ -38,6 +42,7 @@ struct SnapshotArgs {
     scroll_x: i32,
     scroll_y: i32,
     click_point: Option<ClickPoint>,
+    drag_points: Option<DragPoints>,
     touch_point: Option<ClickPoint>,
     typed_text: Option<String>,
 }
@@ -46,6 +51,12 @@ struct SnapshotArgs {
 struct ClickPoint {
     x: u32,
     y: u32,
+}
+
+#[derive(Clone, Copy)]
+struct DragPoints {
+    from: ClickPoint,
+    to: ClickPoint,
 }
 
 #[derive(Debug, Error)]
@@ -78,6 +89,9 @@ enum SidecarError {
 
     #[error("--click-x and --click-y must be provided together")]
     IncompleteClickPoint,
+
+    #[error("--drag-from-x, --drag-from-y, --drag-to-x, and --drag-to-y must be provided together")]
+    IncompleteDragPoints,
 
     #[error("--touch-x and --touch-y must be provided together")]
     IncompleteTouchPoint,
@@ -124,6 +138,10 @@ fn parse_snapshot_args(
     let mut scroll_y = 0;
     let mut click_x = None;
     let mut click_y = None;
+    let mut drag_from_x = None;
+    let mut drag_from_y = None;
+    let mut drag_to_x = None;
+    let mut drag_to_y = None;
     let mut touch_x = None;
     let mut touch_y = None;
     let mut typed_text = None;
@@ -160,6 +178,30 @@ fn parse_snapshot_args(
                     next_argument(&mut args, "--click-y")?,
                 )?)
             }
+            "--drag-from-x" => {
+                drag_from_x = Some(parse_click_coordinate(
+                    "--drag-from-x",
+                    next_argument(&mut args, "--drag-from-x")?,
+                )?)
+            }
+            "--drag-from-y" => {
+                drag_from_y = Some(parse_click_coordinate(
+                    "--drag-from-y",
+                    next_argument(&mut args, "--drag-from-y")?,
+                )?)
+            }
+            "--drag-to-x" => {
+                drag_to_x = Some(parse_click_coordinate(
+                    "--drag-to-x",
+                    next_argument(&mut args, "--drag-to-x")?,
+                )?)
+            }
+            "--drag-to-y" => {
+                drag_to_y = Some(parse_click_coordinate(
+                    "--drag-to-y",
+                    next_argument(&mut args, "--drag-to-y")?,
+                )?)
+            }
             "--touch-x" => {
                 touch_x = Some(parse_click_coordinate(
                     "--touch-x",
@@ -182,6 +224,14 @@ fn parse_snapshot_args(
         (None, None) => None,
         _ => return Err(SidecarError::IncompleteClickPoint),
     };
+    let drag_points = match (drag_from_x, drag_from_y, drag_to_x, drag_to_y) {
+        (Some(from_x), Some(from_y), Some(to_x), Some(to_y)) => Some(DragPoints {
+            from: ClickPoint { x: from_x, y: from_y },
+            to: ClickPoint { x: to_x, y: to_y },
+        }),
+        (None, None, None, None) => None,
+        _ => return Err(SidecarError::IncompleteDragPoints),
+    };
     let touch_point = match (touch_x, touch_y) {
         (Some(x), Some(y)) => Some(ClickPoint { x, y }),
         (None, None) => None,
@@ -196,6 +246,7 @@ fn parse_snapshot_args(
         scroll_x,
         scroll_y,
         click_point,
+        drag_points,
         touch_point,
         typed_text,
     })
@@ -254,6 +305,8 @@ fn run_snapshot(args: SnapshotArgs) -> Result<(), SidecarError> {
         apply_scroll_if_requested(&mut host, &webview_id, &args, snapshot)?;
     let (snapshot, click_changed_frame) =
         apply_click_if_requested(&mut host, &webview_id, &args, snapshot)?;
+    let (snapshot, drag_changed_frame) =
+        apply_drag_if_requested(&mut host, &webview_id, &args, snapshot)?;
     let (snapshot, touch_changed_frame) =
         apply_touch_if_requested(&mut host, &webview_id, &args, snapshot)?;
     let (snapshot, text_changed_frame) =
@@ -267,10 +320,13 @@ fn run_snapshot(args: SnapshotArgs) -> Result<(), SidecarError> {
             &args,
             &snapshot,
             &frame,
-            scroll_changed_frame,
-            click_changed_frame,
-            touch_changed_frame,
-            text_changed_frame,
+            SnapshotInputChanges {
+                scroll: scroll_changed_frame,
+                click: click_changed_frame,
+                drag: drag_changed_frame,
+                touch: touch_changed_frame,
+                text: text_changed_frame,
+            },
         ),
     )?;
     Ok(())
@@ -310,6 +366,27 @@ fn apply_click_if_requested(
         webview_id: webview_id.clone(),
         x: click_point.x,
         y: click_point.y,
+    })?;
+    wait_for_changed_or_settled_frame(host, webview_id, previous_frame_hash)
+}
+
+fn apply_drag_if_requested(
+    host: &mut SoftwareServoHost,
+    webview_id: &ely_domain::WebViewId,
+    args: &SnapshotArgs,
+    snapshot: WebViewSnapshot,
+) -> Result<(WebViewSnapshot, bool), SidecarError> {
+    let Some(drag_points) = args.drag_points else {
+        return Ok((snapshot, false));
+    };
+
+    let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
+    host.drag(MouseDragRequest {
+        webview_id: webview_id.clone(),
+        from_x: drag_points.from.x,
+        from_y: drag_points.from.y,
+        to_x: drag_points.to.x,
+        to_y: drag_points.to.y,
     })?;
     wait_for_changed_or_settled_frame(host, webview_id, previous_frame_hash)
 }
@@ -415,79 +492,4 @@ fn wait_for_changed_or_settled_frame(
     }
 
     Ok((latest_snapshot, false))
-}
-
-#[derive(Serialize)]
-struct SnapshotReport {
-    requested_url: String,
-    loaded_url: Option<String>,
-    title: Option<String>,
-    rgba_path: String,
-    state: &'static str,
-    width: u32,
-    height: u32,
-    rgba_byte_count: usize,
-    opaque_pixel_count: u64,
-    non_white_pixel_count: u64,
-    content_pixel_count: u64,
-    sample_hash: u64,
-    scroll_x: i32,
-    scroll_y: i32,
-    scroll_changed_frame: bool,
-    click_x: Option<u32>,
-    click_y: Option<u32>,
-    click_changed_frame: bool,
-    touch_x: Option<u32>,
-    touch_y: Option<u32>,
-    touch_changed_frame: bool,
-    typed_text_byte_count: usize,
-    text_changed_frame: bool,
-}
-
-impl SnapshotReport {
-    fn new(
-        args: &SnapshotArgs,
-        snapshot: &WebViewSnapshot,
-        frame: &RenderedFrame,
-        scroll_changed_frame: bool,
-        click_changed_frame: bool,
-        touch_changed_frame: bool,
-        text_changed_frame: bool,
-    ) -> Self {
-        Self {
-            requested_url: args.url.as_str().to_string(),
-            loaded_url: snapshot.url().map(str::to_string),
-            title: snapshot.title().map(str::to_string),
-            rgba_path: args.rgba_out.display().to_string(),
-            state: state_label(snapshot.state()),
-            width: frame.width(),
-            height: frame.height(),
-            rgba_byte_count: frame.rgba_bytes().len(),
-            opaque_pixel_count: frame.opaque_pixel_count(),
-            non_white_pixel_count: frame.non_white_pixel_count(),
-            content_pixel_count: frame.content_pixel_count(),
-            sample_hash: frame.sample_hash(),
-            scroll_x: args.scroll_x,
-            scroll_y: args.scroll_y,
-            scroll_changed_frame,
-            click_x: args.click_point.map(|point| point.x),
-            click_y: args.click_point.map(|point| point.y),
-            click_changed_frame,
-            touch_x: args.touch_point.map(|point| point.x),
-            touch_y: args.touch_point.map(|point| point.y),
-            touch_changed_frame,
-            typed_text_byte_count: args.typed_text.as_ref().map_or(0, String::len),
-            text_changed_frame,
-        }
-    }
-}
-
-fn state_label(state: &WebViewState) -> &'static str {
-    match state {
-        WebViewState::Created => "created",
-        WebViewState::Loading => "loading",
-        WebViewState::Complete => "complete",
-        WebViewState::Sleeping => "sleeping",
-        WebViewState::Crashed => "crashed",
-    }
 }

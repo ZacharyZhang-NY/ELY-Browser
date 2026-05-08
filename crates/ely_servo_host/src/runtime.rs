@@ -12,17 +12,16 @@ use dpi::PhysicalSize;
 use ely_domain::{ProfileId, TabId, WebViewId};
 use servo::{
     DeviceIntPoint, DeviceIntRect, DeviceIntSize, DevicePoint, DeviceVector2D, EventLoopWaker,
-    InputEvent, Key, KeyState, KeyboardEvent, LoadStatus, Location, Modifiers, MouseButton,
-    MouseButtonAction, MouseButtonEvent, MouseMoveEvent, RenderingContext, Scroll, Servo,
-    ServoBuilder, TouchEvent, TouchEventType, TouchId, WebView, WebViewBuilder, WebViewDelegate,
-    WebViewPoint, WebViewVector,
+    LoadStatus, RenderingContext, Scroll, Servo, ServoBuilder, WebView, WebViewBuilder,
+    WebViewDelegate, WebViewPoint, WebViewVector,
 };
 use url::Url;
 
 use crate::{
-    KeyboardTextRequest, MouseClickRequest, NavigationRequest, PermissionDecision,
-    PermissionRequest, RenderedFrame, ScrollRequest, ServoHost, ServoHostError, TouchTapRequest,
-    WebViewSnapshot, WebViewState, keyboard::keyboard_code_for_character,
+    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest,
+    PermissionDecision, PermissionRequest, RenderedFrame, ScrollRequest, ServoHost, ServoHostError,
+    TouchTapRequest, WebViewSnapshot, WebViewState,
+    runtime_input::{send_keyboard_text, send_mouse_click, send_mouse_drag, send_touch_tap},
 };
 
 static SERVO_RUNTIME_STARTED: AtomicBool = AtomicBool::new(false);
@@ -172,18 +171,23 @@ impl ServoHost for SoftwareServoHost {
             .get(&request.webview_id)
             .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
 
-        let point = WebViewPoint::Device(DevicePoint::new(request.x as f32, request.y as f32));
-        webview.webview.notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(point)));
-        webview.webview.notify_input_event(InputEvent::MouseButton(MouseButtonEvent::new(
-            MouseButtonAction::Down,
-            MouseButton::Left,
-            point,
-        )));
-        webview.webview.notify_input_event(InputEvent::MouseButton(MouseButtonEvent::new(
-            MouseButtonAction::Up,
-            MouseButton::Left,
-            point,
-        )));
+        send_mouse_click(&webview.webview, request.x, request.y);
+        Ok(())
+    }
+
+    fn drag(&mut self, request: MouseDragRequest) -> Result<(), ServoHostError> {
+        let webview = self
+            .webviews
+            .get(&request.webview_id)
+            .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
+
+        send_mouse_drag(
+            &webview.webview,
+            request.from_x,
+            request.from_y,
+            request.to_x,
+            request.to_y,
+        );
         Ok(())
     }
 
@@ -193,13 +197,7 @@ impl ServoHost for SoftwareServoHost {
             .get(&request.webview_id)
             .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
 
-        let point = WebViewPoint::Device(DevicePoint::new(request.x as f32, request.y as f32));
-        let touch_id = TouchId(1);
-        for event_type in [TouchEventType::Down, TouchEventType::Up] {
-            webview.webview.notify_input_event(InputEvent::Touch(TouchEvent::new(
-                event_type, touch_id, point,
-            )));
-        }
+        send_touch_tap(&webview.webview, request.x, request.y);
         Ok(())
     }
 
@@ -209,32 +207,7 @@ impl ServoHost for SoftwareServoHost {
             .get(&request.webview_id)
             .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
 
-        for character in request.text.chars() {
-            let key = Key::Character(character.to_string());
-            let code = keyboard_code_for_character(character);
-            webview.webview.notify_input_event(InputEvent::Keyboard(
-                KeyboardEvent::new_without_event(
-                    KeyState::Down,
-                    key.clone(),
-                    code,
-                    Location::Standard,
-                    Modifiers::empty(),
-                    false,
-                    false,
-                ),
-            ));
-            webview.webview.notify_input_event(InputEvent::Keyboard(
-                KeyboardEvent::new_without_event(
-                    KeyState::Up,
-                    key,
-                    code,
-                    Location::Standard,
-                    Modifiers::empty(),
-                    false,
-                    false,
-                ),
-            ));
-        }
+        send_keyboard_text(&webview.webview, &request.text);
         Ok(())
     }
 

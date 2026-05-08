@@ -228,6 +228,15 @@ pub struct MouseClickRequest {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MouseDragRequest {
+    pub webview_id: WebViewId,
+    pub from_x: u32,
+    pub from_y: u32,
+    pub to_x: u32,
+    pub to_y: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TouchTapRequest {
     pub webview_id: WebViewId,
     pub x: u32,
@@ -267,6 +276,8 @@ pub trait ServoHost {
     fn scroll(&mut self, request: ScrollRequest) -> Result<(), ServoHostError>;
 
     fn click(&mut self, request: MouseClickRequest) -> Result<(), ServoHostError>;
+
+    fn drag(&mut self, request: MouseDragRequest) -> Result<(), ServoHostError>;
 
     fn touch_tap(&mut self, request: TouchTapRequest) -> Result<(), ServoHostError>;
 
