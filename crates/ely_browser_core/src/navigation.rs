@@ -28,6 +28,7 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
         "ely://about" => Some("About ELY Browser"),
         "ely://settings" => Some("Settings"),
         "ely://settings/sidebar-tabs" => Some("Sidebar & Tabs Settings"),
+        "ely://settings/spaces" => Some("Space Settings"),
         "ely://settings/shortcuts" => Some("Shortcut Settings"),
         "ely://settings/plugins" => Some("Plugin Settings"),
         "ely://settings/profiles" => Some("Profile Settings"),
@@ -162,6 +163,7 @@ fn settings_page_route(query: &str) -> Option<&'static str> {
         "sidebar" | "tabs" | "sidebar tabs" | "sidebar & tabs" => {
             Some("ely://settings/sidebar-tabs")
         }
+        "space" | "spaces" | "space settings" | "spaces settings" => Some("ely://settings/spaces"),
         "shortcut" | "shortcuts" | "keyboard" | "keyboard shortcuts" => {
             Some("ely://settings/shortcuts")
         }

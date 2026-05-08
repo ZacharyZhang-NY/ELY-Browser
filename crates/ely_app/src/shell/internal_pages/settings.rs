@@ -25,6 +25,12 @@ const SETTINGS_ROUTES: &[SettingsRoute] = &[
         route: "ely://settings/sidebar-tabs",
     },
     SettingsRoute {
+        icon: IconName::GalleryVerticalEnd,
+        title: "Spaces",
+        detail: "Space identity, accent color, and active context.",
+        route: "ely://settings/spaces",
+    },
+    SettingsRoute {
         icon: IconName::CircleUser,
         title: "Profiles",
         detail: "Profile identity, color, and download policy.",
