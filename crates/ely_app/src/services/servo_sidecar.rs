@@ -74,6 +74,10 @@ impl ServoSidecarClient {
             .arg(request.width.to_string())
             .arg("--height")
             .arg(request.height.to_string())
+            .arg("--scroll-x")
+            .arg(request.scroll_x.to_string())
+            .arg("--scroll-y")
+            .arg(request.scroll_y.to_string())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -103,12 +107,21 @@ pub struct SidecarSnapshotRequest {
     url: UrlText,
     width: u32,
     height: u32,
+    scroll_x: i32,
+    scroll_y: i32,
 }
 
 impl SidecarSnapshotRequest {
     #[must_use]
     pub fn new(url: UrlText, width: u32, height: u32) -> Self {
-        Self { url, width, height }
+        Self { url, width, height, scroll_x: 0, scroll_y: 0 }
+    }
+
+    #[must_use]
+    pub fn with_scroll_offset(mut self, scroll_x: i32, scroll_y: i32) -> Self {
+        self.scroll_x = scroll_x;
+        self.scroll_y = scroll_y;
+        self
     }
 }
 

@@ -214,6 +214,13 @@ pub struct NavigationRequest {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScrollRequest {
+    pub webview_id: WebViewId,
+    pub delta_x: i32,
+    pub delta_y: i32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PermissionRequest {
     pub webview_id: WebViewId,
     pub tab_id: TabId,
@@ -236,6 +243,8 @@ pub trait ServoHost {
     ) -> Result<WebViewId, ServoHostError>;
 
     fn navigate(&mut self, request: NavigationRequest) -> Result<(), ServoHostError>;
+
+    fn scroll(&mut self, request: ScrollRequest) -> Result<(), ServoHostError>;
 
     fn set_permission(
         &mut self,

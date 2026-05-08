@@ -8,7 +8,7 @@ use std::{
 
 use ely_domain::{ProfileId, TabId, UrlText};
 use ely_servo_host::{
-    NavigationRequest, RenderedFrame, ServoHost, ServoHostError, ServoSurfaceSize,
+    NavigationRequest, RenderedFrame, ScrollRequest, ServoHost, ServoHostError, ServoSurfaceSize,
     SoftwareServoHost, WebViewSnapshot, WebViewState,
 };
 use serde::Serialize;
@@ -17,6 +17,7 @@ use thiserror::Error;
 const WAIT_ITERATIONS: usize = 5_000;
 const WAIT_INTERVAL: Duration = Duration::from_millis(2);
 const RENDER_TIMEOUT: Duration = Duration::from_secs(20);
+const SCROLL_SETTLE_TIMEOUT: Duration = Duration::from_millis(700);
 
 fn main() -> Result<(), SidecarError> {
     match parse_command(env::args())? {
@@ -33,6 +34,8 @@ struct SnapshotArgs {
     rgba_out: PathBuf,
     width: u32,
     height: u32,
+    scroll_x: i32,
+    scroll_y: i32,
 }
 
 #[derive(Debug, Error)]
@@ -52,7 +55,7 @@ enum SidecarError {
     #[error("unknown argument: {value}")]
     UnknownArgument { value: String },
 
-    #[error("{name} must be a positive integer: {value}")]
+    #[error("{name} must be an integer: {value}")]
     InvalidInteger {
         name: &'static str,
         value: String,
@@ -101,6 +104,8 @@ fn parse_snapshot_args(
     let mut rgba_out = None;
     let mut width = None;
     let mut height = None;
+    let mut scroll_x = 0;
+    let mut scroll_y = 0;
 
     while let Some(name) = args.next() {
         match name.as_str() {
@@ -114,6 +119,14 @@ fn parse_snapshot_args(
             "--height" => {
                 height = Some(parse_dimension("--height", next_argument(&mut args, "--height")?)?)
             }
+            "--scroll-x" => {
+                scroll_x =
+                    parse_scroll_delta("--scroll-x", next_argument(&mut args, "--scroll-x")?)?
+            }
+            "--scroll-y" => {
+                scroll_y =
+                    parse_scroll_delta("--scroll-y", next_argument(&mut args, "--scroll-y")?)?
+            }
             _ => return Err(SidecarError::UnknownArgument { value: name }),
         }
     }
@@ -123,6 +136,8 @@ fn parse_snapshot_args(
         rgba_out: rgba_out.ok_or(SidecarError::MissingRequiredArgument { name: "--rgba-out" })?,
         width: width.ok_or(SidecarError::MissingRequiredArgument { name: "--width" })?,
         height: height.ok_or(SidecarError::MissingRequiredArgument { name: "--height" })?,
+        scroll_x,
+        scroll_y,
     })
 }
 
@@ -146,6 +161,10 @@ fn parse_dimension(name: &'static str, value: String) -> Result<u32, SidecarErro
     Ok(dimension)
 }
 
+fn parse_scroll_delta(name: &'static str, value: String) -> Result<i32, SidecarError> {
+    value.parse::<i32>().map_err(|source| SidecarError::InvalidInteger { name, value, source })
+}
+
 fn parse_output_path(value: String) -> Result<PathBuf, SidecarError> {
     if value.trim().is_empty() {
         return Err(SidecarError::EmptyRgbaOutputPath);
@@ -167,14 +186,43 @@ fn run_snapshot(args: SnapshotArgs) -> Result<(), SidecarError> {
     })?;
 
     let snapshot = wait_for_frame(&mut host, &webview_id, args.url.as_str())?;
+    let (snapshot, scroll_changed_frame) =
+        apply_scroll_if_requested(&mut host, &webview_id, &args, snapshot)?;
     let frame = host.last_rendered_frame()?;
     std::fs::write(&args.rgba_out, frame.rgba_bytes())?;
 
     serde_json::to_writer(
         std::io::stdout().lock(),
-        &SnapshotReport::new(args.url.as_str(), &args.rgba_out, &snapshot, &frame),
+        &SnapshotReport::new(
+            args.url.as_str(),
+            &args.rgba_out,
+            &snapshot,
+            &frame,
+            args.scroll_x,
+            args.scroll_y,
+            scroll_changed_frame,
+        ),
     )?;
     Ok(())
+}
+
+fn apply_scroll_if_requested(
+    host: &mut SoftwareServoHost,
+    webview_id: &ely_domain::WebViewId,
+    args: &SnapshotArgs,
+    snapshot: WebViewSnapshot,
+) -> Result<(WebViewSnapshot, bool), SidecarError> {
+    if args.scroll_x == 0 && args.scroll_y == 0 {
+        return Ok((snapshot, false));
+    }
+
+    let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
+    host.scroll(ScrollRequest {
+        webview_id: webview_id.clone(),
+        delta_x: args.scroll_x,
+        delta_y: args.scroll_y,
+    })?;
+    wait_for_changed_or_settled_frame(host, webview_id, previous_frame_hash)
 }
 
 fn wait_for_frame(
@@ -210,6 +258,39 @@ fn wait_for_frame(
     })
 }
 
+fn wait_for_changed_or_settled_frame(
+    host: &mut SoftwareServoHost,
+    webview_id: &ely_domain::WebViewId,
+    previous_frame_hash: u64,
+) -> Result<(WebViewSnapshot, bool), SidecarError> {
+    let started_at = Instant::now();
+    let mut latest_snapshot = host.snapshot(webview_id)?;
+
+    for _ in 0..WAIT_ITERATIONS {
+        if started_at.elapsed() >= SCROLL_SETTLE_TIMEOUT {
+            break;
+        }
+
+        host.tick();
+        let snapshot = host.snapshot(webview_id)?;
+        if snapshot.has_pending_frame() {
+            host.paint(webview_id)?;
+        }
+
+        latest_snapshot = host.snapshot(webview_id)?;
+        let changed_frame = host.last_rendered_frame().is_ok_and(|frame| {
+            frame.non_white_pixel_count() > 0 && frame.sample_hash() != previous_frame_hash
+        });
+        if changed_frame {
+            return Ok((latest_snapshot, true));
+        }
+
+        thread::sleep(WAIT_INTERVAL);
+    }
+
+    Ok((latest_snapshot, false))
+}
+
 #[derive(Serialize)]
 struct SnapshotReport {
     requested_url: String,
@@ -224,6 +305,9 @@ struct SnapshotReport {
     non_white_pixel_count: u64,
     content_pixel_count: u64,
     sample_hash: u64,
+    scroll_x: i32,
+    scroll_y: i32,
+    scroll_changed_frame: bool,
 }
 
 impl SnapshotReport {
@@ -232,6 +316,9 @@ impl SnapshotReport {
         rgba_path: &std::path::Path,
         snapshot: &WebViewSnapshot,
         frame: &RenderedFrame,
+        scroll_x: i32,
+        scroll_y: i32,
+        scroll_changed_frame: bool,
     ) -> Self {
         Self {
             requested_url: requested_url.to_string(),
@@ -246,6 +333,9 @@ impl SnapshotReport {
             non_white_pixel_count: frame.non_white_pixel_count(),
             content_pixel_count: frame.content_pixel_count(),
             sample_hash: frame.sample_hash(),
+            scroll_x,
+            scroll_y,
+            scroll_changed_frame,
         }
     }
 }

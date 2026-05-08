@@ -4,7 +4,8 @@ use std::{error::Error, thread, time::Duration};
 
 use ely_domain::{ProfileId, TabId, UrlText};
 use ely_servo_host::{
-    NavigationRequest, ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, WebViewState,
+    NavigationRequest, ScrollRequest, ServoHost, ServoHostError, ServoSurfaceSize,
+    SoftwareServoHost, WebViewState,
 };
 
 const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
@@ -68,6 +69,13 @@ fn manages_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
         assert_rendered_frame_has_content(&host, site.url, MINIMUM_CONTENT_PIXELS)?;
         previous_frame_hash = Some(host.last_rendered_frame()?.sample_hash());
     }
+
+    let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
+    host.scroll(ScrollRequest { webview_id: webview_id.clone(), delta_x: 0, delta_y: 480 })?;
+    let snapshot = wait_for_rendered_webview(&mut host, &webview_id, Some(previous_frame_hash))?;
+    assert_eq!(snapshot.state(), &WebViewState::Complete, "snapshot: {snapshot:?}");
+    assert_rendered_frame_has_content(&host, "https://servo.org scrolled", MINIMUM_CONTENT_PIXELS)?;
+    assert_ne!(host.last_rendered_frame()?.sample_hash(), previous_frame_hash);
 
     assert!(matches!(
         SoftwareServoHost::new(ServoSurfaceSize::new(640, 480)),

@@ -11,14 +11,15 @@ use std::{
 use dpi::PhysicalSize;
 use ely_domain::{ProfileId, TabId, WebViewId};
 use servo::{
-    DeviceIntPoint, DeviceIntRect, DeviceIntSize, EventLoopWaker, LoadStatus, RenderingContext,
-    Servo, ServoBuilder, WebView, WebViewBuilder, WebViewDelegate,
+    DeviceIntPoint, DeviceIntRect, DeviceIntSize, DevicePoint, DeviceVector2D, EventLoopWaker,
+    LoadStatus, RenderingContext, Scroll, Servo, ServoBuilder, WebView, WebViewBuilder,
+    WebViewDelegate, WebViewPoint, WebViewVector,
 };
 use url::Url;
 
 use crate::{
-    NavigationRequest, PermissionDecision, PermissionRequest, RenderedFrame, ServoHost,
-    ServoHostError, WebViewSnapshot, WebViewState,
+    NavigationRequest, PermissionDecision, PermissionRequest, RenderedFrame, ScrollRequest,
+    ServoHost, ServoHostError, WebViewSnapshot, WebViewState,
 };
 
 static SERVO_RUNTIME_STARTED: AtomicBool = AtomicBool::new(false);
@@ -139,6 +140,26 @@ impl ServoHost for SoftwareServoHost {
             webview.webview.load(url);
         }
         webview.requested_url = Some(requested_url);
+        Ok(())
+    }
+
+    fn scroll(&mut self, request: ScrollRequest) -> Result<(), ServoHostError> {
+        let webview = self
+            .webviews
+            .get(&request.webview_id)
+            .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
+
+        if request.delta_x == 0 && request.delta_y == 0 {
+            return Ok(());
+        }
+
+        webview.webview.notify_scroll_event(
+            Scroll::Delta(WebViewVector::Device(DeviceVector2D::new(
+                request.delta_x as f32,
+                request.delta_y as f32,
+            ))),
+            WebViewPoint::Device(DevicePoint::zero()),
+        );
         Ok(())
     }
 

@@ -15,7 +15,10 @@ mod splits;
 mod tab_groups;
 mod tab_lifecycle;
 mod web_surface;
+mod web_surface_frame;
+mod web_surface_geometry;
 mod web_surface_image;
+mod web_surface_view;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
 use ely_domain::{
