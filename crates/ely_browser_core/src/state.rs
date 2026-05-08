@@ -300,6 +300,14 @@ impl BrowserCore {
         Ok(())
     }
 
+    pub fn set_active_space_default_profile(
+        &mut self,
+        profile_id: &ProfileId,
+    ) -> Result<(), CoreError> {
+        let active_space_id = self.active_space_id.clone();
+        self.set_space_default_profile(&active_space_id, profile_id)
+    }
+
     pub fn set_space_sidebar_width(
         &mut self,
         space_id: &SpaceId,

@@ -234,6 +234,22 @@ fn space_default_profile_updates_with_profile_validation() -> Result<(), Box<dyn
 }
 
 #[test]
+fn active_space_default_profile_updates_current_space() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let work_space_id = core.snapshot()?.active_space_id;
+    let research_profile_id = core.create_profile("Research", 0x9fc9a2, ProfileKind::Standard)?;
+
+    core.set_active_space_default_profile(&research_profile_id)?;
+    let snapshot = core.snapshot()?;
+    let Some(work_space) = snapshot.spaces.iter().find(|space| space.id() == &work_space_id) else {
+        return Err("missing work space".into());
+    };
+
+    assert_eq!(work_space.default_profile_id(), &research_profile_id);
+    Ok(())
+}
+
+#[test]
 fn space_settings_refresh_updated_at() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let work_space_id = core.snapshot()?.active_space_id;

@@ -62,6 +62,8 @@ fn render_profiles_header(snapshot: &BrowserSnapshot) -> AnyElement {
 }
 
 fn render_profile_list(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
+    let active_space = snapshot.spaces.iter().find(|space| space.id() == &snapshot.active_space_id);
+
     div()
         .flex_1()
         .min_h_0()
@@ -71,7 +73,13 @@ fn render_profile_list(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -
         .border_t_1()
         .border_color(rgb(colors::HAIRLINE))
         .children(snapshot.profiles.iter().enumerate().map(|(index, profile)| {
-            render_profile_row(index, profile, profile.id() == &snapshot.active_profile_id, cx)
+            render_profile_row(
+                index,
+                profile,
+                profile.id() == &snapshot.active_profile_id,
+                active_space.is_some_and(|space| space.default_profile_id() == profile.id()),
+                cx,
+            )
         }))
         .into_any_element()
 }
@@ -80,9 +88,11 @@ fn render_profile_row(
     index: usize,
     profile: &Profile,
     active: bool,
+    default_for_active_space: bool,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let profile_id = profile.id().clone();
+    let default_profile_id = profile.id().clone();
     let sync_profile_id = profile.id().clone();
     let sync_policy = profile.sync_policy();
 
@@ -130,6 +140,12 @@ fn render_profile_row(
                 .flex()
                 .items_center()
                 .gap_3()
+                .child(render_profile_default_action(
+                    index,
+                    default_profile_id,
+                    default_for_active_space,
+                    cx,
+                ))
                 .child(render_profile_sync_action(index, sync_profile_id, sync_policy, cx))
                 .child(render_profile_action(index, profile_id, active, cx)),
         )
@@ -144,6 +160,33 @@ fn profile_color_swatch(color_hex: u32) -> AnyElement {
         .border_1()
         .border_color(rgb(colors::HAIRLINE_STRONG))
         .bg(rgb(color_hex))
+        .into_any_element()
+}
+
+fn render_profile_default_action(
+    index: usize,
+    profile_id: ProfileId,
+    default_for_active_space: bool,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    if default_for_active_space {
+        return div()
+            .text_xs()
+            .font_semibold()
+            .text_color(rgb(colors::SUCCESS))
+            .child("Default")
+            .into_any_element();
+    }
+
+    Button::new(("default-profile", index))
+        .ghost()
+        .xsmall()
+        .icon(IconName::CircleCheck)
+        .label("Set Default")
+        .tooltip("Use for New Tabs in Active Space")
+        .on_click(cx.listener(move |shell, _, _, cx| {
+            shell.set_active_space_default_profile(&profile_id, cx);
+        }))
         .into_any_element()
 }
 
