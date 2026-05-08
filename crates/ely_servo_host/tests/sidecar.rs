@@ -27,6 +27,10 @@ const SERVO_SCROLL_OFFSET: ScrollOffset = ScrollOffset { x: 0, y: 480 };
 const SERVO_CLICK_URL: &str = "data:text/html,%3C!doctype%20html%3E%3Ctitle%3EClick%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23f7f7f7%3B%7Dbutton%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A220px%3Bheight%3A90px%3Bfont%3A28px%20sans-serif%3Bbackground%3A%23ffffff%3Bcolor%3A%23111111%3B%7D%3C%2Fstyle%3E%3Cbutton%20onclick%3D%22document.body.style.background%3D%27%230039ff%27%3Bdocument.title%3D%27Clicked%27%3Bthis.textContent%3D%27Clicked%27%3B%22%3ETap%3C%2Fbutton%3E";
 const SERVO_CLICK_SIZE: FrameSize = FrameSize { width: 640, height: 480 };
 const SERVO_CLICK_POINT: ClickPoint = ClickPoint { x: 160, y: 120 };
+const SERVO_TEXT_URL: &str = "data:text/html,%3C!doctype%20html%3E%3Ctitle%3EText%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23f7f7f7%3Bfont%3A28px%20sans-serif%3B%7Dinput%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A260px%3Bheight%3A70px%3Bfont%3A28px%20sans-serif%3B%7Doutput%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A180px%3Bfont%3A32px%20sans-serif%3B%7D%3C%2Fstyle%3E%3Cinput%20id%3Dq%20autofocus%20oninput%3D%22document.body.style.background%3D%27%230039ff%27%3Bdocument.getElementById%28%27out%27%29.textContent%3Dthis.value%3B%22%3E%3Coutput%20id%3Dout%3Eempty%3C%2Foutput%3E";
+const SERVO_TEXT_SIZE: FrameSize = FrameSize { width: 640, height: 480 };
+const SERVO_TEXT_POINT: ClickPoint = ClickPoint { x: 160, y: 120 };
+const SERVO_TEXT_VALUE: &str = "ely42";
 
 struct PrdSiteCompatibilityCase {
     url: &'static str,
@@ -112,6 +116,24 @@ fn sidecar_clicks_page_with_servo_mouse_input() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[test]
+fn sidecar_types_text_with_servo_keyboard_input() -> Result<(), Box<dyn Error>> {
+    let initial_report = snapshot_text_probe(None)?;
+    let typed_report = snapshot_text_probe(Some(SERVO_TEXT_VALUE))?;
+
+    assert_eq!(
+        report_field_as_u64(&typed_report, "typed_text_byte_count")?,
+        SERVO_TEXT_VALUE.len() as u64
+    );
+    assert!(report_field_as_bool(&typed_report, "text_changed_frame")?);
+    assert_ne!(
+        report_field_as_u64(&initial_report, "sample_hash")?,
+        report_field_as_u64(&typed_report, "sample_hash")?
+    );
+
+    Ok(())
+}
+
 fn snapshot_prd_site(
     case: &PrdSiteCompatibilityCase,
     size: FrameSize,
@@ -135,7 +157,7 @@ fn snapshot_prd_site(
         std::fs::remove_file(&output_path)?;
     }
 
-    let output = run_sidecar_snapshot(case.url, &output_path, size, scroll_offset, None)?;
+    let output = run_sidecar_snapshot(case.url, &output_path, size, scroll_offset, None, None)?;
 
     assert!(
         output.status.success(),
@@ -192,6 +214,7 @@ fn snapshot_click_probe(
         SERVO_CLICK_SIZE,
         ScrollOffset::ZERO,
         click_point,
+        None,
     )?;
 
     assert!(
@@ -215,12 +238,56 @@ fn snapshot_click_probe(
     Ok(report)
 }
 
+fn snapshot_text_probe(typed_text: Option<&str>) -> Result<serde_json::Value, Box<dyn Error>> {
+    let output_path = std::env::temp_dir().join(format!(
+        "ely-servo-sidecar-{}-text-{}x{}.rgba",
+        std::process::id(),
+        SERVO_TEXT_SIZE.width,
+        SERVO_TEXT_SIZE.height
+    ));
+
+    if output_path.exists() {
+        std::fs::remove_file(&output_path)?;
+    }
+
+    let click_point = typed_text.map(|_| SERVO_TEXT_POINT);
+    let output = run_sidecar_snapshot(
+        SERVO_TEXT_URL,
+        &output_path,
+        SERVO_TEXT_SIZE,
+        ScrollOffset::ZERO,
+        click_point,
+        typed_text,
+    )?;
+
+    assert!(
+        output.status.success(),
+        "text probe\nstatus: {:?}\nstdout: {}\nstderr: {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    assert_eq!(report_field_as_u64(&report, "width")?, SERVO_TEXT_SIZE.width);
+    assert_eq!(report_field_as_u64(&report, "height")?, SERVO_TEXT_SIZE.height);
+    assert!(report_field_as_u64(&report, "content_pixel_count")? > 0);
+    assert_eq!(
+        std::fs::metadata(&output_path)?.len(),
+        SERVO_TEXT_SIZE.width * SERVO_TEXT_SIZE.height * 4
+    );
+
+    std::fs::remove_file(&output_path)?;
+    Ok(report)
+}
+
 fn run_sidecar_snapshot(
     site_url: &str,
     output_path: &std::path::Path,
     size: FrameSize,
     scroll_offset: ScrollOffset,
     click_point: Option<ClickPoint>,
+    typed_text: Option<&str>,
 ) -> Result<Output, Box<dyn Error>> {
     let mut command = Command::new(env!("CARGO_BIN_EXE_ely_servo_sidecar"));
     command
@@ -242,6 +309,9 @@ fn run_sidecar_snapshot(
     if let Some(click_point) = click_point {
         command.arg("--click-x").arg(click_point.x.to_string());
         command.arg("--click-y").arg(click_point.y.to_string());
+    }
+    if let Some(typed_text) = typed_text {
+        command.arg("--type-text").arg(typed_text);
     }
 
     let mut child = command.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;

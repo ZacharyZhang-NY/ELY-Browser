@@ -8,8 +8,8 @@ use std::{
 
 use ely_domain::{ProfileId, TabId, UrlText};
 use ely_servo_host::{
-    MouseClickRequest, NavigationRequest, RenderedFrame, ScrollRequest, ServoHost, ServoHostError,
-    ServoSurfaceSize, SoftwareServoHost, WebViewSnapshot, WebViewState,
+    KeyboardTextRequest, MouseClickRequest, NavigationRequest, RenderedFrame, ScrollRequest,
+    ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, WebViewSnapshot, WebViewState,
 };
 use serde::Serialize;
 use thiserror::Error;
@@ -37,6 +37,7 @@ struct SnapshotArgs {
     scroll_x: i32,
     scroll_y: i32,
     click_point: Option<ClickPoint>,
+    typed_text: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -118,6 +119,7 @@ fn parse_snapshot_args(
     let mut scroll_y = 0;
     let mut click_x = None;
     let mut click_y = None;
+    let mut typed_text = None;
 
     while let Some(name) = args.next() {
         match name.as_str() {
@@ -151,6 +153,7 @@ fn parse_snapshot_args(
                     next_argument(&mut args, "--click-y")?,
                 )?)
             }
+            "--type-text" => typed_text = Some(next_argument(&mut args, "--type-text")?),
             _ => return Err(SidecarError::UnknownArgument { value: name }),
         }
     }
@@ -169,6 +172,7 @@ fn parse_snapshot_args(
         scroll_x,
         scroll_y,
         click_point,
+        typed_text,
     })
 }
 
@@ -225,12 +229,21 @@ fn run_snapshot(args: SnapshotArgs) -> Result<(), SidecarError> {
         apply_scroll_if_requested(&mut host, &webview_id, &args, snapshot)?;
     let (snapshot, click_changed_frame) =
         apply_click_if_requested(&mut host, &webview_id, &args, snapshot)?;
+    let (snapshot, text_changed_frame) =
+        apply_text_if_requested(&mut host, &webview_id, &args, snapshot)?;
     let frame = host.last_rendered_frame()?;
     std::fs::write(&args.rgba_out, frame.rgba_bytes())?;
 
     serde_json::to_writer(
         std::io::stdout().lock(),
-        &SnapshotReport::new(&args, &snapshot, &frame, scroll_changed_frame, click_changed_frame),
+        &SnapshotReport::new(
+            &args,
+            &snapshot,
+            &frame,
+            scroll_changed_frame,
+            click_changed_frame,
+            text_changed_frame,
+        ),
     )?;
     Ok(())
 }
@@ -269,6 +282,24 @@ fn apply_click_if_requested(
         webview_id: webview_id.clone(),
         x: click_point.x,
         y: click_point.y,
+    })?;
+    wait_for_changed_or_settled_frame(host, webview_id, previous_frame_hash)
+}
+
+fn apply_text_if_requested(
+    host: &mut SoftwareServoHost,
+    webview_id: &ely_domain::WebViewId,
+    args: &SnapshotArgs,
+    snapshot: WebViewSnapshot,
+) -> Result<(WebViewSnapshot, bool), SidecarError> {
+    let Some(typed_text) = args.typed_text.as_ref() else {
+        return Ok((snapshot, false));
+    };
+
+    let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
+    host.type_text(KeyboardTextRequest {
+        webview_id: webview_id.clone(),
+        text: typed_text.clone(),
     })?;
     wait_for_changed_or_settled_frame(host, webview_id, previous_frame_hash)
 }
@@ -359,6 +390,8 @@ struct SnapshotReport {
     click_x: Option<u32>,
     click_y: Option<u32>,
     click_changed_frame: bool,
+    typed_text_byte_count: usize,
+    text_changed_frame: bool,
 }
 
 impl SnapshotReport {
@@ -368,6 +401,7 @@ impl SnapshotReport {
         frame: &RenderedFrame,
         scroll_changed_frame: bool,
         click_changed_frame: bool,
+        text_changed_frame: bool,
     ) -> Self {
         Self {
             requested_url: args.url.as_str().to_string(),
@@ -388,6 +422,8 @@ impl SnapshotReport {
             click_x: args.click_point.map(|point| point.x),
             click_y: args.click_point.map(|point| point.y),
             click_changed_frame,
+            typed_text_byte_count: args.typed_text.as_ref().map_or(0, String::len),
+            text_changed_frame,
         }
     }
 }

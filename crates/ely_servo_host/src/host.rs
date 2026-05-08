@@ -228,6 +228,12 @@ pub struct MouseClickRequest {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KeyboardTextRequest {
+    pub webview_id: WebViewId,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PermissionRequest {
     pub webview_id: WebViewId,
     pub tab_id: TabId,
@@ -254,6 +260,8 @@ pub trait ServoHost {
     fn scroll(&mut self, request: ScrollRequest) -> Result<(), ServoHostError>;
 
     fn click(&mut self, request: MouseClickRequest) -> Result<(), ServoHostError>;
+
+    fn type_text(&mut self, request: KeyboardTextRequest) -> Result<(), ServoHostError>;
 
     fn set_permission(
         &mut self,

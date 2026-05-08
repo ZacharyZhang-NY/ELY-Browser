@@ -12,15 +12,16 @@ use dpi::PhysicalSize;
 use ely_domain::{ProfileId, TabId, WebViewId};
 use servo::{
     DeviceIntPoint, DeviceIntRect, DeviceIntSize, DevicePoint, DeviceVector2D, EventLoopWaker,
-    InputEvent, LoadStatus, MouseButton, MouseButtonAction, MouseButtonEvent, MouseMoveEvent,
-    RenderingContext, Scroll, Servo, ServoBuilder, WebView, WebViewBuilder, WebViewDelegate,
-    WebViewPoint, WebViewVector,
+    InputEvent, Key, KeyState, KeyboardEvent, LoadStatus, Location, Modifiers, MouseButton,
+    MouseButtonAction, MouseButtonEvent, MouseMoveEvent, RenderingContext, Scroll, Servo,
+    ServoBuilder, WebView, WebViewBuilder, WebViewDelegate, WebViewPoint, WebViewVector,
 };
 use url::Url;
 
 use crate::{
-    MouseClickRequest, NavigationRequest, PermissionDecision, PermissionRequest, RenderedFrame,
-    ScrollRequest, ServoHost, ServoHostError, WebViewSnapshot, WebViewState,
+    KeyboardTextRequest, MouseClickRequest, NavigationRequest, PermissionDecision,
+    PermissionRequest, RenderedFrame, ScrollRequest, ServoHost, ServoHostError, WebViewSnapshot,
+    WebViewState, keyboard::keyboard_code_for_character,
 };
 
 static SERVO_RUNTIME_STARTED: AtomicBool = AtomicBool::new(false);
@@ -182,6 +183,41 @@ impl ServoHost for SoftwareServoHost {
             MouseButton::Left,
             point,
         )));
+        Ok(())
+    }
+
+    fn type_text(&mut self, request: KeyboardTextRequest) -> Result<(), ServoHostError> {
+        let webview = self
+            .webviews
+            .get(&request.webview_id)
+            .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
+
+        for character in request.text.chars() {
+            let key = Key::Character(character.to_string());
+            let code = keyboard_code_for_character(character);
+            webview.webview.notify_input_event(InputEvent::Keyboard(
+                KeyboardEvent::new_without_event(
+                    KeyState::Down,
+                    key.clone(),
+                    code,
+                    Location::Standard,
+                    Modifiers::empty(),
+                    false,
+                    false,
+                ),
+            ));
+            webview.webview.notify_input_event(InputEvent::Keyboard(
+                KeyboardEvent::new_without_event(
+                    KeyState::Up,
+                    key,
+                    code,
+                    Location::Standard,
+                    Modifiers::empty(),
+                    false,
+                    false,
+                ),
+            ));
+        }
         Ok(())
     }
 
