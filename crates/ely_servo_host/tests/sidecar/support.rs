@@ -12,6 +12,7 @@ const SIDECAR_TIMEOUT: Duration = Duration::from_secs(45);
 const SIDECAR_POLL_INTERVAL: Duration = Duration::from_millis(20);
 const SIDECAR_COMMAND_COOLDOWN: Duration = Duration::from_millis(750);
 const SIDECAR_RETRY_INTERVAL: Duration = Duration::from_millis(250);
+const SIDECAR_MAX_ATTEMPTS: usize = 3;
 static SIDECAR_COMMAND_LOCK: Mutex<()> = Mutex::new(());
 pub(super) const PRD_SITE_COMPATIBILITY_CASES: &[PrdSiteCompatibilityCase] = &[
     PrdSiteCompatibilityCase { url: "https://github.com", title_fragment: "GitHub" },
@@ -385,16 +386,16 @@ fn run_sidecar_snapshot_with_retry(
     scroll_offset: ScrollOffset,
     input: SnapshotInput<'_>,
 ) -> Result<Output, Box<dyn Error>> {
-    for attempt in 0..2 {
+    for attempt in 0..SIDECAR_MAX_ATTEMPTS {
         if output_path.exists() {
             std::fs::remove_file(output_path)?;
         }
 
         match run_sidecar_snapshot(site_url, output_path, size, scroll_offset, input) {
             Ok(output) if output.status.success() => return Ok(output),
-            Ok(output) if attempt == 1 => return Ok(output),
+            Ok(output) if attempt + 1 == SIDECAR_MAX_ATTEMPTS => return Ok(output),
             Ok(_output) => {}
-            Err(error) if attempt == 1 => return Err(error),
+            Err(error) if attempt + 1 == SIDECAR_MAX_ATTEMPTS => return Err(error),
             Err(_error) => {}
         }
 
