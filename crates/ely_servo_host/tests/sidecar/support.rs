@@ -14,6 +14,7 @@ const SIDECAR_COMMAND_COOLDOWN: Duration = Duration::from_millis(750);
 const SIDECAR_RETRY_INTERVAL: Duration = Duration::from_millis(250);
 static SIDECAR_COMMAND_LOCK: Mutex<()> = Mutex::new(());
 pub(super) const PRD_SITE_COMPATIBILITY_CASES: &[PrdSiteCompatibilityCase] = &[
+    PrdSiteCompatibilityCase { url: "https://github.com", title_fragment: "GitHub" },
     PrdSiteCompatibilityCase { url: "https://example.com", title_fragment: "Example Domain" },
     PrdSiteCompatibilityCase { url: "https://servo.org/", title_fragment: "Servo" },
 ];

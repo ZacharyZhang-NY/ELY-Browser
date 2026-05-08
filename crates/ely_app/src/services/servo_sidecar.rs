@@ -10,27 +10,27 @@ use ely_domain::UrlText;
 use serde::Deserialize;
 use thiserror::Error;
 
-const SIDECAR_COMMAND_TIMEOUT: Duration = Duration::from_secs(35);
+const SIDECAR_BINARY_TIMEOUT: Duration = Duration::from_secs(35);
+const SIDECAR_CARGO_TIMEOUT: Duration = Duration::from_secs(180);
 const SIDECAR_POLL_INTERVAL: Duration = Duration::from_millis(20);
+const SIDECAR_PATH_ENV: &str = "ELY_SERVO_SIDECAR";
 
 #[derive(Clone, Debug)]
 pub struct ServoSidecarClient {
-    binary_path: PathBuf,
+    command_target: SidecarCommandTarget,
 }
 
 impl ServoSidecarClient {
     pub fn new() -> Result<Self, ServoSidecarError> {
-        Ok(Self { binary_path: default_sidecar_path()? })
+        Ok(Self { command_target: default_sidecar_command()? })
     }
 
     pub fn snapshot(
         &self,
         request: SidecarSnapshotRequest,
     ) -> Result<SidecarSnapshot, ServoSidecarError> {
-        if !self.binary_path.is_file() {
-            return Err(ServoSidecarError::SidecarBinaryUnavailable {
-                path: self.binary_path.clone(),
-            });
+        if let Some(path) = self.command_target.missing_binary_path() {
+            return Err(ServoSidecarError::SidecarBinaryUnavailable { path: path.to_path_buf() });
         }
 
         let rgba_path = temporary_rgba_path()?;
@@ -64,21 +64,8 @@ impl ServoSidecarClient {
         request: &SidecarSnapshotRequest,
         rgba_path: &Path,
     ) -> Result<Output, ServoSidecarError> {
-        let mut command = Command::new(&self.binary_path);
-        command
-            .arg("snapshot")
-            .arg("--url")
-            .arg(request.url.as_str())
-            .arg("--rgba-out")
-            .arg(rgba_path)
-            .arg("--width")
-            .arg(request.width.to_string())
-            .arg("--height")
-            .arg(request.height.to_string())
-            .arg("--scroll-x")
-            .arg(request.scroll_x.to_string())
-            .arg("--scroll-y")
-            .arg(request.scroll_y.to_string());
+        let mut command = self.command_target.command();
+        append_snapshot_args(&mut command, request, rgba_path);
         if let Some(click_point) = request.click_point {
             command
                 .arg("--click-x")
@@ -102,17 +89,79 @@ impl ServoSidecarClient {
                 return child.wait_with_output().map_err(ServoSidecarError::Command);
             }
 
-            if started_at.elapsed() >= SIDECAR_COMMAND_TIMEOUT {
+            let timeout = self.command_target.timeout();
+            if started_at.elapsed() >= timeout {
                 terminate_child(child)?;
                 return Err(ServoSidecarError::SidecarTimedOut {
                     url: request.url.as_str().to_string(),
-                    seconds: SIDECAR_COMMAND_TIMEOUT.as_secs(),
+                    seconds: timeout.as_secs(),
                 });
             }
 
             thread::sleep(SIDECAR_POLL_INTERVAL);
         }
     }
+}
+
+#[derive(Clone, Debug)]
+enum SidecarCommandTarget {
+    Binary(PathBuf),
+    Cargo { manifest_path: PathBuf },
+}
+
+impl SidecarCommandTarget {
+    fn command(&self) -> Command {
+        match self {
+            Self::Binary(path) => Command::new(path),
+            Self::Cargo { manifest_path } => {
+                let mut command = Command::new("cargo");
+                command
+                    .arg("run")
+                    .arg("--quiet")
+                    .arg("--manifest-path")
+                    .arg(manifest_path)
+                    .arg("-p")
+                    .arg("ely_servo_host")
+                    .arg("--features")
+                    .arg("servo-engine")
+                    .arg("--bin")
+                    .arg("ely_servo_sidecar")
+                    .arg("--");
+                command
+            }
+        }
+    }
+
+    fn timeout(&self) -> Duration {
+        match self {
+            Self::Binary(_) => SIDECAR_BINARY_TIMEOUT,
+            Self::Cargo { .. } => SIDECAR_CARGO_TIMEOUT,
+        }
+    }
+
+    fn missing_binary_path(&self) -> Option<&Path> {
+        match self {
+            Self::Binary(path) if !path.is_file() => Some(path.as_path()),
+            Self::Binary(_) | Self::Cargo { .. } => None,
+        }
+    }
+}
+
+fn append_snapshot_args(command: &mut Command, request: &SidecarSnapshotRequest, rgba_path: &Path) {
+    command
+        .arg("snapshot")
+        .arg("--url")
+        .arg(request.url.as_str())
+        .arg("--rgba-out")
+        .arg(rgba_path)
+        .arg("--width")
+        .arg(request.width.to_string())
+        .arg("--height")
+        .arg(request.height.to_string())
+        .arg("--scroll-x")
+        .arg(request.scroll_x.to_string())
+        .arg("--scroll-y")
+        .arg(request.scroll_y.to_string());
 }
 
 #[derive(Clone, Debug)]
@@ -302,13 +351,41 @@ struct SidecarReport {
     content_pixel_count: u64,
 }
 
-fn default_sidecar_path() -> Result<PathBuf, ServoSidecarError> {
+fn default_sidecar_command() -> Result<SidecarCommandTarget, ServoSidecarError> {
+    if let Some(path) = env::var_os(SIDECAR_PATH_ENV) {
+        return Ok(SidecarCommandTarget::Binary(PathBuf::from(path)));
+    }
+
     let current_exe = env::current_exe().map_err(ServoSidecarError::CurrentExecutable)?;
     let exe_dir = current_exe.parent().ok_or_else(|| {
         ServoSidecarError::CurrentExecutableDirectoryUnavailable { path: current_exe.clone() }
     })?;
+    let adjacent_sidecar = exe_dir.join(sidecar_binary_name());
+    if adjacent_sidecar.is_file() {
+        return Ok(SidecarCommandTarget::Binary(adjacent_sidecar));
+    }
 
-    Ok(exe_dir.join(sidecar_binary_name()))
+    if let Some(manifest_path) = workspace_manifest_path() {
+        if let Some(target_sidecar) = workspace_target_sidecar_path(&manifest_path)
+            && target_sidecar.is_file()
+        {
+            return Ok(SidecarCommandTarget::Binary(target_sidecar));
+        }
+        if manifest_path.is_file() {
+            return Ok(SidecarCommandTarget::Cargo { manifest_path });
+        }
+    }
+
+    Ok(SidecarCommandTarget::Binary(adjacent_sidecar))
+}
+
+fn workspace_manifest_path() -> Option<PathBuf> {
+    option_env!("ELY_WORKSPACE_MANIFEST").map(PathBuf::from)
+}
+
+fn workspace_target_sidecar_path(manifest_path: &Path) -> Option<PathBuf> {
+    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
+    Some(manifest_path.parent()?.join("target").join(profile).join(sidecar_binary_name()))
 }
 
 fn sidecar_binary_name() -> String {

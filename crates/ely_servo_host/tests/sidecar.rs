@@ -8,7 +8,7 @@ mod support;
 use support::*;
 
 #[test]
-fn sidecar_snapshots_prd_sites_to_rgba_files() -> Result<(), Box<dyn Error>> {
+fn sidecar_opens_and_renders_prd_sites_to_rgba_files() -> Result<(), Box<dyn Error>> {
     for case in PRD_SITE_COMPATIBILITY_CASES {
         for size in PRD_SITE_COMPATIBILITY_SIZES {
             snapshot_prd_site(case, *size, ScrollOffset::ZERO)?;
@@ -19,7 +19,7 @@ fn sidecar_snapshots_prd_sites_to_rgba_files() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-fn sidecar_snapshots_prd_reference_sites_to_rgba_files() -> Result<(), Box<dyn Error>> {
+fn sidecar_opens_and_renders_prd_reference_sites_to_rgba_files() -> Result<(), Box<dyn Error>> {
     for case in PRD_REFERENCE_SITE_COMPATIBILITY_CASES {
         snapshot_prd_site(case, PRD_REFERENCE_SITE_SIZE, ScrollOffset::ZERO)?;
     }

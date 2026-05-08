@@ -28,6 +28,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     emit_env("ELY_BUILD_REVISION", &git_revision(workspace_root)?)?;
     emit_env("ELY_WORKSPACE_LICENSE", string_value(package, "license")?)?;
+    emit_env("ELY_WORKSPACE_MANIFEST", path_value(&workspace_manifest_path)?)?;
     emit_env("ELY_GPUI_VERSION", dependency_version(dependencies, "gpui")?)?;
     emit_env("ELY_GPUI_COMPONENT_VERSION", dependency_version(dependencies, "gpui-component")?)?;
     emit_env("ELY_SERVO_VERSION", dependency_version(dependencies, "servo")?)?;
@@ -62,6 +63,12 @@ fn string_value<'a>(value: &'a toml::Table, key: &str) -> Result<&'a str, Box<dy
         .get(key)
         .and_then(toml::Value::as_str)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, format!("missing {key} value")))
+        .map_err(Into::into)
+}
+
+fn path_value(path: &Path) -> Result<&str, Box<dyn Error>> {
+    path.to_str()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "workspace path is not UTF-8"))
         .map_err(Into::into)
 }
 
