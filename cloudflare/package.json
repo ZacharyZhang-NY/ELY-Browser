@@ -1,0 +1,16 @@
+{
+  "name": "@elydora/cloudflare-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "tsc -p tsconfig.test.json --outDir dist && node --test dist/tests/*.test.js"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20260508.1",
+    "@types/node": "24.12.3",
+    "typescript": "6.0.3",
+    "wrangler": "4.90.0"
+  }
+}

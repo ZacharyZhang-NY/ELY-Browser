@@ -1,0 +1,6 @@
+name = "ely-browser-cloud"
+main = "src/index.ts"
+compatibility_date = "2026-05-08"
+
+[vars]
+ELY_ENVIRONMENT = "local"

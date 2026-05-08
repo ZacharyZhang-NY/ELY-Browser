@@ -10,6 +10,6 @@ while IFS= read -r -d '' file; do
     echo "${file}: ${lines} lines exceeds ${max_lines}"
     status=1
   fi
-done < <(find crates -name '*.rs' -print0)
+done < <(find crates cloudflare/src cloudflare/tests \( -name '*.rs' -o -name '*.ts' \) -print0)
 
 exit "${status}"

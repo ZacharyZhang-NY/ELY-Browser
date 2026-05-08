@@ -1,4 +1,6 @@
 /target/
+/cloudflare/dist/
+/cloudflare/node_modules/
 /references/
 .agents/
 .claude/
