@@ -1,11 +1,12 @@
 use std::time::SystemTime;
 
-use crate::{ProfileId, SpaceId, UrlText};
+use crate::{ProfileId, SpaceId, TabId, UrlText};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HistoryEntry {
     profile_id: ProfileId,
     space_id: SpaceId,
+    source_tab_id: TabId,
     title: String,
     url: UrlText,
     visited_at: SystemTime,
@@ -17,14 +18,29 @@ impl HistoryEntry {
     pub fn new(
         profile_id: ProfileId,
         space_id: SpaceId,
+        source_tab_id: TabId,
         title: impl Into<String>,
         url: UrlText,
         visited_at: SystemTime,
     ) -> Self {
-        Self { profile_id, space_id, title: title.into(), url, visited_at, visit_count: 1 }
+        Self {
+            profile_id,
+            space_id,
+            source_tab_id,
+            title: title.into(),
+            url,
+            visited_at,
+            visit_count: 1,
+        }
     }
 
-    pub fn record_visit(&mut self, title: impl Into<String>, visited_at: SystemTime) {
+    pub fn record_visit(
+        &mut self,
+        source_tab_id: TabId,
+        title: impl Into<String>,
+        visited_at: SystemTime,
+    ) {
+        self.source_tab_id = source_tab_id;
         self.title = title.into();
         self.visited_at = visited_at;
         self.visit_count = self.visit_count.saturating_add(1);
@@ -38,6 +54,11 @@ impl HistoryEntry {
     #[must_use]
     pub fn space_id(&self) -> &SpaceId {
         &self.space_id
+    }
+
+    #[must_use]
+    pub fn source_tab_id(&self) -> &TabId {
+        &self.source_tab_id
     }
 
     #[must_use]

@@ -12,12 +12,13 @@ fn navigation_records_profile_and_space_history() -> Result<(), Box<dyn Error>> 
     let active_profile_id = core.active_tab()?.profile_id().clone();
     let active_space_id = core.snapshot()?.active_space_id;
 
-    core.open_tab(UrlText::parse("https://example.com/research")?);
+    let source_tab_id = core.open_tab(UrlText::parse("https://example.com/research")?);
     let snapshot = core.snapshot()?;
 
     assert_eq!(snapshot.history_entries.len(), 1);
     assert_eq!(snapshot.history_entries[0].profile_id(), &active_profile_id);
     assert_eq!(snapshot.history_entries[0].space_id(), &active_space_id);
+    assert_eq!(snapshot.history_entries[0].source_tab_id(), &source_tab_id);
     assert_eq!(snapshot.history_entries[0].title(), "example.com");
     assert_eq!(snapshot.history_entries[0].url().as_str(), "https://example.com/research");
     assert_eq!(snapshot.history_entries[0].visit_count(), 1);
@@ -28,12 +29,13 @@ fn navigation_records_profile_and_space_history() -> Result<(), Box<dyn Error>> 
 fn repeated_history_visits_increment_count_in_active_context() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     core.open_tab(UrlText::parse("https://example.com/research")?);
-    core.open_tab(UrlText::parse("https://example.com/research")?);
+    let latest_source_tab_id = core.open_tab(UrlText::parse("https://example.com/research")?);
 
     let snapshot = core.snapshot()?;
 
     assert_eq!(snapshot.history_entries.len(), 1);
     assert_eq!(snapshot.history_entries[0].url().as_str(), "https://example.com/research");
+    assert_eq!(snapshot.history_entries[0].source_tab_id(), &latest_source_tab_id);
     assert_eq!(snapshot.history_entries[0].visit_count(), 2);
     Ok(())
 }

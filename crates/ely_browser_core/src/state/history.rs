@@ -44,13 +44,14 @@ impl BrowserCore {
                 && entry.space_id() == tab.space_id()
                 && entry.url() == tab.url()
         }) {
-            entry.record_visit(tab.title(), visited_at);
+            entry.record_visit(tab.id().clone(), tab.title(), visited_at);
             return;
         }
 
         self.history_entries.push(HistoryEntry::new(
             tab.profile_id().clone(),
             tab.space_id().clone(),
+            tab.id().clone(),
             tab.title(),
             tab.url().clone(),
             visited_at,
