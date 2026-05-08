@@ -1,6 +1,7 @@
 mod archive_labels;
 mod bookmarks;
 mod downloads;
+mod focus;
 mod history;
 mod internal_pages;
 mod notes;
@@ -13,6 +14,7 @@ mod spaces;
 mod splits;
 mod tab_groups;
 mod tab_lifecycle;
+mod web_surface;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
 use ely_domain::{
@@ -20,13 +22,14 @@ use ely_domain::{
     NewTabDestination, ProfileId, ProfileSyncPolicy, SearchEngine, SpaceId, SyncObjectKind,
     SyncObjectPolicy, TabId, UrlText,
 };
-use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Subscription, Window};
+use gpui::{AppContext, Context, Entity, FocusHandle, Subscription, Window};
 use gpui_component::input::{InputEvent, InputState, SelectAll};
 
 use bookmarks::PendingBookmarkEdit;
 use downloads::PendingDownloadFileAction;
 use history::{PendingHistoryDomainClear, PendingHistoryTimeClear};
 use plugins::{PendingPluginInstall, PendingPluginUninstall};
+use web_surface::WebSurfaceStore;
 
 use crate::{
     CloseCurrentTab, FocusAddressBar, FocusCommandMode, OpenDownloads, OpenHistory, OpenNewTab,
@@ -57,6 +60,7 @@ pub struct ElyShell {
     plugin_install_error: Option<String>,
     pending_plugin_install: Option<PendingPluginInstall>,
     pending_plugin_uninstall: Option<PendingPluginUninstall>,
+    web_surfaces: WebSurfaceStore,
     _command_subscription: Subscription,
 }
 
@@ -125,6 +129,7 @@ impl ElyShell {
             plugin_install_error: None,
             pending_plugin_install: None,
             pending_plugin_uninstall: None,
+            web_surfaces: WebSurfaceStore::new(),
             _command_subscription: command_subscription,
         }
     }
@@ -476,24 +481,5 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) {
         self.toggle_active_tab_pinned(cx);
-    }
-
-    fn sync_address_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let ShellState::Ready(core) = &mut self.state else {
-            return;
-        };
-
-        if let Ok(active_tab) = core.active_tab() {
-            let value = active_tab.url().as_str().to_string();
-            self.command_input.update(cx, |input, cx| {
-                input.set_value(value, window, cx);
-            });
-        }
-    }
-}
-
-impl Focusable for ElyShell {
-    fn focus_handle(&self, _: &App) -> FocusHandle {
-        self.focus_handle.clone()
     }
 }
