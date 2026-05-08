@@ -122,6 +122,7 @@ impl BrowserCore {
     ) -> Result<&mut DownloadEntry, CoreError> {
         self.download_entries
             .iter_mut()
+            .filter(|entry| entry.profile_id() == &self.active_profile_id)
             .find(|entry| entry.id() == download_id)
             .ok_or_else(|| CoreError::DownloadNotFound { id: download_id.clone() })
     }

@@ -44,6 +44,29 @@ fn download_entries_stay_with_active_profile() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn download_controls_stay_with_active_profile() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let default_profile_id = core.active_tab()?.profile_id().clone();
+    let default_download_id = core.record_download_started(
+        UrlText::parse("https://example.com/report.pdf")?,
+        "report.pdf",
+        Some(2048),
+    )?;
+
+    core.create_profile("Personal", 0xf54e00, ProfileKind::Standard)?;
+    let error = match core.cancel_download(&default_download_id) {
+        Ok(()) => return Err("hidden profile download should stay out of scope".into()),
+        Err(error) => error,
+    };
+
+    assert_eq!(error, CoreError::DownloadNotFound { id: default_download_id.clone() });
+    core.select_profile(&default_profile_id)?;
+    core.cancel_download(&default_download_id)?;
+    assert_eq!(active_download(&core)?.state(), &DownloadState::Cancelled);
+    Ok(())
+}
+
+#[test]
 fn controls_download_lifecycle() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let download_id = core.record_download_started(
