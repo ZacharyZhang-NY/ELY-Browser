@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use ely_domain::{
     BrowserTab, MAX_SPLIT_PANES, SpaceId, SplitAxis, SplitId, SplitLayout, SplitPane, TabGroup,
     TabGroupId, TabId,
@@ -13,6 +15,25 @@ impl BrowserCore {
         let active_tab_id = self.active_tab_id.clone();
         self.assign_tab_to_group(&active_tab_id, &group_id)?;
         Ok(group_id)
+    }
+
+    pub fn auto_group_active_space_tabs_by_domain(&mut self) -> Result<usize, CoreError> {
+        let domain_tab_ids = self.active_space_domain_tab_ids();
+        let mut grouped_count = 0;
+
+        for (domain, tab_ids) in domain_tab_ids {
+            if tab_ids.len() < 2 {
+                continue;
+            }
+
+            let group_id = self.find_or_create_active_space_tab_group(domain)?;
+            for tab_id in tab_ids {
+                self.assign_tab_to_group(&tab_id, &group_id)?;
+                grouped_count += 1;
+            }
+        }
+
+        Ok(grouped_count)
     }
 
     pub fn assign_tab_to_group(
@@ -210,6 +231,26 @@ impl BrowserCore {
             .map(|group| group.id().clone())
     }
 
+    fn active_space_domain_tab_ids(&self) -> BTreeMap<String, Vec<TabId>> {
+        let mut domain_tab_ids = BTreeMap::new();
+        for tab in self.tabs.iter().filter(|tab| self.tab_is_domain_group_candidate(tab)) {
+            let Some(domain) = domain_group_name(tab) else {
+                continue;
+            };
+            domain_tab_ids.entry(domain).or_insert_with(Vec::new).push(tab.id().clone());
+        }
+
+        domain_tab_ids
+    }
+
+    fn tab_is_domain_group_candidate(&self, tab: &BrowserTab) -> bool {
+        tab.space_id() == &self.active_space_id
+            && tab.group_id().is_none()
+            && tab.split_id().is_none()
+            && !tab.flags().favorite
+            && !tab.flags().pinned
+    }
+
     fn next_tab_group_sort_key_for_space(&self, space_id: &SpaceId) -> u64 {
         self.tab_groups
             .iter()
@@ -274,4 +315,12 @@ impl BrowserCore {
             .find(|group| group.id() == group_id)
             .ok_or_else(|| CoreError::TabGroupNotFound { id: group_id.clone() })
     }
+}
+
+fn domain_group_name(tab: &BrowserTab) -> Option<String> {
+    if tab.url().as_str().starts_with("ely://") {
+        return None;
+    }
+
+    tab.url().host()
 }

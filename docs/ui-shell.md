@@ -68,3 +68,21 @@ Sleeping tabs keep the same layout rhythm:
 │                              │  └─────────────────────────────────────────┘  │
 └──────────────────────────────┴───────────────────────────────────────────────┘
 ```
+
+Domain auto grouping keeps manual groups intact and groups matching ungrouped hosts:
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ELY Browser   [ >auto-group-domains......................... ] [pin] [*] [+] │
+├──────────────────────────────┬───────────────────────────────────────────────┤
+│ Tabs                         │  example.com                                  │
+│   [folder] example.com       │  https://example.com/a                        │
+│     2 tabs - Expanded        │                                               │
+│     example.com              │                                               │
+│       example.com            │                                               │
+│     example.com              │                                               │
+│       example.com            │                                               │
+│   servo.org                  │                                               │
+│     servo.org                │                                               │
+└──────────────────────────────┴───────────────────────────────────────────────┘
+```

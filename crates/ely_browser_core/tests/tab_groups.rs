@@ -104,6 +104,70 @@ fn group_tab_command_groups_active_tab() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn auto_group_active_space_tabs_by_domain_groups_matching_hosts() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let first_tab_id = core.open_tab(UrlText::parse("https://example.com/a")?);
+    let second_tab_id = core.open_tab(UrlText::parse("https://example.com/b")?);
+    let singleton_tab_id = core.open_tab(UrlText::parse("https://servo.org")?);
+
+    let grouped_count = core.auto_group_active_space_tabs_by_domain()?;
+    let snapshot = core.snapshot()?;
+    let group = snapshot.tab_groups.first().ok_or("missing domain tab group")?;
+
+    assert_eq!(grouped_count, 2);
+    assert_eq!(snapshot.tab_groups.len(), 1);
+    assert_eq!(group.name(), "example.com");
+    assert_eq!(group.space_id(), &snapshot.active_space_id);
+    assert_eq!(tab_group_id(&snapshot, &first_tab_id), Some(group.id()));
+    assert_eq!(tab_group_id(&snapshot, &second_tab_id), Some(group.id()));
+    assert_eq!(tab_group_id(&snapshot, &singleton_tab_id), None);
+    Ok(())
+}
+
+#[test]
+fn auto_group_domain_command_groups_matching_hosts() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let first_tab_id = core.open_tab(UrlText::parse("https://example.com/one")?);
+    let second_tab_id = core.open_tab(UrlText::parse("https://example.com/two")?);
+
+    core.set_command_query(">auto-group-domains");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+    let group = snapshot.tab_groups.first().ok_or("missing domain tab group")?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("auto-group-domains".to_string())));
+    assert_eq!(snapshot.command_query, "");
+    assert_eq!(snapshot.tab_groups.len(), 1);
+    assert_eq!(group.name(), "example.com");
+    assert_eq!(tab_group_id(&snapshot, &first_tab_id), Some(group.id()));
+    assert_eq!(tab_group_id(&snapshot, &second_tab_id), Some(group.id()));
+    Ok(())
+}
+
+#[test]
+fn auto_group_domains_preserves_existing_manual_groups() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let manual_tab_id = core.open_tab(UrlText::parse("https://example.com/manual")?);
+    let manual_group_id = core.group_active_tab("Manual")?;
+    let first_auto_tab_id = core.open_tab(UrlText::parse("https://example.com/auto-a")?);
+    let second_auto_tab_id = core.open_tab(UrlText::parse("https://example.com/auto-b")?);
+
+    let grouped_count = core.auto_group_active_space_tabs_by_domain()?;
+    let snapshot = core.snapshot()?;
+    let domain_group = snapshot
+        .tab_groups
+        .iter()
+        .find(|group| group.name() == "example.com")
+        .ok_or("missing domain tab group")?;
+
+    assert_eq!(grouped_count, 2);
+    assert_eq!(tab_group_id(&snapshot, &manual_tab_id), Some(&manual_group_id));
+    assert_eq!(tab_group_id(&snapshot, &first_auto_tab_id), Some(domain_group.id()));
+    assert_eq!(tab_group_id(&snapshot, &second_auto_tab_id), Some(domain_group.id()));
+    Ok(())
+}
+
+#[test]
 fn tab_group_collapse_commands_update_active_group() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let group_id = core.group_active_tab("Research")?;
@@ -261,4 +325,11 @@ fn split_tab_group_rejects_groups_above_pane_limit() -> Result<(), Box<dyn Error
 
     assert_eq!(error, CoreError::SplitPaneLimitReached { limit: MAX_SPLIT_PANES });
     Ok(())
+}
+
+fn tab_group_id<'a>(
+    snapshot: &'a ely_browser_core::BrowserSnapshot,
+    tab_id: &ely_domain::TabId,
+) -> Option<&'a ely_domain::TabGroupId> {
+    snapshot.tabs.iter().find(|tab| tab.id() == tab_id).and_then(|tab| tab.group_id())
 }

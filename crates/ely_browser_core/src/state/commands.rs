@@ -195,6 +195,10 @@ impl BrowserCore {
             "split-tab-group" | "split tab group" | "tab-group-to-split" | "tab group to split" => {
                 Ok(self.split_active_tab_group()?.is_some())
             }
+            "auto-group-domains"
+            | "auto group domains"
+            | "auto-group-domain-tabs"
+            | "auto group domain tabs" => Ok(self.auto_group_active_space_tabs_by_domain()? > 0),
             "group-split-view"
             | "group split view"
             | "split-view-to-group"
