@@ -97,6 +97,39 @@ impl BrowserCore {
         Ok(true)
     }
 
+    pub fn duplicate_active_split_pane(&mut self) -> Result<Option<TabId>, CoreError> {
+        let active_tab = self.active_tab()?;
+        let active_tab_id = active_tab.id().clone();
+        let duplicate_url = active_tab.url().clone();
+        let Some(split_id) = active_tab.split_id().cloned() else {
+            return Ok(None);
+        };
+
+        let mut duplicated_tab = self.build_tab(duplicate_url);
+        let duplicated_tab_id = duplicated_tab.id().clone();
+        duplicated_tab.set_split_id(split_id.clone());
+
+        let layout = self
+            .split_layouts
+            .iter_mut()
+            .find(|layout| layout.id() == &split_id)
+            .ok_or_else(|| CoreError::SplitNotFound { id: split_id.clone() })?;
+        if !layout.contains_tab(&active_tab_id) {
+            return Err(CoreError::TabNotFound { id: active_tab_id });
+        }
+        if !layout.add_pane_after_tab(&active_tab_id, SplitPane::new(duplicated_tab_id.clone(), 1))
+        {
+            return Err(CoreError::SplitPaneLimitReached { limit: MAX_SPLIT_PANES });
+        }
+
+        let insert_index = self.active_tab_index()? + 1;
+        self.record_history_entry(&duplicated_tab);
+        self.tabs.insert(insert_index, duplicated_tab);
+        self.select_tab(&duplicated_tab_id)?;
+        self.refresh_saved_split_title(&split_id)?;
+        Ok(Some(duplicated_tab_id))
+    }
+
     pub fn split_active_tab_right(&mut self) -> Result<SplitId, CoreError> {
         let active_index = self.active_tab_index()?;
         let active_tab_id = self.tabs[active_index].id().clone();

@@ -176,6 +176,10 @@ impl BrowserCore {
             "detach-split-pane" | "detach split pane" | "detach-pane" | "detach pane" => {
                 self.detach_active_split_pane()
             }
+            "duplicate-split-pane"
+            | "duplicate split pane"
+            | "duplicate-pane"
+            | "duplicate pane" => Ok(self.duplicate_active_split_pane()?.is_some()),
             "save-split-view" | "save split view" => Ok(self.save_active_split_view()?.is_some()),
             "split-tab-group" | "split tab group" | "tab-group-to-split" | "tab group to split" => {
                 Ok(self.split_active_tab_group()?.is_some())

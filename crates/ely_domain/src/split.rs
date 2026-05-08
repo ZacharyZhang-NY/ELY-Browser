@@ -95,6 +95,20 @@ impl SplitLayout {
         true
     }
 
+    pub fn add_pane_after_tab(&mut self, after_tab_id: &TabId, pane: SplitPane) -> bool {
+        if self.panes.len() >= MAX_SPLIT_PANES || self.contains_tab(pane.tab_id()) {
+            return false;
+        }
+
+        let Some(index) = self.panes.iter().position(|existing| existing.tab_id() == after_tab_id)
+        else {
+            return false;
+        };
+
+        self.panes.insert(index + 1, pane);
+        true
+    }
+
     pub fn remove_tab(&mut self, tab_id: &TabId) -> bool {
         let original_len = self.panes.len();
         self.panes.retain(|pane| pane.tab_id() != tab_id);
