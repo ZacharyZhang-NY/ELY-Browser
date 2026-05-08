@@ -1,6 +1,6 @@
 use ely_domain::{
-    ArchiveSource, ArchivedTab, MAX_SPLIT_PANES, ProfileId, SpaceId, SplitAxis, SplitId,
-    SplitLayout, SplitPane, TabId,
+    ArchiveSource, ArchivedTab, BrowserTab, MAX_SPLIT_PANES, ProfileId, SpaceId, SplitAxis,
+    SplitId, SplitLayout, SplitPane, TabId,
 };
 
 use crate::CoreError;
@@ -20,7 +20,8 @@ impl BrowserCore {
     }
 
     pub fn close_saved_split_view(&mut self, split_id: &SplitId) -> Result<TabId, CoreError> {
-        let pane_ids = self.saved_split_pane_ids(split_id)?;
+        let layout = self.saved_split_layout(split_id)?.clone();
+        let pane_ids = layout.panes().iter().map(|pane| pane.tab_id().clone()).collect::<Vec<_>>();
         self.validate_split_panes_are_open(&pane_ids)?;
 
         let first_close_index = self.first_split_tab_index(&pane_ids)?;
@@ -37,9 +38,10 @@ impl BrowserCore {
             .get(&(closed_space_id.clone(), closed_profile_id.clone()))
             .is_some_and(|tab_id| pane_ids.contains(tab_id));
 
-        let archived_tabs = self.remove_split_tabs(&pane_ids)?;
+        let archived_tabs = self.remove_split_tabs(&pane_ids, true)?;
         self.archived_tabs.extend(archived_tabs);
         self.split_layouts.retain(|layout| layout.id() != split_id);
+        self.archived_split_layouts.push(layout);
 
         self.reselect_after_split_close(
             closed_space_id,
@@ -194,11 +196,10 @@ impl BrowserCore {
         self.split_layouts.iter().any(|layout| layout.id() == split_id && layout.saved())
     }
 
-    fn saved_split_pane_ids(&self, split_id: &SplitId) -> Result<Vec<TabId>, CoreError> {
+    fn saved_split_layout(&self, split_id: &SplitId) -> Result<&SplitLayout, CoreError> {
         self.split_layouts
             .iter()
             .find(|layout| layout.id() == split_id && layout.saved())
-            .map(|layout| layout.panes().iter().map(|pane| pane.tab_id().clone()).collect())
             .ok_or_else(|| CoreError::SplitNotFound { id: split_id.clone() })
     }
 
@@ -219,7 +220,11 @@ impl BrowserCore {
             .ok_or(CoreError::MissingActiveTab)
     }
 
-    fn remove_split_tabs(&mut self, pane_ids: &[TabId]) -> Result<Vec<ArchivedTab>, CoreError> {
+    fn remove_split_tabs(
+        &mut self,
+        pane_ids: &[TabId],
+        preserve_split_id: bool,
+    ) -> Result<Vec<ArchivedTab>, CoreError> {
         let mut archived_tabs = Vec::with_capacity(pane_ids.len());
         for pane_id in pane_ids {
             let tab_index = self
@@ -228,7 +233,9 @@ impl BrowserCore {
                 .position(|tab| tab.id() == pane_id)
                 .ok_or_else(|| CoreError::TabNotFound { id: pane_id.clone() })?;
             let mut tab = self.tabs.remove(tab_index);
-            tab.clear_split_id();
+            if !preserve_split_id {
+                tab.clear_split_id();
+            }
             archived_tabs.push(ArchivedTab::new(tab, ArchiveSource::ManualClose));
         }
 
@@ -282,5 +289,81 @@ impl BrowserCore {
         }
 
         Ok(self.active_tab_id.clone())
+    }
+
+    pub(super) fn archived_split_id_for_tab(&self, tab_id: &TabId) -> Option<SplitId> {
+        let split_id = self
+            .archived_tabs
+            .iter()
+            .find(|archived| archived.tab().id() == tab_id)
+            .and_then(|archived| archived.tab().split_id())?;
+        self.archived_split_exists(split_id).then(|| split_id.clone())
+    }
+
+    pub(super) fn restore_archived_split(
+        &mut self,
+        split_id: &SplitId,
+        focus_tab_id: &TabId,
+    ) -> Result<TabId, CoreError> {
+        let layout = self.archived_split_layout(split_id)?.clone();
+        let pane_ids = layout.panes().iter().map(|pane| pane.tab_id().clone()).collect::<Vec<_>>();
+        self.validate_archived_split_panes(&pane_ids)?;
+
+        let restored_tabs = self.remove_archived_split_tabs(&pane_ids)?;
+        self.archived_split_layouts.retain(|layout| layout.id() != split_id);
+        self.insert_restored_split_tabs(restored_tabs);
+        self.split_layouts.push(layout);
+        self.select_tab(focus_tab_id)?;
+        Ok(focus_tab_id.clone())
+    }
+
+    fn archived_split_exists(&self, split_id: &SplitId) -> bool {
+        self.archived_split_layouts.iter().any(|layout| layout.id() == split_id)
+    }
+
+    fn archived_split_layout(&self, split_id: &SplitId) -> Result<&SplitLayout, CoreError> {
+        self.archived_split_layouts
+            .iter()
+            .find(|layout| layout.id() == split_id)
+            .ok_or_else(|| CoreError::SplitNotFound { id: split_id.clone() })
+    }
+
+    fn validate_archived_split_panes(&self, pane_ids: &[TabId]) -> Result<(), CoreError> {
+        if let Some(missing_tab_id) = pane_ids.iter().find(|tab_id| {
+            !self.archived_tabs.iter().any(|archived| archived.tab().id() == *tab_id)
+        }) {
+            return Err(CoreError::TabNotFound { id: missing_tab_id.clone() });
+        }
+
+        Ok(())
+    }
+
+    fn remove_archived_split_tabs(
+        &mut self,
+        pane_ids: &[TabId],
+    ) -> Result<Vec<BrowserTab>, CoreError> {
+        let mut tabs = Vec::with_capacity(pane_ids.len());
+        for pane_id in pane_ids {
+            let archived_index = self
+                .archived_tabs
+                .iter()
+                .position(|archived| archived.tab().id() == pane_id)
+                .ok_or_else(|| CoreError::TabNotFound { id: pane_id.clone() })?;
+            tabs.push(self.archived_tabs.remove(archived_index).into_tab());
+        }
+
+        Ok(tabs)
+    }
+
+    fn insert_restored_split_tabs(&mut self, tabs: Vec<BrowserTab>) {
+        let insert_index = self
+            .tabs
+            .iter()
+            .position(|existing| existing.id() == &self.active_tab_id)
+            .map_or(self.tabs.len(), |index| index + 1);
+
+        for (offset, tab) in tabs.into_iter().enumerate() {
+            self.tabs.insert(insert_index + offset, tab);
+        }
     }
 }

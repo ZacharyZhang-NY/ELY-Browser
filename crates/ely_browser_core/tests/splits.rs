@@ -91,7 +91,14 @@ fn close_active_tab_archives_saved_split_view() -> Result<(), Box<dyn Error>> {
     assert!(snapshot.split_layouts.is_empty());
     assert_eq!(snapshot.tabs.len(), 1);
     assert_eq!(snapshot.archived_tabs.len(), 2);
-    assert!(snapshot.archived_tabs.iter().all(|archived| archived.tab().split_id().is_none()));
+    let archived_split_id =
+        snapshot.archived_tabs[0].tab().split_id().ok_or("missing archived split id")?;
+    assert!(
+        snapshot
+            .archived_tabs
+            .iter()
+            .all(|archived| archived.tab().split_id() == Some(archived_split_id))
+    );
     Ok(())
 }
 
@@ -148,6 +155,74 @@ fn close_split_view_command_preserves_query_without_saved_split() -> Result<(), 
     assert_eq!(snapshot.active_tab_id, active_tab_id);
     assert_eq!(snapshot.split_layouts.len(), 1);
     assert_eq!(snapshot.command_query, ">close-split-view");
+    Ok(())
+}
+
+#[test]
+fn restore_last_archived_tab_restores_saved_split_view() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let remaining_tab_id = core.active_tab()?.id().clone();
+    core.open_tab(UrlText::parse("https://example.com/saved-split")?);
+    let split_id = core.split_active_tab_right()?;
+    let focused_pane_id = core.active_tab()?.id().clone();
+    core.save_active_split_view()?;
+    core.close_active_tab()?;
+
+    let restored_tab_id = core.restore_last_archived_tab()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(restored_tab_id, focused_pane_id);
+    assert_eq!(snapshot.active_tab_id, focused_pane_id);
+    assert_eq!(snapshot.tabs.len(), 3);
+    assert!(snapshot.archived_tabs.is_empty());
+    let restored_layout = snapshot
+        .split_layouts
+        .iter()
+        .find(|layout| layout.id() == &split_id)
+        .ok_or("missing restored split layout")?;
+    assert!(restored_layout.saved());
+    assert_eq!(restored_layout.pane_count(), 2);
+    assert!(snapshot.tabs.iter().any(|tab| tab.id() == &remaining_tab_id));
+    Ok(())
+}
+
+#[test]
+fn restore_archived_split_member_restores_entire_saved_split_view() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com/saved-split")?);
+    let split_id = core.split_active_tab_right()?;
+    core.save_active_split_view()?;
+    let left_pane_id = core.snapshot()?.split_layouts[0].panes()[0].tab_id().clone();
+    core.close_active_tab()?;
+
+    let restored_tab_id = core.restore_archived_tab(&left_pane_id)?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(restored_tab_id, left_pane_id);
+    assert_eq!(snapshot.active_tab_id, left_pane_id);
+    assert!(snapshot.archived_tabs.is_empty());
+    assert_eq!(snapshot.split_layouts.len(), 1);
+    assert_eq!(snapshot.split_layouts[0].id(), &split_id);
+    assert_eq!(snapshot.split_layouts[0].pane_count(), 2);
+    Ok(())
+}
+
+#[test]
+fn archived_split_search_restores_entire_saved_split_view() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com/saved-split")?);
+    let split_id = core.split_active_tab_right()?;
+    core.save_active_split_view()?;
+    let left_pane_id = core.snapshot()?.split_layouts[0].panes()[0].tab_id().clone();
+    core.close_active_tab()?;
+
+    let restored_tab_id = core.restore_archived_tab_match("saved-split")?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(restored_tab_id, Some(left_pane_id));
+    assert!(snapshot.archived_tabs.is_empty());
+    assert_eq!(snapshot.split_layouts.len(), 1);
+    assert_eq!(snapshot.split_layouts[0].id(), &split_id);
     Ok(())
 }
 

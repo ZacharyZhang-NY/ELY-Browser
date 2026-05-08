@@ -138,9 +138,8 @@ impl BrowserCore {
     }
 
     pub fn restore_last_archived_tab(&mut self) -> Result<TabId, CoreError> {
-        let archived_tab = self.archived_tabs.pop().ok_or(CoreError::NoArchivedTabs)?;
-        let tab = archived_tab.into_tab();
-        self.restore_tab(tab)
+        let index = self.archived_tabs.len().checked_sub(1).ok_or(CoreError::NoArchivedTabs)?;
+        self.restore_archived_tab_at_index(index)
     }
 
     pub fn restore_archived_tab(&mut self, tab_id: &TabId) -> Result<TabId, CoreError> {
@@ -149,9 +148,7 @@ impl BrowserCore {
             .iter()
             .position(|archived| archived.tab().id() == tab_id)
             .ok_or_else(|| CoreError::TabNotFound { id: tab_id.clone() })?;
-        let archived_tab = self.archived_tabs.remove(index);
-        let tab = archived_tab.into_tab();
-        self.restore_tab(tab)
+        self.restore_archived_tab_at_index(index)
     }
 
     pub fn restore_archived_tab_match(&mut self, query: &str) -> Result<Option<TabId>, CoreError> {
@@ -168,9 +165,7 @@ impl BrowserCore {
             return Ok(None);
         };
 
-        let archived_tab = self.archived_tabs.remove(index);
-        let tab = archived_tab.into_tab();
-        self.restore_tab(tab).map(Some)
+        self.restore_archived_tab_at_index(index).map(Some)
     }
 
     pub fn select_tab(&mut self, tab_id: &TabId) -> Result<(), CoreError> {
@@ -262,6 +257,16 @@ impl BrowserCore {
         self.tabs.insert(insert_index, tab);
         self.select_tab(&tab_id)?;
         Ok(tab_id)
+    }
+
+    fn restore_archived_tab_at_index(&mut self, index: usize) -> Result<TabId, CoreError> {
+        let tab_id = self.archived_tabs[index].tab().id().clone();
+        if let Some(split_id) = self.archived_split_id_for_tab(&tab_id) {
+            return self.restore_archived_split(&split_id, &tab_id);
+        }
+
+        let archived_tab = self.archived_tabs.remove(index);
+        self.restore_tab(archived_tab.into_tab())
     }
 
     fn select_tab_by_offset(&mut self, offset: isize) -> Result<TabId, CoreError> {
