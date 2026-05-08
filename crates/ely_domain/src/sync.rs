@@ -7,6 +7,7 @@ pub enum SyncConnectionState {
 pub enum SyncObjectKind {
     Spaces,
     Tabs,
+    Bookmarks,
     Profiles,
     History,
     PluginSettings,

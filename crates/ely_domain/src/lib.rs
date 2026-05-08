@@ -1,4 +1,5 @@
 mod archive;
+mod bookmark;
 mod command;
 mod download;
 mod error;
@@ -13,6 +14,7 @@ mod tab;
 mod url_text;
 
 pub use archive::{ArchiveSource, ArchivedTab};
+pub use bookmark::BookmarkEntry;
 pub use command::{CommandIntent, CommandScope};
 pub use download::{
     DownloadChecksum, DownloadChecksumAlgorithm, DownloadDestination, DownloadEntry,
@@ -20,7 +22,7 @@ pub use download::{
 };
 pub use error::DomainError;
 pub use history::HistoryEntry;
-pub use identifiers::{DownloadId, ProfileId, SpaceId, SplitId, TabId, WebViewId};
+pub use identifiers::{BookmarkId, DownloadId, ProfileId, SpaceId, SplitId, TabId, WebViewId};
 pub use plugin::{
     PluginContributionPoint, PluginId, PluginManifest, PluginPermission, PluginPermissionRisk,
     PluginSignature, PluginSignatureAlgorithm,

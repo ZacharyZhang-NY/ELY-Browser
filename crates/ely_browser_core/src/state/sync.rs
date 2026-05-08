@@ -16,6 +16,11 @@ impl BrowserCore {
                 SyncObjectState::LocalOnly,
             ),
             SyncObjectStatus::new(
+                SyncObjectKind::Bookmarks,
+                self.bookmarks.len(),
+                SyncObjectState::LocalOnly,
+            ),
+            SyncObjectStatus::new(
                 SyncObjectKind::Profiles,
                 self.profiles.len(),
                 SyncObjectState::LocalOnly,

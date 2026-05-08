@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 
 use ely_domain::{
-    ArchivedTab, BrowserTab, DomainError, DownloadEntry, DownloadPolicy, HistoryEntry, Profile,
-    ProfileId, ProfileKind, Space, SpaceId, SyncStatus, TabId, UrlText,
+    ArchivedTab, BookmarkEntry, BrowserTab, DomainError, DownloadEntry, DownloadPolicy,
+    HistoryEntry, Profile, ProfileId, ProfileKind, Space, SpaceId, SyncStatus, TabId, UrlText,
 };
 
 use crate::CoreError;
 
+mod bookmarks;
 mod commands;
 mod downloads;
 mod history;
@@ -42,6 +43,7 @@ pub struct BrowserSnapshot {
     pub favorites: Vec<BrowserTab>,
     pub pinned_tabs: Vec<BrowserTab>,
     pub archived_tabs: Vec<ArchivedTab>,
+    pub bookmarks: Vec<BookmarkEntry>,
     pub download_entries: Vec<DownloadEntry>,
     pub history_entries: Vec<HistoryEntry>,
     pub installed_plugins: Vec<InstalledPlugin>,
@@ -64,6 +66,7 @@ pub struct BrowserCore {
     profiles: Vec<Profile>,
     tabs: Vec<BrowserTab>,
     archived_tabs: Vec<ArchivedTab>,
+    bookmarks: Vec<BookmarkEntry>,
     download_entries: Vec<DownloadEntry>,
     history_entries: Vec<HistoryEntry>,
     installed_plugins: Vec<InstalledPlugin>,
@@ -108,6 +111,7 @@ impl BrowserCore {
             profiles: vec![profile],
             tabs: vec![tab],
             archived_tabs: Vec::new(),
+            bookmarks: Vec::new(),
             download_entries: Vec::new(),
             history_entries: Vec::new(),
             installed_plugins: Vec::new(),
@@ -182,21 +186,14 @@ impl BrowserCore {
     }
 
     pub fn snapshot(&self) -> Result<BrowserSnapshot, CoreError> {
-        let active_space = self
-            .spaces
-            .iter()
-            .find(|space| space.id() == &self.active_space_id)
-            .ok_or(CoreError::MissingActiveTab)?;
-        let active_profile = self
-            .profiles
-            .iter()
-            .find(|profile| profile.id() == &self.active_profile_id)
-            .ok_or(CoreError::MissingActiveTab)?;
+        let active_space = self.active_space()?;
+        let active_profile = self.active_profile()?;
 
         Ok(BrowserSnapshot {
             favorites: self.favorites(),
             pinned_tabs: self.pinned_tabs(),
             archived_tabs: self.archived_tabs.clone(),
+            bookmarks: self.visible_bookmarks(),
             download_entries: self.visible_downloads(),
             history_entries: self.visible_history(),
             installed_plugins: self.installed_plugins.clone(),
@@ -219,7 +216,14 @@ impl BrowserCore {
         self.profiles
             .iter()
             .find(|profile| profile.id() == &self.active_profile_id)
-            .ok_or(CoreError::MissingActiveTab)
+            .ok_or_else(|| CoreError::ProfileNotFound { id: self.active_profile_id.clone() })
+    }
+
+    fn active_space(&self) -> Result<&Space, CoreError> {
+        self.spaces
+            .iter()
+            .find(|space| space.id() == &self.active_space_id)
+            .ok_or_else(|| CoreError::SpaceNotFound { id: self.active_space_id.clone() })
     }
 
     fn favorites(&self) -> Vec<BrowserTab> {

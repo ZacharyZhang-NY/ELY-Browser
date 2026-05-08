@@ -3,8 +3,8 @@ use ely_domain::{CommandIntent, CommandScope, ProfileId, ProfileKind, SpaceId};
 use crate::{
     CoreError,
     navigation::{
-        about_url, downloads_url, history_url, move_tab_space_name, new_profile_name,
-        new_space_name, search_url, settings_page_url, settings_url, space_icon,
+        about_url, bookmarks_url, downloads_url, history_url, move_tab_space_name,
+        new_profile_name, new_space_name, search_url, settings_page_url, settings_url, space_icon,
         switch_profile_name, sync_status_url,
     },
 };
@@ -47,6 +47,12 @@ impl BrowserCore {
             }
             CommandIntent::ScopedSearch { scope: CommandScope::History, query } => {
                 if let Some(url) = self.find_history_match(query) {
+                    self.open_tab(url);
+                    self.command_query.clear();
+                }
+            }
+            CommandIntent::ScopedSearch { scope: CommandScope::Bookmarks, query } => {
+                if let Some(url) = self.find_bookmark_match(query) {
                     self.open_tab(url);
                     self.command_query.clear();
                 }
@@ -102,6 +108,10 @@ impl BrowserCore {
                 self.open_tab(downloads_url()?);
                 Ok(true)
             }
+            "bookmarks" | "open-bookmarks" | "open bookmarks" => {
+                self.open_tab(bookmarks_url()?);
+                Ok(true)
+            }
             "history" | "open-history" | "open history" => {
                 self.open_tab(history_url()?);
                 Ok(true)
@@ -124,6 +134,10 @@ impl BrowserCore {
             }
             "favorite" | "toggle-favorite" => {
                 self.toggle_active_tab_favorite()?;
+                Ok(true)
+            }
+            "bookmark" | "add-bookmark" | "add bookmark" => {
+                self.bookmark_active_tab()?;
                 Ok(true)
             }
             "pin" | "pin-tab" | "toggle-pin" => {

@@ -39,3 +39,4 @@ entity_id!(ProfileId, "profile");
 entity_id!(SplitId, "split");
 entity_id!(WebViewId, "webview");
 entity_id!(DownloadId, "download");
+entity_id!(BookmarkId, "bookmark");

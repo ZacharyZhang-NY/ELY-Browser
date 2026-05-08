@@ -151,6 +151,7 @@ fn sync_object_kind_label(kind: &SyncObjectKind) -> &'static str {
     match kind {
         SyncObjectKind::Spaces => "Spaces",
         SyncObjectKind::Tabs => "Tabs",
+        SyncObjectKind::Bookmarks => "Bookmarks",
         SyncObjectKind::Profiles => "Profiles",
         SyncObjectKind::History => "History",
         SyncObjectKind::PluginSettings => "Plugin settings",

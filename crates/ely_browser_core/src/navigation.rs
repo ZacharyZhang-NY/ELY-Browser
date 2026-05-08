@@ -16,6 +16,7 @@ pub(crate) fn tab_title(url: &UrlText) -> String {
 fn internal_page_title(url: &str) -> Option<&'static str> {
     match url {
         "ely://new-tab" => Some("New Tab"),
+        "ely://bookmarks" => Some("Bookmarks"),
         "ely://downloads" => Some("Downloads"),
         "ely://history" => Some("History"),
         "ely://archive" => Some("Archived Tabs"),
@@ -82,6 +83,10 @@ pub(crate) fn search_url(query: &str) -> Result<UrlText, CoreError> {
 
 pub(crate) fn downloads_url() -> Result<UrlText, CoreError> {
     internal_page_url("ely://downloads")
+}
+
+pub(crate) fn bookmarks_url() -> Result<UrlText, CoreError> {
+    internal_page_url("ely://bookmarks")
 }
 
 pub(crate) fn history_url() -> Result<UrlText, CoreError> {
