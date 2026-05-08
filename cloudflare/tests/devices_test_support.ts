@@ -14,12 +14,19 @@ export interface TestEnvOptions {
   d1?: RecordedD1Database;
   kvEntries?: [string, string][];
   kvReads?: string[];
+  r2Puts?: RecordedR2Put[];
 }
 
 export interface RecordedD1Database extends ElyD1Database {
   batches: number[];
   binds: unknown[][];
   queries: string[];
+}
+
+export interface RecordedR2Put {
+  key: string;
+  payload: ArrayBuffer;
+  options: ElyR2PutOptions;
 }
 
 interface TestD1DatabaseOptions {
@@ -38,7 +45,7 @@ export function testEnv(options: TestEnvOptions): Env {
         return Promise.resolve(values.get(key) ?? null);
       },
     },
-    ELY_STORAGE: testR2Bucket(),
+    ELY_STORAGE: testR2Bucket(options.r2Puts),
     ELY_RATE_LIMITER: {
       limit(): Promise<{ success: boolean }> {
         return Promise.resolve({ success: true });
@@ -112,12 +119,13 @@ function testD1PreparedStatement(
   };
 }
 
-function testR2Bucket(): Env["ELY_STORAGE"] {
+function testR2Bucket(puts: RecordedR2Put[] = []): Env["ELY_STORAGE"] {
   return {
     get() {
       return Promise.resolve(null);
     },
-    put(_key: string, value: ArrayBuffer, _options?: ElyR2PutOptions) {
+    put(key: string, value: ArrayBuffer, options: ElyR2PutOptions = {}) {
+      puts.push({ key, payload: value, options });
       return Promise.resolve({
         arrayBuffer() {
           return Promise.resolve(value);

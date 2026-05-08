@@ -195,7 +195,7 @@ function assertSegment(value: string, name: string): void {
   }
 }
 
-function assertSyncObjectType(value: string): void {
+export function assertSyncObjectType(value: string): void {
   if (!SYNC_OBJECT_TYPES.has(value)) {
     throw new StorageObjectError("object_type_invalid");
   }

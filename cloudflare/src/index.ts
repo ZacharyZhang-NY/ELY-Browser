@@ -35,6 +35,12 @@ import {
   parsePublicSigningKeysDocument,
   publicSigningKeysKvKey,
 } from "./signing_keys.js";
+import {
+  SyncPushConflictError,
+  SyncPushPersistenceError,
+  SyncPushRequestError,
+  syncPushDocument,
+} from "./sync_push.js";
 import { SyncRequestError, SyncSchemaError, syncPullDocument } from "./sync_pull.js";
 import { jsonResponse } from "./responses.js";
 
@@ -196,6 +202,40 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
           if (error instanceof SyncSchemaError) {
             return jsonResponse(
               { error: "sync_pull_invalid" },
+              500,
+              { "Cache-Control": "no-store" },
+            );
+          }
+          throw error;
+        }
+      },
+    );
+  }
+  if (url.pathname === "/api/sync/push") {
+    return withApprovedDeviceApiControls(
+      request,
+      env,
+      "sync.push",
+      ["POST"],
+      async (context) => {
+        try {
+          return jsonResponse(await syncPushDocument(request, env, context), 201, {
+            "Cache-Control": "no-store",
+          });
+        } catch (error) {
+          if (error instanceof SyncPushRequestError) {
+            return jsonResponse(
+              { error: "invalid_sync_push" },
+              400,
+              { "Cache-Control": "no-store" },
+            );
+          }
+          if (error instanceof SyncPushConflictError) {
+            return jsonResponse({ error: "sync_conflict" }, 409, { "Cache-Control": "no-store" });
+          }
+          if (error instanceof SyncPushPersistenceError) {
+            return jsonResponse(
+              { error: "sync_push_failed" },
               500,
               { "Cache-Control": "no-store" },
             );
