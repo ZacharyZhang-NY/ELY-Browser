@@ -52,13 +52,18 @@ pub struct Profile {
 impl Profile {
     #[must_use]
     pub fn new(name: impl Into<String>, color_hex: u32, kind: ProfileKind) -> Self {
+        let sync_policy = match kind {
+            ProfileKind::Standard => ProfileSyncPolicy::Enabled,
+            ProfileKind::Private => ProfileSyncPolicy::Paused,
+        };
+
         Self {
             id: ProfileId::new(),
             name: name.into(),
             color_hex,
             kind,
             download_policy: DownloadPolicy::ask_every_time(),
-            sync_policy: ProfileSyncPolicy::default(),
+            sync_policy,
         }
     }
 

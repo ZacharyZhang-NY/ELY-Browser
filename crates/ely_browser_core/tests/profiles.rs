@@ -17,6 +17,7 @@ fn new_private_profile_command_creates_private_profile() -> Result<(), Box<dyn E
     };
 
     assert_eq!(profile.kind(), &ProfileKind::Private);
+    assert_eq!(profile.sync_policy(), ProfileSyncPolicy::Paused);
     assert_eq!(&snapshot.active_profile_id, profile.id());
     assert_eq!(snapshot.active_profile_name, "Private");
     assert_eq!(snapshot.command_query, "");
@@ -43,6 +44,21 @@ fn private_profiles_do_not_record_history() -> Result<(), Box<dyn Error>> {
     core.select_profile(&private_profile_id)?;
     let private_snapshot = core.snapshot()?;
     assert!(private_snapshot.history_entries.is_empty());
+    Ok(())
+}
+
+#[test]
+fn private_profile_starts_with_sync_paused() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let private_profile_id = core.create_profile("Private", 0x807d72, ProfileKind::Private)?;
+    let snapshot = core.snapshot()?;
+    let Some(private_profile) =
+        snapshot.profiles.iter().find(|profile| profile.id() == &private_profile_id)
+    else {
+        return Err("missing private profile".into());
+    };
+
+    assert_eq!(private_profile.sync_policy(), ProfileSyncPolicy::Paused);
     Ok(())
 }
 
