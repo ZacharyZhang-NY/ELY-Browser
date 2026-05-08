@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use ely_domain::{BrowserTab, HistoryEntry, UrlText};
+use ely_domain::{BrowserTab, HistoryEntry, ProfileId, ProfileKind, UrlText};
 
 use crate::navigation::records_history;
 
@@ -8,7 +8,7 @@ use super::BrowserCore;
 
 impl BrowserCore {
     pub(super) fn record_history_entry(&mut self, tab: &BrowserTab) {
-        if !records_history(tab.url()) {
+        if !records_history(tab.url()) || !self.profile_records_history(tab.profile_id()) {
             return;
         }
 
@@ -45,6 +45,13 @@ impl BrowserCore {
             .filter(|entry| entry.space_id() == &self.active_space_id)
             .cloned()
             .collect()
+    }
+
+    fn profile_records_history(&self, profile_id: &ProfileId) -> bool {
+        match self.profiles.iter().find(|profile| profile.id() == profile_id) {
+            Some(profile) => profile.kind() == &ProfileKind::Standard,
+            None => false,
+        }
     }
 }
 

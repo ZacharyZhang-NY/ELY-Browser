@@ -60,6 +60,10 @@ pub(crate) fn new_profile_name(command: &str) -> Option<&str> {
     command_argument(command, &["new-profile ", "new profile "])
 }
 
+pub(crate) fn new_private_profile_name(command: &str) -> Option<&str> {
+    command_argument(command, &["new-private-profile ", "new private profile "])
+}
+
 pub(crate) fn switch_profile_name(command: &str) -> Option<&str> {
     command_argument(command, &["switch-profile ", "switch profile "])
 }

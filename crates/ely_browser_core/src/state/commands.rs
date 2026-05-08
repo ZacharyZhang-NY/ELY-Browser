@@ -4,9 +4,9 @@ use crate::{
     CoreError,
     navigation::{
         about_url, bookmarks_url, downloads_url, history_url, move_tab_space_name,
-        new_profile_name, new_space_name, plugin_detail_url, plugins_url, reading_list_url,
-        search_url, settings_page_url, settings_url, space_icon, switch_profile_name,
-        sync_status_url, task_manager_url,
+        new_private_profile_name, new_profile_name, new_space_name, plugin_detail_url, plugins_url,
+        reading_list_url, search_url, settings_page_url, settings_url, space_icon,
+        switch_profile_name, sync_status_url, task_manager_url,
     },
 };
 
@@ -95,6 +95,10 @@ impl BrowserCore {
         }
         if let Some(name) = new_profile_name(command) {
             self.create_profile(name.to_string(), 0xf54e00, ProfileKind::Standard)?;
+            return Ok(true);
+        }
+        if let Some(name) = new_private_profile_name(command) {
+            self.create_profile(name.to_string(), 0x807d72, ProfileKind::Private)?;
             return Ok(true);
         }
         if let Some(name) = move_tab_space_name(command) {
