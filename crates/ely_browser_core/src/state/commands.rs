@@ -216,6 +216,9 @@ impl BrowserCore {
             "sleep-tab-group" | "sleep tab group" | "discard-tab-group" | "discard tab group" => {
                 Ok(self.discard_active_tab_group()?.is_some())
             }
+            "refresh-tab-group" | "refresh tab group" | "reload-tab-group" | "reload tab group" => {
+                Ok(self.refresh_active_tab_group()?.is_some())
+            }
             "close-tab-group" | "close tab group" | "archive-tab-group" | "archive tab group" => {
                 Ok(self.close_active_tab_group()?.is_some())
             }

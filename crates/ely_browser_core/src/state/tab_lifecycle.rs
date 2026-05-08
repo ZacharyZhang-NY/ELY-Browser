@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use ely_domain::TabId;
 
 use super::BrowserCore;
@@ -40,6 +42,20 @@ impl BrowserCore {
 
     pub fn wake_discarded_tab(&mut self, tab_id: &TabId) -> Result<TabId, CoreError> {
         self.mark_tab_ready(tab_id)
+    }
+
+    pub(super) fn refresh_tab(&mut self, tab_id: &TabId) -> Result<TabId, CoreError> {
+        {
+            let tab = self
+                .tabs
+                .iter_mut()
+                .find(|tab| tab.id() == tab_id)
+                .ok_or_else(|| CoreError::TabNotFound { id: tab_id.clone() })?;
+            tab.mark_ready();
+        }
+
+        self.record_tab_activity(tab_id, SystemTime::now());
+        Ok(tab_id.clone())
     }
 
     fn mark_tab_ready(&mut self, tab_id: &TabId) -> Result<TabId, CoreError> {

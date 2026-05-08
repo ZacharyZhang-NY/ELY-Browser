@@ -104,6 +104,23 @@ Group sleep applies the sleeping state to every tab in the active group:
 └──────────────────────────────┴───────────────────────────────────────────────┘
 ```
 
+Group refresh brings every tab in the active group back to ready:
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ELY Browser   [ >refresh-tab-group.......................... ] [pin] [*] [+] │
+├──────────────────────────────┬───────────────────────────────────────────────┤
+│ Tabs                         │  example.com                                  │
+│   [folder] Docs              │  https://example.com/b                        │
+│     2 tabs - Expanded        │                                               │
+│     example.com              │  State    Ready                               │
+│       example.com            │  Group    Docs                                │
+│     example.com              │                                               │
+│       example.com            │                                               │
+│   servo.org                  │                                               │
+└──────────────────────────────┴───────────────────────────────────────────────┘
+```
+
 Group close archives every tab in the active group and removes the empty group row:
 
 ```text

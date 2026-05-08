@@ -93,6 +93,19 @@ impl BrowserCore {
         Ok(Some(tab_ids.len()))
     }
 
+    pub fn refresh_active_tab_group(&mut self) -> Result<Option<usize>, CoreError> {
+        let Some(group_id) = self.active_tab_group_id()? else {
+            return Ok(None);
+        };
+        let tab_ids = self.active_space_group_tab_ids(&group_id);
+
+        for tab_id in &tab_ids {
+            self.refresh_tab(tab_id)?;
+        }
+
+        Ok(Some(tab_ids.len()))
+    }
+
     pub fn close_active_tab_group(&mut self) -> Result<Option<usize>, CoreError> {
         let Some(group_id) = self.active_tab_group_id()? else {
             return Ok(None);

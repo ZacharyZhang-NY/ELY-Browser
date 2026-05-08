@@ -204,6 +204,46 @@ fn sleep_tab_group_command_preserves_query_without_active_group() -> Result<(), 
 }
 
 #[test]
+fn refresh_tab_group_command_marks_active_group_tabs_ready() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let ungrouped_tab_id = core.open_tab(UrlText::parse("https://servo.org")?);
+    let first_group_tab_id = core.open_tab(UrlText::parse("https://example.com/a")?);
+    core.group_active_tab("Docs")?;
+    let second_group_tab_id = core.open_tab(UrlText::parse("https://example.com/b")?);
+    core.group_active_tab("Docs")?;
+    core.crash_tab(&first_group_tab_id)?;
+    core.discard_tab(&second_group_tab_id)?;
+
+    core.set_command_query(">refresh-tab-group");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("refresh-tab-group".to_string())));
+    assert_eq!(snapshot.command_query, "");
+    assert_eq!(snapshot.tab_groups.len(), 1);
+    assert_eq!(tab_state(&snapshot, &first_group_tab_id), Some(&TabState::Ready));
+    assert_eq!(tab_state(&snapshot, &second_group_tab_id), Some(&TabState::Ready));
+    assert_eq!(tab_state(&snapshot, &ungrouped_tab_id), Some(&TabState::Ready));
+    Ok(())
+}
+
+#[test]
+fn refresh_tab_group_command_preserves_query_without_active_group() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let tab_id = core.open_tab(UrlText::parse("https://example.com")?);
+    core.discard_tab(&tab_id)?;
+
+    core.set_command_query(">refresh-tab-group");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("refresh-tab-group".to_string())));
+    assert_eq!(snapshot.command_query, ">refresh-tab-group");
+    assert_eq!(tab_state(&snapshot, &tab_id), Some(&TabState::Discarded));
+    Ok(())
+}
+
+#[test]
 fn close_tab_group_command_archives_active_group_tabs() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let ungrouped_tab_id = core.open_tab(UrlText::parse("https://servo.org")?);
