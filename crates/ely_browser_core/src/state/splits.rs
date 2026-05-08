@@ -82,6 +82,21 @@ impl BrowserCore {
         Ok(Some(split_id))
     }
 
+    pub fn detach_active_split_pane(&mut self) -> Result<bool, CoreError> {
+        let active_tab = self.active_tab()?;
+        let active_tab_id = active_tab.id().clone();
+        let Some(split_id) = active_tab.split_id().cloned() else {
+            return Ok(false);
+        };
+        if !self.split_layouts.iter().any(|layout| layout.id() == &split_id) {
+            return Err(CoreError::SplitNotFound { id: split_id });
+        }
+
+        self.detach_tab_from_split(&active_tab_id);
+        self.refresh_saved_split_title(&split_id)?;
+        Ok(true)
+    }
+
     pub fn split_active_tab_right(&mut self) -> Result<SplitId, CoreError> {
         let active_index = self.active_tab_index()?;
         let active_tab_id = self.tabs[active_index].id().clone();
@@ -198,6 +213,21 @@ impl BrowserCore {
             [title] => format!("Split View: {title}"),
             [first, second, ..] => format!("Split View: {first} + {second}"),
         })
+    }
+
+    fn refresh_saved_split_title(&mut self, split_id: &SplitId) -> Result<(), CoreError> {
+        let Some(layout_index) =
+            self.split_layouts.iter().position(|layout| layout.id() == split_id)
+        else {
+            return Ok(());
+        };
+        if !self.split_layouts[layout_index].saved() {
+            return Ok(());
+        }
+
+        let title = self.active_split_title(split_id)?;
+        self.split_layouts[layout_index].save(title);
+        Ok(())
     }
 
     pub(super) fn saved_split_id_for_tab(&self, tab_id: &TabId) -> Option<SplitId> {

@@ -173,6 +173,9 @@ impl BrowserCore {
             "split-grid" | "split grid" => {
                 Ok(self.set_active_split_axis(SplitAxis::Grid)?.is_some())
             }
+            "detach-split-pane" | "detach split pane" | "detach-pane" | "detach pane" => {
+                self.detach_active_split_pane()
+            }
             "save-split-view" | "save split view" => Ok(self.save_active_split_view()?.is_some()),
             "split-tab-group" | "split tab group" | "tab-group-to-split" | "tab group to split" => {
                 Ok(self.split_active_tab_group()?.is_some())

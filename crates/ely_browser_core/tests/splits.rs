@@ -147,6 +147,99 @@ fn split_grid_command_keeps_four_pane_layout() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn detach_split_pane_command_removes_active_pane_from_layout() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let split_id = core.split_active_tab_right()?;
+    core.split_active_tab_right()?;
+    let detached_tab_id = core.active_tab()?.id().clone();
+
+    core.set_command_query(">detach-split-pane");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+    let layout = snapshot.split_layouts.first().ok_or("missing split layout")?;
+    let detached_tab = snapshot
+        .tabs
+        .iter()
+        .find(|tab| tab.id() == &detached_tab_id)
+        .ok_or("missing detached tab")?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("detach-split-pane".to_string())));
+    assert_eq!(snapshot.active_tab_id, detached_tab_id);
+    assert_eq!(detached_tab.split_id(), None);
+    assert_eq!(layout.id(), &split_id);
+    assert_eq!(layout.pane_count(), 2);
+    assert!(!layout.panes().iter().any(|pane| pane.tab_id() == &detached_tab_id));
+    assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn detach_split_pane_command_dissolves_two_pane_layout() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.split_active_tab_right()?;
+    let detached_tab_id = core.active_tab()?.id().clone();
+
+    core.set_command_query(">detach-split-pane");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("detach-split-pane".to_string())));
+    assert_eq!(snapshot.active_tab_id, detached_tab_id);
+    assert!(snapshot.split_layouts.is_empty());
+    assert!(snapshot.tabs.iter().all(|tab| tab.split_id().is_none()));
+    assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn detach_split_pane_command_preserves_query_without_active_split() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let active_tab_id = core.active_tab()?.id().clone();
+
+    core.set_command_query(">detach-split-pane");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("detach-split-pane".to_string())));
+    assert_eq!(snapshot.active_tab_id, active_tab_id);
+    assert!(snapshot.split_layouts.is_empty());
+    assert_eq!(snapshot.command_query, ">detach-split-pane");
+    Ok(())
+}
+
+#[test]
+fn detach_split_pane_refreshes_saved_split_title() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.open_tab(UrlText::parse("https://example.com/docs")?);
+    core.group_active_tab("Research")?;
+    let detached_tab_id = core.open_tab(UrlText::parse("https://servo.org")?);
+    core.group_active_tab("Research")?;
+    let split_id = core.split_active_tab_group()?.ok_or("missing split id")?;
+    core.split_active_tab_right()?;
+    core.save_active_split_view()?;
+
+    core.select_tab(&detached_tab_id)?;
+    core.detach_active_split_pane()?;
+    let snapshot = core.snapshot()?;
+    let layout = snapshot
+        .split_layouts
+        .iter()
+        .find(|layout| layout.id() == &split_id)
+        .ok_or("missing saved split layout")?;
+    let detached_tab = snapshot
+        .tabs
+        .iter()
+        .find(|tab| tab.id() == &detached_tab_id)
+        .ok_or("missing detached tab")?;
+
+    assert_eq!(detached_tab.split_id(), None);
+    assert!(layout.saved());
+    assert_eq!(layout.title(), "Split View: example.com + New Tab");
+    assert_eq!(layout.pane_count(), 2);
+    Ok(())
+}
+
+#[test]
 fn close_active_tab_archives_saved_split_view() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let remaining_tab_id = core.active_tab()?.id().clone();
