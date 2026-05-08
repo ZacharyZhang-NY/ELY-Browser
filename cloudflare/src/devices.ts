@@ -54,6 +54,65 @@ const DEVICE_BY_IDEMPOTENCY_KEY_QUERY = `
   FROM user_devices
   WHERE user_id = ? AND idempotency_key = ?
 `;
+const DEVICE_BY_ID_QUERY = `
+  SELECT
+    device_id,
+    public_key,
+    device_name,
+    platform,
+    approval_status,
+    created_at,
+    approved_at,
+    last_active_at,
+    revoked_at
+  FROM user_devices
+  WHERE user_id = ? AND device_id = ?
+`;
+const APPROVED_DEVICE_QUERY = `
+  SELECT
+    device_id,
+    public_key,
+    device_name,
+    platform,
+    approval_status,
+    created_at,
+    approved_at,
+    last_active_at,
+    revoked_at
+  FROM user_devices
+  WHERE user_id = ? AND device_id = ? AND approval_status = 'approved' AND revoked_at IS NULL
+`;
+const DEVICE_APPROVAL_BY_IDEMPOTENCY_KEY_QUERY = `
+  SELECT
+    device_id,
+    requester_device_id,
+    status,
+    decided_at
+  FROM device_approvals
+  WHERE user_id = ? AND idempotency_key = ?
+`;
+const DEVICE_APPROVAL_INSERT_QUERY = `
+  INSERT INTO device_approvals (
+    user_id,
+    approval_id,
+    device_id,
+    requester_device_id,
+    status,
+    requested_at,
+    decided_at,
+    expires_at,
+    idempotency_key
+  ) VALUES (?, ?, ?, ?, 'approved', ?, ?, ?, ?)
+  ON CONFLICT(user_id, idempotency_key) DO NOTHING
+`;
+const DEVICE_APPROVE_QUERY = `
+  UPDATE user_devices
+  SET
+    approval_status = 'approved',
+    approved_at = COALESCE(approved_at, ?),
+    last_active_at = ?
+  WHERE user_id = ? AND device_id = ? AND approval_status = 'pending' AND revoked_at IS NULL
+`;
 
 export interface DeviceListDocument {
   version: 1;
@@ -64,6 +123,14 @@ export interface DeviceListDocument {
 export interface DeviceRegistrationDocument {
   version: 1;
   user_id: string;
+  device: DeviceDocument;
+}
+
+export interface DeviceApprovalDocument {
+  version: 1;
+  user_id: string;
+  approved_by_device_id: string;
+  approved_at: number;
   device: DeviceDocument;
 }
 
@@ -100,7 +167,16 @@ interface DeviceRegistrationRequest {
   idempotencyKey: string;
 }
 
-type DeviceRegistrationBody = Record<string, unknown>;
+type DeviceApprovalRequest = { deviceId: string; idempotencyKey: string };
+
+interface DeviceApprovalRow {
+  device_id: unknown;
+  requester_device_id: unknown;
+  status: unknown;
+  decided_at: unknown;
+}
+
+type DeviceRequestBody = Record<string, unknown>;
 
 export class DeviceSchemaError extends Error {
   constructor(message: string) {
@@ -172,16 +248,69 @@ export async function registerDeviceDocument(
   };
 }
 
+export async function approveDeviceDocument(
+  request: Request,
+  env: Env,
+  context: AuthContext,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): Promise<DeviceApprovalDocument> {
+  const approval = await deviceApprovalRequest(request);
+  const requesterDeviceId = currentDeviceId(context);
+  if (requesterDeviceId === approval.deviceId) {
+    throw new DevicePermissionError("device_self_approval_forbidden");
+  }
+
+  const existingApproval = await env.ELY_DB.prepare(DEVICE_APPROVAL_BY_IDEMPOTENCY_KEY_QUERY)
+    .bind(context.userId, approval.idempotencyKey)
+    .first<DeviceApprovalRow>();
+  if (existingApproval !== null) {
+    return existingApprovalDocument(env, context, approval, requesterDeviceId, existingApproval);
+  }
+
+  const approver = await env.ELY_DB.prepare(APPROVED_DEVICE_QUERY)
+    .bind(context.userId, requesterDeviceId)
+    .first<DeviceRow>();
+  if (approver === null) {
+    throw new DevicePermissionError("approver_device_unapproved");
+  }
+
+  const pendingDevice = await deviceRowById(env, context.userId, approval.deviceId);
+  if (pendingDevice === null) {
+    throw new DevicePermissionError("device_not_found");
+  }
+  const pendingDocument = deviceDocument(pendingDevice, requesterDeviceId);
+  if (pendingDocument.approval_status !== "pending" || pendingDocument.revoked_at !== null) {
+    throw new DevicePermissionError("device_not_pending");
+  }
+
+  await env.ELY_DB.batch([
+    env.ELY_DB.prepare(DEVICE_APPROVAL_INSERT_QUERY).bind(
+      context.userId,
+      approval.idempotencyKey,
+      approval.deviceId,
+      requesterDeviceId,
+      nowSeconds,
+      nowSeconds,
+      nowSeconds,
+      approval.idempotencyKey,
+    ),
+    env.ELY_DB.prepare(DEVICE_APPROVE_QUERY).bind(
+      nowSeconds,
+      nowSeconds,
+      context.userId,
+      approval.deviceId,
+    ),
+  ]);
+
+  const approvedDevice = await deviceRowById(env, context.userId, approval.deviceId);
+  if (approvedDevice === null) {
+    throw new DevicePersistenceError("device_approval_missing");
+  }
+  return approvedDeviceDocument(context.userId, requesterDeviceId, approvedDevice);
+}
+
 async function deviceRegistrationRequest(request: Request): Promise<DeviceRegistrationRequest> {
-  let value: unknown;
-  try {
-    value = await request.json();
-  } catch {
-    throw new DeviceSchemaError("device_registration_json_invalid");
-  }
-  if (!isRecord(value)) {
-    throw new DeviceSchemaError("device_registration_must_be_object");
-  }
+  const value = await deviceRequestBody(request, "device_registration");
   assertOnlyFields(value, [
     "version",
     "device_id",
@@ -201,6 +330,89 @@ async function deviceRegistrationRequest(request: Request): Promise<DeviceRegist
     platform: deviceText(value.platform, "platform"),
     idempotencyKey: idempotencyKeyValue(value.idempotency_key),
   };
+}
+
+async function deviceApprovalRequest(request: Request): Promise<DeviceApprovalRequest> {
+  const value = await deviceRequestBody(request, "device_approval");
+  assertOnlyFields(value, ["version", "device_id", "idempotency_key"]);
+  if (value.version !== 1) {
+    throw new DeviceSchemaError("device_approval_version_invalid");
+  }
+
+  return {
+    deviceId: deviceIdValue(value.device_id, "device_id"),
+    idempotencyKey: idempotencyKeyValue(value.idempotency_key),
+  };
+}
+
+async function existingApprovalDocument(
+  env: Env,
+  context: AuthContext,
+  approval: DeviceApprovalRequest,
+  requesterDeviceId: string,
+  row: DeviceApprovalRow,
+): Promise<DeviceApprovalDocument> {
+  const approvedDeviceId = deviceIdValue(row.device_id, "device_id");
+  const approvedByDeviceId = deviceIdValue(row.requester_device_id, "requester_device_id");
+  if (
+    approvedDeviceId !== approval.deviceId ||
+    approvedByDeviceId !== requesterDeviceId ||
+    row.status !== "approved"
+  ) {
+    throw new DevicePermissionError("device_approval_replay_mismatch");
+  }
+
+  const approvedDevice = await deviceRowById(env, context.userId, approvedDeviceId);
+  if (approvedDevice === null) {
+    throw new DevicePersistenceError("device_approval_missing");
+  }
+
+  return {
+    ...approvedDeviceDocument(context.userId, requesterDeviceId, approvedDevice),
+    approved_at: timestamp(row.decided_at, "decided_at"),
+  };
+}
+
+function approvedDeviceDocument(
+  userId: string,
+  approvedByDeviceId: string,
+  row: DeviceRow,
+): DeviceApprovalDocument {
+  const device = deviceDocument(row, approvedByDeviceId);
+  if (device.approval_status !== "approved" || device.approved_at === null) {
+    throw new DevicePersistenceError("device_approval_missing");
+  }
+  return {
+    version: 1,
+    user_id: userId,
+    approved_by_device_id: approvedByDeviceId,
+    approved_at: device.approved_at,
+    device,
+  };
+}
+
+function currentDeviceId(context: AuthContext): string {
+  if (context.deviceId === undefined) {
+    throw new DevicePermissionError("device_context_required");
+  }
+  return context.deviceId;
+}
+
+async function deviceRowById(env: Env, userId: string, deviceId: string): Promise<DeviceRow | null> {
+  return env.ELY_DB.prepare(DEVICE_BY_ID_QUERY).bind(userId, deviceId).first<DeviceRow>();
+}
+
+async function deviceRequestBody(request: Request, label: string): Promise<DeviceRequestBody> {
+  let value: unknown;
+  try {
+    value = await request.json();
+  } catch {
+    throw new DeviceSchemaError(`${label}_json_invalid`);
+  }
+  if (!isRecord(value)) {
+    throw new DeviceSchemaError(`${label}_must_be_object`);
+  }
+  return value;
 }
 
 function deviceDocument(row: DeviceRow, currentDeviceId: string | undefined): DeviceDocument {
@@ -272,7 +484,7 @@ function timestamp(value: unknown, label: string): number {
   return value;
 }
 
-function assertOnlyFields(value: DeviceRegistrationBody, fields: string[]): void {
+function assertOnlyFields(value: DeviceRequestBody, fields: string[]): void {
   const allowed = new Set(fields);
   for (const field of Object.keys(value)) {
     if (!allowed.has(field)) {
@@ -281,6 +493,6 @@ function assertOnlyFields(value: DeviceRegistrationBody, fields: string[]): void
   }
 }
 
-function isRecord(value: unknown): value is DeviceRegistrationBody {
+function isRecord(value: unknown): value is DeviceRequestBody {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

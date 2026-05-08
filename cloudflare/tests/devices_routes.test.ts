@@ -1,18 +1,17 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import type {
-  ElyAnalyticsDataPoint,
-  ElyD1Database,
-  ElyD1PreparedStatement,
-  ElyR2PutOptions,
-  Env,
-} from "../src/bindings.js";
+import type { ElyAnalyticsDataPoint } from "../src/bindings.js";
 import { authSessionCacheKvKey, authTokenHash } from "../src/auth.js";
 import { handleRequest } from "../src/index.js";
+import {
+  ACCESS_TOKEN,
+  PUBLIC_KEY,
+  sessionDocument,
+  testD1Database,
+  testEnv,
+} from "./devices_test_support.js";
 
-const ACCESS_TOKEN = "D".repeat(48);
-const PUBLIC_KEY = "a".repeat(64);
 const IDEMPOTENCY_KEY = "device-register-0001";
 
 describe("device routes", () => {
@@ -284,82 +283,6 @@ describe("device routes", () => {
   });
 });
 
-interface TestEnvOptions {
-  auditEvents?: ElyAnalyticsDataPoint[];
-  d1?: RecordedD1Database;
-  kvEntries?: [string, string][];
-  kvReads?: string[];
-}
-
-interface RecordedD1Database extends ElyD1Database {
-  binds: unknown[][];
-  queries: string[];
-}
-
-function testEnv(options: TestEnvOptions): Env {
-  const values = new Map(options.kvEntries ?? []);
-  return {
-    ELY_ENVIRONMENT: "local",
-    ELY_DB: options.d1 ?? testD1Database([]),
-    ELY_KV: {
-      get(key: string): Promise<string | null> {
-        options.kvReads?.push(key);
-        return Promise.resolve(values.get(key) ?? null);
-      },
-    },
-    ELY_STORAGE: testR2Bucket(),
-    ELY_RATE_LIMITER: {
-      limit(): Promise<{ success: boolean }> {
-        return Promise.resolve({ success: true });
-      },
-    },
-    ELY_API_AUDIT: {
-      writeDataPoint(event?: ElyAnalyticsDataPoint): void {
-        if (event !== undefined) {
-          options.auditEvents?.push(event);
-        }
-      },
-    },
-  };
-}
-
-function testD1Database(rows: unknown[]): RecordedD1Database {
-  const binds: unknown[][] = [];
-  const queries: string[] = [];
-  return {
-    binds,
-    queries,
-    prepare(query: string) {
-      queries.push(query);
-      return testD1PreparedStatement(rows, binds);
-    },
-    batch() {
-      return Promise.resolve([]);
-    },
-    exec() {
-      return Promise.resolve({});
-    },
-  };
-}
-
-function testD1PreparedStatement(rows: unknown[], binds: unknown[][]): ElyD1PreparedStatement {
-  return {
-    bind(...values: unknown[]) {
-      binds.push(values);
-      return this;
-    },
-    first<T>() {
-      return Promise.resolve((rows[0] as T | undefined) ?? null);
-    },
-    all<T>() {
-      return Promise.resolve({ results: rows as T[] });
-    },
-    run() {
-      return Promise.resolve({});
-    },
-  };
-}
-
 function deviceRegistrationBody(): Record<string, unknown> {
   return {
     version: 1,
@@ -369,29 +292,4 @@ function deviceRegistrationBody(): Record<string, unknown> {
     platform: "macOS",
     idempotency_key: IDEMPOTENCY_KEY,
   };
-}
-
-function testR2Bucket(): Env["ELY_STORAGE"] {
-  return {
-    get() {
-      return Promise.resolve(null);
-    },
-    put(_key: string, value: ArrayBuffer, _options?: ElyR2PutOptions) {
-      return Promise.resolve({
-        arrayBuffer() {
-          return Promise.resolve(value);
-        },
-      });
-    },
-  };
-}
-
-function sessionDocument(): string {
-  return JSON.stringify({
-    version: 1,
-    user_id: "user-01",
-    session_id: "session-01",
-    device_id: "device-01",
-    expires_at: "2099-01-01T00:00:00.000Z",
-  });
 }

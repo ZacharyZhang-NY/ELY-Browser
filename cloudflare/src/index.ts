@@ -4,6 +4,7 @@ import {
   DevicePermissionError,
   DevicePersistenceError,
   DeviceSchemaError,
+  approveDeviceDocument,
   deviceListDocument,
   registerDeviceDocument,
 } from "./devices.js";
@@ -82,6 +83,44 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
           if (error instanceof DevicePersistenceError) {
             return jsonResponse(
               { error: "device_registration_failed" },
+              500,
+              { "Cache-Control": "no-store" },
+            );
+          }
+          throw error;
+        }
+      },
+    );
+  }
+  if (url.pathname === "/api/devices/approve") {
+    return withAuthenticatedApiControls(
+      request,
+      env,
+      "devices.approve",
+      ["POST"],
+      async (context) => {
+        try {
+          return jsonResponse(await approveDeviceDocument(request, env, context), 200, {
+            "Cache-Control": "no-store",
+          });
+        } catch (error) {
+          if (error instanceof DevicePermissionError) {
+            return jsonResponse(
+              { error: "device_approval_forbidden" },
+              403,
+              { "Cache-Control": "no-store" },
+            );
+          }
+          if (error instanceof DeviceSchemaError) {
+            return jsonResponse(
+              { error: "invalid_device_approval" },
+              400,
+              { "Cache-Control": "no-store" },
+            );
+          }
+          if (error instanceof DevicePersistenceError) {
+            return jsonResponse(
+              { error: "device_approval_failed" },
               500,
               { "Cache-Control": "no-store" },
             );
