@@ -311,7 +311,9 @@ mod tests {
     };
 
     use super::PluginPackageReader;
-    use crate::services::plugin_package_fixtures::{sign_package_in_place, write_signed_package};
+    use crate::services::plugin_package_test_support::{
+        sign_package_in_place, write_signed_package,
+    };
     use crate::services::plugin_signatures::{
         PluginSignatureVerificationError, PluginSignatureVerifier, TrustedPluginSigningKeys,
     };

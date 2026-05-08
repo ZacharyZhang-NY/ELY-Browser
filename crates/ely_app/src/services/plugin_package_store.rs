@@ -262,7 +262,7 @@ mod tests {
     };
 
     use super::{PluginPackageStore, PluginPackageStoreError};
-    use crate::services::plugin_package_fixtures::write_signed_package;
+    use crate::services::plugin_package_test_support::write_signed_package;
     use crate::services::plugin_packages::PluginPackageReader;
 
     #[test]

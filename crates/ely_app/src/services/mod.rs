@@ -5,4 +5,4 @@ pub mod plugin_packages;
 pub mod plugin_signatures;
 
 #[cfg(test)]
-mod plugin_package_fixtures;
+mod plugin_package_test_support;

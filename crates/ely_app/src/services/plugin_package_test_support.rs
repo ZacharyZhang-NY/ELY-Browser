@@ -11,7 +11,13 @@ use sha2::{Digest, Sha256};
 use super::plugin_signatures::signing_payload;
 
 const KEY_ID: &str = "elydora-alpha-plugins";
-const TEST_SIGNING_KEY: [u8; 32] = [9; 32];
+const DETERMINISTIC_SIGNING_KEY: [u8; 32] = [9; 32];
+const PARSABLE_SIGNATURE_VALUE: &str = concat!(
+    "00000000000000000000000000000000",
+    "00000000000000000000000000000000",
+    "00000000000000000000000000000000",
+    "00000000000000000000000000000000",
+);
 
 pub(crate) fn write_signed_package(
     root: &Path,
@@ -28,15 +34,14 @@ pub(crate) fn write_signed_package(
 pub(crate) fn sign_package_in_place(package: &Path, name: &str) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(package.join("signatures"))?;
 
-    let signing_key = SigningKey::from_bytes(&TEST_SIGNING_KEY);
+    let signing_key = SigningKey::from_bytes(&DETERMINISTIC_SIGNING_KEY);
     let public_key = hex_bytes(signing_key.verifying_key().to_bytes().as_slice());
     let component = fs::read(package.join("component.wasm"))?;
     let checksum = format!("{:x}", Sha256::digest(component.as_slice()));
-    let placeholder_signature = "0".repeat(128);
 
     fs::write(
         package.join("plugin.toml"),
-        manifest_toml(name, checksum.as_str(), public_key.as_str(), placeholder_signature.as_str()),
+        manifest_toml(name, checksum.as_str(), public_key.as_str(), PARSABLE_SIGNATURE_VALUE),
     )?;
 
     let manifest_text = fs::read_to_string(package.join("plugin.toml"))?;
