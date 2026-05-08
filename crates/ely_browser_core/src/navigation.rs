@@ -20,19 +20,27 @@ pub(crate) fn tab_matches_query(tab: &BrowserTab, normalized_query: &str) -> boo
 }
 
 pub(crate) fn new_space_name(command: &str) -> Option<&str> {
-    let normalized_command = command.to_ascii_lowercase();
-    for prefix in ["new-space ", "new space "] {
-        if normalized_command.starts_with(prefix) {
-            let name = command[prefix.len()..].trim();
-            return (!name.is_empty()).then_some(name);
-        }
-    }
-    None
+    command_argument(command, &["new-space ", "new space "])
 }
 
 pub(crate) fn move_tab_space_name(command: &str) -> Option<&str> {
+    command_argument(
+        command,
+        &["move-tab ", "move tab ", "move-tab-to-space ", "move tab to space "],
+    )
+}
+
+pub(crate) fn new_profile_name(command: &str) -> Option<&str> {
+    command_argument(command, &["new-profile ", "new profile "])
+}
+
+pub(crate) fn switch_profile_name(command: &str) -> Option<&str> {
+    command_argument(command, &["switch-profile ", "switch profile "])
+}
+
+fn command_argument<'a>(command: &'a str, prefixes: &[&str]) -> Option<&'a str> {
     let normalized_command = command.to_ascii_lowercase();
-    for prefix in ["move-tab ", "move tab ", "move-tab-to-space ", "move tab to space "] {
+    for prefix in prefixes {
         if normalized_command.starts_with(prefix) {
             let name = command[prefix.len()..].trim();
             return (!name.is_empty()).then_some(name);

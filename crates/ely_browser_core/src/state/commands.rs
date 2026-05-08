@@ -1,8 +1,11 @@
-use ely_domain::{CommandIntent, CommandScope, SpaceId};
+use ely_domain::{CommandIntent, CommandScope, ProfileId, ProfileKind, SpaceId};
 
 use crate::{
     CoreError,
-    navigation::{move_tab_space_name, new_space_name, search_url, space_icon},
+    navigation::{
+        move_tab_space_name, new_profile_name, new_space_name, search_url, space_icon,
+        switch_profile_name,
+    },
 };
 
 use super::BrowserCore;
@@ -58,11 +61,22 @@ impl BrowserCore {
             self.create_space(name.to_string(), space_icon(name), 0xf54e00)?;
             return Ok(true);
         }
+        if let Some(name) = new_profile_name(command) {
+            self.create_profile(name.to_string(), 0xf54e00, ProfileKind::Standard)?;
+            return Ok(true);
+        }
         if let Some(name) = move_tab_space_name(command) {
             let Some(space_id) = self.find_space_match(name) else {
                 return Ok(false);
             };
             self.move_active_tab_to_space(&space_id)?;
+            return Ok(true);
+        }
+        if let Some(name) = switch_profile_name(command) {
+            let Some(profile_id) = self.find_profile_match(name) else {
+                return Ok(false);
+            };
+            self.select_profile(&profile_id)?;
             return Ok(true);
         }
 
@@ -98,5 +112,13 @@ impl BrowserCore {
                 || space.icon().to_lowercase().contains(&query))
             .then(|| space.id().clone())
         })
+    }
+
+    fn find_profile_match(&self, query: &str) -> Option<ProfileId> {
+        let query = query.trim().to_lowercase();
+        self.profiles
+            .iter()
+            .find(|profile| profile.name().to_lowercase().contains(&query))
+            .map(|profile| profile.id().clone())
     }
 }

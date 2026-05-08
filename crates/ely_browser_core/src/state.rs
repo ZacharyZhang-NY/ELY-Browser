@@ -11,6 +11,7 @@ use crate::{
 };
 
 mod commands;
+mod profiles;
 
 const DEFAULT_FAVORITE_LIMIT: usize = 12;
 
@@ -57,6 +58,7 @@ pub struct BrowserCore {
     active_profile_id: ProfileId,
     active_tab_id: TabId,
     active_tabs_by_space: BTreeMap<SpaceId, TabId>,
+    active_tabs_by_space_profile: BTreeMap<(SpaceId, ProfileId), TabId>,
     command_query: String,
     new_tab_url: UrlText,
 }
@@ -77,13 +79,17 @@ impl BrowserCore {
         );
         let active_tab_id = tab.id().clone();
         let mut active_tabs_by_space = BTreeMap::new();
+        let mut active_tabs_by_space_profile = BTreeMap::new();
         active_tabs_by_space.insert(active_space_id.clone(), active_tab_id.clone());
+        active_tabs_by_space_profile
+            .insert((active_space_id.clone(), active_profile_id.clone()), active_tab_id.clone());
 
         Ok(Self {
             active_space_id,
             active_profile_id,
             active_tab_id,
             active_tabs_by_space,
+            active_tabs_by_space_profile,
             spaces: vec![space],
             profiles: vec![profile],
             tabs: vec![tab],
@@ -104,6 +110,8 @@ impl BrowserCore {
         self.tabs.insert(insert_index, tab);
         self.active_tab_id = tab_id.clone();
         self.active_tabs_by_space.insert(self.active_space_id.clone(), tab_id.clone());
+        self.active_tabs_by_space_profile
+            .insert((self.active_space_id.clone(), self.active_profile_id.clone()), tab_id.clone());
         tab_id
     }
 
@@ -170,15 +178,23 @@ impl BrowserCore {
         let tab_index = self.active_tab_index()?;
         let tab_id = self.active_tab_id.clone();
         let source_space_id = self.tabs[tab_index].space_id().clone();
+        let profile_id = self.tabs[tab_index].profile_id().clone();
         if &source_space_id == space_id {
             return Ok(tab_id);
         }
 
         self.tabs[tab_index].move_to_space(space_id.clone());
         self.active_tabs_by_space.insert(space_id.clone(), tab_id.clone());
+        self.active_tabs_by_space_profile.remove(&(source_space_id.clone(), profile_id.clone()));
 
         if let Some(next_tab_id) = self.nearest_tab_in_space(&source_space_id, tab_index) {
-            self.active_tabs_by_space.insert(source_space_id, next_tab_id);
+            self.active_tabs_by_space.insert(source_space_id.clone(), next_tab_id);
+            if let Some(next_profile_tab_id) =
+                self.nearest_tab_in_space_profile(&source_space_id, &profile_id, tab_index)
+            {
+                self.active_tabs_by_space_profile
+                    .insert((source_space_id, profile_id), next_profile_tab_id);
+            }
         } else {
             let tab = self.build_tab_for(
                 source_space_id.clone(),
@@ -187,6 +203,8 @@ impl BrowserCore {
             );
             let replacement_id = tab.id().clone();
             self.tabs.insert(tab_index, tab);
+            self.active_tabs_by_space_profile
+                .insert((source_space_id.clone(), profile_id), replacement_id.clone());
             self.active_tabs_by_space.insert(source_space_id, replacement_id);
         }
 
@@ -211,11 +229,19 @@ impl BrowserCore {
         let closed_space_id = closed_tab.space_id().clone();
         let closed_profile_id = closed_tab.profile_id().clone();
         let was_space_active_tab = self.active_tabs_by_space.get(&closed_space_id) == Some(tab_id);
+        self.active_tabs_by_space_profile
+            .remove(&(closed_space_id.clone(), closed_profile_id.clone()));
         self.archived_tabs.push(ArchivedTab::new(closed_tab, ArchiveSource::ManualClose));
 
         if let Some(next_tab_id) = self.nearest_tab_in_space(&closed_space_id, close_index) {
             if was_space_active_tab {
-                self.active_tabs_by_space.insert(closed_space_id, next_tab_id.clone());
+                self.active_tabs_by_space.insert(closed_space_id.clone(), next_tab_id.clone());
+            }
+            if let Some(next_profile_tab_id) =
+                self.nearest_tab_in_space_profile(&closed_space_id, &closed_profile_id, close_index)
+            {
+                self.active_tabs_by_space_profile
+                    .insert((closed_space_id, closed_profile_id), next_profile_tab_id);
             }
             if was_active {
                 self.select_tab(&next_tab_id)?;
@@ -225,11 +251,13 @@ impl BrowserCore {
 
         let tab = self.build_tab_for(
             closed_space_id.clone(),
-            closed_profile_id,
+            closed_profile_id.clone(),
             self.new_tab_url.clone(),
         );
         let replacement_id = tab.id().clone();
         self.tabs.insert(close_index.min(self.tabs.len()), tab);
+        self.active_tabs_by_space_profile
+            .insert((closed_space_id.clone(), closed_profile_id), replacement_id.clone());
         self.active_tabs_by_space.insert(closed_space_id, replacement_id.clone());
 
         if was_active {
@@ -301,7 +329,9 @@ impl BrowserCore {
 
         self.active_tab_id = active_tab_id.clone();
         self.active_space_id = active_space_id.clone();
-        self.active_profile_id = active_profile_id;
+        self.active_profile_id = active_profile_id.clone();
+        self.active_tabs_by_space_profile
+            .insert((active_space_id.clone(), active_profile_id), active_tab_id.clone());
         self.active_tabs_by_space.insert(active_space_id, active_tab_id);
         Ok(())
     }
@@ -443,6 +473,20 @@ impl BrowserCore {
             .skip(start_index)
             .chain(self.tabs.iter().take(start_index))
             .find(|tab| tab.space_id() == space_id)
+            .map(|tab| tab.id().clone())
+    }
+
+    fn nearest_tab_in_space_profile(
+        &self,
+        space_id: &SpaceId,
+        profile_id: &ProfileId,
+        start_index: usize,
+    ) -> Option<TabId> {
+        self.tabs
+            .iter()
+            .skip(start_index)
+            .chain(self.tabs.iter().take(start_index))
+            .find(|tab| tab.space_id() == space_id && tab.profile_id() == profile_id)
             .map(|tab| tab.id().clone())
     }
 

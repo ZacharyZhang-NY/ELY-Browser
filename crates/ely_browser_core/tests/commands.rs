@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{CommandIntent, CommandScope, UrlText};
+use ely_domain::{CommandIntent, CommandScope, ProfileKind, UrlText};
 
 #[test]
 fn favorite_command_toggles_active_tab() -> Result<(), Box<dyn Error>> {
@@ -65,6 +65,62 @@ fn new_space_command_creates_and_selects_named_space() -> Result<(), Box<dyn Err
     assert_eq!(snapshot.tabs[0].space_id(), &snapshot.active_space_id);
     assert_eq!(active_tab.url().as_str(), "ely://new-tab");
     assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn new_profile_command_creates_and_selects_named_profile() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let default_profile_id = core.active_tab()?.profile_id().clone();
+
+    core.set_command_query(">new-profile Personal");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("new-profile Personal".to_string())));
+    assert_eq!(snapshot.active_profile_name, "Personal");
+    assert_ne!(active_tab.profile_id(), &default_profile_id);
+    assert_eq!(active_tab.url().as_str(), "ely://new-tab");
+    assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn switch_profile_command_selects_matching_profile_context() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let default_profile_id = core.active_tab()?.profile_id().clone();
+    let personal_profile_id = core.create_profile("Personal", 0xf54e00, ProfileKind::Standard)?;
+    let personal_tab_id = core.open_tab(UrlText::parse("https://example.com")?);
+    core.select_profile(&default_profile_id)?;
+
+    core.set_command_query(">switch-profile Personal");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("switch-profile Personal".to_string())));
+    assert_eq!(snapshot.active_profile_name, "Personal");
+    assert_eq!(snapshot.active_tab_id, personal_tab_id);
+    assert_eq!(active_tab.profile_id(), &personal_profile_id);
+    assert_eq!(active_tab.url().as_str(), "https://example.com");
+    assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn switch_profile_command_preserves_query_without_match() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let active_tab_id = core.active_tab()?.id().clone();
+
+    core.set_command_query(">switch-profile Missing");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("switch-profile Missing".to_string())));
+    assert_eq!(snapshot.active_profile_name, "Default");
+    assert_eq!(snapshot.active_tab_id, active_tab_id);
+    assert_eq!(snapshot.command_query, ">switch-profile Missing");
     Ok(())
 }
 
