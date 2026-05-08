@@ -7,6 +7,7 @@ mod download_settings;
 mod downloads;
 mod general;
 mod history;
+mod new_tab;
 mod notes;
 mod notes_markdown;
 mod plugin_catalog;
@@ -54,6 +55,7 @@ impl ElyShell {
         }
 
         match tab.url().as_str() {
+            "ely://new-tab" => self.render_new_tab_page(snapshot, cx),
             "ely://bookmarks" => self.render_bookmarks_page(snapshot, cx),
             "ely://notes" => self.render_notes_page(snapshot, cx),
             "ely://reading-list" => self.render_reading_list_page(snapshot, cx),
