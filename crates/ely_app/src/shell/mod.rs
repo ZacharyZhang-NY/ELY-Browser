@@ -1,4 +1,5 @@
 mod downloads;
+mod history;
 mod internal_pages;
 mod plugins;
 mod render;
@@ -36,6 +37,7 @@ pub struct ElyShell {
     download_action_error: Option<String>,
     download_clear_confirmation: bool,
     download_security_confirmation: Option<PendingDownloadFileAction>,
+    history_clear_confirmation: Option<ProfileId>,
     site_permissions_clear_confirmation: Option<ProfileId>,
     plugin_install_error: Option<String>,
     pending_plugin_install: Option<PendingPluginInstall>,
@@ -98,6 +100,7 @@ impl ElyShell {
             download_action_error: None,
             download_clear_confirmation: false,
             download_security_confirmation: None,
+            history_clear_confirmation: None,
             site_permissions_clear_confirmation: None,
             plugin_install_error: None,
             pending_plugin_install: None,

@@ -1,6 +1,7 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
 use ely_domain::HistoryRecordingPolicy;
+use gpui::prelude::FluentBuilder;
 use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, px, rgb};
 use gpui_component::{
     IconName, Selectable, Sizable, StyledExt,
@@ -16,6 +17,9 @@ impl ElyShell {
         snapshot: &BrowserSnapshot,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let confirming_clear =
+            self.history_clear_confirmation.as_ref() == Some(&snapshot.active_profile_id);
+
         render_canvas_surface(
             div()
                 .size_full()
@@ -25,6 +29,9 @@ impl ElyShell {
                 .gap_5()
                 .child(render_privacy_header(snapshot))
                 .child(render_history_summary(snapshot))
+                .when(snapshot.active_profile_history_entry_count > 0, |this| {
+                    this.child(render_history_clear_controls(confirming_clear, cx))
+                })
                 .child(render_history_policy_rows(snapshot.history_recording_policy, cx)),
         )
     }
@@ -120,7 +127,91 @@ fn render_history_summary(snapshot: &BrowserSnapshot) -> AnyElement {
                 .text_xs()
                 .font_semibold()
                 .text_color(rgb(colors::MUTED))
-                .child(format!("{} visible entries", snapshot.history_entries.len())),
+                .child(format!("{} Profile entries", snapshot.active_profile_history_entry_count)),
+        )
+        .into_any_element()
+}
+
+fn render_history_clear_controls(confirming_clear: bool, cx: &mut Context<ElyShell>) -> AnyElement {
+    if confirming_clear {
+        return render_clear_history_confirmation(cx);
+    }
+
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap_4()
+        .child(
+            div()
+                .text_sm()
+                .text_color(rgb(colors::MUTED))
+                .child("Clear all history saved for this Profile."),
+        )
+        .child(
+            Button::new("request-clear-history")
+                .danger()
+                .xsmall()
+                .label("Clear History")
+                .tooltip("Clear Profile History")
+                .on_click(cx.listener(|shell, _, _, cx| {
+                    shell.request_clear_history_confirmation(cx);
+                })),
+        )
+        .into_any_element()
+}
+
+fn render_clear_history_confirmation(cx: &mut Context<ElyShell>) -> AnyElement {
+    div()
+        .rounded_md()
+        .border_1()
+        .border_color(rgb(colors::ERROR))
+        .bg(rgb(colors::CANVAS_SOFT))
+        .px_4()
+        .py_3()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap_4()
+        .child(
+            div()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    div()
+                        .text_sm()
+                        .font_semibold()
+                        .text_color(rgb(colors::INK))
+                        .child("Confirm history clearing"),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(rgb(colors::MUTED))
+                        .child("This removes Profile history across every Space."),
+                ),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    Button::new("cancel-clear-history").ghost().xsmall().label("Cancel").on_click(
+                        cx.listener(|shell, _, _, cx| {
+                            shell.cancel_clear_history_confirmation(cx);
+                        }),
+                    ),
+                )
+                .child(
+                    Button::new("confirm-clear-history").danger().xsmall().label("Clear").on_click(
+                        cx.listener(|shell, _, _, cx| {
+                            shell.clear_active_profile_history(cx);
+                        }),
+                    ),
+                ),
         )
         .into_any_element()
 }

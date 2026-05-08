@@ -46,6 +46,46 @@ fn paused_history_recording_skips_new_history_entries() -> Result<(), Box<dyn Er
 }
 
 #[test]
+fn clear_active_profile_history_removes_every_space_entry() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let default_profile_id = core.snapshot()?.active_profile_id;
+
+    core.open_tab(UrlText::parse("https://example.com/work")?);
+    core.create_space("Research", "R", 0xf54e00)?;
+    core.open_tab(UrlText::parse("https://example.com/research")?);
+
+    let personal_profile_id = core.create_profile("Personal", 0x26251e, ProfileKind::Standard)?;
+    core.open_tab(UrlText::parse("https://example.com/personal")?);
+    core.select_profile(&default_profile_id)?;
+
+    let removed_count = core.clear_active_profile_history()?;
+    let default_snapshot = core.snapshot()?;
+    assert_eq!(removed_count, 2);
+    assert_eq!(default_snapshot.active_profile_history_entry_count, 0);
+    assert!(default_snapshot.history_entries.is_empty());
+
+    core.select_profile(&personal_profile_id)?;
+    let personal_snapshot = core.snapshot()?;
+    assert_eq!(personal_snapshot.active_profile_history_entry_count, 1);
+    assert_eq!(personal_snapshot.history_entries.len(), 1);
+    assert_eq!(personal_snapshot.history_entries[0].url().as_str(), "https://example.com/personal");
+    Ok(())
+}
+
+#[test]
+fn clear_active_profile_history_without_entries_is_empty_change() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    let removed_count = core.clear_active_profile_history()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(removed_count, 0);
+    assert_eq!(snapshot.active_profile_history_entry_count, 0);
+    assert!(snapshot.history_entries.is_empty());
+    Ok(())
+}
+
+#[test]
 fn history_scoped_search_opens_recent_matching_entry() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     core.open_tab(UrlText::parse("https://example.com/research")?);

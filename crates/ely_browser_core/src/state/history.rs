@@ -7,6 +7,11 @@ use crate::navigation::records_history;
 use super::BrowserCore;
 
 impl BrowserCore {
+    pub fn clear_active_profile_history(&mut self) -> Result<usize, crate::CoreError> {
+        let profile_id = self.active_profile_id.clone();
+        self.clear_profile_history(&profile_id)
+    }
+
     pub(super) fn record_history_entry(&mut self, tab: &BrowserTab) {
         if !self.history_recording_policy.records_history()
             || !records_history(tab.url())
@@ -48,6 +53,23 @@ impl BrowserCore {
             .filter(|entry| entry.space_id() == &self.active_space_id)
             .cloned()
             .collect()
+    }
+
+    pub(super) fn active_profile_history_count(&self) -> usize {
+        self.history_entries
+            .iter()
+            .filter(|entry| entry.profile_id() == &self.active_profile_id)
+            .count()
+    }
+
+    fn clear_profile_history(&mut self, profile_id: &ProfileId) -> Result<usize, crate::CoreError> {
+        if !self.profiles.iter().any(|profile| profile.id() == profile_id) {
+            return Err(crate::CoreError::ProfileNotFound { id: profile_id.clone() });
+        }
+
+        let original_count = self.history_entries.len();
+        self.history_entries.retain(|entry| entry.profile_id() != profile_id);
+        Ok(original_count - self.history_entries.len())
     }
 
     fn profile_records_history(&self, profile_id: &ProfileId) -> bool {
