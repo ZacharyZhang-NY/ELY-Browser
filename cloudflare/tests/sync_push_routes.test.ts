@@ -212,6 +212,31 @@ describe("sync push routes", () => {
     assert.deepEqual(d1.batches, []);
   });
 
+  it("rejects same-clock object write races after D1 persistence", async () => {
+    const payload = bytes("encrypted tab payload");
+    const payloadHash = sha256(payload);
+    const tokenHash = await authTokenHash(ACCESS_TOKEN);
+    const d1 = testD1Database({
+      firstRows: [
+        { device_id: DEVICE_ID },
+        null,
+        syncObjectRow({ payload_hash: "e".repeat(64), logical_clock: 42 }),
+      ],
+    });
+
+    const response = await handleRequest(
+      syncPushRequest(syncPushBody({ payload_hash: payloadHash, payload: inlinePayload(payload) })),
+      testEnv({
+        d1,
+        kvEntries: [[authSessionCacheKvKey("local", tokenHash), sessionDocument(DEVICE_ID)]],
+      }),
+    );
+
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { error: "sync_conflict" });
+    assert.equal(d1.batches[0], 2);
+  });
+
   it("rejects revoked devices before reading the sync push body", async () => {
     const tokenHash = await authTokenHash(ACCESS_TOKEN);
     const d1 = testD1Database({ firstRows: [null] });

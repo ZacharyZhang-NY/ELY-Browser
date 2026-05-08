@@ -61,7 +61,22 @@ const SYNC_OBJECT_UPSERT_QUERY = `
     device_id = excluded.device_id,
     updated_at = excluded.updated_at,
     deleted_at = excluded.deleted_at
-  WHERE excluded.logical_clock >= sync_objects.logical_clock
+  WHERE excluded.logical_clock > sync_objects.logical_clock
+    OR (
+      excluded.logical_clock = sync_objects.logical_clock
+      AND sync_objects.object_type = excluded.object_type
+      AND (
+        (sync_objects.payload_r2_key IS NULL AND excluded.payload_r2_key IS NULL)
+        OR sync_objects.payload_r2_key = excluded.payload_r2_key
+      )
+      AND sync_objects.payload_hash = excluded.payload_hash
+      AND sync_objects.schema_rev = excluded.schema_rev
+      AND sync_objects.device_id = excluded.device_id
+      AND (
+        (sync_objects.deleted_at IS NULL AND excluded.deleted_at IS NULL)
+        OR (sync_objects.deleted_at IS NOT NULL AND excluded.deleted_at IS NOT NULL)
+      )
+    )
 `;
 const SYNC_CHANGE_INSERT_QUERY = `
   INSERT INTO sync_change_log (
@@ -240,6 +255,17 @@ function assertSavedObjectMatchesPush(
 ): void {
   if (object.logical_clock > push.logicalClock) {
     throw new SyncPushConflictError("logical_clock_stale");
+  }
+  if (
+    object.logical_clock === push.logicalClock &&
+    (object.object_type !== push.objectType ||
+      object.operation !== push.operation ||
+      object.payload_hash !== push.payloadHash ||
+      object.schema_rev !== push.schemaRev ||
+      object.device_id !== deviceId ||
+      object.payload_r2_key !== push.payload.r2Key)
+  ) {
+    throw new SyncPushConflictError("logical_clock_conflict");
   }
   if (
     object.object_id !== push.objectId ||
