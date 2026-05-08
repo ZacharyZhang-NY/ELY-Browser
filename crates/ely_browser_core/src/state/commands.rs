@@ -156,6 +156,9 @@ impl BrowserCore {
                 Ok(true)
             }
             "save-split-view" | "save split view" => Ok(self.save_active_split_view()?.is_some()),
+            "split-tab-group" | "split tab group" | "tab-group-to-split" | "tab group to split" => {
+                Ok(self.split_active_tab_group()?.is_some())
+            }
             "toggle-tab-group" | "toggle tab group" => {
                 Ok(self.toggle_active_tab_group_collapsed()?.is_some())
             }

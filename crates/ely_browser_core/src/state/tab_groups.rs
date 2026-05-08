@@ -1,8 +1,10 @@
-use ely_domain::{TabGroup, TabGroupId, TabId};
+use ely_domain::{
+    MAX_SPLIT_PANES, SplitAxis, SplitId, SplitLayout, SplitPane, TabGroup, TabGroupId, TabId,
+};
 
 use crate::CoreError;
 
-use super::BrowserCore;
+use super::{BrowserCore, tab_order};
 
 impl BrowserCore {
     pub fn group_active_tab(&mut self, name: impl Into<String>) -> Result<TabGroupId, CoreError> {
@@ -54,6 +56,37 @@ impl BrowserCore {
         };
         self.clear_tab_group(&active_tab_id)?;
         Ok(true)
+    }
+
+    pub fn split_active_tab_group(&mut self) -> Result<Option<SplitId>, CoreError> {
+        let Some(group_id) = self.active_tab_group_id()? else {
+            return Ok(None);
+        };
+        let group_tabs = self.active_space_group_tabs(&group_id);
+        if group_tabs.len() < 2 {
+            return Ok(None);
+        }
+        if group_tabs.len() > MAX_SPLIT_PANES {
+            return Err(CoreError::SplitPaneLimitReached { limit: MAX_SPLIT_PANES });
+        }
+
+        let pane_ids = group_tabs.iter().map(|tab| tab.id().clone()).collect::<Vec<_>>();
+        for pane_id in &pane_ids {
+            self.detach_tab_from_split(pane_id);
+        }
+
+        let panes = pane_ids.iter().cloned().map(|tab_id| SplitPane::new(tab_id, 1)).collect();
+        let layout = SplitLayout::new(SplitAxis::Horizontal, panes);
+        let split_id = layout.id().clone();
+
+        for tab in self.tabs.iter_mut().filter(|tab| pane_ids.contains(tab.id())) {
+            tab.clear_group_id();
+            tab.set_split_id(split_id.clone());
+        }
+
+        self.tab_groups.retain(|group| group.id() != &group_id);
+        self.split_layouts.push(layout);
+        Ok(Some(split_id))
     }
 
     pub fn toggle_active_tab_group_collapsed(&mut self) -> Result<Option<bool>, CoreError> {
@@ -140,6 +173,15 @@ impl BrowserCore {
             .map(TabGroup::sort_key)
             .max()
             .map_or(0, |sort_key| sort_key.saturating_add(1))
+    }
+
+    fn active_space_group_tabs(&self, group_id: &TabGroupId) -> Vec<ely_domain::BrowserTab> {
+        tab_order::sorted_tabs(
+            self.tabs
+                .iter()
+                .filter(|tab| tab.space_id() == &self.active_space_id)
+                .filter(|tab| tab.group_id() == Some(group_id)),
+        )
     }
 
     fn active_tab_group_id(&self) -> Result<Option<TabGroupId>, CoreError> {

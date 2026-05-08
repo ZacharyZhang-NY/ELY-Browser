@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, CoreError, InitialBrowserConfig};
-use ely_domain::{CommandIntent, UrlText};
+use ely_domain::{CommandIntent, MAX_SPLIT_PANES, SplitAxis, UrlText};
 
 #[test]
 fn group_active_tab_creates_visible_space_group() -> Result<(), Box<dyn Error>> {
@@ -182,5 +182,65 @@ fn tab_group_command_preserves_query_without_active_group() -> Result<(), Box<dy
     assert_eq!(intent, Some(CommandIntent::Command("toggle-tab-group".to_string())));
     assert_eq!(snapshot.active_tab_id, active_tab_id);
     assert_eq!(snapshot.command_query, ">toggle-tab-group");
+    Ok(())
+}
+
+#[test]
+fn split_tab_group_command_converts_active_group_to_split_view() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let first_tab_id = core.active_tab()?.id().clone();
+    core.group_active_tab("Research")?;
+    let second_tab_id = core.open_tab(UrlText::parse("https://example.com")?);
+    core.group_active_tab("research")?;
+
+    core.set_command_query(">split-tab-group");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+    let layout = snapshot.split_layouts.first().ok_or("missing split layout")?;
+    let pane_ids = layout.panes().iter().map(|pane| pane.tab_id().clone()).collect::<Vec<_>>();
+
+    assert_eq!(intent, Some(CommandIntent::Command("split-tab-group".to_string())));
+    assert_eq!(snapshot.active_tab_id, second_tab_id);
+    assert_eq!(snapshot.command_query, "");
+    assert!(snapshot.tab_groups.is_empty());
+    assert_eq!(layout.axis(), &SplitAxis::Horizontal);
+    assert_eq!(pane_ids, vec![first_tab_id, second_tab_id]);
+    assert!(snapshot.tabs.iter().all(|tab| tab.group_id().is_none()));
+    assert!(snapshot.tabs.iter().all(|tab| tab.split_id() == Some(layout.id())));
+    Ok(())
+}
+
+#[test]
+fn split_tab_group_command_preserves_query_for_single_tab_group() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.group_active_tab("Research")?;
+
+    core.set_command_query(">split-tab-group");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("split-tab-group".to_string())));
+    assert!(snapshot.split_layouts.is_empty());
+    assert_eq!(snapshot.tab_groups.len(), 1);
+    assert_eq!(snapshot.command_query, ">split-tab-group");
+    Ok(())
+}
+
+#[test]
+fn split_tab_group_rejects_groups_above_pane_limit() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    for index in 0..=MAX_SPLIT_PANES {
+        if index > 0 {
+            core.open_tab(UrlText::parse(format!("https://example.com/{index}"))?);
+        }
+        core.group_active_tab("Research")?;
+    }
+
+    let error = match core.split_active_tab_group() {
+        Err(error) => error,
+        Ok(_) => return Err("oversized tab group was converted to a split view".into()),
+    };
+
+    assert_eq!(error, CoreError::SplitPaneLimitReached { limit: MAX_SPLIT_PANES });
     Ok(())
 }
