@@ -20,4 +20,4 @@ pub(crate) use split_pane::{
     render_split_pane_header,
 };
 pub(crate) use topbar::render_topbar;
-pub(crate) use wallpaper::{WallpaperTheme, render_wallpaper};
+pub(crate) use wallpaper::render_wallpaper;

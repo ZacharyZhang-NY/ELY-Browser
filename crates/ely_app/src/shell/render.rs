@@ -7,7 +7,7 @@ use gpui::{
 };
 
 use super::chrome::{
-    PANEL_BG, WallpaperTheme, panel_shadow, render_command_overlay,
+    PANEL_BG, panel_shadow, render_command_overlay,
     render_topbar as render_topbar_chrome, render_wallpaper,
 };
 use super::sidebar::collapsed_sidebar_active;
@@ -64,7 +64,7 @@ impl ElyShell {
             .on_action(cx.listener(Self::on_zoom_in))
             .on_action(cx.listener(Self::on_zoom_out))
             .text_color(rgb(colors::INK))
-            .child(render_wallpaper(WallpaperTheme::Dawn))
+            .child(render_wallpaper(snapshot.appearance.wallpaper()))
             .child(
                 div()
                     .absolute()
