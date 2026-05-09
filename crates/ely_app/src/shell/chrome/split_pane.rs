@@ -7,19 +7,20 @@ use gpui::{
 use gpui_component::IconName;
 
 use crate::shell::ElyShell;
+use crate::shell::chrome::render_glyph_for;
 
 pub(crate) fn render_split_pane_header(
     host: String,
     path: String,
     secure: bool,
-    dot_color: u32,
+    glyph_initial: String,
     close_tab_id: TabId,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let lock_or_globe = if secure { IconName::Search } else { IconName::Globe };
 
     div()
-        .h(px(30.0))
+        .h(px(32.0))
         .px(px(10.0))
         .gap(px(8.0))
         .flex()
@@ -28,7 +29,7 @@ pub(crate) fn render_split_pane_header(
         .border_b_1()
         .border_color(rgb(colors::HAIRLINE))
         .bg(rgb(0xf6f4ef))
-        .child(div().size(px(8.0)).rounded_full().bg(rgb(dot_color)))
+        .child(render_glyph_for(Some(host.as_str()), &glyph_initial, 16.0))
         .child(
             div()
                 .text_color(rgb(colors::INK_3))
@@ -37,7 +38,7 @@ pub(crate) fn render_split_pane_header(
         )
         .child(
             div()
-                .text_size(px(11.0))
+                .text_size(px(11.5))
                 .font_weight(FontWeight(500.0))
                 .text_color(rgb(colors::INK))
                 .child(host),
@@ -51,7 +52,23 @@ pub(crate) fn render_split_pane_header(
                 .text_color(rgb(colors::INK_4))
                 .child(path),
         )
+        .child(render_reload_glyph(close_tab_id.clone(), cx))
         .child(render_close_glyph(close_tab_id, cx))
+        .into_any_element()
+}
+
+fn render_reload_glyph(tab_id: TabId, cx: &mut Context<ElyShell>) -> AnyElement {
+    let id = format!("split-pane-reload-{}", tab_id.as_str());
+    div()
+        .id(SharedString::from(id))
+        .text_color(rgb(colors::INK_4))
+        .text_size(px(11.0))
+        .cursor_pointer()
+        .hover(|style| style.text_color(rgb(colors::INK)))
+        .on_click(cx.listener(move |shell, _, window, cx| {
+            shell.select_tab(&tab_id, window, cx);
+        }))
+        .child(IconName::Redo2)
         .into_any_element()
 }
 

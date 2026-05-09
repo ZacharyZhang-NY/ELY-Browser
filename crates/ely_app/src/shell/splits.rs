@@ -192,7 +192,12 @@ impl ElyShell {
         let host = pane_host_label(tab);
         let path = pane_path_label(tab);
         let secure = pane_url_is_secure(tab);
-        let dot_color = if active { colors::ACCENT } else { colors::INK_4 };
+        let glyph_initial = tab
+            .title()
+            .chars()
+            .next()
+            .unwrap_or('?')
+            .to_string();
 
         div()
             .id(SharedString::from(format!("split-pane-{}", tab.id().as_str())))
@@ -212,7 +217,7 @@ impl ElyShell {
             .on_click(cx.listener(move |shell, _, window, cx| {
                 shell.select_tab(&tab_id, window, cx);
             }))
-            .child(render_split_pane_header(host, path, secure, dot_color, close_tab_id, cx))
+            .child(render_split_pane_header(host, path, secure, glyph_initial, close_tab_id, cx))
             .child(div().flex_1().min_h_0().overflow_hidden().child(if compact_canvas {
                 render_compact_split_canvas(tab)
             } else {
