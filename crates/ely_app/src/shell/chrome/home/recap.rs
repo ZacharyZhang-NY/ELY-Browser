@@ -179,7 +179,29 @@ fn render_reading_list_cover(
             linear_color_stop(hsla(20.0 / 360.0, 0.36, 0.78, 1.0), 0.0),
             linear_color_stop(hsla(220.0 / 360.0, 0.30, 0.71, 1.0), 1.0),
         ))
-        .cursor_pointer();
+        .cursor_pointer()
+        .hover(|style| style.opacity(0.96))
+        .active(|style| style.opacity(0.88))
+        .child(
+            div()
+                .absolute()
+                .inset_0()
+                .bg(linear_gradient(
+                    225.0,
+                    linear_color_stop(hsla(345.0 / 360.0, 1.0, 0.85, 0.55), 0.0),
+                    linear_color_stop(hsla(345.0 / 360.0, 1.0, 0.85, 0.0), 0.6),
+                )),
+        )
+        .child(
+            div()
+                .absolute()
+                .inset_0()
+                .bg(linear_gradient(
+                    45.0,
+                    linear_color_stop(hsla(228.0 / 360.0, 0.52, 0.62, 0.55), 0.0),
+                    linear_color_stop(hsla(228.0 / 360.0, 0.52, 0.62, 0.0), 0.7),
+                )),
+        );
 
     if let Some(target) = url {
         cover = cover.on_click(cx.listener(move |shell, _, window, cx| {
