@@ -1,6 +1,6 @@
 use ely_browser_core::{BrowserSnapshot, InstalledPlugin, PluginAuditAction, PluginAuditEvent};
 use ely_design_system::colors;
-use ely_domain::PluginId;
+use ely_domain::{PluginId, ProfileKind};
 use gpui::prelude::FluentBuilder;
 use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, px, rgb};
 use gpui_component::{
@@ -252,7 +252,7 @@ fn render_plugin_list(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) ->
         .installed_plugins
         .iter()
         .enumerate()
-        .map(|(index, plugin)| render_plugin_row(index, plugin, cx))
+        .map(|(index, plugin)| render_plugin_row(index, plugin, &snapshot.active_profile_kind, cx))
         .collect::<Vec<_>>();
 
     div()
@@ -267,11 +267,13 @@ fn render_plugin_list(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) ->
 fn render_plugin_row(
     index: usize,
     plugin: &InstalledPlugin,
+    profile_kind: &ProfileKind,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let high_risk_count = plugin.manifest().high_risk_permissions().count();
-    let status_color = if plugin.enabled() { colors::SUCCESS } else { colors::MUTED };
-    let status_label = if plugin.enabled() { "Enabled" } else { "Disabled" };
+    let status_color =
+        if plugin.enabled_for_profile(profile_kind) { colors::SUCCESS } else { colors::MUTED };
+    let status_label = plugin_status_label(plugin, profile_kind);
     let plugin_id = plugin.id().clone();
     let plugin_name = plugin.manifest().name().to_string();
     let target_enabled = !plugin.enabled();
@@ -323,9 +325,21 @@ fn render_plugin_row(
                     target_enabled,
                     cx,
                 ))
+                .child(render_plugin_private_button(index, plugin, plugin_id.clone(), cx))
                 .child(render_plugin_uninstall_button(index, plugin_id, plugin_name, cx)),
         )
         .into_any_element()
+}
+
+fn plugin_status_label(plugin: &InstalledPlugin, profile_kind: &ProfileKind) -> &'static str {
+    if !plugin.enabled() {
+        return "Disabled";
+    }
+    match profile_kind {
+        ProfileKind::Standard => "Enabled",
+        ProfileKind::Private if plugin.private_window_allowed() => "Private Enabled",
+        ProfileKind::Private => "Private Off",
+    }
 }
 
 fn render_plugin_state_button(
@@ -352,6 +366,28 @@ fn render_plugin_state_button(
     } else {
         button.primary().into_any_element()
     }
+}
+
+fn render_plugin_private_button(
+    index: usize,
+    plugin: &InstalledPlugin,
+    plugin_id: PluginId,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let allowed = plugin.private_window_allowed();
+    let label = if allowed { "Block Private" } else { "Allow Private" };
+    let icon = if allowed { IconName::CircleX } else { IconName::Check };
+
+    Button::new(("set-plugin-private", index))
+        .ghost()
+        .xsmall()
+        .icon(icon)
+        .label(label)
+        .tooltip("Set Private Window Permission")
+        .on_click(cx.listener(move |shell, _, _, cx| {
+            shell.set_plugin_private_window_allowed(plugin_id.clone(), !allowed, cx);
+        }))
+        .into_any_element()
 }
 
 fn render_plugin_uninstall_button(
@@ -423,6 +459,8 @@ fn plugin_audit_action_label(action: &PluginAuditAction) -> &'static str {
         PluginAuditAction::Installed => "Installed",
         PluginAuditAction::Enabled => "Enabled",
         PluginAuditAction::Disabled => "Disabled",
+        PluginAuditAction::PrivateWindowAllowed => "Private Allowed",
+        PluginAuditAction::PrivateWindowBlocked => "Private Blocked",
         PluginAuditAction::Uninstalled => "Uninstalled",
     }
 }

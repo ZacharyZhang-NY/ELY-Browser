@@ -1,6 +1,6 @@
 use ely_browser_core::{BrowserSnapshot, InstalledPlugin};
 use ely_design_system::colors;
-use ely_domain::{PluginId, PluginManifest, PluginPermission, PluginPermissionRisk};
+use ely_domain::{PluginId, PluginManifest, PluginPermission, PluginPermissionRisk, ProfileKind};
 use gpui::prelude::FluentBuilder;
 use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, px, rgb};
 use gpui_component::{
@@ -30,10 +30,14 @@ impl ElyShell {
                 .flex_col()
                 .gap_5()
                 .when_some(plugin, |this, plugin| {
-                    this.child(self.render_plugin_detail_header(plugin, cx))
-                        .child(render_plugin_security_summary(plugin))
-                        .child(render_plugin_manifest_rows(plugin.manifest()))
-                        .child(render_plugin_permission_list(plugin.manifest()))
+                    this.child(self.render_plugin_detail_header(
+                        plugin,
+                        &snapshot.active_profile_kind,
+                        cx,
+                    ))
+                    .child(render_plugin_security_summary(plugin))
+                    .child(render_plugin_manifest_rows(plugin.manifest()))
+                    .child(render_plugin_permission_list(plugin.manifest()))
                 })
                 .when(plugin.is_none(), |this| {
                     this.child(render_missing_plugin_detail(plugin_id.as_ref(), cx))
@@ -44,14 +48,19 @@ impl ElyShell {
     fn render_plugin_detail_header(
         &mut self,
         plugin: &InstalledPlugin,
+        profile_kind: &ProfileKind,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let plugin_id = plugin.id().clone();
         let target_enabled = !plugin.enabled();
-        let status_label = if plugin.enabled() { "Enabled" } else { "Disabled" };
-        let status_color = if plugin.enabled() { colors::SUCCESS } else { colors::MUTED };
+        let private_allowed = plugin.private_window_allowed();
+        let status_label = plugin_status_label(plugin, profile_kind);
+        let status_color =
+            if plugin.enabled_for_profile(profile_kind) { colors::SUCCESS } else { colors::MUTED };
         let action_label = if plugin.enabled() { "Disable" } else { "Enable" };
         let action_icon = if plugin.enabled() { IconName::CircleX } else { IconName::Check };
+        let private_action_label = if private_allowed { "Block Private" } else { "Allow Private" };
+        let private_action_icon = if private_allowed { IconName::CircleX } else { IconName::Check };
 
         div()
             .flex()
@@ -83,6 +92,24 @@ impl ElyShell {
                     .text_xs()
                     .child(div().font_semibold().text_color(rgb(status_color)).child(status_label))
                     .child(
+                        Button::new("toggle-plugin-detail-private")
+                            .ghost()
+                            .xsmall()
+                            .icon(private_action_icon)
+                            .label(private_action_label)
+                            .tooltip("Set Private Window Permission")
+                            .on_click(cx.listener({
+                                let plugin_id = plugin_id.clone();
+                                move |shell, _, _, cx| {
+                                    shell.set_plugin_private_window_allowed(
+                                        plugin_id.clone(),
+                                        !private_allowed,
+                                        cx,
+                                    );
+                                }
+                            })),
+                    )
+                    .child(
                         Button::new("toggle-plugin-detail-enabled")
                             .xsmall()
                             .icon(action_icon)
@@ -105,6 +132,17 @@ impl ElyShell {
                     ),
             )
             .into_any_element()
+    }
+}
+
+fn plugin_status_label(plugin: &InstalledPlugin, profile_kind: &ProfileKind) -> &'static str {
+    if !plugin.enabled() {
+        return "Disabled";
+    }
+    match profile_kind {
+        ProfileKind::Standard => "Enabled",
+        ProfileKind::Private if plugin.private_window_allowed() => "Private Enabled",
+        ProfileKind::Private => "Private Off",
     }
 }
 

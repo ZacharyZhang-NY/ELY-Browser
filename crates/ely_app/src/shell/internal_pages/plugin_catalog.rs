@@ -166,25 +166,24 @@ fn render_plugin_catalog_list(
         .overflow_y_scrollbar()
         .border_t_1()
         .border_color(rgb(colors::HAIRLINE))
-        .children(
-            snapshot
-                .installed_plugins
-                .iter()
-                .enumerate()
-                .map(|(index, plugin)| render_plugin_catalog_row(index, plugin, cx)),
-        )
+        .children(snapshot.installed_plugins.iter().enumerate().map(|(index, plugin)| {
+            render_plugin_catalog_row(index, plugin, &snapshot.active_profile_kind, cx)
+        }))
         .into_any_element()
 }
 
 fn render_plugin_catalog_row(
     index: usize,
     plugin: &InstalledPlugin,
+    profile_kind: &ely_domain::ProfileKind,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let detail_route = format!("ely://plugin/{}", plugin.id().as_str());
     let high_risk_count = plugin.manifest().high_risk_permissions().count();
-    let status_color = if plugin.enabled() { colors::SUCCESS } else { colors::MUTED };
-    let status_label = if plugin.enabled() { "Enabled" } else { "Disabled" };
+    let status_color =
+        if plugin.enabled_for_profile(profile_kind) { colors::SUCCESS } else { colors::MUTED };
+    let status_label =
+        if plugin.enabled_for_profile(profile_kind) { "Enabled" } else { "Disabled" };
 
     div()
         .py_3()
@@ -251,7 +250,11 @@ fn render_plugin_catalog_row(
 }
 
 fn enabled_plugin_count(snapshot: &BrowserSnapshot) -> usize {
-    snapshot.installed_plugins.iter().filter(|plugin| plugin.enabled()).count()
+    snapshot
+        .installed_plugins
+        .iter()
+        .filter(|plugin| plugin.enabled_for_profile(&snapshot.active_profile_kind))
+        .count()
 }
 
 fn high_risk_plugin_count(snapshot: &BrowserSnapshot) -> usize {

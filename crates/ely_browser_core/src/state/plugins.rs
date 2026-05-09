@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use ely_domain::{PluginId, PluginManifest};
+use ely_domain::{PluginId, PluginManifest, ProfileKind};
 
 use crate::CoreError;
 
@@ -10,6 +10,7 @@ use super::BrowserCore;
 pub struct InstalledPlugin {
     manifest: PluginManifest,
     enabled: bool,
+    private_window_allowed: bool,
     high_risk_confirmed: bool,
     installed_at: SystemTime,
 }
@@ -19,6 +20,8 @@ pub enum PluginAuditAction {
     Installed,
     Enabled,
     Disabled,
+    PrivateWindowAllowed,
+    PrivateWindowBlocked,
     Uninstalled,
 }
 
@@ -31,11 +34,21 @@ pub struct PluginAuditEvent {
 
 impl InstalledPlugin {
     fn new(manifest: PluginManifest, high_risk_confirmed: bool, installed_at: SystemTime) -> Self {
-        Self { manifest, enabled: true, high_risk_confirmed, installed_at }
+        Self {
+            manifest,
+            enabled: true,
+            private_window_allowed: false,
+            high_risk_confirmed,
+            installed_at,
+        }
     }
 
     fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
+    }
+
+    fn set_private_window_allowed(&mut self, allowed: bool) {
+        self.private_window_allowed = allowed;
     }
 
     #[must_use]
@@ -51,6 +64,20 @@ impl InstalledPlugin {
     #[must_use]
     pub fn enabled(&self) -> bool {
         self.enabled
+    }
+
+    #[must_use]
+    pub fn private_window_allowed(&self) -> bool {
+        self.private_window_allowed
+    }
+
+    #[must_use]
+    pub fn enabled_for_profile(&self, profile_kind: &ProfileKind) -> bool {
+        self.enabled
+            && match profile_kind {
+                ProfileKind::Standard => true,
+                ProfileKind::Private => self.private_window_allowed,
+            }
     }
 
     #[must_use]
@@ -118,6 +145,31 @@ impl BrowserCore {
         self.plugin_mut(plugin_id)?.set_enabled(false);
         self.record_plugin_audit_event(plugin_id.clone(), PluginAuditAction::Disabled);
         Ok(())
+    }
+
+    pub fn set_plugin_private_window_allowed(
+        &mut self,
+        plugin_id: &PluginId,
+        allowed: bool,
+    ) -> Result<(), CoreError> {
+        self.plugin_mut(plugin_id)?.set_private_window_allowed(allowed);
+        let action = if allowed {
+            PluginAuditAction::PrivateWindowAllowed
+        } else {
+            PluginAuditAction::PrivateWindowBlocked
+        };
+        self.record_plugin_audit_event(plugin_id.clone(), action);
+        Ok(())
+    }
+
+    pub fn enabled_plugins_for_active_profile(&self) -> Result<Vec<InstalledPlugin>, CoreError> {
+        let profile_kind = self.active_profile()?.kind();
+        Ok(self
+            .installed_plugins
+            .iter()
+            .filter(|plugin| plugin.enabled_for_profile(profile_kind))
+            .cloned()
+            .collect())
     }
 
     pub fn uninstall_plugin(&mut self, plugin_id: &PluginId) -> Result<(), CoreError> {

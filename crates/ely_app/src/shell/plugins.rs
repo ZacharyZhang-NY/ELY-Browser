@@ -170,6 +170,23 @@ impl ElyShell {
         cx.notify();
     }
 
+    pub(super) fn set_plugin_private_window_allowed(
+        &mut self,
+        plugin_id: PluginId,
+        allowed: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let result = match &mut self.state {
+            ShellState::Ready(core) => core
+                .set_plugin_private_window_allowed(&plugin_id, allowed)
+                .map_err(|error| error.to_string()),
+            ShellState::StartupError(message) => Err(message.clone()),
+        };
+
+        self.plugin_install_error = result.err();
+        cx.notify();
+    }
+
     fn uninstall_plugin(&mut self, plugin_id: PluginId, cx: &mut Context<Self>) {
         let result = match &mut self.state {
             ShellState::Ready(core) => PluginPackageStore::application()

@@ -119,11 +119,9 @@ fn render_task_table(snapshot: &BrowserSnapshot) -> AnyElement {
         })
         .when(!snapshot.installed_plugins.is_empty(), |this| {
             this.child(render_section_header("Plugins")).children(
-                snapshot
-                    .installed_plugins
-                    .iter()
-                    .enumerate()
-                    .map(|(index, plugin)| render_plugin_task_row(index, plugin)),
+                snapshot.installed_plugins.iter().enumerate().map(|(index, plugin)| {
+                    render_plugin_task_row(index, plugin, &snapshot.active_profile_kind)
+                }),
             )
         })
         .into_any_element()
@@ -169,9 +167,14 @@ fn render_download_task_row(index: usize, entry: &DownloadEntry) -> AnyElement {
     )
 }
 
-fn render_plugin_task_row(index: usize, plugin: &InstalledPlugin) -> AnyElement {
-    let status = if plugin.enabled() { "Enabled" } else { "Disabled" };
-    let status_color = if plugin.enabled() { colors::SUCCESS } else { colors::MUTED };
+fn render_plugin_task_row(
+    index: usize,
+    plugin: &InstalledPlugin,
+    profile_kind: &ely_domain::ProfileKind,
+) -> AnyElement {
+    let status = if plugin.enabled_for_profile(profile_kind) { "Enabled" } else { "Disabled" };
+    let status_color =
+        if plugin.enabled_for_profile(profile_kind) { colors::SUCCESS } else { colors::MUTED };
     let detail = format!(
         "{} permissions - {} contributions",
         plugin.manifest().permissions().len(),

@@ -30,6 +30,7 @@ fn installs_standard_plugin_and_records_audit_event() -> Result<(), Box<dyn Erro
     assert_eq!(snapshot.installed_plugins.len(), 1);
     assert_eq!(snapshot.installed_plugins[0].id(), &plugin_id);
     assert!(snapshot.installed_plugins[0].enabled());
+    assert!(!snapshot.installed_plugins[0].private_window_allowed());
     assert!(!snapshot.installed_plugins[0].high_risk_confirmed());
     assert_eq!(snapshot.plugin_audit_events.len(), 1);
     assert_eq!(snapshot.plugin_audit_events[0].plugin_id(), &plugin_id);
@@ -141,6 +142,57 @@ fn allows_reinstall_after_plugin_uninstall() -> Result<(), Box<dyn Error>> {
     assert_eq!(snapshot.installed_plugins.len(), 1);
     assert_eq!(snapshot.plugin_audit_events.len(), 3);
     assert_eq!(snapshot.plugin_audit_events[2].action(), &PluginAuditAction::Installed);
+    Ok(())
+}
+
+#[test]
+fn private_profile_disables_plugins_until_allowed() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::private_window()?)?;
+    let plugin_id =
+        core.install_plugin(plugin_manifest("com.elydora.reader", &["page:metadata"])?, false)?;
+
+    assert!(core.enabled_plugins_for_active_profile()?.is_empty());
+    assert!(!core.snapshot()?.installed_plugins[0].private_window_allowed());
+
+    core.set_plugin_private_window_allowed(&plugin_id, true)?;
+    let allowed_plugins = core.enabled_plugins_for_active_profile()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(allowed_plugins.len(), 1);
+    assert_eq!(allowed_plugins[0].id(), &plugin_id);
+    assert!(snapshot.installed_plugins[0].private_window_allowed());
+    assert_eq!(snapshot.plugin_audit_events[1].action(), &PluginAuditAction::PrivateWindowAllowed);
+    Ok(())
+}
+
+#[test]
+fn disabled_plugin_overrides_private_permission() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::private_window()?)?;
+    let plugin_id =
+        core.install_plugin(plugin_manifest("com.elydora.reader", &["page:metadata"])?, false)?;
+
+    core.set_plugin_private_window_allowed(&plugin_id, true)?;
+    core.disable_plugin(&plugin_id)?;
+
+    assert!(core.enabled_plugins_for_active_profile()?.is_empty());
+    assert_eq!(core.snapshot()?.plugin_audit_events[2].action(), &PluginAuditAction::Disabled);
+    Ok(())
+}
+
+#[test]
+fn blocks_unknown_plugin_private_window_permission() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let plugin_id = PluginId::parse("com.elydora.missing")?;
+
+    let error = core
+        .set_plugin_private_window_allowed(&plugin_id, true)
+        .err()
+        .ok_or_else(|| io::Error::other("missing plugin permission update succeeded"))?;
+
+    assert!(matches!(
+        error,
+        CoreError::PluginNotFound { id } if id.as_str() == "com.elydora.missing"
+    ));
     Ok(())
 }
 
