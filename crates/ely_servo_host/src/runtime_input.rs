@@ -6,6 +6,10 @@ use servo::{
 
 use crate::keyboard::key_and_code_for_character;
 
+pub(super) fn send_mouse_hover(webview: &WebView, x: u32, y: u32) {
+    webview.notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(point(x, y))));
+}
+
 pub(super) fn send_mouse_click(webview: &WebView, x: u32, y: u32) {
     let point = point(x, y);
     webview.notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(point)));

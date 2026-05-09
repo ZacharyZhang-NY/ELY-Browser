@@ -23,7 +23,9 @@ use crate::{
     KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest, PageZoomRequest,
     PermissionDecision, PermissionRequest, RenderedFrame, ResizeRequest, ScreenshotRequest,
     ScrollRequest, ServoHost, ServoHostError, TouchTapRequest, WebViewSnapshot, WebViewState,
-    runtime_input::{send_keyboard_text, send_mouse_click, send_mouse_drag, send_touch_tap},
+    runtime_input::{
+        send_keyboard_text, send_mouse_click, send_mouse_drag, send_mouse_hover, send_touch_tap,
+    },
     runtime_permissions::{PermissionStore, set_permission_decision},
     runtime_waker::ServoWakeFlag,
     runtime_webview::{HostWebView, HostWebViewDelegate},
@@ -52,7 +54,7 @@ impl ServoSurfaceSize {
 
 pub struct SoftwareServoHost {
     servo: Servo,
-    rendering_context: Rc<dyn RenderingContext>,
+    default_surface_size: ServoSurfaceSize,
     webviews: HashMap<WebViewId, HostWebView>,
     permissions: PermissionStore,
     wake_requested: Arc<AtomicBool>,
@@ -82,16 +84,19 @@ impl SoftwareServoHost {
         host
     }
 
+    pub fn create_webview_with_size(
+        &mut self,
+        tab_id: TabId,
+        profile_id: ProfileId,
+        size: ServoSurfaceSize,
+    ) -> Result<WebViewId, ServoHostError> {
+        self.create_webview_in_context(tab_id, profile_id, size)
+    }
+
     fn new_started(
         size: ServoSurfaceSize,
         config_dir: Option<PathBuf>,
     ) -> Result<Self, ServoHostError> {
-        let rendering_context = Rc::new(
-            servo::SoftwareRenderingContext::new(size.physical())
-                .map_err(|_| ServoHostError::RenderingContextUnavailable)?,
-        );
-        rendering_context.make_current().map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
-
         let wake_requested = Arc::new(AtomicBool::new(false));
         let mut builder = ServoBuilder::default()
             .event_loop_waker(Box::new(ServoWakeFlag::new(wake_requested.clone())));
@@ -102,7 +107,7 @@ impl SoftwareServoHost {
 
         Ok(Self {
             servo,
-            rendering_context,
+            default_surface_size: size,
             webviews: HashMap::new(),
             permissions: Rc::new(RefCell::new(HashMap::new())),
             wake_requested,
@@ -117,19 +122,7 @@ impl ServoHost for SoftwareServoHost {
         tab_id: TabId,
         profile_id: ProfileId,
     ) -> Result<WebViewId, ServoHostError> {
-        let webview_id = WebViewId::new();
-        let delegate =
-            Rc::new(HostWebViewDelegate::new(profile_id.clone(), self.permissions.clone()));
-        let webview = WebViewBuilder::new(&self.servo, self.rendering_context.clone())
-            .delegate(delegate.clone())
-            .build();
-
-        self.webviews.insert(
-            webview_id.clone(),
-            HostWebView { tab_id, profile_id, webview, delegate, requested_url: None },
-        );
-
-        Ok(webview_id)
+        self.create_webview_in_context(tab_id, profile_id, self.default_surface_size)
     }
 
     fn navigate(&mut self, request: NavigationRequest) -> Result<(), ServoHostError> {
@@ -138,7 +131,6 @@ impl ServoHost for SoftwareServoHost {
         })?;
         self.servo.spin_event_loop();
         let servo = self.servo.clone();
-        let rendering_context = self.rendering_context.clone();
         let webview = self
             .webviews
             .get_mut(&request.webview_id)
@@ -151,7 +143,7 @@ impl ServoHost for SoftwareServoHost {
 
         webview.delegate.set_state(WebViewState::Loading);
         if should_create_initial_document {
-            webview.webview = WebViewBuilder::new(&servo, rendering_context)
+            webview.webview = WebViewBuilder::new(&servo, webview.rendering_context.clone())
                 .delegate(webview.delegate.clone())
                 .url(url)
                 .build();
@@ -188,7 +180,9 @@ impl ServoHost for SoftwareServoHost {
             .get(&request.webview_id)
             .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
 
-        webview.webview.resize(PhysicalSize::new(request.width, request.height));
+        let size = PhysicalSize::new(request.width, request.height);
+        webview.rendering_context.resize(size);
+        webview.webview.resize(size);
         Ok(())
     }
 
@@ -199,6 +193,13 @@ impl ServoHost for SoftwareServoHost {
             .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
 
         webview.webview.set_page_zoom(request.zoom_factor);
+        Ok(())
+    }
+
+    fn hover(&mut self, x: u32, y: u32) -> Result<(), ServoHostError> {
+        if let Some(webview) = self.webviews.values().next() {
+            send_mouse_hover(&webview.webview, x, y);
+        }
         Ok(())
     }
 
@@ -319,16 +320,15 @@ impl ServoHost for SoftwareServoHost {
     }
 
     fn paint(&mut self, webview_id: &WebViewId) -> Result<(), ServoHostError> {
-        self.rendering_context
-            .make_current()
-            .map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
-        self.rendering_context.prepare_for_rendering();
+        let rendering_context = self.webview(webview_id)?.rendering_context.clone();
+        rendering_context.make_current().map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
+        rendering_context.prepare_for_rendering();
         {
             let webview = self.webview(webview_id)?;
             webview.webview.paint();
         }
-        let rendered_frame = self.read_rendered_frame()?;
-        self.rendering_context.present();
+        let rendered_frame = Self::read_rendered_frame(rendering_context.as_ref())?;
+        rendering_context.present();
         self.webview(webview_id)?.delegate.mark_frame_presented();
         self.last_rendered_frame = Some(rendered_frame);
         Ok(())
@@ -340,14 +340,56 @@ impl ServoHost for SoftwareServoHost {
 }
 
 impl SoftwareServoHost {
+    fn create_webview_in_context(
+        &mut self,
+        tab_id: TabId,
+        profile_id: ProfileId,
+        size: ServoSurfaceSize,
+    ) -> Result<WebViewId, ServoHostError> {
+        let webview_id = WebViewId::new();
+        let rendering_context = Self::new_rendering_context(size)?;
+        let delegate =
+            Rc::new(HostWebViewDelegate::new(profile_id.clone(), self.permissions.clone()));
+        let webview = WebViewBuilder::new(&self.servo, rendering_context.clone())
+            .delegate(delegate.clone())
+            .build();
+
+        self.webviews.insert(
+            webview_id.clone(),
+            HostWebView {
+                tab_id,
+                profile_id,
+                rendering_context,
+                webview,
+                delegate,
+                requested_url: None,
+            },
+        );
+
+        Ok(webview_id)
+    }
+
+    fn new_rendering_context(
+        size: ServoSurfaceSize,
+    ) -> Result<Rc<dyn RenderingContext>, ServoHostError> {
+        let rendering_context = Rc::new(
+            servo::SoftwareRenderingContext::new(size.physical())
+                .map_err(|_| ServoHostError::RenderingContextUnavailable)?,
+        );
+        rendering_context.make_current().map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
+        Ok(rendering_context)
+    }
+
     fn webview(&self, webview_id: &WebViewId) -> Result<&HostWebView, ServoHostError> {
         self.webviews
             .get(webview_id)
             .ok_or_else(|| ServoHostError::WebViewNotFound { id: webview_id.clone() })
     }
 
-    fn read_rendered_frame(&self) -> Result<RenderedFrame, ServoHostError> {
-        let size = self.rendering_context.size();
+    fn read_rendered_frame(
+        rendering_context: &dyn RenderingContext,
+    ) -> Result<RenderedFrame, ServoHostError> {
+        let size = rendering_context.size();
         let width =
             i32::try_from(size.width).map_err(|_| ServoHostError::RenderedFrameUnavailable)?;
         let height =
@@ -356,8 +398,7 @@ impl SoftwareServoHost {
             DeviceIntPoint::new(0, 0),
             DeviceIntSize::new(width, height),
         );
-        let image = self
-            .rendering_context
+        let image = rendering_context
             .read_to_image(frame_rect)
             .ok_or(ServoHostError::RenderedFrameUnavailable)?;
 

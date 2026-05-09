@@ -2,31 +2,16 @@ use ely_browser_core::BrowserSnapshot;
 use ely_domain::{BrowserTab, ProfileKind, TabId};
 use gpui::{AnyElement, Bounds, Context, Pixels, Point};
 
-use crate::services::{
-    ProfileDataMode,
-    servo_sidecar::{ServoSidecarError, SidecarSitePermission, SidecarSnapshot},
-};
+use crate::services::ProfileDataMode;
 
 use super::{
     ElyShell,
-    web_surface_frame::WebSurfaceFrame,
-    web_surface_geometry::{WebSurfaceClickPoint, WebSurfaceScrollOffset, WebSurfaceSize},
-    web_surface_permissions::sidecar_site_permissions_for_tab,
-    web_surface_state::{WebSurfaceRequest, WebSurfaceState, WebSurfaceStateKey},
+    web_surface_permissions::web_surface_site_permissions_for_tab,
+    web_surface_state::WebSurfaceState,
     web_surface_view::{
         render_failed_web_surface, render_loading_web_surface, render_ready_web_surface,
     },
 };
-
-struct PendingWebSurfaceFrame {
-    tab_id: TabId,
-    requested_url: String,
-    size: WebSurfaceSize,
-    scroll_offset: WebSurfaceScrollOffset,
-    zoom_percent: u16,
-    click_point: Option<WebSurfaceClickPoint>,
-    typed_text: Option<String>,
-}
 
 impl ElyShell {
     pub(super) fn render_external_web_canvas(
@@ -39,9 +24,9 @@ impl ElyShell {
         let Some(profile_data_mode) = profile_data_mode_for(tab, snapshot) else {
             return render_failed_web_surface(tab, "Profile context is unavailable.", state_entity);
         };
-        let site_permissions = sidecar_site_permissions_for_tab(tab, snapshot);
 
-        self.ensure_external_web_frame(tab, profile_data_mode, site_permissions, cx);
+        let permissions = web_surface_site_permissions_for_tab(tab, snapshot);
+        self.web_surfaces.ensure_surface(tab, profile_data_mode, &permissions);
 
         match self.web_surfaces.state(tab.id()) {
             Some(WebSurfaceState::Ready(frame)) => {
@@ -59,109 +44,8 @@ impl ElyShell {
         }
     }
 
-    fn ensure_external_web_frame(
-        &mut self,
-        tab: &BrowserTab,
-        profile_data_mode: ProfileDataMode,
-        site_permissions: Vec<SidecarSitePermission>,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(request) = self.web_surfaces.prepare_request(tab, profile_data_mode) else {
-            return;
-        };
-
-        let WebSurfaceRequest {
-            tab_id,
-            requested_url,
-            size,
-            scroll_offset,
-            zoom_percent,
-            click_point,
-            typed_text,
-            client,
-            mut snapshot_request,
-        } = request;
-        snapshot_request = snapshot_request.with_site_permissions(site_permissions);
-        let pending_frame = PendingWebSurfaceFrame {
-            tab_id,
-            requested_url,
-            size,
-            scroll_offset,
-            zoom_percent,
-            click_point,
-            typed_text,
-        };
-        cx.spawn(async move |shell, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { client.snapshot(snapshot_request) })
-                .await;
-
-            _ = shell.update(cx, |shell, cx| {
-                shell.handle_external_web_frame_result(pending_frame, result);
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    fn handle_external_web_frame_result(
-        &mut self,
-        pending_frame: PendingWebSurfaceFrame,
-        result: Result<SidecarSnapshot, ServoSidecarError>,
-    ) {
-        let PendingWebSurfaceFrame {
-            tab_id,
-            requested_url,
-            size,
-            scroll_offset,
-            zoom_percent,
-            click_point,
-            typed_text,
-        } = pending_frame;
-        let state_key = WebSurfaceStateKey {
-            requested_url: requested_url.as_str(),
-            size,
-            scroll_offset,
-            zoom_percent,
-            click_point,
-            typed_text: typed_text.as_deref(),
-        };
-        if !self.web_surfaces.is_loading(&tab_id, state_key) {
-            return;
-        }
-
-        let state = match result {
-            Ok(snapshot) => match WebSurfaceFrame::from_snapshot(
-                requested_url.clone(),
-                scroll_offset,
-                zoom_percent,
-                click_point,
-                typed_text.clone(),
-                snapshot,
-            ) {
-                Ok(frame) => WebSurfaceState::Ready(frame),
-                Err(error) => WebSurfaceState::Failed {
-                    requested_url,
-                    size,
-                    scroll_offset,
-                    zoom_percent,
-                    click_point,
-                    typed_text,
-                    message: error.to_string(),
-                },
-            },
-            Err(error) => WebSurfaceState::Failed {
-                requested_url,
-                size,
-                scroll_offset,
-                zoom_percent,
-                click_point,
-                typed_text,
-                message: error.to_string(),
-            },
-        };
-        self.web_surfaces.finish(tab_id, state);
+    pub(super) fn tick_external_web_surfaces(&mut self) -> bool {
+        self.web_surfaces.tick()
     }
 
     pub(super) fn record_external_web_viewport(
@@ -179,10 +63,21 @@ impl ElyShell {
         &mut self,
         tab_id: TabId,
         requested_url: String,
-        delta: gpui::Point<Pixels>,
+        delta: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
         if self.web_surfaces.record_scroll_delta(&tab_id, requested_url.as_str(), delta) {
+            cx.notify();
+        }
+    }
+
+    pub(super) fn hover_external_web_viewport(
+        &mut self,
+        tab_id: TabId,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.web_surfaces.record_hover_point(&tab_id, position) {
             cx.notify();
         }
     }

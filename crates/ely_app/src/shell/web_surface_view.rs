@@ -93,6 +93,8 @@ fn render_input_overlay(
     let click_tab_id = tab_id.clone();
     let click_url = url.clone();
     let click_entity = state_entity.clone();
+    let hover_tab_id = tab_id.clone();
+    let hover_entity = state_entity.clone();
     let scroll_tab_id = tab_id;
     let scroll_url = url;
     let scroll_entity = state_entity;
@@ -115,6 +117,15 @@ fn render_input_overlay(
                 );
             });
             cx.stop_propagation();
+        })
+        .on_mouse_move(move |event, _window, cx| {
+            hover_entity.update(cx, |shell, cx| {
+                shell.hover_external_web_viewport(
+                    hover_tab_id.clone(),
+                    event.position,
+                    cx,
+                );
+            });
         })
         .on_scroll_wheel(move |event, window, cx| {
             let delta = event.delta.pixel_delta(window.line_height());
