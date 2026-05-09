@@ -1,0 +1,377 @@
+use std::time::SystemTime;
+
+use ely_browser_core::BrowserSnapshot;
+use ely_design_system::colors;
+use ely_domain::{HistoryEntry, ReadingListEntry};
+use gpui::{
+    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, div, hsla, linear_color_stop, linear_gradient, px, rgb,
+    rgba,
+};
+use gpui_component::IconName;
+
+use crate::shell::ElyShell;
+
+use super::style::{CARD_BG, CARD_BG_HOVER, card_shadow};
+use super::time::relative_time_label;
+
+pub(crate) fn render_recap(
+    snapshot: &BrowserSnapshot,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    if snapshot.history_entries.is_empty() && snapshot.reading_list.is_empty() {
+        return div().into_any_element();
+    }
+
+    let now = SystemTime::now();
+
+    div()
+        .grid()
+        .grid_cols(8)
+        .gap(px(12.0))
+        .child(
+            div()
+                .col_span(5)
+                .child(render_continue_card(snapshot, now, cx)),
+        )
+        .child(
+            div()
+                .col_span(3)
+                .child(render_activity_card(snapshot, now, cx)),
+        )
+        .into_any_element()
+}
+
+fn render_continue_card(
+    snapshot: &BrowserSnapshot,
+    now: SystemTime,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let recent_history: Vec<&HistoryEntry> = snapshot.history_entries.iter().rev().take(3).collect();
+    let featured = snapshot.reading_list.first();
+
+    div()
+        .rounded(px(16.0))
+        .bg(rgba(CARD_BG))
+        .shadow(card_shadow())
+        .p(px(16.0))
+        .grid()
+        .grid_cols(2)
+        .gap(px(16.0))
+        .child(render_continue_history(recent_history, now, cx))
+        .child(render_reading_list_cover(featured, cx))
+        .into_any_element()
+}
+
+fn render_continue_history(
+    entries: Vec<&HistoryEntry>,
+    now: SystemTime,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(14.0))
+        .child(
+            div()
+                .text_size(px(13.0))
+                .font_weight(FontWeight(500.0))
+                .text_color(rgb(colors::INK))
+                .child("Continue where you left off"),
+        )
+        .child(if entries.is_empty() {
+            render_empty_history_state()
+        } else {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(10.0))
+                .children(
+                    entries
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, entry)| render_history_row(index, entry, now, cx)),
+                )
+                .into_any_element()
+        })
+        .into_any_element()
+}
+
+fn render_empty_history_state() -> AnyElement {
+    div()
+        .text_size(px(12.0))
+        .text_color(rgb(colors::INK_4))
+        .child("Your recently visited pages will appear here.")
+        .into_any_element()
+}
+
+fn render_history_row(
+    index: usize,
+    entry: &HistoryEntry,
+    now: SystemTime,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let url = entry.url().clone();
+    let title = entry.title().to_string();
+    let host = entry.url().host().unwrap_or_default().to_string();
+    let when = relative_time_label(now, entry.visited_at());
+    let initial = title.chars().next().unwrap_or('?').to_uppercase().to_string();
+
+    div()
+        .id(SharedString::from(format!("continue-row-{index}")))
+        .flex()
+        .items_center()
+        .gap(px(12.0))
+        .py(px(4.0))
+        .cursor_pointer()
+        .on_click(cx.listener(move |shell, _, window, cx| {
+            shell.open_internal_tab(url.as_str(), window, cx);
+        }))
+        .child(
+            div()
+                .size(px(26.0))
+                .rounded(px(7.0))
+                .bg(rgba(CARD_BG_HOVER))
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(px(12.0))
+                .font_weight(FontWeight(600.0))
+                .text_color(rgb(colors::INK_2))
+                .child(initial),
+        )
+        .child(
+            div()
+                .min_w_0()
+                .flex_1()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    div()
+                        .text_size(px(13.0))
+                        .font_weight(FontWeight(500.0))
+                        .text_color(rgb(colors::INK))
+                        .truncate()
+                        .child(title),
+                )
+                .child(
+                    div()
+                        .text_size(px(11.5))
+                        .text_color(rgb(colors::INK_4))
+                        .truncate()
+                        .child(format!("{host} · {when}")),
+                ),
+        )
+        .into_any_element()
+}
+
+fn render_reading_list_cover(
+    featured: Option<&ReadingListEntry>,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let title = featured
+        .map(|entry| entry.title().to_string())
+        .unwrap_or_else(|| "Add an article to your reading list".to_string());
+    let subtitle = featured
+        .map(|entry| entry.display_url())
+        .unwrap_or_else(|| "Reading List".to_string());
+    let url = featured.map(|entry| entry.source_url().clone());
+
+    let mut cover = div()
+        .id(SharedString::from("reading-list-cover"))
+        .min_h(px(200.0))
+        .rounded(px(12.0))
+        .relative()
+        .overflow_hidden()
+        .bg(linear_gradient(
+            135.0,
+            linear_color_stop(hsla(20.0 / 360.0, 0.36, 0.78, 1.0), 0.0),
+            linear_color_stop(hsla(220.0 / 360.0, 0.30, 0.71, 1.0), 1.0),
+        ))
+        .cursor_pointer();
+
+    if let Some(target) = url {
+        cover = cover.on_click(cx.listener(move |shell, _, window, cx| {
+            shell.open_internal_tab(target.as_str(), window, cx);
+        }));
+    } else {
+        cover = cover.on_click(cx.listener(|shell, _, window, cx| {
+            shell.open_internal_tab("ely://reading-list", window, cx);
+        }));
+    }
+
+    cover
+        .child(
+            div()
+                .absolute()
+                .top(px(8.0))
+                .right(px(8.0))
+                .px(px(10.0))
+                .py(px(4.0))
+                .rounded(px(999.0))
+                .bg(rgba(BADGE_BG))
+                .text_size(px(10.5))
+                .text_color(rgb(0xffffff))
+                .child(format!("Reading List · {}", featured.map(|_| 1).unwrap_or(0))),
+        )
+        .child(
+            div()
+                .absolute()
+                .left_0()
+                .right_0()
+                .bottom_0()
+                .p(px(14.0))
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    div()
+                        .text_size(px(18.0))
+                        .font_weight(FontWeight(500.0))
+                        .text_color(rgb(0xffffff))
+                        .child(title),
+                )
+                .child(
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(rgb(0xe6e3de))
+                        .child(subtitle),
+                ),
+        )
+        .into_any_element()
+}
+
+fn render_activity_card(
+    snapshot: &BrowserSnapshot,
+    now: SystemTime,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let entries: Vec<&HistoryEntry> = snapshot.history_entries.iter().rev().take(3).collect();
+
+    div()
+        .rounded(px(16.0))
+        .bg(rgba(CARD_BG))
+        .shadow(card_shadow())
+        .p(px(16.0))
+        .flex()
+        .flex_col()
+        .gap(px(12.0))
+        .child(
+            div()
+                .text_size(px(13.0))
+                .font_weight(FontWeight(500.0))
+                .text_color(rgb(colors::INK))
+                .child("Recent activity"),
+        )
+        .child(if entries.is_empty() {
+            render_empty_activity_state()
+        } else {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(12.0))
+                .children(entries.into_iter().enumerate().map(|(index, entry)| {
+                    render_activity_row(index, entry, now, cx)
+                }))
+                .into_any_element()
+        })
+        .child(render_view_all_link(cx))
+        .into_any_element()
+}
+
+fn render_empty_activity_state() -> AnyElement {
+    div()
+        .text_size(px(12.0))
+        .text_color(rgb(colors::INK_4))
+        .child("Activity from your tabs will land here.")
+        .into_any_element()
+}
+
+fn render_activity_row(
+    index: usize,
+    entry: &HistoryEntry,
+    now: SystemTime,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let url = entry.url().clone();
+    let title = entry.title().to_string();
+    let display_url = entry.url().as_str().to_string();
+    let when = relative_time_label(now, entry.visited_at());
+
+    div()
+        .id(SharedString::from(format!("activity-row-{index}")))
+        .flex()
+        .items_start()
+        .gap(px(10.0))
+        .cursor_pointer()
+        .on_click(cx.listener(move |shell, _, window, cx| {
+            shell.open_internal_tab(url.as_str(), window, cx);
+        }))
+        .child(
+            div()
+                .size(px(24.0))
+                .rounded(px(6.0))
+                .bg(rgba(CARD_BG_HOVER))
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_color(rgb(colors::INK_3))
+                .child(IconName::Globe),
+        )
+        .child(
+            div()
+                .min_w_0()
+                .flex_1()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    div()
+                        .text_size(px(11.5))
+                        .text_color(rgb(colors::INK_3))
+                        .child("You visited"),
+                )
+                .child(
+                    div()
+                        .text_size(px(13.0))
+                        .font_weight(FontWeight(500.0))
+                        .text_color(rgb(colors::INK))
+                        .truncate()
+                        .child(title),
+                )
+                .child(
+                    div()
+                        .text_size(px(10.5))
+                        .text_color(rgb(colors::INK_4))
+                        .truncate()
+                        .child(display_url),
+                ),
+        )
+        .child(
+            div()
+                .text_size(px(10.5))
+                .text_color(rgb(colors::INK_4))
+                .child(when),
+        )
+        .into_any_element()
+}
+
+fn render_view_all_link(cx: &mut Context<ElyShell>) -> AnyElement {
+    div()
+        .id(SharedString::from("activity-view-all"))
+        .pt(px(10.0))
+        .border_t_1()
+        .border_color(rgba(colors::DIVIDER))
+        .text_size(px(11.5))
+        .text_color(rgb(colors::INK_3))
+        .cursor_pointer()
+        .hover(|style| style.text_color(rgb(colors::INK)))
+        .on_click(cx.listener(|shell, _, window, cx| {
+            shell.open_internal_tab("ely://history", window, cx);
+        }))
+        .child("View all history →")
+        .into_any_element()
+}
+
+const BADGE_BG: u32 = 0x00000059;
