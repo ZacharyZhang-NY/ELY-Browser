@@ -18,5 +18,6 @@ cargo check -p ely_servo_host --features servo-engine --all-targets
 cargo clippy -p ely_servo_host --features servo-engine --all-targets -- -D warnings
 cargo test -p ely_servo_host --features servo-engine --test software_host
 scripts/verify_prd_site_rendering.sh
+scripts/verify_windows_app_manifest.sh
 cargo run -p ely_app
 ```

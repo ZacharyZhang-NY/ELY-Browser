@@ -53,6 +53,9 @@ jobs:
       - name: Verify Linux desktop metadata
         run: scripts/verify_linux_desktop_metadata.sh
 
+      - name: Verify Windows app manifest metadata
+        run: scripts/verify_windows_app_manifest.sh
+
       - name: Build macOS app bundle
         run: scripts/create_macos_app_bundle.sh
 
