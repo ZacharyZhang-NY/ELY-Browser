@@ -73,6 +73,19 @@ fn opened_tabs_record_active_tab_as_parent() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn auth_callback_tabs_receive_internal_title() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    let tab_id = core.open_tab(UrlText::parse("ely://auth/callback?code=abc")?);
+    let snapshot = core.snapshot()?;
+    let tab =
+        snapshot.tabs.iter().find(|tab| tab.id() == &tab_id).ok_or(CoreError::MissingActiveTab)?;
+
+    assert_eq!(tab.title(), "Auth Callback");
+    Ok(())
+}
+
+#[test]
 fn replacement_tabs_have_no_parent_tab() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let active_tab_id = core.active_tab()?.id().clone();

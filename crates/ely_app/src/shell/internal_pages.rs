@@ -1,6 +1,7 @@
 mod about;
 mod advanced;
 mod appearance;
+mod auth_callback;
 mod bookmarks;
 mod crash;
 mod download_actions;
@@ -70,6 +71,7 @@ impl ElyShell {
             "ely://task-manager" => self.render_task_manager_page(snapshot),
             "ely://site-compatibility" => self.render_site_compatibility_page(snapshot),
             "ely://plugins" => self.render_plugin_catalog_page(snapshot, cx),
+            url if url.starts_with("ely://auth/callback") => self.render_auth_callback_page(url),
             url if url.starts_with("ely://crash/") => self.render_crash_route(snapshot, url, cx),
             url if url.starts_with("ely://plugin/") => {
                 self.render_plugin_detail_page(snapshot, url, cx)

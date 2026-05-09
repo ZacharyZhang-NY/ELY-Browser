@@ -25,6 +25,7 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
         "ely://task-manager" => Some("Task Manager"),
         "ely://site-compatibility" => Some("Site Compatibility"),
         "ely://plugins" => Some("Plugin Marketplace"),
+        url if auth_callback_route(url) => Some("Auth Callback"),
         url if crash_route_tab_id(url).is_some() => Some("Tab Recovery"),
         url if plugin_detail_route_id(url).is_some() => Some("Plugin Details"),
         url if SiteOrigin::from_site_route(url).ok().flatten().is_some() => Some("Site Settings"),
@@ -485,4 +486,8 @@ fn plugin_detail_route_id(url: &str) -> Option<&str> {
 pub(crate) fn crash_route_tab_id(url: &str) -> Option<&str> {
     let tab_id = url.strip_prefix("ely://crash/")?;
     (!tab_id.is_empty() && !tab_id.contains('/')).then_some(tab_id)
+}
+
+fn auth_callback_route(url: &str) -> bool {
+    matches!(url, "ely://auth/callback") || url.starts_with("ely://auth/callback?")
 }
