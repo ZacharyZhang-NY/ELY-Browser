@@ -47,6 +47,15 @@ jobs:
       - name: Audit source file size
         run: scripts/audit_source_lines.sh
 
+      - name: Verify macOS bundle metadata
+        run: scripts/verify_macos_bundle_metadata.sh
+
+      - name: Build macOS app bundle
+        run: scripts/create_macos_app_bundle.sh
+
+      - name: Verify built macOS app bundle metadata
+        run: scripts/verify_macos_bundle_metadata.sh "target/macos/ELY Browser.app/Contents/Info.plist"
+
   cloudflare:
     name: Cloudflare worker
     runs-on: ubuntu-latest

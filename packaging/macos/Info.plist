@@ -11,6 +11,8 @@
   <string>ely_app</string>
   <key>CFBundleIdentifier</key>
   <string>com.elydora.ely-browser</string>
+  <key>CFBundleGetInfoString</key>
+  <string>ELY Browser by Elydora</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -21,6 +23,17 @@
   <string>0.1.0</string>
   <key>CFBundleVersion</key>
   <string>1</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>com.elydora.ely-browser</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>ely</string>
+      </array>
+    </dict>
+  </array>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.productivity</string>
   <key>LSMinimumSystemVersion</key>
@@ -29,5 +42,7 @@
   <true/>
   <key>NSSupportsAutomaticGraphicsSwitching</key>
   <true/>
+  <key>NSHumanReadableCopyright</key>
+  <string>Copyright 2026 Elydora. All rights reserved.</string>
 </dict>
 </plist>

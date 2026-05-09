@@ -49,7 +49,7 @@ impl ElyShell {
         }
     }
 
-    pub(super) fn open_url(&mut self, url: UrlText, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn open_url(&mut self, url: UrlText, window: &mut Window, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state {
             core.open_tab(url);
             self.sync_address_input(window, cx);
