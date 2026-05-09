@@ -44,6 +44,9 @@ jobs:
       - name: Test PRD site compatibility
         run: cargo test -p ely_servo_host --features servo-engine --test sidecar -- --test-threads=1
 
+      - name: Test app PRD live-site smoke
+        run: cargo test -p ely_app --features live-site-smoke --all-targets -- --test-threads=1
+
       - name: Audit source file size
         run: scripts/audit_source_lines.sh
 
