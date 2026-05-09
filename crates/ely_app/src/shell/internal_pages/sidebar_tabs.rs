@@ -64,13 +64,17 @@ impl ElyShell {
                 .flex()
                 .flex_col()
                 .gap_5()
-                .child(render_sidebar_tabs_header(snapshot, active_space))
+                .child(render_sidebar_tabs_header(snapshot, active_space, cx))
                 .child(render_sidebar_tabs_settings(snapshot, active_space, cx)),
         )
     }
 }
 
-fn render_sidebar_tabs_header(snapshot: &BrowserSnapshot, active_space: &Space) -> AnyElement {
+fn render_sidebar_tabs_header(
+    snapshot: &BrowserSnapshot,
+    active_space: &Space,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
     div()
         .flex()
         .items_end()
@@ -98,16 +102,33 @@ fn render_sidebar_tabs_header(snapshot: &BrowserSnapshot, active_space: &Space) 
                 .flex()
                 .items_center()
                 .gap_2()
-                .text_xs()
-                .font_semibold()
-                .text_color(rgb(colors::MUTED))
-                .child(IconName::LayoutDashboard)
-                .child(format!(
-                    "{} / {} / {}",
-                    sidebar_width_label(active_space),
-                    archive_policy_label(active_space.archive_policy()),
-                    snapshot.favorite_limit.label()
-                )),
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .text_xs()
+                        .font_semibold()
+                        .text_color(rgb(colors::MUTED))
+                        .child(IconName::LayoutDashboard)
+                        .child(format!(
+                            "{} / {} / {}",
+                            sidebar_width_label(active_space),
+                            archive_policy_label(active_space.archive_policy()),
+                            snapshot.favorite_limit.label()
+                        )),
+                )
+                .child(
+                    Button::new("reset-sidebar-tabs-settings")
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Undo2)
+                        .label("Reset")
+                        .tooltip("Restore Sidebar & Tabs Defaults")
+                        .on_click(cx.listener(|shell, _, _, cx| {
+                            shell.reset_sidebar_tabs_settings(cx);
+                        })),
+                ),
         )
         .into_any_element()
 }

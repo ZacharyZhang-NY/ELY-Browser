@@ -10,6 +10,7 @@ mod notes;
 mod plugins;
 mod reading_list;
 mod render;
+mod settings_actions;
 mod sidebar;
 mod site_permissions;
 mod space_files;
@@ -28,10 +29,7 @@ mod web_surface_state;
 mod web_surface_view;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{
-    ArchivePolicy, DownloadPolicy, FavoriteLimit, HistoryRecordingPolicy, NewTabDestination,
-    ProfileId, ProfileSyncPolicy, SearchEngine, SpaceId, SyncObjectKind, SyncObjectPolicy, TabId,
-};
+use ely_domain::{ProfileId, SpaceId, TabId};
 use gpui::{AppContext, Context, Entity, FocusHandle, Subscription, Window};
 use gpui_component::input::{InputEvent, InputState};
 
@@ -263,95 +261,6 @@ impl ElyShell {
     fn toggle_active_tab_pinned(&mut self, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state
             && core.toggle_active_tab_pinned().is_ok()
-        {
-            cx.notify();
-        }
-    }
-
-    fn set_active_space_archive_policy(
-        &mut self,
-        archive_policy: ArchivePolicy,
-        cx: &mut Context<Self>,
-    ) {
-        if let ShellState::Ready(core) = &mut self.state
-            && core.set_active_space_archive_policy(archive_policy).is_ok()
-        {
-            cx.notify();
-        }
-    }
-
-    fn set_search_engine(&mut self, search_engine: SearchEngine, cx: &mut Context<Self>) {
-        if let ShellState::Ready(core) = &mut self.state {
-            core.set_search_engine(search_engine);
-            cx.notify();
-        }
-    }
-
-    fn set_new_tab_destination(&mut self, destination: NewTabDestination, cx: &mut Context<Self>) {
-        if let ShellState::Ready(core) = &mut self.state {
-            core.set_new_tab_destination(destination);
-            cx.notify();
-        }
-    }
-
-    fn set_history_recording_policy(
-        &mut self,
-        policy: HistoryRecordingPolicy,
-        cx: &mut Context<Self>,
-    ) {
-        if let ShellState::Ready(core) = &mut self.state {
-            core.set_history_recording_policy(policy);
-            cx.notify();
-        }
-    }
-
-    fn set_active_profile_download_policy(
-        &mut self,
-        policy: DownloadPolicy,
-        cx: &mut Context<Self>,
-    ) {
-        if let ShellState::Ready(core) = &mut self.state
-            && core.set_active_profile_download_policy(policy).is_ok()
-        {
-            cx.notify();
-        }
-    }
-
-    fn set_profile_sync_policy(
-        &mut self,
-        profile_id: &ProfileId,
-        sync_policy: ProfileSyncPolicy,
-        cx: &mut Context<Self>,
-    ) {
-        if let ShellState::Ready(core) = &mut self.state
-            && core.set_profile_sync_policy(profile_id, sync_policy).is_ok()
-        {
-            cx.notify();
-        }
-    }
-
-    fn set_favorite_limit(&mut self, favorite_limit: FavoriteLimit, cx: &mut Context<Self>) {
-        if let ShellState::Ready(core) = &mut self.state {
-            core.set_favorite_limit(favorite_limit);
-            cx.notify();
-        }
-    }
-
-    fn set_sync_object_policy(
-        &mut self,
-        kind: SyncObjectKind,
-        policy: SyncObjectPolicy,
-        cx: &mut Context<Self>,
-    ) {
-        if let ShellState::Ready(core) = &mut self.state {
-            core.set_sync_object_policy(kind, policy);
-            cx.notify();
-        }
-    }
-
-    fn archive_idle_tabs_now(&mut self, cx: &mut Context<Self>) {
-        if let ShellState::Ready(core) = &mut self.state
-            && core.archive_idle_tabs(std::time::SystemTime::now()).is_ok()
         {
             cx.notify();
         }

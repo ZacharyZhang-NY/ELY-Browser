@@ -37,7 +37,7 @@ impl ElyShell {
                 .flex_col()
                 .gap_5()
                 .child(render_download_settings_header(snapshot))
-                .child(render_download_policy_summary(snapshot))
+                .child(render_download_policy_summary(snapshot, cx))
                 .child(render_download_policy_rows(&snapshot.active_download_policy, &options, cx)),
         )
     }
@@ -78,7 +78,10 @@ fn render_download_settings_header(snapshot: &BrowserSnapshot) -> AnyElement {
         .into_any_element()
 }
 
-fn render_download_policy_summary(snapshot: &BrowserSnapshot) -> AnyElement {
+fn render_download_policy_summary(
+    snapshot: &BrowserSnapshot,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
     div()
         .rounded_md()
         .border_1()
@@ -121,10 +124,27 @@ fn render_download_policy_summary(snapshot: &BrowserSnapshot) -> AnyElement {
         )
         .child(
             div()
-                .text_xs()
-                .font_semibold()
-                .text_color(rgb(colors::MUTED))
-                .child(format!("{} entries", snapshot.download_entries.len())),
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    div()
+                        .text_xs()
+                        .font_semibold()
+                        .text_color(rgb(colors::MUTED))
+                        .child(format!("{} entries", snapshot.download_entries.len())),
+                )
+                .child(
+                    Button::new("reset-download-settings")
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Undo2)
+                        .label("Reset")
+                        .tooltip("Restore Download Defaults")
+                        .on_click(cx.listener(|shell, _, _, cx| {
+                            shell.reset_active_profile_download_settings(cx);
+                        })),
+                ),
         )
         .into_any_element()
 }

@@ -66,6 +66,10 @@ impl BrowserCore {
         self.sync_object_policies.set(kind, policy);
     }
 
+    pub fn reset_sync_settings(&mut self) {
+        self.sync_object_policies = SyncObjectPolicies::default();
+    }
+
     #[must_use]
     pub fn sync_object_policy(&self, kind: SyncObjectKind) -> SyncObjectPolicy {
         self.sync_object_policies.get(kind)

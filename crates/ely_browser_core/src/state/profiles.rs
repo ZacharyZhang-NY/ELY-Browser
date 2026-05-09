@@ -90,6 +90,10 @@ impl BrowserCore {
         self.set_profile_download_policy(&profile_id, download_policy)
     }
 
+    pub fn reset_active_profile_download_settings(&mut self) -> Result<(), CoreError> {
+        self.set_active_profile_download_policy(DownloadPolicy::ask_every_time())
+    }
+
     pub fn set_profile_sync_policy(
         &mut self,
         profile_id: &ProfileId,
@@ -106,6 +110,12 @@ impl BrowserCore {
 
         profile.set_sync_policy(sync_policy);
         Ok(())
+    }
+
+    pub fn reset_profile_sync_settings(&mut self) {
+        for profile in &mut self.profiles {
+            profile.set_sync_policy(ProfileSyncPolicy::default());
+        }
     }
 
     pub(super) fn cleanup_private_profile_session_data(&mut self, profile_id: &ProfileId) {

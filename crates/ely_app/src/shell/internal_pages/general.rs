@@ -24,7 +24,7 @@ impl ElyShell {
                 .flex_col()
                 .gap_5()
                 .child(render_general_header(snapshot))
-                .child(render_general_summary(snapshot.new_tab_destination))
+                .child(render_general_summary(snapshot.new_tab_destination, cx))
                 .child(render_new_tab_destinations(snapshot.new_tab_destination, cx)),
         )
     }
@@ -65,7 +65,10 @@ fn render_general_header(snapshot: &BrowserSnapshot) -> AnyElement {
         .into_any_element()
 }
 
-fn render_general_summary(destination: NewTabDestination) -> AnyElement {
+fn render_general_summary(
+    destination: NewTabDestination,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
     div()
         .rounded_md()
         .border_1()
@@ -107,7 +110,28 @@ fn render_general_summary(destination: NewTabDestination) -> AnyElement {
                 ),
         )
         .child(
-            div().text_xs().font_semibold().text_color(rgb(colors::SUCCESS)).child("Saved locally"),
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    div()
+                        .text_xs()
+                        .font_semibold()
+                        .text_color(rgb(colors::SUCCESS))
+                        .child("Saved locally"),
+                )
+                .child(
+                    Button::new("reset-general-settings")
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Undo2)
+                        .label("Reset")
+                        .tooltip("Restore General Defaults")
+                        .on_click(cx.listener(|shell, _, _, cx| {
+                            shell.reset_general_settings(cx);
+                        })),
+                ),
         )
         .into_any_element()
 }

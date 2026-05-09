@@ -1,9 +1,9 @@
 use std::{collections::BTreeMap, time::SystemTime};
 
 use ely_domain::{
-    ArchivePolicy, ArchivedTab, BookmarkEntry, BrowserTab, DomainError, DownloadEntry,
-    DownloadPolicy, FavoriteLimit, HistoryEntry, HistoryRecordingPolicy, NewTabDestination,
-    NoteEntry, Profile, ProfileId, ProfileKind, ReadingListEntry, SearchEngine,
+    ArchivePolicy, ArchivedTab, BookmarkEntry, BrowserTab, DEFAULT_SIDEBAR_WIDTH_PX, DomainError,
+    DownloadEntry, DownloadPolicy, FavoriteLimit, HistoryEntry, HistoryRecordingPolicy,
+    NewTabDestination, NoteEntry, Profile, ProfileId, ProfileKind, ReadingListEntry, SearchEngine,
     SitePermissionAuditEvent, SitePermissionEntry, Space, SpaceId, SplitLayout, SyncStatus,
     TabGroup, TabId, UrlText,
 };
@@ -292,6 +292,10 @@ impl BrowserCore {
         self.search_engine = search_engine;
     }
 
+    pub fn reset_search_settings(&mut self) {
+        self.set_search_engine(SearchEngine::default());
+    }
+
     #[must_use]
     pub fn search_engine(&self) -> SearchEngine {
         self.search_engine
@@ -299,6 +303,10 @@ impl BrowserCore {
 
     pub fn set_new_tab_destination(&mut self, destination: NewTabDestination) {
         self.new_tab_destination = destination;
+    }
+
+    pub fn reset_general_settings(&mut self) {
+        self.set_new_tab_destination(NewTabDestination::default());
     }
 
     #[must_use]
@@ -310,6 +318,10 @@ impl BrowserCore {
         self.history_recording_policy = policy;
     }
 
+    pub fn reset_privacy_settings(&mut self) {
+        self.set_history_recording_policy(HistoryRecordingPolicy::default());
+    }
+
     #[must_use]
     pub fn history_recording_policy(&self) -> HistoryRecordingPolicy {
         self.history_recording_policy
@@ -317,6 +329,14 @@ impl BrowserCore {
 
     pub fn set_favorite_limit(&mut self, favorite_limit: FavoriteLimit) {
         self.favorite_limit = favorite_limit;
+    }
+
+    pub fn reset_sidebar_tabs_settings(&mut self) -> Result<(), CoreError> {
+        let active_space_id = self.active_space_id.clone();
+        self.set_space_archive_policy(&active_space_id, ArchivePolicy::Manual)?;
+        self.set_space_sidebar_width(&active_space_id, DEFAULT_SIDEBAR_WIDTH_PX)?;
+        self.set_favorite_limit(FavoriteLimit::default());
+        Ok(())
     }
 
     #[must_use]

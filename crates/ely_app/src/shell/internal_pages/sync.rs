@@ -8,7 +8,11 @@ use gpui::{
     px, rgb,
 };
 use gpui::{StatefulInteractiveElement, prelude::FluentBuilder};
-use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
+use gpui_component::{
+    IconName, Sizable, StyledExt,
+    button::{Button, ButtonVariants},
+    scroll::ScrollableElement,
+};
 
 use super::{ElyShell, render_canvas_surface};
 
@@ -26,7 +30,7 @@ impl ElyShell {
                 .flex_col()
                 .gap_5()
                 .child(render_sync_header(snapshot))
-                .child(render_sync_queue(snapshot))
+                .child(render_sync_queue(snapshot, cx))
                 .child(render_sync_objects(snapshot, cx)),
         )
     }
@@ -64,7 +68,7 @@ fn render_sync_header(snapshot: &BrowserSnapshot) -> AnyElement {
         .into_any_element()
 }
 
-fn render_sync_queue(snapshot: &BrowserSnapshot) -> AnyElement {
+fn render_sync_queue(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
     div()
         .rounded_md()
         .border_1()
@@ -76,8 +80,33 @@ fn render_sync_queue(snapshot: &BrowserSnapshot) -> AnyElement {
         .items_center()
         .justify_between()
         .gap_4()
-        .child(metric_block("Pending objects", snapshot.sync_status.pending_objects(), colors::INK))
-        .child(metric_block("Failed objects", snapshot.sync_status.failed_objects(), colors::ERROR))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_4()
+                .child(metric_block(
+                    "Pending objects",
+                    snapshot.sync_status.pending_objects(),
+                    colors::INK,
+                ))
+                .child(metric_block(
+                    "Failed objects",
+                    snapshot.sync_status.failed_objects(),
+                    colors::ERROR,
+                )),
+        )
+        .child(
+            Button::new("reset-sync-settings")
+                .ghost()
+                .xsmall()
+                .icon(IconName::Undo2)
+                .label("Reset")
+                .tooltip("Restore Sync Defaults")
+                .on_click(cx.listener(|shell, _, _, cx| {
+                    shell.reset_sync_settings(cx);
+                })),
+        )
         .into_any_element()
 }
 

@@ -28,19 +28,21 @@ impl ElyShell {
                 .flex()
                 .flex_col()
                 .gap_5()
-                .child(render_profiles_header(snapshot))
+                .child(render_profiles_header(snapshot, cx))
                 .child(render_profile_list(snapshot, cx)),
         )
     }
 }
 
-fn render_profiles_header(snapshot: &BrowserSnapshot) -> AnyElement {
+fn render_profiles_header(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
     div()
         .flex()
         .items_end()
         .justify_between()
+        .gap_4()
         .child(
             div()
+                .min_w_0()
                 .flex()
                 .flex_col()
                 .gap_2()
@@ -54,9 +56,26 @@ fn render_profiles_header(snapshot: &BrowserSnapshot) -> AnyElement {
         )
         .child(
             div()
-                .text_xs()
-                .text_color(rgb(colors::MUTED))
-                .child(format!("{} profiles", snapshot.profiles.len())),
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(rgb(colors::MUTED))
+                        .child(format!("{} profiles", snapshot.profiles.len())),
+                )
+                .child(
+                    Button::new("reset-profile-sync-settings")
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Undo2)
+                        .label("Reset Sync")
+                        .tooltip("Restore Profile Sync Defaults")
+                        .on_click(cx.listener(|shell, _, _, cx| {
+                            shell.reset_profile_sync_settings(cx);
+                        })),
+                ),
         )
         .into_any_element()
 }

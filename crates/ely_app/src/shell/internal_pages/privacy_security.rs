@@ -28,7 +28,7 @@ impl ElyShell {
                 .flex_col()
                 .gap_5()
                 .child(render_privacy_header(snapshot))
-                .child(render_history_summary(snapshot))
+                .child(render_history_summary(snapshot, cx))
                 .when(snapshot.active_profile_history_entry_count > 0, |this| {
                     this.child(render_history_clear_controls(confirming_clear, cx))
                 })
@@ -77,7 +77,7 @@ fn render_privacy_header(snapshot: &BrowserSnapshot) -> AnyElement {
         .into_any_element()
 }
 
-fn render_history_summary(snapshot: &BrowserSnapshot) -> AnyElement {
+fn render_history_summary(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
     div()
         .rounded_md()
         .border_1()
@@ -124,10 +124,23 @@ fn render_history_summary(snapshot: &BrowserSnapshot) -> AnyElement {
         )
         .child(
             div()
-                .text_xs()
-                .font_semibold()
-                .text_color(rgb(colors::MUTED))
-                .child(format!("{} Profile entries", snapshot.active_profile_history_entry_count)),
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(div().text_xs().font_semibold().text_color(rgb(colors::MUTED)).child(
+                    format!("{} Profile entries", snapshot.active_profile_history_entry_count),
+                ))
+                .child(
+                    Button::new("reset-privacy-settings")
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Undo2)
+                        .label("Reset")
+                        .tooltip("Restore Privacy Defaults")
+                        .on_click(cx.listener(|shell, _, _, cx| {
+                            shell.reset_privacy_settings(cx);
+                        })),
+                ),
         )
         .into_any_element()
 }

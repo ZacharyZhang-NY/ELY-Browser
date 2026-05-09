@@ -24,7 +24,7 @@ impl ElyShell {
                 .flex_col()
                 .gap_5()
                 .child(render_search_header(snapshot))
-                .child(render_search_summary(snapshot.search_engine))
+                .child(render_search_summary(snapshot.search_engine, cx))
                 .child(render_search_engines(snapshot.search_engine, cx)),
         )
     }
@@ -65,7 +65,7 @@ fn render_search_header(snapshot: &BrowserSnapshot) -> AnyElement {
         .into_any_element()
 }
 
-fn render_search_summary(search_engine: SearchEngine) -> AnyElement {
+fn render_search_summary(search_engine: SearchEngine, cx: &mut Context<ElyShell>) -> AnyElement {
     div()
         .rounded_md()
         .border_1()
@@ -107,7 +107,28 @@ fn render_search_summary(search_engine: SearchEngine) -> AnyElement {
                 ),
         )
         .child(
-            div().text_xs().font_semibold().text_color(rgb(colors::SUCCESS)).child("Saved locally"),
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    div()
+                        .text_xs()
+                        .font_semibold()
+                        .text_color(rgb(colors::SUCCESS))
+                        .child("Saved locally"),
+                )
+                .child(
+                    Button::new("reset-search-settings")
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Undo2)
+                        .label("Reset")
+                        .tooltip("Restore Search Defaults")
+                        .on_click(cx.listener(|shell, _, _, cx| {
+                            shell.reset_search_settings(cx);
+                        })),
+                ),
         )
         .into_any_element()
 }
