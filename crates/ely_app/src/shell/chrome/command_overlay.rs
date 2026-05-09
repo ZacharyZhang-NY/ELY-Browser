@@ -8,6 +8,7 @@ use gpui::{
 use gpui_component::IconName;
 
 use crate::shell::ElyShell;
+use crate::shell::chrome::render_glyph_for;
 
 const COMMAND_PREFIX: &str = ">";
 const RESULT_LIMIT: usize = 4;
@@ -166,17 +167,18 @@ fn render_tab_rows(tabs: Vec<&BrowserTab>, cx: &mut Context<ElyShell>) -> AnyEle
         .children(tabs.into_iter().enumerate().map(|(index, tab)| {
             let tab_id = tab.id().clone();
             let title = tab.title().to_string();
-            let host = tab
-                .url()
-                .host()
-                .map(|host| host.to_string())
+            let host = tab.url().host().map(|host| host.to_string());
+            let host_label = host
+                .clone()
                 .unwrap_or_else(|| tab.display_url());
+            let initial = title.chars().next().unwrap_or('?').to_string();
 
-            render_row(
+            render_row_with_glyph(
                 format!("cmd-tab-{index}"),
-                IconName::Globe,
+                host.as_deref(),
+                &initial,
                 title,
-                Some(host),
+                Some(host_label),
                 None,
                 cx,
                 move |shell, window, cx| {
@@ -198,15 +200,16 @@ fn render_history_rows(
         .children(entries.into_iter().enumerate().map(|(index, entry)| {
             let url = entry.url().clone();
             let title = entry.title().to_string();
-            let display = entry
-                .url()
-                .host()
-                .map(|host| host.to_string())
+            let host = entry.url().host().map(|host| host.to_string());
+            let display = host
+                .clone()
                 .unwrap_or_else(|| entry.url().as_str().to_string());
+            let initial = title.chars().next().unwrap_or('?').to_string();
 
-            render_row(
+            render_row_with_glyph(
                 format!("cmd-history-{index}"),
-                IconName::Undo2,
+                host.as_deref(),
+                &initial,
                 title,
                 Some(display),
                 None,
@@ -314,6 +317,48 @@ fn render_row<F>(
 where
     F: Fn(&mut ElyShell, &mut gpui::Window, &mut Context<ElyShell>) + 'static,
 {
+    let leading = div()
+        .size(px(24.0))
+        .rounded(px(6.0))
+        .bg(rgba(ROW_ICON_BG))
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_color(rgb(colors::INK_2))
+        .child(icon)
+        .into_any_element();
+    render_row_inner(id, leading, title, hint, keys, cx, handler)
+}
+
+fn render_row_with_glyph<F>(
+    id: String,
+    host: Option<&str>,
+    fallback_initial: &str,
+    title: String,
+    hint: Option<String>,
+    keys: Option<String>,
+    cx: &mut Context<ElyShell>,
+    handler: F,
+) -> AnyElement
+where
+    F: Fn(&mut ElyShell, &mut gpui::Window, &mut Context<ElyShell>) + 'static,
+{
+    let leading = render_glyph_for(host, fallback_initial, 24.0);
+    render_row_inner(id, leading, title, hint, keys, cx, handler)
+}
+
+fn render_row_inner<F>(
+    id: String,
+    leading: AnyElement,
+    title: String,
+    hint: Option<String>,
+    keys: Option<String>,
+    cx: &mut Context<ElyShell>,
+    handler: F,
+) -> AnyElement
+where
+    F: Fn(&mut ElyShell, &mut gpui::Window, &mut Context<ElyShell>) + 'static,
+{
     div()
         .id(SharedString::from(id))
         .flex()
@@ -325,17 +370,7 @@ where
         .hover(|style| style.bg(rgba(ROW_HOVER_BG)))
         .active(|style| style.opacity(0.85))
         .on_click(cx.listener(move |shell, _, window, cx| handler(shell, window, cx)))
-        .child(
-            div()
-                .size(px(24.0))
-                .rounded(px(6.0))
-                .bg(rgba(ROW_ICON_BG))
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_color(rgb(colors::INK_2))
-                .child(icon),
-        )
+        .child(leading)
         .child(
             div()
                 .flex_1()
