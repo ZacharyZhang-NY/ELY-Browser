@@ -345,12 +345,15 @@ const SETTINGS_ROUTE_MATCHES: &[SettingsRouteMatch] = &[
             "history recording",
             "diagnostics",
             "diagnostic reporting",
+            "export local data",
+            "export privacy data",
         ],
         search_terms: &[
             "Privacy & Security",
-            "History recording, diagnostics, and profile-scoped privacy controls.",
+            "History recording, diagnostics, local data export, and profile-scoped privacy controls.",
             "profile privacy",
             "recording policy",
+            "local data export",
         ],
     },
     SettingsRouteMatch {

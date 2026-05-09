@@ -313,6 +313,16 @@ impl BrowserCore {
                 self.open_tab(space_settings_url()?);
                 Ok(true)
             }
+            "export-local-data"
+            | "export local data"
+            | "export-privacy-data"
+            | "export privacy data" => {
+                let Some(url) = settings_page_url("privacy")? else {
+                    return Ok(false);
+                };
+                self.open_tab(url);
+                Ok(true)
+            }
             "site-settings" | "open-site-settings" | "open site settings" => {
                 let Some(url) = self.active_tab_site_settings_url()? else {
                     return Ok(false);

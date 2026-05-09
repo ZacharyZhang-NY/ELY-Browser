@@ -24,6 +24,9 @@ pub enum CoreError {
     #[error("invalid .elybookmarks package: {reason}")]
     InvalidBookmarkPackage { reason: String },
 
+    #[error("invalid .elydata package: {reason}")]
+    InvalidLocalDataPackage { reason: String },
+
     #[error("trashed space not found: {id}")]
     TrashedSpaceNotFound { id: SpaceId },
 

@@ -1,8 +1,10 @@
 use ely_domain::{DiagnosticsReportingPolicy, HistoryRecordingPolicy};
+use serde::{Deserialize, Serialize};
 
 use super::BrowserCore;
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct LocalDataInventory {
     open_tabs: usize,
     archived_tabs: usize,

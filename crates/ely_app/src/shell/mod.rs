@@ -6,6 +6,7 @@ mod downloads;
 mod focus;
 mod history;
 mod internal_pages;
+mod local_data_files;
 mod navigation;
 mod notes;
 mod plugins;
@@ -74,6 +75,8 @@ pub struct ElyShell {
     bookmark_edit_error: Option<String>,
     bookmark_file_error: Option<String>,
     bookmark_file_notice: Option<String>,
+    local_data_file_error: Option<String>,
+    local_data_file_notice: Option<String>,
     plugin_install_error: Option<String>,
     pending_plugin_install: Option<PendingPluginInstall>,
     pending_plugin_uninstall: Option<PendingPluginUninstall>,
@@ -161,6 +164,8 @@ impl ElyShell {
             bookmark_edit_error: None,
             bookmark_file_error: None,
             bookmark_file_notice: None,
+            local_data_file_error: None,
+            local_data_file_notice: None,
             plugin_install_error: None,
             pending_plugin_install: None,
             pending_plugin_uninstall: None,

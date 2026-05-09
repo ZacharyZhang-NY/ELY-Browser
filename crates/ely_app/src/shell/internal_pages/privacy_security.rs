@@ -32,7 +32,12 @@ impl ElyShell {
                 .when(snapshot.active_profile_history_entry_count > 0, |this| {
                     this.child(render_history_clear_controls(confirming_clear, cx))
                 })
-                .child(render_local_data_inventory(snapshot))
+                .child(render_local_data_inventory(
+                    snapshot,
+                    self.local_data_file_notice.as_deref(),
+                    self.local_data_file_error.as_deref(),
+                    cx,
+                ))
                 .child(render_privacy_settings_rows(snapshot, cx)),
         )
     }

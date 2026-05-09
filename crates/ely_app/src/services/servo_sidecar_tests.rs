@@ -11,6 +11,8 @@ use crate::services::prd_live_sites::{
 };
 
 #[cfg(feature = "live-site-smoke")]
+const LIVE_SITE_RENDER_ATTEMPTS: usize = 3;
+#[cfg(feature = "live-site-smoke")]
 const LIVE_SITE_WIDTH: u32 = 934;
 #[cfg(feature = "live-site-smoke")]
 const LIVE_SITE_HEIGHT: u32 = 657;
@@ -147,23 +149,7 @@ fn prd_reference_live_site_cases_cover_prd_urls() -> Result<(), Box<dyn Error>> 
 fn assert_live_sites_render(cases: &[LiveSiteCase]) -> Result<(), Box<dyn Error>> {
     let client = ServoSidecarClient::new()?;
     for case in cases {
-        let request = SidecarSnapshotRequest::new(
-            UrlText::parse(case.url)?,
-            ProfileId::new(),
-            LIVE_SITE_WIDTH,
-            LIVE_SITE_HEIGHT,
-        );
-        let snapshot = client.snapshot(request)?;
-
-        assert_eq!(snapshot.width(), LIVE_SITE_WIDTH, "{}", case.url);
-        assert_eq!(snapshot.height(), LIVE_SITE_HEIGHT, "{}", case.url);
-        assert_render_state_is_open(snapshot.render_state(), case.url);
-        assert_loaded_url_contains(&snapshot, case.url)?;
-        assert_title_contains(&snapshot, case.title_fragment)?;
-        assert!(snapshot.non_white_pixel_count > 0, "{}", case.url);
-        assert!(snapshot.content_pixel_count >= MINIMUM_CONTENT_PIXELS, "{}", case.url);
-        assert!(snapshot.sample_hash > 0, "{}", case.url);
-
+        let snapshot = render_live_site_snapshot(&client, case)?;
         let rgba_bytes = snapshot.into_rgba_bytes();
         assert_eq!(
             rgba_bytes.len(),
@@ -176,26 +162,81 @@ fn assert_live_sites_render(cases: &[LiveSiteCase]) -> Result<(), Box<dyn Error>
 }
 
 #[cfg(feature = "live-site-smoke")]
-fn assert_render_state_is_open(state: &str, url: &str) {
-    assert!(matches!(state, "complete" | "loading"), "{url} state: {state}");
+fn render_live_site_snapshot(
+    client: &ServoSidecarClient,
+    case: &LiveSiteCase,
+) -> Result<SidecarSnapshot, Box<dyn Error>> {
+    let mut last_error = String::new();
+
+    for attempt in 0..LIVE_SITE_RENDER_ATTEMPTS {
+        let request = SidecarSnapshotRequest::new(
+            UrlText::parse(case.url)?,
+            ProfileId::new(),
+            LIVE_SITE_WIDTH,
+            LIVE_SITE_HEIGHT,
+        );
+
+        match client.snapshot(request) {
+            Ok(snapshot) => match validate_live_site_snapshot(&snapshot, case) {
+                Ok(()) => return Ok(snapshot),
+                Err(error) => last_error = error,
+            },
+            Err(error) => last_error = error.to_string(),
+        }
+
+        if attempt + 1 < LIVE_SITE_RENDER_ATTEMPTS {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+    }
+
+    Err(last_error.into())
 }
 
 #[cfg(feature = "live-site-smoke")]
-fn assert_loaded_url_contains(
+fn validate_live_site_snapshot(
     snapshot: &SidecarSnapshot,
-    fragment: &str,
-) -> Result<(), Box<dyn Error>> {
+    case: &LiveSiteCase,
+) -> Result<(), String> {
+    require(
+        snapshot.width() == LIVE_SITE_WIDTH,
+        format!("{} width: {}", case.url, snapshot.width()),
+    )?;
+    require(
+        snapshot.height() == LIVE_SITE_HEIGHT,
+        format!("{} height: {}", case.url, snapshot.height()),
+    )?;
+    require_render_state_is_open(snapshot.render_state(), case.url)?;
+    require_loaded_url_contains(snapshot, case.url)?;
+    require_title_contains(snapshot, case.title_fragment)?;
+    require(snapshot.non_white_pixel_count > 0, case.url.to_string())?;
+    require(
+        snapshot.content_pixel_count >= MINIMUM_CONTENT_PIXELS,
+        format!("{} content pixels: {}", case.url, snapshot.content_pixel_count),
+    )?;
+    require(snapshot.sample_hash > 0, case.url.to_string())
+}
+
+#[cfg(feature = "live-site-smoke")]
+fn require_render_state_is_open(state: &str, url: &str) -> Result<(), String> {
+    require(matches!(state, "complete" | "loading"), format!("{url} state: {state}"))
+}
+
+#[cfg(feature = "live-site-smoke")]
+fn require_loaded_url_contains(snapshot: &SidecarSnapshot, fragment: &str) -> Result<(), String> {
     let loaded_url =
         snapshot.loaded_url().ok_or_else(|| format!("missing loaded URL for {fragment}"))?;
-    assert!(loaded_url.contains(fragment), "loaded_url: {loaded_url}");
-    Ok(())
+    require(loaded_url.contains(fragment), format!("loaded_url: {loaded_url}"))
 }
 
 #[cfg(feature = "live-site-smoke")]
-fn assert_title_contains(snapshot: &SidecarSnapshot, fragment: &str) -> Result<(), Box<dyn Error>> {
+fn require_title_contains(snapshot: &SidecarSnapshot, fragment: &str) -> Result<(), String> {
     let title = snapshot.title().ok_or_else(|| format!("missing title containing {fragment}"))?;
-    assert!(title.contains(fragment), "title: {title}");
-    Ok(())
+    require(title.contains(fragment), format!("title: {title}"))
+}
+
+#[cfg(feature = "live-site-smoke")]
+fn require(condition: bool, message: String) -> Result<(), String> {
+    if condition { Ok(()) } else { Err(message) }
 }
 
 fn report_with_state(state: &str, profile_id: &ProfileId) -> SidecarReport {

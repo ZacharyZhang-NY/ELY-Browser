@@ -1,9 +1,20 @@
 use ely_browser_core::{BrowserSnapshot, LocalDataInventory};
 use ely_design_system::colors;
-use gpui::{AnyElement, IntoElement, ParentElement, Styled, div, rgb};
-use gpui_component::{IconName, StyledExt};
+use gpui::prelude::FluentBuilder;
+use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, rgb};
+use gpui_component::{
+    IconName, Sizable, StyledExt,
+    button::{Button, ButtonVariants},
+};
 
-pub(super) fn render_local_data_inventory(snapshot: &BrowserSnapshot) -> AnyElement {
+use super::ElyShell;
+
+pub(super) fn render_local_data_inventory(
+    snapshot: &BrowserSnapshot,
+    notice: Option<&str>,
+    error: Option<&str>,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
     let inventory = snapshot.local_data_inventory;
 
     div()
@@ -16,7 +27,8 @@ pub(super) fn render_local_data_inventory(snapshot: &BrowserSnapshot) -> AnyElem
         .flex()
         .flex_col()
         .gap_3()
-        .child(render_inventory_header(snapshot, inventory))
+        .child(render_inventory_header(snapshot, inventory, cx))
+        .when_some(file_message(notice, error), |this, message| this.child(message))
         .child(render_inventory_rows(inventory))
         .into_any_element()
 }
@@ -24,6 +36,7 @@ pub(super) fn render_local_data_inventory(snapshot: &BrowserSnapshot) -> AnyElem
 fn render_inventory_header(
     snapshot: &BrowserSnapshot,
     inventory: LocalDataInventory,
+    cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     div()
         .flex()
@@ -33,6 +46,7 @@ fn render_inventory_header(
         .child(
             div()
                 .min_w_0()
+                .flex_1()
                 .flex()
                 .items_center()
                 .gap_3()
@@ -61,17 +75,54 @@ fn render_inventory_header(
         .child(
             div()
                 .flex_none()
-                .rounded_md()
-                .border_1()
-                .border_color(rgb(colors::HAIRLINE))
-                .bg(rgb(colors::CANVAS))
-                .px_3()
-                .py_2()
-                .text_xs()
-                .font_semibold()
-                .text_color(rgb(colors::INK))
-                .child(format!("{} items", inventory.total_items())),
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    div()
+                        .rounded_md()
+                        .border_1()
+                        .border_color(rgb(colors::HAIRLINE))
+                        .bg(rgb(colors::CANVAS))
+                        .px_3()
+                        .py_2()
+                        .text_xs()
+                        .font_semibold()
+                        .text_color(rgb(colors::INK))
+                        .child(format!("{} items", inventory.total_items())),
+                )
+                .child(
+                    Button::new("export-local-data")
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::File)
+                        .label("Export")
+                        .tooltip("Export Local Data")
+                        .on_click(cx.listener(|shell, _, window, cx| {
+                            shell.export_local_data(window, cx);
+                        })),
+                ),
         )
+        .into_any_element()
+}
+
+fn file_message(notice: Option<&str>, error: Option<&str>) -> Option<AnyElement> {
+    notice
+        .map(|message| render_file_message(message, colors::SUCCESS))
+        .or_else(|| error.map(|message| render_file_message(message, colors::ERROR)))
+}
+
+fn render_file_message(message: &str, color: u32) -> AnyElement {
+    div()
+        .rounded_md()
+        .border_1()
+        .border_color(rgb(color))
+        .px_3()
+        .py_2()
+        .text_xs()
+        .font_semibold()
+        .text_color(rgb(color))
+        .child(message.to_string())
         .into_any_element()
 }
 

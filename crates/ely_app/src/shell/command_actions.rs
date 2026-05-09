@@ -23,6 +23,11 @@ enum BookmarkFileCommand {
     Import,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LocalDataFileCommand {
+    Export,
+}
+
 impl ElyShell {
     pub(super) fn handle_shell_command_intent(
         &mut self,
@@ -58,6 +63,11 @@ impl ElyShell {
         match bookmark_file_command(command) {
             Some(BookmarkFileCommand::Export) => self.export_bookmarks(window, cx),
             Some(BookmarkFileCommand::Import) => self.choose_bookmark_import(window, cx),
+            None => {}
+        }
+
+        match local_data_file_command(command) {
+            Some(LocalDataFileCommand::Export) => self.export_local_data(window, cx),
             None => {}
         }
     }
@@ -110,11 +120,22 @@ fn bookmark_file_command(command: &str) -> Option<BookmarkFileCommand> {
     }
 }
 
+fn local_data_file_command(command: &str) -> Option<LocalDataFileCommand> {
+    match command.trim().to_ascii_lowercase().as_str() {
+        "export-local-data"
+        | "export local data"
+        | "export-privacy-data"
+        | "export privacy data" => Some(LocalDataFileCommand::Export),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        BookmarkFileCommand, ShortcutFileCommand, SpaceFileCommand, bookmark_file_command,
-        install_plugin_from_file_command, shortcut_file_command, space_file_command,
+        BookmarkFileCommand, LocalDataFileCommand, ShortcutFileCommand, SpaceFileCommand,
+        bookmark_file_command, install_plugin_from_file_command, local_data_file_command,
+        shortcut_file_command, space_file_command,
     };
 
     #[test]
@@ -159,5 +180,17 @@ mod tests {
     fn bookmark_file_command_matches_export_and_import_aliases() {
         assert_eq!(bookmark_file_command("export-bookmarks"), Some(BookmarkFileCommand::Export));
         assert_eq!(bookmark_file_command("import bookmarks"), Some(BookmarkFileCommand::Import));
+    }
+
+    #[test]
+    fn local_data_file_command_matches_export_aliases() {
+        assert_eq!(
+            local_data_file_command("export-local-data"),
+            Some(LocalDataFileCommand::Export)
+        );
+        assert_eq!(
+            local_data_file_command("export privacy data"),
+            Some(LocalDataFileCommand::Export)
+        );
     }
 }

@@ -17,6 +17,8 @@ mod commands;
 mod diagnostics;
 mod downloads;
 mod history;
+mod local_data_export_records;
+mod local_data_exports;
 mod notes;
 mod plugins;
 mod privacy;
@@ -39,6 +41,7 @@ pub use bookmarks::{
     BookmarkImportSummary, ELYBOOKMARKS_FILE_EXTENSION, ELYBOOKMARKS_SCHEMA_VERSION,
     ElyBookmarksPackage,
 };
+pub use local_data_exports::{ELYDATA_FILE_EXTENSION, ELYDATA_SCHEMA_VERSION, ElyLocalDataPackage};
 pub use plugins::{InstalledPlugin, PluginAuditAction, PluginAuditEvent};
 pub use privacy::LocalDataInventory;
 pub use site_data::SiteDataClearance;

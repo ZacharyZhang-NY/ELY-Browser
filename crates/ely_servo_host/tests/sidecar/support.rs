@@ -57,9 +57,37 @@ pub(super) fn snapshot_prd_site(
         scroll_offset.y
     ));
 
+    snapshot_prd_site_with_retry(case, &output_path, size, scroll_offset)
+}
+
+fn snapshot_prd_site_with_retry(
+    case: &PrdSiteCompatibilityCase,
+    output_path: &Path,
+    size: FrameSize,
+    scroll_offset: ScrollOffset,
+) -> Result<serde_json::Value, Box<dyn Error>> {
+    for attempt in 0..SIDECAR_MAX_ATTEMPTS {
+        match snapshot_prd_site_once(case, output_path, size, scroll_offset) {
+            Ok(report) => return Ok(report),
+            Err(error) if attempt + 1 == SIDECAR_MAX_ATTEMPTS => return Err(error),
+            Err(_) => remove_file_if_present(output_path)?,
+        }
+
+        thread::sleep(SIDECAR_RETRY_INTERVAL);
+    }
+
+    Err("sidecar PRD snapshot retry did not produce output".into())
+}
+
+fn snapshot_prd_site_once(
+    case: &PrdSiteCompatibilityCase,
+    output_path: &Path,
+    size: FrameSize,
+    scroll_offset: ScrollOffset,
+) -> Result<serde_json::Value, Box<dyn Error>> {
     let output = run_sidecar_snapshot_with_retry(
         case.url,
-        &output_path,
+        output_path,
         size,
         scroll_offset,
         SnapshotInput::default(),
@@ -96,12 +124,20 @@ pub(super) fn snapshot_prd_site(
         case.url
     );
     assert!(report_field_as_u64(&report, "sample_hash")? > 0, "{}", case.url);
-    assert_eq!(std::fs::metadata(&output_path)?.len(), size.width * size.height * 4);
+    assert_eq!(std::fs::metadata(output_path)?.len(), size.width * size.height * 4);
 
     log_prd_report(&report, case, size)?;
 
-    std::fs::remove_file(&output_path)?;
+    std::fs::remove_file(output_path)?;
     Ok(report)
+}
+
+fn remove_file_if_present(path: &Path) -> Result<(), Box<dyn Error>> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
 }
 
 pub(super) fn snapshot_click_probe(
@@ -325,8 +361,7 @@ fn assert_report_text_equals(
     expected: &str,
 ) -> Result<(), Box<dyn Error>> {
     let value = report_field_as_text(report, field)?;
-    assert_eq!(value, expected, "{field}");
-    Ok(())
+    if value == expected { Ok(()) } else { Err(format!("{field}: {value}").into()) }
 }
 
 fn assert_report_text_contains(
@@ -335,14 +370,16 @@ fn assert_report_text_contains(
     fragment: &str,
 ) -> Result<(), Box<dyn Error>> {
     let value = report_field_as_text(report, field)?;
-    assert!(value.contains(fragment), "{field}: {value}");
-    Ok(())
+    if value.contains(fragment) { Ok(()) } else { Err(format!("{field}: {value}").into()) }
 }
 
 fn assert_report_state_is_renderable(report: &serde_json::Value) -> Result<(), Box<dyn Error>> {
     let state = report_field_as_text(report, "state")?;
-    assert!(matches!(state, "complete" | "loading"), "state: {state}");
-    Ok(())
+    if matches!(state, "complete" | "loading") {
+        Ok(())
+    } else {
+        Err(format!("state: {state}").into())
+    }
 }
 
 fn log_prd_report(
