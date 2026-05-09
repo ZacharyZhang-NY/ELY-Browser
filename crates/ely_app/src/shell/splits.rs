@@ -3,7 +3,7 @@ use ely_design_system::{colors, spacing};
 use ely_domain::{BrowserTab, SplitAxis, SplitLayout};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, px, rgb,
+    StatefulInteractiveElement, Styled, Window, div, px, rgb, rgba,
 };
 use gpui_component::{
     IconName, Selectable, Sizable, StyledExt,
@@ -130,12 +130,11 @@ impl ElyShell {
             .flex_1()
             .h_full()
             .min_w_0()
-            .p_3()
-            .gap_3()
+            .p(px(14.0))
+            .gap(px(10.0))
             .flex()
             .flex_col()
-            .overflow_hidden()
-            .bg(rgb(colors::CANVAS));
+            .overflow_hidden();
         let pane_area = div().flex_1().min_h_0().gap_3().overflow_hidden();
 
         let compact_canvas = layout.axis() == &SplitAxis::Vertical && layout.pane_count() >= 4;
@@ -176,7 +175,7 @@ impl ElyShell {
 
     fn render_split_pane(
         &mut self,
-        index: usize,
+        _index: usize,
         tab: &BrowserTab,
         snapshot: &BrowserSnapshot,
         compact_canvas: bool,
@@ -184,9 +183,8 @@ impl ElyShell {
     ) -> AnyElement {
         let active = tab.id() == &snapshot.active_tab_id;
         let tab_id = tab.id().clone();
-        let pane_number = index + 1;
-        let border = if active { colors::PRIMARY } else { colors::HAIRLINE_STRONG };
-        let title_color = if active { colors::INK } else { colors::BODY };
+        let border = if active { colors::ACCENT } else { colors::HAIRLINE_STRONG };
+        let title_color = if active { colors::INK } else { colors::INK_2 };
 
         div()
             .id(SharedString::from(format!("split-pane-{}", tab.id().as_str())))
@@ -196,41 +194,37 @@ impl ElyShell {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .rounded_md()
+            .rounded(px(10.0))
             .border_1()
             .border_color(rgb(border))
-            .bg(rgb(colors::SURFACE_CARD))
+            .bg(rgba(colors::GLASS_2))
             .cursor_pointer()
-            .hover(|style| style.bg(rgb(colors::CANVAS_SOFT)))
+            .hover(|style| style.bg(rgba(colors::GLASS_3)))
             .active(|style| style.opacity(0.92))
             .on_click(cx.listener(move |shell, _, window, cx| {
                 shell.select_tab(&tab_id, window, cx);
             }))
             .child(
                 div()
-                    .h(px(spacing::COMMAND_BAR_HEIGHT - spacing::MD))
-                    .px_3()
-                    .gap_2()
+                    .h(px(30.0))
+                    .px(px(10.0))
+                    .gap(px(6.0))
                     .flex()
                     .items_center()
-                    .border_b_1()
-                    .border_color(rgb(colors::HAIRLINE))
-                    .bg(rgb(colors::CANVAS_SOFT))
-                    .child(div().text_color(rgb(colors::MUTED)).child(IconName::Frame))
+                    .flex_shrink_0()
                     .child(
                         div()
-                            .text_xs()
-                            .font_semibold()
-                            .text_color(rgb(colors::MUTED))
-                            .child(format!("Pane {pane_number}")),
+                            .size(px(6.0))
+                            .rounded_full()
+                            .bg(rgb(if active { colors::ACCENT } else { colors::INK_4 })),
                     )
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_sm()
-                            .font_semibold()
+                            .text_size(px(12.0))
+                            .font_weight(gpui::FontWeight(500.0))
                             .text_color(rgb(title_color))
                             .child(tab.title().to_string()),
                     ),
@@ -255,10 +249,8 @@ impl ElyShell {
             .flex()
             .items_center()
             .justify_center()
-            .border_1()
-            .border_color(rgb(colors::HAIRLINE))
-            .rounded_md()
-            .bg(rgb(colors::CANVAS_SOFT))
+            .rounded(px(10.0))
+            .bg(rgba(colors::GLASS_2))
             .child(
                 div()
                     .text_xs()
@@ -391,28 +383,25 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let first_tab_id = layout.panes().first()?.tab_id().clone();
-        let background = if active { colors::SURFACE_CARD } else { colors::CANVAS };
-        let border = if active { colors::PRIMARY } else { colors::HAIRLINE };
+        let bg = if active { colors::GLASS_3 } else { 0x00000000 };
 
         Some(
             div()
                 .id(SharedString::from(format!("saved-split-{}", layout.id().as_str())))
-                .rounded_md()
-                .border_1()
-                .border_color(rgb(border))
-                .bg(rgb(background))
-                .px_3()
-                .py_2()
-                .gap_2()
+                .rounded(px(spacing::RADIUS_NAV))
+                .bg(rgba(bg))
+                .px(px(10.0))
+                .py(px(7.0))
+                .gap(px(10.0))
                 .flex()
                 .items_center()
                 .cursor_pointer()
-                .hover(|style| style.bg(rgb(colors::SURFACE_CARD)))
+                .hover(|style| style.bg(rgba(colors::GLASS_3)))
                 .active(|style| style.opacity(0.82))
                 .on_click(cx.listener(move |shell, _, window, cx| {
                     shell.select_tab(&first_tab_id, window, cx);
                 }))
-                .child(div().text_color(rgb(colors::PRIMARY)).child(IconName::Frame))
+                .child(div().text_color(rgb(colors::ACCENT)).child(IconName::Frame))
                 .child(
                     div()
                         .min_w_0()
@@ -421,16 +410,16 @@ impl ElyShell {
                         .gap_1()
                         .child(
                             div()
-                                .text_sm()
-                                .font_semibold()
+                                .text_size(px(13.0))
+                                .font_weight(gpui::FontWeight(500.0))
                                 .truncate()
                                 .text_color(rgb(colors::INK))
                                 .child(layout.title().to_string()),
                         )
                         .child(
                             div()
-                                .text_xs()
-                                .text_color(rgb(colors::MUTED))
+                                .text_size(px(11.0))
+                                .text_color(rgb(colors::INK_4))
                                 .child(format!("{} panes", layout.pane_count())),
                         ),
                 )
@@ -452,21 +441,18 @@ fn render_compact_split_canvas(tab: &BrowserTab) -> AnyElement {
         .flex_1()
         .min_h_0()
         .p_2()
-        .bg(rgb(colors::CANVAS_SOFT))
         .child(
             div()
                 .size_full()
                 .min_h_0()
-                .rounded_md()
-                .border_1()
-                .border_color(rgb(colors::HAIRLINE))
-                .bg(rgb(colors::SURFACE_CARD))
-                .px_3()
-                .py_2()
-                .gap_2()
+                .rounded(px(10.0))
+                .bg(rgba(colors::GLASS_2))
+                .px(px(10.0))
+                .py(px(8.0))
+                .gap(px(8.0))
                 .flex()
                 .items_center()
-                .child(div().text_color(rgb(colors::MUTED)).child(IconName::Globe))
+                .child(div().text_color(rgb(colors::INK_4)).child(IconName::Globe))
                 .child(
                     div()
                         .min_w_0()
@@ -475,15 +461,15 @@ fn render_compact_split_canvas(tab: &BrowserTab) -> AnyElement {
                         .child(
                             div()
                                 .truncate()
-                                .text_sm()
-                                .font_semibold()
+                                .text_size(px(13.0))
+                                .font_weight(gpui::FontWeight(500.0))
                                 .child(tab.title().to_string()),
                         )
                         .child(
                             div()
                                 .truncate()
-                                .text_xs()
-                                .text_color(rgb(colors::MUTED))
+                                .text_size(px(11.0))
+                                .text_color(rgb(colors::INK_4))
                                 .child(split_canvas_status(tab)),
                         ),
                 ),
