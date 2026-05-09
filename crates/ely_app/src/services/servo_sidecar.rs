@@ -289,6 +289,24 @@ impl SidecarSnapshot {
         self.height
     }
 
+    #[cfg(all(test, feature = "live-site-smoke"))]
+    #[must_use]
+    pub(crate) fn non_white_pixel_count(&self) -> u64 {
+        self.non_white_pixel_count
+    }
+
+    #[cfg(all(test, feature = "live-site-smoke"))]
+    #[must_use]
+    pub(crate) fn content_pixel_count(&self) -> u64 {
+        self.content_pixel_count
+    }
+
+    #[cfg(all(test, feature = "live-site-smoke"))]
+    #[must_use]
+    pub(crate) fn sample_hash(&self) -> u64 {
+        self.sample_hash
+    }
+
     #[must_use]
     pub fn into_rgba_bytes(self) -> Vec<u8> {
         self.rgba_bytes

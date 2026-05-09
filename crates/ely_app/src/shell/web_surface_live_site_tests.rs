@@ -20,6 +20,7 @@ use super::WebSurfaceStore;
 
 const LIVE_SURFACE_WIDTH: u32 = 934;
 const LIVE_SURFACE_HEIGHT: u32 = 657;
+const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
 
 #[test]
 fn web_surface_cases_cover_prd_reference_urls() -> Result<(), Box<dyn Error>> {
@@ -78,6 +79,9 @@ fn assert_prd_frame_is_ready(frame: &WebSurfaceFrame, case: &LiveSiteCase) {
     assert!(frame.url_label().contains(normalized_url(case.url)), "{}", frame.url_label());
     assert!(frame.title_label().contains(case.title_fragment), "{}", frame.title_label());
     assert_eq!(frame.detail_label(), format!("{} 934x657", frame.render_state()), "{}", case.url);
+    assert!(frame.non_white_pixel_count() > 0, "{}", case.url);
+    assert!(frame.content_pixel_count() >= MINIMUM_CONTENT_PIXELS, "{}", case.url);
+    assert!(frame.sample_hash() > 0, "{}", case.url);
 }
 
 fn assert_render_state_is_open(state: &str, url: &str) {

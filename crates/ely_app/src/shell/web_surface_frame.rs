@@ -22,6 +22,12 @@ pub(super) struct WebSurfaceFrame {
     scroll_offset: WebSurfaceScrollOffset,
     click_point: Option<WebSurfaceClickPoint>,
     typed_text: Option<String>,
+    #[cfg(all(test, feature = "live-site-smoke"))]
+    non_white_pixel_count: u64,
+    #[cfg(all(test, feature = "live-site-smoke"))]
+    content_pixel_count: u64,
+    #[cfg(all(test, feature = "live-site-smoke"))]
+    sample_hash: u64,
     pub(super) image: Arc<RenderImage>,
 }
 
@@ -38,6 +44,12 @@ impl WebSurfaceFrame {
         let loaded_url = snapshot.loaded_url().map(str::to_string);
         let title = snapshot.title().map(str::to_string);
         let render_state = snapshot.render_state().to_string();
+        #[cfg(all(test, feature = "live-site-smoke"))]
+        let non_white_pixel_count = snapshot.non_white_pixel_count();
+        #[cfg(all(test, feature = "live-site-smoke"))]
+        let content_pixel_count = snapshot.content_pixel_count();
+        #[cfg(all(test, feature = "live-site-smoke"))]
+        let sample_hash = snapshot.sample_hash();
         let rgba_bytes = snapshot.into_rgba_bytes();
 
         let Some(buffer) = ImageBuffer::<Rgba<u8>, _>::from_raw(width, height, rgba_bytes) else {
@@ -56,6 +68,12 @@ impl WebSurfaceFrame {
             scroll_offset,
             click_point,
             typed_text,
+            #[cfg(all(test, feature = "live-site-smoke"))]
+            non_white_pixel_count,
+            #[cfg(all(test, feature = "live-site-smoke"))]
+            content_pixel_count,
+            #[cfg(all(test, feature = "live-site-smoke"))]
+            sample_hash,
             image: Arc::new(RenderImage::new([image::Frame::new(image_buffer)])),
         })
     }
@@ -98,6 +116,21 @@ impl WebSurfaceFrame {
 
     pub(super) fn typed_text(&self) -> Option<&str> {
         self.typed_text.as_deref()
+    }
+
+    #[cfg(all(test, feature = "live-site-smoke"))]
+    pub(super) fn non_white_pixel_count(&self) -> u64 {
+        self.non_white_pixel_count
+    }
+
+    #[cfg(all(test, feature = "live-site-smoke"))]
+    pub(super) fn content_pixel_count(&self) -> u64 {
+        self.content_pixel_count
+    }
+
+    #[cfg(all(test, feature = "live-site-smoke"))]
+    pub(super) fn sample_hash(&self) -> u64 {
+        self.sample_hash
     }
 }
 
