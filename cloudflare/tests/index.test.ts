@@ -369,6 +369,9 @@ function testEnv(
     ELY_API_AUDIT: {
       writeDataPoint(): void {},
     },
+    ELY_DIAGNOSTICS: {
+      writeDataPoint(): void {},
+    },
   };
 }
 

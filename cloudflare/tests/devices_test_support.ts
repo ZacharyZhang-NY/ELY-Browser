@@ -11,6 +11,7 @@ export const PUBLIC_KEY = "a".repeat(64);
 
 export interface TestEnvOptions {
   auditEvents?: ElyAnalyticsDataPoint[];
+  diagnosticEvents?: ElyAnalyticsDataPoint[];
   d1?: RecordedD1Database;
   kvEntries?: [string, string][];
   kvReads?: string[];
@@ -65,6 +66,13 @@ export function testEnv(options: TestEnvOptions): Env {
       writeDataPoint(event?: ElyAnalyticsDataPoint): void {
         if (event !== undefined) {
           options.auditEvents?.push(event);
+        }
+      },
+    },
+    ELY_DIAGNOSTICS: {
+      writeDataPoint(event?: ElyAnalyticsDataPoint): void {
+        if (event !== undefined) {
+          options.diagnosticEvents?.push(event);
         }
       },
     },

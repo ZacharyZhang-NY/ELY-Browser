@@ -334,6 +334,9 @@ function testEnv(options: TestEnvOptions = {}): Env {
         }
       },
     },
+    ELY_DIAGNOSTICS: {
+      writeDataPoint(): void {},
+    },
   };
 }
 

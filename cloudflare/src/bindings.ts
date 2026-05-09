@@ -51,6 +51,7 @@ export interface Env {
   ELY_STORAGE: ElyR2Bucket;
   ELY_RATE_LIMITER: ElyRateLimit;
   ELY_API_AUDIT: ElyAnalyticsDataset;
+  ELY_DIAGNOSTICS: ElyAnalyticsDataset;
   ELY_ENVIRONMENT: string;
   ELY_AUTH_BASE_URL: string;
   ELY_AUTH_SECRET: string;

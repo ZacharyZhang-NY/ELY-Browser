@@ -33,6 +33,10 @@ import {
   publicSigningKeysKvKey,
 } from "./signing_keys.js";
 import { handleSyncRoute } from "./sync_routes.js";
+import {
+  TelemetrySchemaError,
+  telemetryEventAcceptedDocument,
+} from "./telemetry.js";
 import { jsonResponse } from "./responses.js";
 
 export default {
@@ -197,6 +201,32 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   if (url.pathname === "/api/releases/signature") {
     return withPublicApiControls(request, env, "releases.signature", ["GET"], () =>
       handleReleaseSignature(env, url),
+    );
+  }
+  if (url.pathname === "/api/telemetry/events") {
+    return withAuthenticatedApiControls(
+      request,
+      env,
+      "telemetry.events",
+      ["POST"],
+      async (context) => {
+        try {
+          return jsonResponse(
+            await telemetryEventAcceptedDocument(request, env, context),
+            202,
+            { "Cache-Control": "no-store" },
+          );
+        } catch (error) {
+          if (error instanceof TelemetrySchemaError) {
+            return jsonResponse(
+              { error: error.code },
+              400,
+              { "Cache-Control": "no-store" },
+            );
+          }
+          throw error;
+        }
+      },
     );
   }
 

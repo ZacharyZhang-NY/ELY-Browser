@@ -25,6 +25,10 @@ ELY_AUTH_BASE_URL = "http://localhost:8787"
 binding = "ELY_API_AUDIT"
 dataset = "ely_api_audit"
 
+[[analytics_engine_datasets]]
+binding = "ELY_DIAGNOSTICS"
+dataset = "ely_diagnostics"
+
 [[ratelimits]]
 name = "ELY_RATE_LIMITER"
 namespace_id = "1001"
