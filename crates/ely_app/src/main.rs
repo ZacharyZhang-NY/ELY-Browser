@@ -5,6 +5,7 @@ mod shortcuts;
 
 use std::{
     cell::RefCell,
+    env,
     rc::Rc,
     sync::{Arc, Mutex},
     time::Duration,
@@ -48,6 +49,7 @@ actions!(
 
 fn main() {
     let pending_deep_links = PendingDeepLinks::default();
+    pending_deep_links.push(startup_deep_links(env::args().skip(1)));
     let open_url_queue = pending_deep_links.clone();
     let application = Application::new().with_assets(Assets);
 
@@ -284,6 +286,12 @@ fn parse_ely_deep_link(value: &str) -> Option<UrlText> {
         .flatten()
 }
 
+fn startup_deep_links(args: impl IntoIterator<Item = String>) -> Vec<String> {
+    args.into_iter()
+        .filter_map(|arg| parse_ely_deep_link(&arg).map(|url| url.as_str().to_string()))
+        .collect()
+}
+
 fn quit(_: &Quit, cx: &mut App) {
     cx.quit();
 }
@@ -296,7 +304,7 @@ fn open_private_window(_: &OpenPrivateWindow, cx: &mut App) {
 
 #[cfg(test)]
 mod tests {
-    use super::{PendingDeepLinks, parse_ely_deep_link};
+    use super::{PendingDeepLinks, parse_ely_deep_link, startup_deep_links};
 
     #[test]
     fn pending_deep_links_drains_urls_in_order() {
@@ -328,5 +336,19 @@ mod tests {
     #[test]
     fn parse_ely_deep_link_filters_other_schemes() {
         assert!(parse_ely_deep_link("https://example.com").is_none());
+    }
+
+    #[test]
+    fn startup_deep_links_filter_and_normalize_args() {
+        let links = startup_deep_links(
+            ["--ignored", " ELY://history ", "https://example.com", "ely://auth/callback?code=abc"]
+                .into_iter()
+                .map(str::to_string),
+        );
+
+        assert_eq!(
+            links,
+            vec!["ely://history".to_string(), "ely://auth/callback?code=abc".to_string()]
+        );
     }
 }
