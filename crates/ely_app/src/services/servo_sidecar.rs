@@ -248,6 +248,12 @@ pub struct SidecarSnapshot {
     title: Option<String>,
     width: u32,
     height: u32,
+    #[cfg(test)]
+    non_white_pixel_count: u64,
+    #[cfg(test)]
+    content_pixel_count: u64,
+    #[cfg(test)]
+    sample_hash: u64,
     rgba_bytes: Vec<u8>,
 }
 
@@ -281,6 +287,12 @@ impl SidecarSnapshot {
             title: report.title,
             width: report.width,
             height: report.height,
+            #[cfg(test)]
+            non_white_pixel_count: report.non_white_pixel_count,
+            #[cfg(test)]
+            content_pixel_count: report.content_pixel_count,
+            #[cfg(test)]
+            sample_hash: report.sample_hash,
             rgba_bytes,
         })
     }
@@ -379,6 +391,8 @@ struct SidecarReport {
     rgba_byte_count: usize,
     non_white_pixel_count: u64,
     content_pixel_count: u64,
+    #[cfg(test)]
+    sample_hash: u64,
 }
 
 fn default_sidecar_command() -> Result<SidecarCommandTarget, ServoSidecarError> {

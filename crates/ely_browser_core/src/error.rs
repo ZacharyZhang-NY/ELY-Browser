@@ -39,6 +39,9 @@ pub enum CoreError {
     #[error("private profile keeps sync paused: {id}")]
     PrivateProfileSyncLocked { id: ProfileId },
 
+    #[error("private profile cannot be a space default profile: {id}")]
+    PrivateProfileDefaultLocked { id: ProfileId },
+
     #[error("download not found: {id}")]
     DownloadNotFound { id: DownloadId },
 

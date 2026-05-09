@@ -7,6 +7,8 @@ const LIVE_SITE_WIDTH: u32 = 934;
 #[cfg(feature = "live-site-smoke")]
 const LIVE_SITE_HEIGHT: u32 = 657;
 #[cfg(feature = "live-site-smoke")]
+const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
+#[cfg(feature = "live-site-smoke")]
 const PRD_TOP_SITE_CASES: &[LiveSiteCase] = &[
     LiveSiteCase { url: "https://github.com", title_fragment: "GitHub" },
     LiveSiteCase { url: "https://example.com", title_fragment: "Example Domain" },
@@ -90,6 +92,9 @@ fn accepts_loading_report_with_visible_content() -> Result<(), ServoSidecarError
     assert_eq!(snapshot.title(), Some("Example Domain"));
     assert_eq!(snapshot.width(), 2);
     assert_eq!(snapshot.height(), 1);
+    assert_eq!(snapshot.non_white_pixel_count, 1);
+    assert_eq!(snapshot.content_pixel_count, 1);
+    assert_eq!(snapshot.sample_hash, 42);
     Ok(())
 }
 
@@ -147,6 +152,9 @@ fn assert_live_sites_render(cases: &[LiveSiteCase]) -> Result<(), Box<dyn Error>
         assert_eq!(snapshot.height(), LIVE_SITE_HEIGHT, "{}", case.url);
         assert_loaded_url_contains(&snapshot, case.url)?;
         assert_title_contains(&snapshot, case.title_fragment)?;
+        assert!(snapshot.non_white_pixel_count > 0, "{}", case.url);
+        assert!(snapshot.content_pixel_count >= MINIMUM_CONTENT_PIXELS, "{}", case.url);
+        assert!(snapshot.sample_hash > 0, "{}", case.url);
 
         let rgba_bytes = snapshot.into_rgba_bytes();
         assert_eq!(
@@ -155,7 +163,6 @@ fn assert_live_sites_render(cases: &[LiveSiteCase]) -> Result<(), Box<dyn Error>
             "{}",
             case.url
         );
-        assert!(non_white_pixel_count(&rgba_bytes) > 0, "{}", case.url);
     }
     Ok(())
 }
@@ -178,14 +185,6 @@ fn assert_title_contains(snapshot: &SidecarSnapshot, fragment: &str) -> Result<(
     Ok(())
 }
 
-#[cfg(feature = "live-site-smoke")]
-fn non_white_pixel_count(rgba_bytes: &[u8]) -> usize {
-    rgba_bytes
-        .chunks_exact(4)
-        .filter(|pixel| pixel[3] > 0 && (pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255))
-        .count()
-}
-
 fn report_with_state(state: &str) -> SidecarReport {
     SidecarReport {
         requested_url: "https://example.com".to_string(),
@@ -197,6 +196,7 @@ fn report_with_state(state: &str) -> SidecarReport {
         rgba_byte_count: 8,
         non_white_pixel_count: 1,
         content_pixel_count: 1,
+        sample_hash: 42,
     }
 }
 

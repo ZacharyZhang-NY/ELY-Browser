@@ -289,8 +289,13 @@ impl BrowserCore {
         space_id: &SpaceId,
         profile_id: &ProfileId,
     ) -> Result<(), CoreError> {
-        if !self.profiles.iter().any(|profile| profile.id() == profile_id) {
-            return Err(CoreError::ProfileNotFound { id: profile_id.clone() });
+        let profile = self
+            .profiles
+            .iter()
+            .find(|profile| profile.id() == profile_id)
+            .ok_or_else(|| CoreError::ProfileNotFound { id: profile_id.clone() })?;
+        if profile.kind() == &ProfileKind::Private {
+            return Err(CoreError::PrivateProfileDefaultLocked { id: profile_id.clone() });
         }
 
         let space = self

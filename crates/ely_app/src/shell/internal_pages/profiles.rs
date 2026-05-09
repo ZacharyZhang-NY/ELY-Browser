@@ -143,6 +143,7 @@ fn render_profile_row(
                 .child(render_profile_default_action(
                     index,
                     default_profile_id,
+                    profile.kind() == &ProfileKind::Standard,
                     default_for_active_space,
                     cx,
                 ))
@@ -172,6 +173,7 @@ fn profile_color_swatch(color_hex: u32) -> AnyElement {
 fn render_profile_default_action(
     index: usize,
     profile_id: ProfileId,
+    allows_default: bool,
     default_for_active_space: bool,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
@@ -181,6 +183,16 @@ fn render_profile_default_action(
             .font_semibold()
             .text_color(rgb(colors::SUCCESS))
             .child("Default")
+            .into_any_element();
+    }
+
+    if !allows_default {
+        return Button::new(("default-profile", index))
+            .ghost()
+            .xsmall()
+            .disabled(true)
+            .label("Private")
+            .tooltip("Private Profiles stay opt-in")
             .into_any_element();
     }
 

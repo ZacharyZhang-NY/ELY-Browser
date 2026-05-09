@@ -234,6 +234,28 @@ fn space_default_profile_updates_with_profile_validation() -> Result<(), Box<dyn
 }
 
 #[test]
+fn space_default_profile_rejects_private_profile() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let snapshot = core.snapshot()?;
+    let work_space_id = snapshot.active_space_id;
+    let default_profile_id = snapshot.active_profile_id;
+    let private_profile_id = core.create_profile("Private", 0x807d72, ProfileKind::Private)?;
+
+    let error = match core.set_space_default_profile(&work_space_id, &private_profile_id) {
+        Err(error) => error,
+        Ok(_) => return Err("space default profile accepted a private profile".into()),
+    };
+
+    assert_eq!(error, CoreError::PrivateProfileDefaultLocked { id: private_profile_id.clone() });
+    let snapshot = core.snapshot()?;
+    let Some(work_space) = snapshot.spaces.iter().find(|space| space.id() == &work_space_id) else {
+        return Err("missing work space".into());
+    };
+    assert_eq!(work_space.default_profile_id(), &default_profile_id);
+    Ok(())
+}
+
+#[test]
 fn active_space_default_profile_updates_current_space() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let work_space_id = core.snapshot()?.active_space_id;
