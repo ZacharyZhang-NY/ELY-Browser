@@ -190,7 +190,12 @@ impl BrowserCore {
         accent_hex: u32,
     ) -> Result<SpaceId, CoreError> {
         let sort_key = self.next_space_sort_key();
-        let space = Space::new(name, icon, accent_hex, self.active_profile_id.clone(), sort_key);
+        let default_profile_id = if self.active_profile()?.kind() == &ProfileKind::Private {
+            self.active_space()?.default_profile_id().clone()
+        } else {
+            self.active_profile_id.clone()
+        };
+        let space = Space::new(name, icon, accent_hex, default_profile_id, sort_key);
         let space_id = space.id().clone();
         let default_profile_id = space.default_profile_id().clone();
         let tab = self.build_tab_for(space_id.clone(), default_profile_id, self.new_tab_url()?);

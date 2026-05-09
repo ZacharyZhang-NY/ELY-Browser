@@ -27,6 +27,25 @@ fn created_space_binds_current_profile_as_default() -> Result<(), Box<dyn Error>
 }
 
 #[test]
+fn space_creation_from_private_profile_uses_space_default_profile() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let default_profile_id = core.snapshot()?.active_profile_id;
+
+    core.create_profile("Private", 0x807d72, ProfileKind::Private)?;
+    let research_space_id = core.create_space("Research", "R", 0x9fc9a2)?;
+    let snapshot = core.snapshot()?;
+    let Some(research_space) =
+        snapshot.spaces.iter().find(|space| space.id() == &research_space_id)
+    else {
+        return Err("missing research space".into());
+    };
+
+    assert_eq!(research_space.default_profile_id(), &default_profile_id);
+    assert_eq!(snapshot.active_profile_id, default_profile_id);
+    Ok(())
+}
+
+#[test]
 fn created_space_records_creation_timestamps() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let research_space_id = core.create_space("Research", "R", 0x9fc9a2)?;
