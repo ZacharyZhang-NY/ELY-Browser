@@ -10,7 +10,7 @@ use ely_domain::UrlText;
 use serde::Deserialize;
 use thiserror::Error;
 
-const SIDECAR_BINARY_TIMEOUT: Duration = Duration::from_secs(35);
+const SIDECAR_BINARY_TIMEOUT: Duration = Duration::from_secs(45);
 const SIDECAR_CARGO_TIMEOUT: Duration = Duration::from_secs(180);
 const SIDECAR_POLL_INTERVAL: Duration = Duration::from_millis(20);
 const SIDECAR_RETRY_INTERVAL: Duration = Duration::from_millis(250);
