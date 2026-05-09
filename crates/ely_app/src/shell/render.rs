@@ -6,15 +6,13 @@ use gpui::{
     SharedString, StatefulInteractiveElement, Styled, Window, div, hsla, linear_gradient, point,
     linear_color_stop, prelude::FluentBuilder, px, rgb, rgba,
 };
-use gpui_component::{
-    IconName, Selectable, Sizable, StyledExt,
-    button::{Button, ButtonVariants},
-    input::Input,
-    scroll::ScrollableElement,
-};
+use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
 
-use super::chrome::{WallpaperTheme, render_sidebar_header, render_wallpaper};
-use super::sidebar::{collapsed_sidebar_active, render_command_bar_identity};
+use super::chrome::{
+    WallpaperTheme, render_sidebar_header, render_topbar as render_topbar_chrome,
+    render_wallpaper,
+};
+use super::sidebar::collapsed_sidebar_active;
 use super::{ElyShell, ShellState, archive_labels::archive_detail_label};
 
 impl Render for ElyShell {
@@ -103,92 +101,12 @@ impl ElyShell {
             .bg(rgba(PANEL_BG))
             .shadow(panel_shadow())
             .overflow_hidden()
-            .child(self.render_topbar(snapshot, active_tab, sidebar_collapsed, cx))
+            .child(render_topbar_chrome(self, snapshot, active_tab, sidebar_collapsed, cx))
             .child(
                 div()
                     .flex_1()
                     .overflow_hidden()
                     .child(self.render_content_area(snapshot, active_tab, cx)),
-            )
-            .into_any_element()
-    }
-
-    fn render_topbar(
-        &mut self,
-        snapshot: &BrowserSnapshot,
-        active_tab: &BrowserTab,
-        sidebar_collapsed: bool,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let favorite_icon =
-            if active_tab.flags().favorite { IconName::Star } else { IconName::StarOff };
-        let favorite_tooltip =
-            if active_tab.flags().favorite { "Remove Favorite" } else { "Add Favorite" };
-        let pinned_tooltip = if active_tab.flags().pinned { "Unpin Tab" } else { "Pin Tab" };
-
-        div()
-            .h(px(spacing::TOPBAR_HEIGHT))
-            .px(px(14.0))
-            .gap(px(8.0))
-            .flex()
-            .items_center()
-            .flex_shrink_0()
-            .border_b_1()
-            .border_color(rgba(colors::DIVIDER))
-            .children(if sidebar_collapsed {
-                Some(render_command_bar_identity(snapshot, 56.0, true))
-            } else {
-                None
-            })
-            .child(render_icon_button("nav-back", IconName::ChevronLeft))
-            .child(render_icon_button("nav-forward", IconName::ChevronRight))
-            .child(
-                div()
-                    .flex_1()
-                    .h(px(spacing::OMNIBAR_HEIGHT))
-                    .rounded(px(spacing::RADIUS_PILL))
-                    .bg(rgba(OMNIBAR_BG))
-                    .shadow(soft_shadow())
-                    .px(px(14.0))
-                    .flex()
-                    .items_center()
-                    .gap(px(10.0))
-                    .child(div().text_color(rgb(colors::INK_3)).child(IconName::Search))
-                    .child(
-                        div()
-                            .flex_1()
-                            .child(
-                                Input::new(&self.command_input)
-                                    .appearance(false)
-                                    .cleanable(true),
-                            ),
-                    ),
-            )
-            .child(
-                Button::new("toggle-pinned-tab")
-                    .ghost()
-                    .small()
-                    .selected(active_tab.flags().pinned)
-                    .icon(IconName::Asterisk)
-                    .tooltip(pinned_tooltip)
-                    .on_click(cx.listener(|shell, _, _, cx| shell.toggle_active_tab_pinned(cx))),
-            )
-            .child(
-                Button::new("toggle-favorite-tab")
-                    .ghost()
-                    .small()
-                    .selected(active_tab.flags().favorite)
-                    .icon(favorite_icon)
-                    .tooltip(favorite_tooltip)
-                    .on_click(cx.listener(|shell, _, _, cx| shell.toggle_active_tab_favorite(cx))),
-            )
-            .child(
-                Button::new("new-tab")
-                    .ghost()
-                    .small()
-                    .icon(IconName::Plus)
-                    .tooltip("New Tab")
-                    .on_click(cx.listener(|shell, _, window, cx| shell.open_new_tab(window, cx))),
             )
             .into_any_element()
     }
@@ -507,11 +425,7 @@ impl ElyShell {
     }
 }
 
-// rgba(255,255,255,0.55) — omnibar background
-const OMNIBAR_BG: u32 = 0xffffff8c;
-// rgba(255,255,255,0.85) — active nav item background
 const ACTIVE_NAV_BG: u32 = 0xffffffd9;
-// rgba(255,255,255,0.88) — glass panel background
 const PANEL_BG: u32 = 0xffffffe0;
 
 fn panel_shadow() -> Vec<BoxShadow> {
@@ -546,21 +460,6 @@ fn soft_shadow() -> Vec<BoxShadow> {
             spread_radius: px(1.),
         },
     ]
-}
-
-fn render_icon_button(id: &'static str, icon: IconName) -> impl IntoElement {
-    div()
-        .id(id)
-        .size(px(30.0))
-        .rounded(px(8.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .cursor_pointer()
-        .text_color(rgb(colors::INK_3))
-        .hover(|style| style.bg(rgba(OMNIBAR_BG)).text_color(rgb(colors::INK)))
-        .active(|style| style.opacity(0.82))
-        .child(icon)
 }
 
 fn render_error(message: String) -> AnyElement {

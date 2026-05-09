@@ -1,5 +1,5 @@
 use ely_domain::UrlText;
-use gpui::{Context, Window};
+use gpui::{ClipboardItem, Context, Window};
 use gpui_component::input::SelectAll;
 
 use super::{ElyShell, ShellState};
@@ -63,5 +63,13 @@ impl ElyShell {
             input.focus(window, cx);
         });
         window.dispatch_action(Box::new(SelectAll), cx);
+    }
+
+    pub(super) fn copy_active_tab_url(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &self.state
+            && let Ok(tab) = core.active_tab()
+        {
+            cx.write_to_clipboard(ClipboardItem::new_string(tab.url().as_str().to_string()));
+        }
     }
 }
