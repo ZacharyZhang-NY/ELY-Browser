@@ -1,6 +1,6 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
-use ely_domain::{ArchivedTab, BrowserTab, Profile, Space};
+use ely_domain::BrowserTab;
 use gpui::{
     AnyElement, BoxShadow, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, div, hsla, linear_color_stop, linear_gradient, point,
@@ -9,8 +9,7 @@ use gpui::{
 use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
 
 use crate::shell::ElyShell;
-use crate::shell::archive_labels::archive_detail_label;
-use crate::shell::chrome::render_sidebar_header;
+use crate::shell::chrome::{render_glyph_for, render_sidebar_header};
 
 impl ElyShell {
     pub(crate) fn render_expanded_sidebar(
@@ -36,60 +35,97 @@ impl ElyShell {
                     .p(px(10.0))
                     .flex()
                     .flex_col()
-                    .gap(px(6.0))
-                    .child(section_label("FAVORITES"))
+                    .gap(px(2.0))
+                    .child(self.render_home_anchor_row(snapshot, cx))
                     .children(snapshot.favorites.iter().map(|tab| {
-                        self.render_favorite_row(
+                        self.render_launcher_row(
                             tab,
-                            &snapshot.profiles,
                             tab.id() == &snapshot.active_tab_id,
                             cx,
                         )
                     }))
                     .child(section_label("PINNED"))
                     .children(snapshot.pinned_tabs.iter().map(|tab| {
-                        self.render_pinned_row(
+                        self.render_launcher_row(
                             tab,
-                            &snapshot.profiles,
                             tab.id() == &snapshot.active_tab_id,
                             cx,
                         )
                     }))
-                    .child(section_label("SPACES"))
-                    .children(snapshot.spaces.iter().map(|space| {
-                        self.render_space_row(
-                            space,
-                            space.id() == &snapshot.active_space_id,
-                            cx,
-                        )
-                    }))
-                    .child(section_label("TABS"))
+                    .child(section_tabs_label(snapshot.tabs.len()))
                     .children(self.render_sidebar_tab_rows(snapshot, cx))
-                    .child(section_label("ARCHIVE"))
-                    .children(
-                        snapshot
-                            .archived_tabs
-                            .iter()
-                            .rev()
-                            .map(|archived_tab| {
-                                self.render_archived_row(archived_tab, snapshot, cx)
-                            }),
-                    ),
+                    .child(self.render_new_tab_row(cx)),
             )
-            .child(self.render_sidebar_footer(snapshot))
+            .child(self.render_sidebar_footer(snapshot, cx))
             .into_any_element()
     }
 
-    fn render_sidebar_footer(&self, snapshot: &BrowserSnapshot) -> AnyElement {
+    fn render_sidebar_footer(
+        &mut self,
+        snapshot: &BrowserSnapshot,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         div()
-            .px(px(14.0))
-            .py(px(12.0))
+            .px(px(10.0))
+            .py(px(8.0))
             .flex()
-            .items_center()
-            .gap_2()
+            .flex_col()
+            .gap(px(2.0))
             .flex_shrink_0()
             .border_t_1()
             .border_color(rgba(colors::DIVIDER))
+            .child(self.render_settings_row(cx))
+            .child(self.render_profile_row(snapshot, cx))
+            .into_any_element()
+    }
+
+    fn render_settings_row(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .id(SharedString::from("nav-settings"))
+            .rounded(px(spacing::RADIUS_NAV))
+            .px(px(10.0))
+            .py(px(7.0))
+            .gap(px(10.0))
+            .flex()
+            .items_center()
+            .text_size(px(13.0))
+            .text_color(rgb(colors::INK_2))
+            .cursor_pointer()
+            .hover(|style| style.bg(rgba(ACTIVE_NAV_BG)).text_color(rgb(colors::INK)))
+            .active(|style| style.opacity(0.82))
+            .on_click(cx.listener(|shell, _, window, cx| {
+                shell.open_internal_tab("ely://settings", window, cx);
+            }))
+            .child(
+                div()
+                    .text_color(rgb(colors::INK_3))
+                    .child(IconName::Settings),
+            )
+            .child("Settings")
+            .into_any_element()
+    }
+
+    fn render_profile_row(
+        &mut self,
+        snapshot: &BrowserSnapshot,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let profile_name = snapshot.active_profile_name.clone();
+
+        div()
+            .id(SharedString::from("nav-profile"))
+            .rounded(px(spacing::RADIUS_NAV))
+            .px(px(10.0))
+            .py(px(6.0))
+            .gap(px(10.0))
+            .flex()
+            .items_center()
+            .cursor_pointer()
+            .hover(|style| style.bg(rgba(ACTIVE_NAV_BG)))
+            .active(|style| style.opacity(0.82))
+            .on_click(cx.listener(|shell, _, window, cx| {
+                shell.open_internal_tab("ely://settings/profiles", window, cx);
+            }))
             .child(
                 div()
                     .size(px(26.0))
@@ -107,31 +143,44 @@ impl ElyShell {
                             .text_size(px(10.0))
                             .font_semibold()
                             .text_color(rgb(0xffffff))
-                            .child(profile_initial(&snapshot.active_profile_name)),
+                            .child(profile_initial(&profile_name)),
                     ),
             )
             .child(
                 div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
                     .text_size(px(13.0))
                     .font_weight(gpui::FontWeight(500.0))
                     .text_color(rgb(colors::INK_2))
-                    .child(snapshot.active_profile_name.clone()),
+                    .child(profile_name),
+            )
+            .child(
+                div()
+                    .text_color(rgb(colors::INK_4))
+                    .child(IconName::ChevronDown),
             )
             .into_any_element()
     }
 
-    fn render_space_row(
+    fn render_home_anchor_row(
         &mut self,
-        space: &Space,
-        active: bool,
+        snapshot: &BrowserSnapshot,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let space_id = space.id().clone();
+        let active_tab = snapshot
+            .tabs
+            .iter()
+            .find(|tab| tab.id() == &snapshot.active_tab_id);
+        let active = active_tab
+            .map(|tab| tab.url().as_str() == "ely://new-tab")
+            .unwrap_or(false);
         let bg_color = if active { ACTIVE_NAV_BG } else { 0x00000000 };
         let text_color = if active { colors::INK } else { colors::INK_2 };
 
         div()
-            .id(SharedString::from(format!("space-{}", space.id().as_str())))
+            .id(SharedString::from("nav-home"))
             .rounded(px(spacing::RADIUS_NAV))
             .px(px(10.0))
             .py(px(7.0))
@@ -143,52 +192,33 @@ impl ElyShell {
             .active(|style| style.opacity(0.82))
             .bg(rgba(bg_color))
             .when(active, |el| el.shadow(soft_shadow()))
-            .on_click(cx.listener(move |shell, _, window, cx| {
-                shell.select_space(&space_id, window, cx);
+            .on_click(cx.listener(|shell, _, window, cx| {
+                shell.open_internal_tab("ely://new-tab", window, cx);
             }))
-            .child(render_workspace_tile(space))
+            .child(div().text_color(rgb(colors::INK_3)).child(IconName::Frame))
             .child(
                 div()
+                    .flex_1()
                     .text_size(px(13.0))
                     .font_weight(gpui::FontWeight(500.0))
                     .text_color(rgb(text_color))
-                    .child(space.name().to_string()),
+                    .child("Home"),
             )
             .into_any_element()
     }
 
-    fn render_favorite_row(
+    fn render_launcher_row(
         &mut self,
         tab: &BrowserTab,
-        profiles: &[Profile],
         active: bool,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        self.render_nav_row(tab, profiles, active, IconName::Star, colors::ACCENT, cx)
-    }
-
-    fn render_pinned_row(
-        &mut self,
-        tab: &BrowserTab,
-        profiles: &[Profile],
-        active: bool,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        self.render_nav_row(tab, profiles, active, IconName::Asterisk, colors::INK_3, cx)
-    }
-
-    fn render_nav_row(
-        &mut self,
-        tab: &BrowserTab,
-        _profiles: &[Profile],
-        active: bool,
-        icon: IconName,
-        icon_color: u32,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let tab_id = tab.id().clone();
         let bg_color = if active { ACTIVE_NAV_BG } else { 0x00000000 };
         let text_color = if active { colors::INK } else { colors::INK_2 };
+        let host = tab.url().host().map(|host| host.to_string());
+        let title = tab.title().to_string();
+        let initial = title.chars().next().unwrap_or('?').to_string();
 
         div()
             .id(SharedString::from(format!("nav-{}", tab.id().as_str())))
@@ -206,16 +236,44 @@ impl ElyShell {
             .on_click(cx.listener(move |shell, _, window, cx| {
                 shell.select_tab(&tab_id, window, cx);
             }))
-            .child(div().text_color(rgb(icon_color)).child(icon))
+            .child(render_glyph_for(host.as_deref(), &initial, 18.0))
             .child(
                 div()
+                    .flex_1()
                     .min_w_0()
                     .overflow_hidden()
+                    .truncate()
                     .text_size(px(13.0))
                     .font_weight(gpui::FontWeight(500.0))
                     .text_color(rgb(text_color))
-                    .child(tab.title().to_string()),
+                    .child(title),
             )
+            .into_any_element()
+    }
+
+    fn render_new_tab_row(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .id(SharedString::from("nav-new-tab"))
+            .rounded(px(spacing::RADIUS_NAV))
+            .px(px(10.0))
+            .py(px(7.0))
+            .gap(px(10.0))
+            .flex()
+            .items_center()
+            .text_color(rgb(colors::INK_3))
+            .text_size(px(13.0))
+            .cursor_pointer()
+            .hover(|style| style.bg(rgba(ACTIVE_NAV_BG)).text_color(rgb(colors::INK)))
+            .active(|style| style.opacity(0.82))
+            .on_click(cx.listener(|shell, _, window, cx| {
+                shell.open_new_tab(window, cx);
+            }))
+            .child(
+                div()
+                    .text_color(rgb(colors::INK_4))
+                    .child(IconName::Plus),
+            )
+            .child("New Tab")
             .into_any_element()
     }
 
@@ -263,55 +321,6 @@ impl ElyShell {
             .into_any_element()
     }
 
-    fn render_archived_row(
-        &mut self,
-        archived_tab: &ArchivedTab,
-        snapshot: &BrowserSnapshot,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let tab = archived_tab.tab();
-        let tab_id = tab.id().clone();
-        let detail = archive_detail_label(archived_tab, &snapshot.spaces, &snapshot.profiles);
-
-        div()
-            .id(SharedString::from(format!("archived-{}", tab.id().as_str())))
-            .rounded(px(spacing::RADIUS_NAV))
-            .px(px(10.0))
-            .py(px(7.0))
-            .gap(px(10.0))
-            .flex()
-            .items_center()
-            .cursor_pointer()
-            .hover(|style| style.bg(rgba(ACTIVE_NAV_BG)))
-            .active(|style| style.opacity(0.82))
-            .on_click(cx.listener(move |shell, _, window, cx| {
-                shell.restore_archived_tab(&tab_id, window, cx);
-            }))
-            .child(div().text_color(rgb(colors::INK_4)).child(IconName::Undo2))
-            .child(
-                div()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .child(
-                        div()
-                            .text_size(px(13.0))
-                            .font_weight(gpui::FontWeight(500.0))
-                            .text_color(rgb(colors::INK_2))
-                            .overflow_hidden()
-                            .child(tab.title().to_string()),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(11.0))
-                            .text_color(rgb(colors::INK_4))
-                            .overflow_hidden()
-                            .child(detail),
-                    ),
-            )
-            .into_any_element()
-    }
 }
 
 fn profile_initial(name: &str) -> String {
@@ -322,24 +331,25 @@ fn profile_initial(name: &str) -> String {
         .to_string()
 }
 
-fn render_workspace_tile(space: &Space) -> impl IntoElement {
+fn section_tabs_label(count: usize) -> impl IntoElement {
     div()
-        .size(px(32.0))
-        .rounded(px(9.0))
-        .bg(linear_gradient(
-            135.0,
-            linear_color_stop(hsla(0., 0., 1., 1.0), 0.0),
-            linear_color_stop(hsla(20.0 / 360.0, 0.6, 0.94, 1.0), 1.0),
-        ))
-        .shadow(soft_shadow())
+        .pt(px(12.0))
+        .pb(px(4.0))
+        .px(px(10.0))
         .flex()
         .items_center()
-        .justify_center()
+        .gap(px(6.0))
         .child(
             div()
-                .text_size(px(14.0))
-                .text_color(rgb(colors::ACCENT))
-                .child(space.icon().to_string()),
+                .text_color(rgb(colors::INK_4))
+                .child(IconName::Frame),
+        )
+        .child(
+            div()
+                .text_size(px(10.5))
+                .font_weight(gpui::FontWeight(500.0))
+                .text_color(rgb(colors::INK_4))
+                .child(format!("TABS · {count}")),
         )
 }
 
