@@ -4,6 +4,8 @@ use std::{collections::BTreeSet, error::Error, fs, path::PathBuf, process::Comma
 
 use ely_domain::ProfileId;
 
+#[path = "sidecar/site_cases.rs"]
+mod site_cases;
 #[path = "sidecar/support.rs"]
 mod support;
 

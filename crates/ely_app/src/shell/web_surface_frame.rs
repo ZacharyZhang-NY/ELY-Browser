@@ -16,6 +16,7 @@ pub(super) struct WebSurfaceFrame {
     pub(super) requested_url: String,
     loaded_url: Option<String>,
     title: Option<String>,
+    render_state: String,
     width: u32,
     height: u32,
     scroll_offset: WebSurfaceScrollOffset,
@@ -36,6 +37,7 @@ impl WebSurfaceFrame {
         let height = snapshot.height();
         let loaded_url = snapshot.loaded_url().map(str::to_string);
         let title = snapshot.title().map(str::to_string);
+        let render_state = snapshot.render_state().to_string();
         let rgba_bytes = snapshot.into_rgba_bytes();
 
         let Some(buffer) = ImageBuffer::<Rgba<u8>, _>::from_raw(width, height, rgba_bytes) else {
@@ -48,6 +50,7 @@ impl WebSurfaceFrame {
             requested_url,
             loaded_url,
             title,
+            render_state,
             width,
             height,
             scroll_offset,
@@ -66,7 +69,8 @@ impl WebSurfaceFrame {
     }
 
     pub(super) fn detail_label(&self) -> String {
-        let mut detail = self.scroll_offset.detail_label(self.size());
+        let mut detail =
+            format!("{} {}", self.render_state(), self.scroll_offset.detail_label(self.size()));
         if let Some(click_point) = self.click_point {
             detail = format!("{detail} {}", click_point.detail_label());
         }
@@ -78,6 +82,10 @@ impl WebSurfaceFrame {
 
     pub(super) fn size(&self) -> WebSurfaceSize {
         WebSurfaceSize { width: self.width, height: self.height }
+    }
+
+    pub(super) fn render_state(&self) -> &str {
+        self.render_state.as_str()
     }
 
     pub(super) fn scroll_offset(&self) -> WebSurfaceScrollOffset {

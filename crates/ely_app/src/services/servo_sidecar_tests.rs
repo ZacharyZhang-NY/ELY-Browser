@@ -28,6 +28,7 @@ fn accepts_loading_report_with_visible_content() -> Result<(), ServoSidecarError
 
     assert_eq!(snapshot.loaded_url(), Some("https://example.com/"));
     assert_eq!(snapshot.title(), Some("Example Domain"));
+    assert_eq!(snapshot.render_state(), "loading");
     assert_eq!(snapshot.width(), 2);
     assert_eq!(snapshot.height(), 1);
     assert_eq!(snapshot.non_white_pixel_count, 1);
@@ -156,6 +157,7 @@ fn assert_live_sites_render(cases: &[LiveSiteCase]) -> Result<(), Box<dyn Error>
 
         assert_eq!(snapshot.width(), LIVE_SITE_WIDTH, "{}", case.url);
         assert_eq!(snapshot.height(), LIVE_SITE_HEIGHT, "{}", case.url);
+        assert_render_state_is_open(snapshot.render_state(), case.url);
         assert_loaded_url_contains(&snapshot, case.url)?;
         assert_title_contains(&snapshot, case.title_fragment)?;
         assert!(snapshot.non_white_pixel_count > 0, "{}", case.url);
@@ -171,6 +173,11 @@ fn assert_live_sites_render(cases: &[LiveSiteCase]) -> Result<(), Box<dyn Error>
         );
     }
     Ok(())
+}
+
+#[cfg(feature = "live-site-smoke")]
+fn assert_render_state_is_open(state: &str, url: &str) {
+    assert!(matches!(state, "complete" | "loading"), "{url} state: {state}");
 }
 
 #[cfg(feature = "live-site-smoke")]

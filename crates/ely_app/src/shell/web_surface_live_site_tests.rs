@@ -74,9 +74,14 @@ fn assert_prd_frame_is_ready(frame: &WebSurfaceFrame, case: &LiveSiteCase) {
         case.url
     );
     assert_eq!(frame.scroll_offset(), WebSurfaceScrollOffset::default(), "{}", case.url);
+    assert_render_state_is_open(frame.render_state(), case.url);
     assert!(frame.url_label().contains(normalized_url(case.url)), "{}", frame.url_label());
     assert!(frame.title_label().contains(case.title_fragment), "{}", frame.title_label());
-    assert_eq!(frame.detail_label(), "934x657", "{}", case.url);
+    assert_eq!(frame.detail_label(), format!("{} 934x657", frame.render_state()), "{}", case.url);
+}
+
+fn assert_render_state_is_open(state: &str, url: &str) {
+    assert!(matches!(state, "complete" | "loading"), "{url} state: {state}");
 }
 
 fn live_surface_bounds() -> Bounds<gpui::Pixels> {

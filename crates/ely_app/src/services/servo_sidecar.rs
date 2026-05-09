@@ -201,6 +201,7 @@ impl SidecarSnapshotRequest {
 pub struct SidecarSnapshot {
     loaded_url: Option<String>,
     title: Option<String>,
+    render_state: String,
     width: u32,
     height: u32,
     #[cfg(test)]
@@ -250,6 +251,7 @@ impl SidecarSnapshot {
         Ok(Self {
             loaded_url: report.loaded_url,
             title: report.title,
+            render_state: report.state,
             width: report.width,
             height: report.height,
             #[cfg(test)]
@@ -270,6 +272,11 @@ impl SidecarSnapshot {
     #[must_use]
     pub fn title(&self) -> Option<&str> {
         self.title.as_deref()
+    }
+
+    #[must_use]
+    pub fn render_state(&self) -> &str {
+        self.render_state.as_str()
     }
 
     #[must_use]
