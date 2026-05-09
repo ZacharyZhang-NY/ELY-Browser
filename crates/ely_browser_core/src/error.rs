@@ -36,6 +36,9 @@ pub enum CoreError {
     #[error("profile not found: {id}")]
     ProfileNotFound { id: ProfileId },
 
+    #[error("private profile keeps sync paused: {id}")]
+    PrivateProfileSyncLocked { id: ProfileId },
+
     #[error("download not found: {id}")]
     DownloadNotFound { id: DownloadId },
 

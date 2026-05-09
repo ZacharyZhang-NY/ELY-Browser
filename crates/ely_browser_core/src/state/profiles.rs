@@ -100,6 +100,9 @@ impl BrowserCore {
             .iter_mut()
             .find(|profile| profile.id() == profile_id)
             .ok_or_else(|| CoreError::ProfileNotFound { id: profile_id.clone() })?;
+        if sync_policy == ProfileSyncPolicy::Enabled && !profile.allows_sync() {
+            return Err(CoreError::PrivateProfileSyncLocked { id: profile_id.clone() });
+        }
 
         profile.set_sync_policy(sync_policy);
         Ok(())

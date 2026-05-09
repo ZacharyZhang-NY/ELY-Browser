@@ -8,7 +8,7 @@ use gpui::{
     px, rgb,
 };
 use gpui_component::{
-    IconName, Selectable, Sizable, StyledExt,
+    Disableable, IconName, Selectable, Sizable, StyledExt,
     button::{Button, ButtonVariants},
     scroll::ScrollableElement,
 };
@@ -146,7 +146,13 @@ fn render_profile_row(
                     default_for_active_space,
                     cx,
                 ))
-                .child(render_profile_sync_action(index, sync_profile_id, sync_policy, cx))
+                .child(render_profile_sync_action(
+                    index,
+                    sync_profile_id,
+                    profile.allows_sync(),
+                    sync_policy,
+                    cx,
+                ))
                 .child(render_profile_action(index, profile_id, active, cx)),
         )
         .into_any_element()
@@ -220,9 +226,21 @@ fn render_profile_action(
 fn render_profile_sync_action(
     index: usize,
     profile_id: ProfileId,
+    allows_sync: bool,
     sync_policy: ProfileSyncPolicy,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
+    if !allows_sync {
+        return Button::new(("profile-sync-policy", index))
+            .ghost()
+            .xsmall()
+            .selected(true)
+            .disabled(true)
+            .label("Sync Paused")
+            .tooltip("Private Profiles keep Sync paused")
+            .into_any_element();
+    }
+
     let next_policy = sync_policy.toggled();
     let paused = sync_policy == ProfileSyncPolicy::Paused;
 

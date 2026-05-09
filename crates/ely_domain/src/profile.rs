@@ -97,11 +97,19 @@ impl Profile {
         self.sync_policy
     }
 
+    #[must_use]
+    pub fn allows_sync(&self) -> bool {
+        self.kind == ProfileKind::Standard
+    }
+
     pub fn set_download_policy(&mut self, download_policy: DownloadPolicy) {
         self.download_policy = download_policy;
     }
 
     pub fn set_sync_policy(&mut self, sync_policy: ProfileSyncPolicy) {
-        self.sync_policy = sync_policy;
+        self.sync_policy = match self.kind {
+            ProfileKind::Standard => sync_policy,
+            ProfileKind::Private => ProfileSyncPolicy::Paused,
+        };
     }
 }

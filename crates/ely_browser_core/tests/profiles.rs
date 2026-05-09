@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use ely_browser_core::{BrowserCore, InitialBrowserConfig};
+use ely_browser_core::{BrowserCore, CoreError, InitialBrowserConfig};
 use ely_domain::{CommandIntent, ProfileKind, ProfileSyncPolicy, UrlText};
 
 #[test]
@@ -83,5 +83,27 @@ fn profile_sync_policy_can_pause_one_profile() -> Result<(), Box<dyn Error>> {
 
     assert_eq!(default_profile.sync_policy(), ProfileSyncPolicy::Enabled);
     assert_eq!(research_profile.sync_policy(), ProfileSyncPolicy::Paused);
+    Ok(())
+}
+
+#[test]
+fn private_profile_sync_policy_stays_paused() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let private_profile_id = core.create_profile("Private", 0x807d72, ProfileKind::Private)?;
+
+    let result = core.set_profile_sync_policy(&private_profile_id, ProfileSyncPolicy::Enabled);
+    let error = match result {
+        Ok(()) => return Err("private profile sync enabled".into()),
+        Err(error) => error,
+    };
+
+    assert_eq!(error, CoreError::PrivateProfileSyncLocked { id: private_profile_id.clone() });
+    let snapshot = core.snapshot()?;
+    let Some(private_profile) =
+        snapshot.profiles.iter().find(|profile| profile.id() == &private_profile_id)
+    else {
+        return Err("missing private profile".into());
+    };
+    assert_eq!(private_profile.sync_policy(), ProfileSyncPolicy::Paused);
     Ok(())
 }
