@@ -1,6 +1,6 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::{BrowserTab, HistoryEntry};
+use ely_domain::{BookmarkEntry, BrowserTab, HistoryEntry};
 use gpui::{
     AnyElement, BoxShadow, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
     SharedString, StatefulInteractiveElement, Styled, div, hsla, point, px, rgb, rgba,
@@ -9,10 +9,12 @@ use gpui_component::IconName;
 
 use crate::shell::ElyShell;
 use crate::shell::chrome::command_footer::{render_command_footer, render_kbd};
+use crate::shell::chrome::command_match::{
+    matching_bookmarks, matching_history, matching_tabs,
+};
 use crate::shell::chrome::render_glyph_for;
 
 const COMMAND_PREFIX: &str = ">";
-const RESULT_LIMIT: usize = 4;
 
 pub(crate) fn render_command_overlay(
     snapshot: &BrowserSnapshot,
@@ -114,6 +116,7 @@ fn render_results(
 ) -> AnyElement {
     let tabs = matching_tabs(snapshot, needle);
     let history = matching_history(snapshot, needle);
+    let bookmarks = matching_bookmarks(snapshot, needle);
     let actions = matching_actions(needle);
 
     let mut sections: Vec<AnyElement> = Vec::new();
@@ -122,6 +125,12 @@ fn render_results(
     }
     if !history.is_empty() {
         sections.push(render_section("History", render_history_rows(history, cx)));
+    }
+    if !bookmarks.is_empty() {
+        sections.push(render_section(
+            "Bookmarks",
+            render_bookmark_rows(bookmarks, cx),
+        ));
     }
     if !actions.is_empty() {
         sections.push(render_section("Actions", render_action_rows(actions, cx)));
@@ -420,46 +429,39 @@ fn render_empty_state() -> AnyElement {
         .into_any_element()
 }
 
-fn matching_tabs<'a>(
-    snapshot: &'a BrowserSnapshot,
-    needle: &str,
-) -> Vec<&'a BrowserTab> {
-    if needle.is_empty() {
-        return snapshot.tabs.iter().take(RESULT_LIMIT).collect();
-    }
+fn render_bookmark_rows(
+    entries: Vec<&BookmarkEntry>,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .children(entries.into_iter().enumerate().map(|(index, bookmark)| {
+            let url = bookmark.url().clone();
+            let title = bookmark.title().to_string();
+            let host = bookmark.url().host().map(|host| host.to_string());
+            let display = host
+                .clone()
+                .unwrap_or_else(|| bookmark.url().as_str().to_string());
+            let initial = title.chars().next().unwrap_or('?').to_string();
 
-    snapshot
-        .tabs
-        .iter()
-        .filter(|tab| matches_tab(tab, needle))
-        .take(RESULT_LIMIT)
-        .collect()
-}
-
-fn matches_tab(tab: &BrowserTab, needle: &str) -> bool {
-    tab.title().to_lowercase().contains(needle) || tab.url().as_str().to_lowercase().contains(needle)
-}
-
-fn matching_history<'a>(
-    snapshot: &'a BrowserSnapshot,
-    needle: &str,
-) -> Vec<&'a HistoryEntry> {
-    if needle.is_empty() {
-        return snapshot.history_entries.iter().rev().take(RESULT_LIMIT).collect();
-    }
-
-    snapshot
-        .history_entries
-        .iter()
-        .rev()
-        .filter(|entry| matches_history(entry, needle))
-        .take(RESULT_LIMIT)
-        .collect()
-}
-
-fn matches_history(entry: &HistoryEntry, needle: &str) -> bool {
-    entry.title().to_lowercase().contains(needle)
-        || entry.url().as_str().to_lowercase().contains(needle)
+            render_row_with_glyph(
+                CommandRowContent {
+                    id: format!("cmd-bookmark-{index}"),
+                    title,
+                    hint: Some(display),
+                    keys: None,
+                },
+                host.as_deref(),
+                &initial,
+                cx,
+                move |shell, window, cx| {
+                    shell.open_internal_tab(url.as_str(), window, cx);
+                    shell.dismiss_command_mode(window, cx);
+                },
+            )
+        }))
+        .into_any_element()
 }
 
 const PANEL_BG: u32 = 0xfffffff5;
