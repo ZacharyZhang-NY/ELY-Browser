@@ -41,6 +41,7 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
         "ely://settings/plugins" => Some("Plugin Settings"),
         "ely://settings/profiles" => Some("Profile Settings"),
         "ely://settings/sync" => Some("Sync Settings"),
+        "ely://settings/updates" => Some("Update Settings"),
         "ely://sync/status" => Some("Sync Status"),
         _ => None,
     }
@@ -259,6 +260,9 @@ fn settings_page_route(query: &str) -> Option<&'static str> {
             Some("ely://settings/shortcuts")
         }
         "sync" | "sync settings" => Some("ely://settings/sync"),
+        "update" | "updates" | "auto update" | "auto updates" | "release" | "releases" => {
+            Some("ely://settings/updates")
+        }
         "profile" | "profiles" | "profile settings" | "profiles settings" => {
             Some("ely://settings/profiles")
         }

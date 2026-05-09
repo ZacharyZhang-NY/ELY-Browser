@@ -28,6 +28,7 @@ mod spaces;
 mod sync;
 mod tab_context;
 mod task_manager;
+mod updates;
 
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
@@ -88,6 +89,7 @@ impl ElyShell {
             "ely://settings/plugins" => self.render_plugins_page(snapshot, cx),
             "ely://settings/profiles" => self.render_profiles_page(snapshot, cx),
             "ely://settings/sync" => self.render_sync_page(snapshot, cx),
+            "ely://settings/updates" => self.render_updates_page(snapshot),
             "ely://sync/status" => self.render_sync_page(snapshot, cx),
             url if super::web_surface::is_external_web_url(url) => {
                 self.render_external_web_canvas(tab, cx)

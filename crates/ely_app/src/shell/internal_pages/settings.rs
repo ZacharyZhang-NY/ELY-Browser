@@ -85,6 +85,12 @@ const SETTINGS_ROUTES: &[SettingsRoute] = &[
         route: "ely://settings/sync",
     },
     SettingsRoute {
+        icon: IconName::LoaderCircle,
+        title: "Updates",
+        detail: "Build identity and Elydora release manifest contract.",
+        route: "ely://settings/updates",
+    },
+    SettingsRoute {
         icon: IconName::Asterisk,
         title: "Plugins",
         detail: "Installed plugin control and audit trail.",
