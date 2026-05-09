@@ -12,6 +12,7 @@ use gpui_component::{IconName, scroll::ScrollableElement};
 use crate::brand::SYNC_SERVICE_NAME;
 
 use super::{ElyShell, render_canvas_surface};
+use crate::shell::chrome::SERIF_FAMILY;
 
 impl ElyShell {
     pub(super) fn render_sync_page(
@@ -78,6 +79,7 @@ fn render_status_pill(snapshot: &BrowserSnapshot) -> AnyElement {
 
 fn render_serif_headline() -> AnyElement {
     div()
+        .font_family(SERIF_FAMILY)
         .text_size(px(46.0))
         .font_weight(FontWeight(400.0))
         .text_color(rgb(colors::INK))

@@ -8,6 +8,7 @@ pub(crate) mod sidebar;
 pub(crate) mod sidebar_header;
 pub(crate) mod split_pane;
 pub(crate) mod topbar;
+pub(crate) mod typography;
 pub(crate) mod wallpaper;
 
 pub(crate) use appearance_form::render_appearance_form;
@@ -22,4 +23,5 @@ pub(crate) use split_pane::{
     render_split_pane_header,
 };
 pub(crate) use topbar::render_topbar;
+pub(crate) use typography::{SERIF_FAMILY, register_serif_fonts};
 pub(crate) use wallpaper::render_wallpaper;

@@ -60,6 +60,9 @@ fn main() {
     application.on_open_urls(move |urls| open_url_queue.push(urls));
     application.run(move |cx: &mut App| {
         gpui_component::init(cx);
+        if let Err(error) = shell::chrome::register_serif_fonts(cx) {
+            eprintln!("ELY: failed to register serif fonts: {error}");
+        }
         cx.on_action(quit);
         bind_shortcuts(cx);
         cx.on_action(open_private_window);

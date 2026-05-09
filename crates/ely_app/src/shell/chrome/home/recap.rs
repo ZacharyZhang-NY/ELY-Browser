@@ -10,7 +10,7 @@ use gpui::{
 };
 
 use crate::shell::ElyShell;
-use crate::shell::chrome::render_glyph_for;
+use crate::shell::chrome::{SERIF_FAMILY, render_glyph_for};
 
 use super::style::{CARD_BG, card_shadow};
 use super::time::relative_time_label;
@@ -217,6 +217,7 @@ fn render_reading_list_cover(
                 .gap_1()
                 .child(
                     div()
+                        .font_family(SERIF_FAMILY)
                         .text_size(px(18.0))
                         .font_weight(FontWeight(500.0))
                         .text_color(rgb(0xffffff))

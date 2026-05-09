@@ -9,6 +9,7 @@ use gpui::{
 use gpui_component::{IconName, scroll::ScrollableElement};
 
 use crate::shell::ElyShell;
+use crate::shell::chrome::SERIF_FAMILY;
 
 pub(crate) fn render_appearance_form(
     snapshot: &BrowserSnapshot,
@@ -48,6 +49,7 @@ fn render_header() -> AnyElement {
         )
         .child(
             div()
+                .font_family(SERIF_FAMILY)
                 .text_size(px(34.0))
                 .font_weight(FontWeight(400.0))
                 .text_color(rgb(colors::INK))

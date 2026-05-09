@@ -10,6 +10,7 @@ use gpui_component::{
 };
 
 use super::{ElyShell, render_canvas_surface};
+use crate::shell::chrome::SERIF_FAMILY;
 
 impl ElyShell {
     pub(super) fn render_plugin_detail_page(
@@ -75,7 +76,8 @@ impl ElyShell {
                     .gap_2()
                     .child(
                         div()
-                            .text_size(px(26.0))
+                            .font_family(SERIF_FAMILY)
+                            .text_size(px(28.0))
                             .truncate()
                             .text_color(rgb(colors::INK))
                             .child(plugin.manifest().name().to_string()),

@@ -10,6 +10,7 @@ use gpui_component::{IconName, scroll::ScrollableElement};
 
 use super::plugin_editors_pick::{action_button, render_editors_pick};
 use super::{ElyShell, render_canvas_surface};
+use crate::shell::chrome::SERIF_FAMILY;
 
 impl ElyShell {
     pub(super) fn render_plugin_catalog_page(
@@ -58,6 +59,7 @@ fn render_hero_left(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> A
         )
         .child(
             div()
+                .font_family(SERIF_FAMILY)
                 .text_size(px(48.0))
                 .font_weight(FontWeight(400.0))
                 .text_color(rgb(colors::INK))

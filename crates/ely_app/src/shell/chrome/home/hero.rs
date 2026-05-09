@@ -7,6 +7,8 @@ use gpui_component::IconName;
 
 use crate::shell::ElyShell;
 
+use crate::shell::chrome::SERIF_FAMILY;
+
 use super::style::{
     ARROW_CHIP_BG, PILL_BG, PILL_BG_HOVER, SEARCH_BG, card_shadow, soft_shadow,
 };
@@ -42,6 +44,7 @@ fn render_greeting_row(text: String) -> AnyElement {
 
 fn render_serif_headline() -> AnyElement {
     div()
+        .font_family(SERIF_FAMILY)
         .text_size(px(64.0))
         .font_weight(FontWeight(400.0))
         .text_color(rgb(colors::INK))
