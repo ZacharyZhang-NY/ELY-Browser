@@ -62,6 +62,7 @@ pub struct ElyShell {
     state: ShellState,
     focus_handle: FocusHandle,
     command_input: Entity<InputState>,
+    pub(crate) plugin_search_input: Entity<InputState>,
     download_action_error: Option<String>,
     download_clear_confirmation: bool,
     download_security_confirmation: Option<PendingDownloadFileAction>,
@@ -104,6 +105,8 @@ impl ElyShell {
     ) -> Self {
         let command_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Search or enter address"));
+        let plugin_search_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Search plugins…"));
 
         let command_subscription = cx.subscribe_in(
             &command_input,
@@ -151,6 +154,7 @@ impl ElyShell {
             state,
             focus_handle: cx.focus_handle(),
             command_input,
+            plugin_search_input,
             download_action_error: None,
             download_clear_confirmation: false,
             download_security_confirmation: None,

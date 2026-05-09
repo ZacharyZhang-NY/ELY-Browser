@@ -6,7 +6,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, div, hsla, linear_color_stop, linear_gradient, px, rgb,
     rgba,
 };
-use gpui_component::{IconName, scroll::ScrollableElement};
+use gpui_component::{IconName, input::Input, scroll::ScrollableElement};
 
 use super::plugin_editors_pick::{action_button, render_editors_pick};
 use super::{ElyShell, render_canvas_surface};
@@ -18,6 +18,9 @@ impl ElyShell {
         snapshot: &BrowserSnapshot,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let needle = self.plugin_search_input.read(cx).value().to_string();
+        let needle_lower = needle.trim().to_lowercase();
+
         render_canvas_surface(
             div()
                 .size_full()
@@ -27,88 +30,122 @@ impl ElyShell {
                 .flex()
                 .flex_col()
                 .gap(px(24.0))
-                .child(render_hero(snapshot, cx))
+                .child(self.render_hero(snapshot, cx))
                 .child(render_summary(snapshot))
-                .child(render_grid(snapshot, cx)),
+                .child(render_grid(snapshot, &needle_lower, cx)),
         )
+    }
+
+    fn render_hero(
+        &mut self,
+        snapshot: &BrowserSnapshot,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .grid()
+            .grid_cols(2)
+            .gap(px(28.0))
+            .child(self.render_hero_left(snapshot, cx))
+            .child(render_editors_pick(snapshot, cx))
+            .into_any_element()
+    }
+
+    fn render_hero_left(
+        &mut self,
+        _snapshot: &BrowserSnapshot,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(10.0))
+            .child(
+                div()
+                    .text_size(px(11.0))
+                    .text_color(rgb(colors::INK_4))
+                    .child("PLUGINS · NATIVE TO ELY"),
+            )
+            .child(
+                div()
+                    .font_family(SERIF_FAMILY)
+                    .text_size(px(48.0))
+                    .font_weight(FontWeight(400.0))
+                    .text_color(rgb(colors::INK))
+                    .child("Quiet tools. Everyday magic."),
+            )
+            .child(
+                div()
+                    .max_w(px(520.0))
+                    .text_size(px(13.5))
+                    .text_color(rgb(colors::INK_2))
+                    .child(
+                        "ELY plugins are sandboxed, theme-aware, and ship with their own \
+                         controls in your sidebar — no Chrome extension framework required.",
+                    ),
+            )
+            .child(self.render_search_row(cx))
+            .into_any_element()
+    }
+
+    fn render_search_row(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .max_w(px(520.0))
+            .child(
+                div()
+                    .flex_1()
+                    .h(px(42.0))
+                    .px(px(16.0))
+                    .rounded(px(12.0))
+                    .bg(rgba(SEARCH_BG))
+                    .flex()
+                    .items_center()
+                    .gap(px(10.0))
+                    .child(
+                        div()
+                            .text_color(rgb(colors::INK_3))
+                            .child(IconName::Search),
+                    )
+                    .child(
+                        div().flex_1().child(
+                            Input::new(&self.plugin_search_input)
+                                .appearance(false)
+                                .cleanable(true),
+                        ),
+                    ),
+            )
+            .child(
+                div()
+                    .id(SharedString::from("plugin-install-action"))
+                    .h(px(42.0))
+                    .px(px(16.0))
+                    .rounded(px(12.0))
+                    .bg(rgba(INSTALL_BG))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .text_size(px(13.0))
+                    .font_weight(FontWeight(500.0))
+                    .text_color(rgb(0xffffff))
+                    .cursor_pointer()
+                    .hover(|style| style.opacity(0.92))
+                    .active(|style| style.opacity(0.78))
+                    .on_click(cx.listener(|shell, _, window, cx| {
+                        shell.choose_plugin_package(window, cx);
+                    }))
+                    .child(
+                        div()
+                            .text_color(rgb(0xffffff))
+                            .child(IconName::Plus),
+                    )
+                    .child("Install"),
+            )
+            .into_any_element()
     }
 }
 
-fn render_hero(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
-    div()
-        .grid()
-        .grid_cols(2)
-        .gap(px(28.0))
-        .child(render_hero_left(snapshot, cx))
-        .child(render_editors_pick(snapshot, cx))
-        .into_any_element()
-}
-
-fn render_hero_left(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
-    let total = snapshot.installed_plugins.len();
-
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(10.0))
-        .child(
-            div()
-                .text_size(px(11.0))
-                .text_color(rgb(colors::INK_4))
-                .child("PLUGINS · NATIVE TO ELY"),
-        )
-        .child(
-            div()
-                .font_family(SERIF_FAMILY)
-                .text_size(px(48.0))
-                .font_weight(FontWeight(400.0))
-                .text_color(rgb(colors::INK))
-                .child("Quiet tools. Everyday magic."),
-        )
-        .child(
-            div()
-                .max_w(px(520.0))
-                .text_size(px(13.5))
-                .text_color(rgb(colors::INK_2))
-                .child(
-                    "ELY plugins are sandboxed, theme-aware, and ship with their own controls in \
-                     your sidebar — no Chrome extension framework required.",
-                ),
-        )
-        .child(render_install_button(total, cx))
-        .into_any_element()
-}
-
-fn render_install_button(total: usize, cx: &mut Context<ElyShell>) -> AnyElement {
-    div().flex().child(
-    div()
-        .id(SharedString::from("plugin-install"))
-        .h(px(42.0))
-        .px(px(16.0))
-        .rounded(px(12.0))
-        .bg(rgba(SEARCH_BG))
-        .flex()
-        .items_center()
-        .gap(px(10.0))
-        .text_size(px(13.0))
-        .text_color(rgb(colors::INK_3))
-        .cursor_pointer()
-        .hover(|style| style.bg(rgba(SEARCH_BG_HOVER)))
-        .active(|style| style.opacity(0.85))
-        .on_click(cx.listener(|shell, _, window, cx| {
-            shell.choose_plugin_package(window, cx);
-        }))
-        .child(
-            div()
-                .text_color(rgb(colors::INK_3))
-                .child(IconName::Plus),
-        )
-        .child(format!(
-            "Install plugin · {} active",
-            total
-        )))
-        .into_any_element()
-}
 
 fn render_summary(snapshot: &BrowserSnapshot) -> AnyElement {
     div()
@@ -151,9 +188,23 @@ fn category_chip(label: &'static str, active: bool) -> AnyElement {
         .into_any_element()
 }
 
-fn render_grid(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
+fn render_grid(
+    snapshot: &BrowserSnapshot,
+    needle: &str,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
     if snapshot.installed_plugins.is_empty() {
         return render_empty_state(cx);
+    }
+
+    let matches: Vec<&InstalledPlugin> = snapshot
+        .installed_plugins
+        .iter()
+        .filter(|plugin| matches_plugin(plugin, needle))
+        .collect();
+
+    if matches.is_empty() {
+        return render_no_match_state(needle);
     }
 
     div()
@@ -164,13 +215,44 @@ fn render_grid(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyEle
         .grid_cols(4)
         .gap(px(14.0))
         .children(
-            snapshot
-                .installed_plugins
-                .iter()
+            matches
+                .into_iter()
                 .enumerate()
                 .map(|(index, plugin)| {
                     render_plugin_card(index, plugin, &snapshot.active_profile_kind, cx)
                 }),
+        )
+        .into_any_element()
+}
+
+fn matches_plugin(plugin: &InstalledPlugin, needle: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    let manifest = plugin.manifest();
+    manifest.name().to_lowercase().contains(needle)
+        || manifest.author().to_lowercase().contains(needle)
+        || manifest.description().to_lowercase().contains(needle)
+}
+
+fn render_no_match_state(needle: &str) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap(px(8.0))
+        .py(px(40.0))
+        .child(
+            div()
+                .text_size(px(13.0))
+                .text_color(rgb(colors::INK))
+                .child(format!("No plugins match \"{needle}\".")),
+        )
+        .child(
+            div()
+                .text_size(px(11.5))
+                .text_color(rgb(colors::INK_3))
+                .child("Try a different keyword."),
         )
         .into_any_element()
 }
@@ -350,7 +432,7 @@ fn sandbox_chip_label(snapshot: &BrowserSnapshot) -> &'static str {
 }
 
 const SEARCH_BG: u32 = 0xffffffd9;
-const SEARCH_BG_HOVER: u32 = 0xffffffeb;
+const INSTALL_BG: u32 = 0x1d1c1aff;
 const CARD_BG: u32 = 0xffffffc7;
 const CARD_BG_HOVER: u32 = 0xffffffeb;
 const STATUS_BG: u32 = 0xffffffd9;
