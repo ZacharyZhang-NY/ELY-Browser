@@ -7,8 +7,8 @@ use gpui::{
 };
 
 use super::chrome::{
-    PANEL_BG, WallpaperTheme, panel_shadow, render_topbar as render_topbar_chrome,
-    render_wallpaper,
+    PANEL_BG, WallpaperTheme, panel_shadow, render_command_overlay,
+    render_topbar as render_topbar_chrome, render_wallpaper,
 };
 use super::sidebar::collapsed_sidebar_active;
 use super::{ElyShell, ShellState};
@@ -75,6 +75,7 @@ impl ElyShell {
                     .child(self.render_sidebar(&snapshot, sidebar_width, sidebar_collapsed, cx))
                     .child(self.render_main_pane(&snapshot, &active_tab, sidebar_collapsed, cx)),
             )
+            .children(render_command_overlay(&snapshot, cx))
             .into_any_element()
     }
 

@@ -72,4 +72,15 @@ impl ElyShell {
             cx.write_to_clipboard(ClipboardItem::new_string(tab.url().as_str().to_string()));
         }
     }
+
+    pub(crate) fn dismiss_command_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state {
+            core.set_command_query(String::new());
+        }
+
+        self.command_input.update(cx, |input, cx| {
+            input.set_value("", window, cx);
+        });
+        cx.notify();
+    }
 }
