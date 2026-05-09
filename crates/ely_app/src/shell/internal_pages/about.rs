@@ -3,7 +3,10 @@ use ely_design_system::colors;
 use gpui::{AnyElement, IntoElement, ParentElement, Styled, div, px, rgb};
 use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
 
-use crate::brand::{COMPANY_NAME, FORMAL_PRODUCT_NAME, PRODUCT_NAME, SYNC_SERVICE_NAME};
+use crate::brand::{
+    AUTH_CALLBACK_URL, COMPANY_NAME, DEEP_LINK_PREFIX, DEEP_LINK_SCHEME, FORMAL_PRODUCT_NAME,
+    PRODUCT_NAME, SYNC_SERVICE_NAME,
+};
 
 use super::{ElyShell, render_canvas_surface};
 
@@ -79,6 +82,12 @@ fn render_about_rows(snapshot: &BrowserSnapshot) -> AnyElement {
         ))
         .child(about_row(IconName::Building2, "Publisher", COMPANY_NAME, "Brand owner"))
         .child(about_row(IconName::Globe, "Service", SYNC_SERVICE_NAME, "Sync and release service"))
+        .child(about_row(
+            IconName::ExternalLink,
+            "Protocol",
+            DEEP_LINK_PREFIX,
+            format!("scheme: {DEEP_LINK_SCHEME}; auth: {AUTH_CALLBACK_URL}"),
+        ))
         .child(about_row(IconName::Info, "Version", APP_VERSION, "Cargo package version"))
         .child(about_row(IconName::GitHub, "Build", BUILD_REVISION, "Git revision"))
         .child(about_row(

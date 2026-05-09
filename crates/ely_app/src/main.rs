@@ -19,7 +19,7 @@ use gpui_component_assets::Assets;
 use shell::ElyShell;
 use shortcuts::bind_shortcuts;
 
-use crate::brand::PRODUCT_NAME;
+use crate::brand::{DEEP_LINK_PREFIX, PRODUCT_NAME};
 
 actions!(
     ely_app,
@@ -275,12 +275,12 @@ fn open_deep_link(target: &BrowserWindowTarget, url: UrlText, cx: &mut App) -> b
 
 fn parse_ely_deep_link(value: &str) -> Option<UrlText> {
     let trimmed = value.trim();
-    let scheme = trimmed.get(..6)?;
-    let route = trimmed.get(6..)?;
+    let scheme = trimmed.get(..DEEP_LINK_PREFIX.len())?;
+    let route = trimmed.get(DEEP_LINK_PREFIX.len()..)?;
 
     scheme
-        .eq_ignore_ascii_case("ely://")
-        .then(|| UrlText::parse(format!("ely://{route}")).ok())
+        .eq_ignore_ascii_case(DEEP_LINK_PREFIX)
+        .then(|| UrlText::parse(format!("{DEEP_LINK_PREFIX}{route}")).ok())
         .flatten()
 }
 
