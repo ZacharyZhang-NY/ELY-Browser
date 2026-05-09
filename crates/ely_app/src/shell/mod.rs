@@ -1,6 +1,7 @@
 mod archive_labels;
 mod bookmark_files;
 mod bookmarks;
+pub(crate) mod chrome;
 mod command_actions;
 mod download_targets;
 mod downloads;

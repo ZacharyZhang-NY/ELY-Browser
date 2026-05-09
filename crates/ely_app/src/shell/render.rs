@@ -13,6 +13,7 @@ use gpui_component::{
     scroll::ScrollableElement,
 };
 
+use super::chrome::{WallpaperTheme, render_wallpaper};
 use super::sidebar::{collapsed_sidebar_active, render_command_bar_identity};
 use super::{ElyShell, ShellState, archive_labels::archive_detail_label};
 
@@ -66,12 +67,8 @@ impl ElyShell {
             .on_action(cx.listener(Self::on_toggle_sidebar))
             .on_action(cx.listener(Self::on_zoom_in))
             .on_action(cx.listener(Self::on_zoom_out))
-            .bg(linear_gradient(
-                135.0,
-                linear_color_stop(hsla(20.0 / 360.0, 0.35, 0.92, 1.0), 0.0),
-                linear_color_stop(hsla(220.0 / 360.0, 0.25, 0.88, 1.0), 1.0),
-            ))
             .text_color(rgb(colors::INK))
+            .child(render_wallpaper(WallpaperTheme::Dawn))
             .child(
                 div()
                     .absolute()
