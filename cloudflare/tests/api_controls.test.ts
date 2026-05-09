@@ -196,6 +196,55 @@ describe("api controls", () => {
     ]);
   });
 
+  it("uses Better Auth D1 sessions when the session cache is cold", async () => {
+    const tokenHash = await authTokenHash(ACCESS_TOKEN);
+    const auditEvents: ElyAnalyticsDataPoint[] = [];
+    const kvReads: string[] = [];
+    const rateLimitKeys: string[] = [];
+    const d1Queries: string[] = [];
+    const d1Binds: unknown[][] = [];
+    const response = await withAuthenticatedApiControls(
+      new Request("https://elydora.test/api/devices", {
+        headers: { authorization: `Bearer ${ACCESS_TOKEN}` },
+      }),
+      testEnv({
+        auditEvents,
+        kvReads,
+        rateLimitKeys,
+        d1: testD1Database({
+          firstRows: [
+            { id: "session-01", userId: "user-01", expiresAt: "2099-01-01T00:00:00.000Z" },
+          ],
+          queries: d1Queries,
+          binds: d1Binds,
+        }),
+      }),
+      "devices.list",
+      ["GET"],
+      (context) =>
+        Promise.resolve(
+          jsonResponse({ user_id: context.userId, session_id: context.sessionId }, 200),
+        ),
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { user_id: "user-01", session_id: "session-01" });
+    assert.deepEqual(rateLimitKeys, [`local:devices.list:bearer:${tokenHash}`]);
+    assert.deepEqual(kvReads, [authSessionCacheKvKey("local", tokenHash)]);
+    assert.equal(d1Queries.length, 1);
+    assert.match(d1Queries[0] ?? "", /FROM better_auth_session/);
+    assert.deepEqual(d1Binds, [[ACCESS_TOKEN]]);
+    assert.deepEqual(auditEvents[0]?.blobs?.slice(0, 7), [
+      "devices.list",
+      "GET",
+      "/api/devices",
+      "handled",
+      "",
+      "",
+      "user-01",
+    ]);
+  });
+
   it("rejects expired authenticated sessions", async () => {
     const tokenHash = await authTokenHash(ACCESS_TOKEN);
     const response = await withAuthenticatedApiControls(
@@ -222,6 +271,7 @@ describe("api controls", () => {
 
 interface TestEnvOptions {
   auditEvents?: ElyAnalyticsDataPoint[];
+  d1?: Env["ELY_DB"];
   kvEntries?: [string, string][];
   kvReads?: string[];
   rateLimitKeys?: string[];
@@ -246,7 +296,7 @@ function testEnv(options: TestEnvOptions = {}): Env {
     ELY_ENVIRONMENT: "local",
     ELY_AUTH_BASE_URL: "https://elydora.test",
     ELY_AUTH_SECRET: "test-auth-secret-for-api-controls",
-    ELY_DB: testD1Database(),
+    ELY_DB: options.d1 ?? testD1Database(),
     ELY_KV: {
       get(key: string): Promise<string | null> {
         options.kvReads?.push(key);
@@ -298,10 +348,18 @@ function testR2Bucket(): Env["ELY_STORAGE"] {
   };
 }
 
-function testD1Database(): Env["ELY_DB"] {
+interface TestD1DatabaseOptions {
+  binds?: unknown[][];
+  firstRows?: unknown[];
+  queries?: string[];
+}
+
+function testD1Database(options: TestD1DatabaseOptions = {}): Env["ELY_DB"] {
+  let firstIndex = 0;
   return {
-    prepare() {
-      return testD1PreparedStatement();
+    prepare(query: string) {
+      options.queries?.push(query);
+      return testD1PreparedStatement(options, () => firstIndex++);
     },
     batch() {
       return Promise.resolve([]);
@@ -312,13 +370,17 @@ function testD1Database(): Env["ELY_DB"] {
   };
 }
 
-function testD1PreparedStatement(): ReturnType<Env["ELY_DB"]["prepare"]> {
+function testD1PreparedStatement(
+  options: TestD1DatabaseOptions,
+  nextFirstIndex: () => number,
+): ReturnType<Env["ELY_DB"]["prepare"]> {
   return {
-    bind() {
+    bind(...values: unknown[]) {
+      options.binds?.push(values);
       return this;
     },
-    first() {
-      return Promise.resolve(null);
+    first<T>() {
+      return Promise.resolve((options.firstRows?.[nextFirstIndex()] as T | undefined) ?? null);
     },
     all() {
       return Promise.resolve({ results: [] });

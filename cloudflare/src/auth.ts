@@ -5,6 +5,11 @@ const AUTH_SESSION_CACHE_NAMESPACE = "auth_session_cache";
 const BEARER_TOKEN_PATTERN = /^[A-Za-z0-9._~+/=-]{32,4096}$/;
 const SUBJECT_ID_PATTERN = /^[a-zA-Z0-9._:-]{3,128}$/;
 const DEVICE_ID_PATTERN = /^[a-zA-Z0-9._:-]{3,128}$/;
+const BETTER_AUTH_SESSION_QUERY = `
+  SELECT id, userId, expiresAt
+  FROM better_auth_session
+  WHERE token = ?
+`;
 
 export interface AuthContext {
   userId: string;
@@ -12,6 +17,12 @@ export interface AuthContext {
   tokenHash: string;
   expiresAt: string;
   deviceId?: string;
+}
+
+interface BetterAuthSessionRow extends Record<string, unknown> {
+  id: unknown;
+  userId: unknown;
+  expiresAt: unknown;
 }
 
 export type AuthErrorCode =
@@ -75,10 +86,35 @@ export async function readAuthContext(
   const cacheKey = authSessionCacheKvKey(env.ELY_ENVIRONMENT, tokenHash);
   const document = await env.ELY_KV.get(cacheKey);
   if (document === null) {
-    throw new AuthError("session_not_found");
+    return readBetterAuthSessionContext(env, token, tokenHash, now);
   }
 
   const session = parseAuthSessionCacheDocument(document, tokenHash);
+  if (Date.parse(session.expiresAt) <= now.getTime()) {
+    throw new AuthError("session_expired");
+  }
+  return session;
+}
+
+async function readBetterAuthSessionContext(
+  env: Env,
+  token: string,
+  tokenHash: string,
+  now: Date,
+): Promise<AuthContext> {
+  const row = await env.ELY_DB.prepare(BETTER_AUTH_SESSION_QUERY)
+    .bind(token)
+    .first<BetterAuthSessionRow>();
+  if (row === null) {
+    throw new AuthError("session_not_found");
+  }
+
+  const session: AuthContext = {
+    userId: subjectId(stringField(row, "userId"), "userId"),
+    sessionId: subjectId(stringField(row, "id"), "session_id"),
+    tokenHash,
+    expiresAt: timestampField(row, "expiresAt"),
+  };
   if (Date.parse(session.expiresAt) <= now.getTime()) {
     throw new AuthError("session_expired");
   }
@@ -154,6 +190,20 @@ function isoTimestamp(value: string, label: string): string {
     throw new AuthSessionCacheSchemaError(`${label}_invalid`);
   }
   return new Date(timestamp).toISOString();
+}
+
+function timestampField(value: Record<string, unknown>, field: string): string {
+  const fieldValue = value[field];
+  if (typeof fieldValue === "string" && fieldValue.trim() !== "") {
+    return isoTimestamp(fieldValue, field);
+  }
+  if (typeof fieldValue === "number" && Number.isFinite(fieldValue)) {
+    return new Date(fieldValue).toISOString();
+  }
+  if (fieldValue instanceof Date) {
+    return fieldValue.toISOString();
+  }
+  throw new AuthSessionCacheSchemaError(`${field}_required`);
 }
 
 function stringField(value: Record<string, unknown>, field: string): string {
