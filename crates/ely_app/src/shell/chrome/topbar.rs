@@ -2,8 +2,9 @@ use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
 use ely_domain::BrowserTab;
 use gpui::{
-    AnyElement, BoxShadow, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, div, hsla, point, prelude::FluentBuilder, px, rgb, rgba,
+    AnyElement, BoxShadow, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    SharedString, StatefulInteractiveElement, Styled, div, hsla, point,
+    prelude::FluentBuilder, px, rgb, rgba,
 };
 use gpui_component::{IconName, input::Input};
 
@@ -70,6 +71,12 @@ fn render_omnibar(
     } else {
         IconName::StarOff
     };
+    let input_value = shell.command_input.read(cx).value().to_string();
+    let active_url = active_tab.url().as_str().to_string();
+    let show_styled = !input_value.is_empty()
+        && input_value == active_url
+        && active_url != "ely://new-tab";
+    let secure = active_url.starts_with("https://") || active_url.starts_with("ely://");
 
     div()
         .flex_1()
@@ -82,17 +89,21 @@ fn render_omnibar(
         .flex()
         .items_center()
         .gap(px(10.0))
+        .child(render_lock_or_search(secure, show_styled))
         .child(
             div()
-                .text_color(rgb(colors::INK_3))
-                .child(IconName::Search),
-        )
-        .child(
-            div().flex_1().child(
-                Input::new(&shell.command_input)
-                    .appearance(false)
-                    .cleanable(true),
-            ),
+                .id(SharedString::from("omnibar-content"))
+                .flex_1()
+                .min_w_0()
+                .cursor_pointer()
+                .on_click(cx.listener(|shell, _, window, cx| {
+                    shell.focus_address_bar(window, cx);
+                }))
+                .child(if show_styled {
+                    render_styled_url(active_tab)
+                } else {
+                    render_omnibar_input(shell)
+                }),
         )
         .child(render_omnibar_chip(
             "omnibar-filters",
@@ -108,6 +119,62 @@ fn render_omnibar(
             cx,
             |shell, _window, cx| shell.toggle_active_tab_favorite(cx),
         ))
+        .into_any_element()
+}
+
+fn render_omnibar_input(shell: &ElyShell) -> AnyElement {
+    Input::new(&shell.command_input)
+        .appearance(false)
+        .cleanable(true)
+        .into_any_element()
+}
+
+fn render_styled_url(active_tab: &BrowserTab) -> AnyElement {
+    let host = active_tab
+        .url()
+        .host()
+        .map(|host| host.to_string())
+        .unwrap_or_default();
+    let url = active_tab.url().as_str();
+    let path_start = url.find("://").map(|prefix| prefix + 3).unwrap_or(0);
+    let from_path = &url[path_start..];
+    let path = match from_path.find('/') {
+        Some(slash) => from_path[slash..].to_string(),
+        None => String::new(),
+    };
+
+    div()
+        .flex()
+        .items_center()
+        .gap(px(2.0))
+        .text_size(px(13.0))
+        .child(
+            div()
+                .font_weight(FontWeight(500.0))
+                .text_color(rgb(colors::INK))
+                .child(host),
+        )
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_color(rgb(colors::INK_3))
+                .child(path),
+        )
+        .into_any_element()
+}
+
+fn render_lock_or_search(secure: bool, show_styled: bool) -> AnyElement {
+    let icon = if !show_styled {
+        IconName::Search
+    } else if secure {
+        IconName::Search
+    } else {
+        IconName::Globe
+    };
+    div()
+        .text_color(rgb(colors::INK_3))
+        .child(icon)
         .into_any_element()
 }
 
