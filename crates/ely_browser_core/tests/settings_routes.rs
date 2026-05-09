@@ -67,6 +67,27 @@ fn settings_scoped_search_opens_appearance_page() -> Result<(), Box<dyn Error>> 
 }
 
 #[test]
+fn settings_scoped_search_opens_advanced_page() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query("@settings advanced");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(
+        intent,
+        Some(CommandIntent::ScopedSearch {
+            scope: CommandScope::Settings,
+            query: "advanced".to_string(),
+        })
+    );
+    assert_eq!(active_tab.title(), "Advanced Settings");
+    assert_eq!(active_tab.url().as_str(), "ely://settings/advanced");
+    assert_eq!(core.snapshot()?.command_query, "");
+    Ok(())
+}
+
+#[test]
 fn settings_scoped_search_opens_shortcuts_page() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
 

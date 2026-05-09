@@ -91,6 +91,12 @@ const SETTINGS_ROUTES: &[SettingsRoute] = &[
         route: "ely://settings/updates",
     },
     SettingsRoute {
+        icon: IconName::Inspector,
+        title: "Advanced",
+        detail: "Local runtime policies and audit counters.",
+        route: "ely://settings/advanced",
+    },
+    SettingsRoute {
         icon: IconName::Asterisk,
         title: "Plugins",
         detail: "Installed plugin control and audit trail.",
