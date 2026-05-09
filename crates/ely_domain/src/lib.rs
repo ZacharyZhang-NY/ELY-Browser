@@ -42,7 +42,7 @@ pub use plugin::{
     PluginContributionPoint, PluginId, PluginManifest, PluginPermission, PluginPermissionRisk,
     PluginSignature, PluginSignatureAlgorithm,
 };
-pub use privacy::HistoryRecordingPolicy;
+pub use privacy::{DiagnosticsReportingPolicy, HistoryRecordingPolicy};
 pub use profile::{Profile, ProfileKind, ProfileSyncPolicy};
 pub use reading_list::{ReadingListEntry, ReadingProgress, ReadingProgressPercent};
 pub use search::SearchEngine;

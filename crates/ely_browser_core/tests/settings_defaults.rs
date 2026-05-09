@@ -2,9 +2,9 @@ use std::{error::Error, path::PathBuf};
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
 use ely_domain::{
-    ArchivePolicy, DEFAULT_SIDEBAR_WIDTH_PX, DownloadPolicy, FavoriteLimit, HistoryRecordingPolicy,
-    NewTabDestination, ProfileKind, ProfileSyncPolicy, SearchEngine, SyncObjectKind,
-    SyncObjectPolicy, UpdatePolicy,
+    ArchivePolicy, DEFAULT_SIDEBAR_WIDTH_PX, DiagnosticsReportingPolicy, DownloadPolicy,
+    FavoriteLimit, HistoryRecordingPolicy, NewTabDestination, ProfileKind, ProfileSyncPolicy,
+    SearchEngine, SyncObjectKind, SyncObjectPolicy, UpdatePolicy,
 };
 
 #[test]
@@ -20,10 +20,13 @@ fn section_resets_restore_settings_defaults() -> Result<(), Box<dyn Error>> {
     assert_eq!(core.snapshot()?.search_engine, SearchEngine::DuckDuckGo);
 
     core.set_history_recording_policy(HistoryRecordingPolicy::Pause);
+    core.set_diagnostics_reporting_policy(DiagnosticsReportingPolicy::Paused);
     core.reset_privacy_settings();
-    assert_eq!(core.snapshot()?.history_recording_policy, HistoryRecordingPolicy::Record);
+    let snapshot = core.snapshot()?;
+    assert_eq!(snapshot.history_recording_policy, HistoryRecordingPolicy::Record);
+    assert_eq!(snapshot.diagnostics_reporting_policy, DiagnosticsReportingPolicy::Minimal);
 
-    let active_space_id = core.snapshot()?.active_space_id;
+    let active_space_id = snapshot.active_space_id;
     core.set_active_space_archive_policy(ArchivePolicy::IdleDays(30))?;
     core.set_space_sidebar_width(&active_space_id, 56)?;
     core.set_favorite_limit(FavoriteLimit::Six);

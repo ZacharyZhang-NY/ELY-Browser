@@ -343,10 +343,12 @@ const SETTINGS_ROUTE_MATCHES: &[SettingsRouteMatch] = &[
             "privacy & security",
             "history",
             "history recording",
+            "diagnostics",
+            "diagnostic reporting",
         ],
         search_terms: &[
             "Privacy & Security",
-            "History recording and profile-scoped privacy controls.",
+            "History recording, diagnostics, and profile-scoped privacy controls.",
             "profile privacy",
             "recording policy",
         ],
