@@ -45,7 +45,7 @@ pub(super) const PRD_REFERENCE_SITE_COMPATIBILITY_CASES: &[PrdSiteCompatibilityC
         title_fragment: "Tab Tiling",
     },
     PrdSiteCompatibilityCase { url: "https://www.gpui.rs/", title_fragment: "gpui" },
-    PrdSiteCompatibilityCase { url: "https://docs.rs/gpui/latest/gpui/", title_fragment: "gpui" },
+    PrdSiteCompatibilityCase { url: "https://docs.rs/gpui", title_fragment: "gpui" },
     PrdSiteCompatibilityCase {
         url: "https://zed.dev/blog/videogame",
         title_fragment: "Leveraging Rust",

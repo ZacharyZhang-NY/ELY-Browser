@@ -440,3 +440,7 @@ mod tests {
         ))
     }
 }
+
+#[cfg(all(test, feature = "live-site-smoke"))]
+#[path = "web_surface_live_site_tests.rs"]
+mod web_surface_live_site_tests;

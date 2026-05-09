@@ -1,11 +1,30 @@
 #![cfg(feature = "servo-engine")]
 
-use std::error::Error;
+use std::{collections::BTreeSet, error::Error, fs, path::PathBuf};
 
 #[path = "sidecar/support.rs"]
 mod support;
 
 use support::*;
+
+#[test]
+fn sidecar_prd_reference_cases_cover_prd_urls() -> Result<(), Box<dyn Error>> {
+    let prd = fs::read_to_string(prd_path())?;
+    let prd_urls = prd_reference_urls(&prd);
+    let covered_urls = PRD_REFERENCE_SITE_COMPATIBILITY_CASES
+        .iter()
+        .map(|case| normalized_url(case.url))
+        .collect::<BTreeSet<_>>();
+    let missing_urls = prd_urls
+        .iter()
+        .filter(|url| !covered_urls.contains(url.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    assert!(missing_urls.is_empty(), "missing PRD sidecar smoke cases: {missing_urls:?}");
+    assert_eq!(prd_urls.len(), PRD_REFERENCE_SITE_COMPATIBILITY_CASES.len());
+    Ok(())
+}
 
 #[test]
 fn sidecar_opens_and_renders_prd_sites_to_rgba_files() -> Result<(), Box<dyn Error>> {
@@ -16,6 +35,25 @@ fn sidecar_opens_and_renders_prd_sites_to_rgba_files() -> Result<(), Box<dyn Err
     }
 
     Ok(())
+}
+
+fn prd_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("PRD.md")
+}
+
+fn prd_reference_urls(prd: &str) -> Vec<String> {
+    prd.lines()
+        .filter(|line| line.starts_with("[R"))
+        .filter_map(|line| {
+            let start = line.find("https://")?;
+            let url = line[start..].split_whitespace().next()?;
+            Some(normalized_url(url))
+        })
+        .collect()
+}
+
+fn normalized_url(url: &str) -> String {
+    url.trim().trim_end_matches('/').to_string()
 }
 
 #[test]

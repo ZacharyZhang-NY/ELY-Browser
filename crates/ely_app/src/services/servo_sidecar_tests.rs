@@ -3,86 +3,17 @@ use std::error::Error;
 use super::*;
 
 #[cfg(feature = "live-site-smoke")]
+use crate::services::prd_live_sites::{
+    LiveSiteCase, PRD_REFERENCE_SITE_CASES, PRD_TOP_SITE_CASES,
+    assert_prd_reference_urls_are_covered,
+};
+
+#[cfg(feature = "live-site-smoke")]
 const LIVE_SITE_WIDTH: u32 = 934;
 #[cfg(feature = "live-site-smoke")]
 const LIVE_SITE_HEIGHT: u32 = 657;
 #[cfg(feature = "live-site-smoke")]
 const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
-#[cfg(feature = "live-site-smoke")]
-const PRD_TOP_SITE_CASES: &[LiveSiteCase] = &[
-    LiveSiteCase { url: "https://github.com", title_fragment: "GitHub" },
-    LiveSiteCase { url: "https://example.com", title_fragment: "Example Domain" },
-    LiveSiteCase { url: "https://servo.org/", title_fragment: "Servo" },
-];
-#[cfg(feature = "live-site-smoke")]
-const PRD_REFERENCE_SITE_CASES: &[LiveSiteCase] = &[
-    LiveSiteCase {
-        url: "https://blog.google/products-and-platforms/products/chrome/new-chrome-productivity-features/",
-        title_fragment: "Chrome",
-    },
-    LiveSiteCase {
-        url: "https://www.microsoft.com/en-us/edge/features/vertical-tabs",
-        title_fragment: "Microsoft Edge",
-    },
-    LiveSiteCase {
-        url: "https://resources.arc.net/hc/en-us/articles/19230755904151-Favorites-Top-Tabs-Across-Every-Space",
-        title_fragment: "Favorites",
-    },
-    LiveSiteCase {
-        url: "https://resources.arc.net/hc/en-us/articles/19228855311127-Auto-Archive-Clean-as-you-go",
-        title_fragment: "Auto Archive",
-    },
-    LiveSiteCase { url: "https://vivaldi.com/features/workspaces/", title_fragment: "Workspaces" },
-    LiveSiteCase {
-        url: "https://help.vivaldi.com/desktop/tabs/tab-tiling/",
-        title_fragment: "Tab Tiling",
-    },
-    LiveSiteCase { url: "https://www.gpui.rs/", title_fragment: "gpui" },
-    LiveSiteCase { url: "https://docs.rs/gpui/latest/gpui/", title_fragment: "gpui" },
-    LiveSiteCase { url: "https://zed.dev/blog/videogame", title_fragment: "Leveraging Rust" },
-    LiveSiteCase {
-        url: "https://github.com/longbridge/gpui-component/",
-        title_fragment: "gpui-component",
-    },
-    LiveSiteCase {
-        url: "https://github.com/zed-industries/awesome-gpui/",
-        title_fragment: "awesome-gpui",
-    },
-    LiveSiteCase { url: "https://servo.org/", title_fragment: "Servo" },
-    LiveSiteCase {
-        url: "https://servo.org/blog/2026/04/13/servo-0.1.0-release/",
-        title_fragment: "Servo",
-    },
-    LiveSiteCase { url: "https://developers.cloudflare.com/d1/", title_fragment: "Cloudflare" },
-    LiveSiteCase {
-        url: "https://developers.cloudflare.com/workers/platform/storage-options/",
-        title_fragment: "Cloudflare",
-    },
-    LiveSiteCase {
-        url: "https://developers.cloudflare.com/kv/concepts/how-kv-works/",
-        title_fragment: "Cloudflare",
-    },
-    LiveSiteCase { url: "https://better-auth.com/blog/1-5", title_fragment: "Better Auth" },
-    LiveSiteCase {
-        url: "https://developers.cloudflare.com/d1/platform/limits/",
-        title_fragment: "Cloudflare",
-    },
-    LiveSiteCase {
-        url: "https://component-model.bytecodealliance.org/",
-        title_fragment: "WebAssembly Component Model",
-    },
-    LiveSiteCase {
-        url: "https://docs.wasmtime.dev/api/wasmtime/component/index.html",
-        title_fragment: "wasmtime",
-    },
-    LiveSiteCase { url: "https://docs.wasmtime.dev/security.html", title_fragment: "Wasmtime" },
-];
-
-#[cfg(feature = "live-site-smoke")]
-struct LiveSiteCase {
-    url: &'static str,
-    title_fragment: &'static str,
-}
 
 #[test]
 fn accepts_loading_report_with_visible_content() -> Result<(), ServoSidecarError> {
@@ -135,6 +66,12 @@ fn desktop_sidecar_opens_prd_top_sites() -> Result<(), Box<dyn Error>> {
 #[test]
 fn desktop_sidecar_opens_prd_reference_sites() -> Result<(), Box<dyn Error>> {
     assert_live_sites_render(PRD_REFERENCE_SITE_CASES)
+}
+
+#[cfg(feature = "live-site-smoke")]
+#[test]
+fn prd_reference_live_site_cases_cover_prd_urls() -> Result<(), Box<dyn Error>> {
+    assert_prd_reference_urls_are_covered()
 }
 
 #[cfg(feature = "live-site-smoke")]
