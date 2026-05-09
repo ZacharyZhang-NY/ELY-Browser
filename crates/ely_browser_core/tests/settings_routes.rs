@@ -233,3 +233,87 @@ fn settings_scoped_search_opens_updates_page() -> Result<(), Box<dyn Error>> {
     assert_eq!(core.snapshot()?.command_query, "");
     Ok(())
 }
+
+#[test]
+fn settings_scoped_search_matches_setting_description_terms() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query("@settings build identity");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(
+        intent,
+        Some(CommandIntent::ScopedSearch {
+            scope: CommandScope::Settings,
+            query: "build identity".to_string(),
+        })
+    );
+    assert_eq!(active_tab.title(), "Update Settings");
+    assert_eq!(active_tab.url().as_str(), "ely://settings/updates");
+    assert_eq!(core.snapshot()?.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn settings_scoped_search_matches_setting_keywords() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query("@settings profile scoped permissions");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(
+        intent,
+        Some(CommandIntent::ScopedSearch {
+            scope: CommandScope::Settings,
+            query: "profile scoped permissions".to_string(),
+        })
+    );
+    assert_eq!(active_tab.title(), "Site Permissions Settings");
+    assert_eq!(active_tab.url().as_str(), "ely://settings/site-permissions");
+    assert_eq!(core.snapshot()?.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn settings_scoped_search_matches_shortcut_keywords() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query("@settings cmd comma");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(
+        intent,
+        Some(CommandIntent::ScopedSearch {
+            scope: CommandScope::Settings,
+            query: "cmd comma".to_string(),
+        })
+    );
+    assert_eq!(active_tab.title(), "Shortcut Settings");
+    assert_eq!(active_tab.url().as_str(), "ely://settings/shortcuts");
+    assert_eq!(core.snapshot()?.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn settings_scoped_search_prefers_exact_route_terms() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query("@settings profile");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(
+        intent,
+        Some(CommandIntent::ScopedSearch {
+            scope: CommandScope::Settings,
+            query: "profile".to_string(),
+        })
+    );
+    assert_eq!(active_tab.title(), "Profile Settings");
+    assert_eq!(active_tab.url().as_str(), "ely://settings/profiles");
+    assert_eq!(core.snapshot()?.command_query, "");
+    Ok(())
+}

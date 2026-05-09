@@ -228,57 +228,231 @@ pub(crate) fn sync_status_url() -> Result<UrlText, CoreError> {
 }
 
 pub(crate) fn settings_page_url(query: &str) -> Result<Option<UrlText>, CoreError> {
-    let normalized_query = query.trim().to_ascii_lowercase();
-    let Some(url) = settings_page_route(&normalized_query) else {
+    let Some(url) = settings_page_route(query) else {
         return Ok(None);
     };
 
     internal_page_url(url).map(Some)
 }
 
-fn settings_page_route(query: &str) -> Option<&'static str> {
-    match query {
-        "settings" => Some("ely://settings"),
-        "advanced" | "advanced settings" | "runtime" | "diagnostics" | "diagnostic" => {
-            Some("ely://settings/advanced")
-        }
-        "general" | "browser" | "new tab" | "new-tab" | "startup" => Some("ely://settings/general"),
-        "appearance" | "theme" | "visual" | "design" | "colors" => {
-            Some("ely://settings/appearance")
-        }
-        "about" | "about ely browser" => Some("ely://about"),
-        "sidebar" | "tabs" | "sidebar tabs" | "sidebar & tabs" => {
-            Some("ely://settings/sidebar-tabs")
-        }
-        "search" | "search engine" | "default search" | "default search engine" => {
-            Some("ely://settings/search")
-        }
-        "privacy" | "security" | "privacy security" | "privacy & security" | "history"
-        | "history recording" => Some("ely://settings/privacy-security"),
-        "download" | "downloads" | "download settings" | "downloads settings" => {
-            Some("ely://settings/downloads")
-        }
-        "space" | "spaces" | "space settings" | "spaces settings" => Some("ely://settings/spaces"),
-        "site permission"
-        | "site permissions"
-        | "site permissions settings"
-        | "permissions"
-        | "permission settings" => Some("ely://settings/site-permissions"),
-        "shortcut" | "shortcuts" | "keyboard" | "keyboard shortcuts" => {
-            Some("ely://settings/shortcuts")
-        }
-        "sync" | "sync settings" => Some("ely://settings/sync"),
-        "update" | "updates" | "auto update" | "auto updates" | "release" | "releases" => {
-            Some("ely://settings/updates")
-        }
-        "profile" | "profiles" | "profile settings" | "profiles settings" => {
-            Some("ely://settings/profiles")
-        }
-        "plugin" | "plugins" | "plugin settings" | "plugins settings" => {
-            Some("ely://settings/plugins")
-        }
-        _ => None,
+struct SettingsRouteMatch {
+    route: &'static str,
+    exact_terms: &'static [&'static str],
+    search_terms: &'static [&'static str],
+}
+
+impl SettingsRouteMatch {
+    fn exact_match(&self, query: &str) -> bool {
+        self.exact_terms.iter().any(|term| normalize_settings_query(term) == query)
     }
+
+    fn search_match(&self, query: &str) -> bool {
+        self.search_terms.iter().any(|term| settings_term_matches(query, term))
+    }
+}
+
+const SETTINGS_ROUTE_MATCHES: &[SettingsRouteMatch] = &[
+    SettingsRouteMatch {
+        route: "ely://settings",
+        exact_terms: &["settings"],
+        search_terms: &["Settings center", "all browser settings"],
+    },
+    SettingsRouteMatch {
+        route: "ely://settings/advanced",
+        exact_terms: &["advanced", "advanced settings", "runtime", "diagnostics", "diagnostic"],
+        search_terms: &[
+            "Advanced",
+            "Local runtime policies and audit counters.",
+            "runtime policy",
+            "audit counters",
+            "diagnostics",
+        ],
+    },
+    SettingsRouteMatch {
+        route: "ely://settings/general",
+        exact_terms: &["general", "browser", "new tab", "new-tab", "startup"],
+        search_terms: &[
+            "General",
+            "New Tab destination and browser startup defaults.",
+            "default new tab",
+            "startup defaults",
+        ],
+    },
+    SettingsRouteMatch {
+        route: "ely://settings/appearance",
+        exact_terms: &["appearance", "theme", "visual", "design", "colors"],
+        search_terms: &[
+            "Appearance",
+            "Theme tokens, Space accent, and Profile color.",
+            "theme tokens",
+            "space accent",
+            "profile color",
+        ],
+    },
+    SettingsRouteMatch {
+        route: "ely://about",
+        exact_terms: &["about", "about ely browser"],
+        search_terms: &["About", "Build, runtime, license, and product information."],
+    },
+    SettingsRouteMatch {
+        route: "ely://settings/sidebar-tabs",
+        exact_terms: &["sidebar", "tabs", "sidebar tabs", "sidebar & tabs"],
+        search_terms: &[
+            "Sidebar & Tabs",
+            "Vertical tabs, pinned area, and auto archive policy.",
+            "vertical tabs",
+            "pinned area",
+            "auto archive",
+        ],
+    },
+    SettingsRouteMatch {
+        route: "ely://settings/search",
+        exact_terms: &["search", "search engine", "default search", "default search engine"],
+        search_terms: &[
+            "Search",
+            "Default search engine for Command Bar queries.",
+            "command bar search",
+            "query provider",
+        ],
+    },
+    SettingsRouteMatch {
+        route: "ely://settings/privacy-security",
+        exact_terms: &[
+            "privacy",
+            "security",
+            "privacy security",
+            "privacy & security",
+            "history",
+            "history recording",
+        ],
+        search_terms: &[
+            "Privacy & Security",
+            "History recording and profile-scoped privacy controls.",
+            "profile privacy",
+            "recording policy",
+        ],
+    },
+    SettingsRouteMatch {
+        route: "ely://settings/downloads",
+        exact_terms: &["download", "downloads", "download settings", "downloads settings"],
+        search_terms: &[
+            "Downloads",
+            "Profile download location and save behavior.",
+            "download location",
+            "save behavior",
+        ],
+    },
+    SettingsRouteMatch {
+        route: "ely://settings/spaces",
+        exact_terms: &["space", "spaces", "space settings", "spaces settings"],
+        search_terms: &[
+            "Spaces",
+            "Space identity, accent color, and active context.",
+            "space identity",
+            "active context",
+        ],
+    },
+    SettingsRouteMatch {
+        route: "ely://settings/site-permissions",
+        exact_terms: &[
+            "site permission",
+            "site permissions",
+            "site permissions settings",
+            "permissions",
+            "permission settings",
+        ],
+        search_terms: &[
+            "Site Permissions",
+            "Profile-scoped site permissions and local audit state.",
+            "profile scoped permissions",
+            "local audit state",
+            "storage persistence",
+        ],
+    },
+    SettingsRouteMatch {
+        route: "ely://settings/shortcuts",
+        exact_terms: &["shortcut", "shortcuts", "keyboard", "keyboard shortcuts"],
+        search_terms: &[
+            "Shortcuts",
+            "Registered key bindings and conflict state.",
+            "key bindings",
+            "keyboard conflict",
+            "cmd comma",
+            "ctrl comma",
+            "cmd shift p",
+            "ctrl shift p",
+        ],
+    },
+    SettingsRouteMatch {
+        route: "ely://settings/sync",
+        exact_terms: &["sync", "sync settings"],
+        search_terms: &["Sync", "Local sync state and object scope.", "sync object scope"],
+    },
+    SettingsRouteMatch {
+        route: "ely://settings/updates",
+        exact_terms: &["update", "updates", "auto update", "auto updates", "release", "releases"],
+        search_terms: &[
+            "Updates",
+            "Build identity and Elydora release manifest contract.",
+            "build identity",
+            "release manifest",
+            "artifact integrity",
+        ],
+    },
+    SettingsRouteMatch {
+        route: "ely://settings/profiles",
+        exact_terms: &["profile", "profiles", "profile settings", "profiles settings"],
+        search_terms: &[
+            "Profiles",
+            "Profile identity, color, and download policy.",
+            "profile identity",
+            "profile download policy",
+        ],
+    },
+    SettingsRouteMatch {
+        route: "ely://settings/plugins",
+        exact_terms: &["plugin", "plugins", "plugin settings", "plugins settings"],
+        search_terms: &[
+            "Plugins",
+            "Installed plugin control and audit trail.",
+            "installed plugin control",
+            "plugin audit trail",
+        ],
+    },
+];
+
+fn settings_page_route(query: &str) -> Option<&'static str> {
+    let normalized_query = normalize_settings_query(query);
+    if normalized_query.is_empty() {
+        return None;
+    }
+
+    SETTINGS_ROUTE_MATCHES
+        .iter()
+        .find(|route| route.exact_match(&normalized_query))
+        .or_else(|| {
+            SETTINGS_ROUTE_MATCHES.iter().find(|route| route.search_match(&normalized_query))
+        })
+        .map(|route| route.route)
+}
+
+fn settings_term_matches(query: &str, term: &str) -> bool {
+    let normalized_term = normalize_settings_query(term);
+    query == normalized_term || query.split_whitespace().all(|part| normalized_term.contains(part))
+}
+
+fn normalize_settings_query(value: &str) -> String {
+    value
+        .chars()
+        .map(
+            |character| {
+                if character.is_ascii_alphanumeric() { character.to_ascii_lowercase() } else { ' ' }
+            },
+        )
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn internal_page_url(value: &str) -> Result<UrlText, CoreError> {
