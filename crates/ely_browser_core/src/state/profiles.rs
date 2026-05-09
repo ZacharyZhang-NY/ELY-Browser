@@ -107,4 +107,14 @@ impl BrowserCore {
         profile.set_sync_policy(sync_policy);
         Ok(())
     }
+
+    pub(super) fn cleanup_private_profile_session_data(&mut self, profile_id: &ProfileId) {
+        if self
+            .profiles
+            .iter()
+            .any(|profile| profile.id() == profile_id && profile.kind() == &ProfileKind::Private)
+        {
+            self.clear_downloads_for_profile(profile_id);
+        }
+    }
 }

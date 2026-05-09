@@ -48,6 +48,50 @@ fn private_profiles_do_not_record_history() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn private_profile_download_index_clears_when_leaving_profile() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let default_profile_id = core.snapshot()?.active_profile_id;
+    let private_profile_id = core.create_profile("Private", 0x807d72, ProfileKind::Private)?;
+
+    core.record_download_started(
+        UrlText::parse("https://example.com/private.dmg")?,
+        "private.dmg",
+        Some(4096),
+    )?;
+    assert_eq!(core.snapshot()?.download_entries.len(), 1);
+
+    core.select_profile(&default_profile_id)?;
+    assert_eq!(core.snapshot()?.active_profile_id, default_profile_id);
+    assert!(core.snapshot()?.download_entries.is_empty());
+
+    core.select_profile(&private_profile_id)?;
+    assert_eq!(core.snapshot()?.active_profile_id, private_profile_id);
+    assert!(core.snapshot()?.download_entries.is_empty());
+    Ok(())
+}
+
+#[test]
+fn selecting_standard_tab_clears_private_profile_download_index() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let default_tab_id = core.snapshot()?.active_tab_id;
+    let private_profile_id = core.create_profile("Private", 0x807d72, ProfileKind::Private)?;
+
+    core.record_download_started(
+        UrlText::parse("https://example.com/private.zip")?,
+        "private.zip",
+        Some(1024),
+    )?;
+    assert_eq!(core.snapshot()?.download_entries.len(), 1);
+
+    core.select_tab(&default_tab_id)?;
+    assert!(core.snapshot()?.download_entries.is_empty());
+
+    core.select_profile(&private_profile_id)?;
+    assert!(core.snapshot()?.download_entries.is_empty());
+    Ok(())
+}
+
+#[test]
 fn private_profile_starts_with_sync_paused() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let private_profile_id = core.create_profile("Private", 0x807d72, ProfileKind::Private)?;

@@ -28,6 +28,7 @@ mod tab_group_order;
 mod tab_groups;
 mod tab_lifecycle;
 mod tab_order;
+mod tab_selection;
 mod tabs;
 
 pub use plugins::{InstalledPlugin, PluginAuditAction, PluginAuditEvent};

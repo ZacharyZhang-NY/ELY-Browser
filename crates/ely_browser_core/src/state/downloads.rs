@@ -1,6 +1,6 @@
 use std::{path::PathBuf, time::SystemTime};
 
-use ely_domain::{DownloadChecksum, DownloadEntry, DownloadId, UrlText};
+use ely_domain::{DownloadChecksum, DownloadEntry, DownloadId, ProfileId, UrlText};
 
 use crate::CoreError;
 
@@ -107,8 +107,12 @@ impl BrowserCore {
 
     pub fn clear_downloads_for_active_profile(&mut self) -> usize {
         let active_profile_id = self.active_profile_id.clone();
+        self.clear_downloads_for_profile(&active_profile_id)
+    }
+
+    pub(super) fn clear_downloads_for_profile(&mut self, profile_id: &ProfileId) -> usize {
         let before_count = self.download_entries.len();
-        self.download_entries.retain(|entry| entry.profile_id() != &active_profile_id);
+        self.download_entries.retain(|entry| entry.profile_id() != profile_id);
         before_count - self.download_entries.len()
     }
 
