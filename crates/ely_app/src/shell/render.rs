@@ -13,7 +13,7 @@ use gpui_component::{
     scroll::ScrollableElement,
 };
 
-use super::chrome::{WallpaperTheme, render_wallpaper};
+use super::chrome::{WallpaperTheme, render_sidebar_header, render_wallpaper};
 use super::sidebar::{collapsed_sidebar_active, render_command_bar_identity};
 use super::{ElyShell, ShellState, archive_labels::archive_detail_label};
 
@@ -213,7 +213,7 @@ impl ElyShell {
             .bg(rgba(PANEL_BG))
             .shadow(panel_shadow())
             .overflow_hidden()
-            .child(self.render_sidebar_header(snapshot))
+            .child(render_sidebar_header(snapshot, cx))
             .child(
                 div()
                     .flex_1()
@@ -262,38 +262,6 @@ impl ElyShell {
                     ),
             )
             .child(self.render_sidebar_footer(snapshot))
-            .into_any_element()
-    }
-
-    fn render_sidebar_header(&self, snapshot: &BrowserSnapshot) -> AnyElement {
-        let space_name = snapshot
-            .spaces
-            .iter()
-            .find(|s| s.id() == &snapshot.active_space_id)
-            .map(|s| s.name().to_string())
-            .unwrap_or_default();
-
-        div()
-            .pt(px(48.0))
-            .px(px(14.0))
-            .pb(px(10.0))
-            .flex()
-            .flex_col()
-            .gap_1()
-            .flex_shrink_0()
-            .child(
-                div()
-                    .text_size(px(15.0))
-                    .font_semibold()
-                    .text_color(rgb(colors::INK))
-                    .child("ELY Browser"),
-            )
-            .child(
-                div()
-                    .text_size(px(11.0))
-                    .text_color(rgb(colors::INK_3))
-                    .child(space_name),
-            )
             .into_any_element()
     }
 

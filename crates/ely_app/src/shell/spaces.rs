@@ -87,6 +87,10 @@ impl ElyShell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.cycle_to_next_space(window, cx);
+    }
+
+    pub(super) fn cycle_to_next_space(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state
             && core.select_next_space().is_ok()
         {
