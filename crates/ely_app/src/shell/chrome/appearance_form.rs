@@ -6,7 +6,7 @@ use gpui::{
     SharedString, StatefulInteractiveElement, Styled, div, hsla, linear_color_stop,
     linear_gradient, prelude::FluentBuilder, px, rgb, rgba,
 };
-use gpui_component::{IconName, scroll::ScrollableElement};
+use gpui_component::{IconName, scroll::ScrollableElement, slider::Slider};
 
 use super::appearance_layout_cards::render_sidebar_layout_section;
 
@@ -14,6 +14,7 @@ use crate::shell::ElyShell;
 use crate::shell::chrome::SERIF_FAMILY;
 
 pub(crate) fn render_appearance_form(
+    shell: &mut ElyShell,
     snapshot: &BrowserSnapshot,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
@@ -33,7 +34,8 @@ pub(crate) fn render_appearance_form(
                 .gap(px(28.0))
                 .child(render_header())
                 .child(render_wallpaper_grid(snapshot, cx))
-                .child(render_appearance_rows(snapshot, cx))
+                .child(render_appearance_rows(shell, snapshot, cx))
+                .child(render_translucency_presets(cx))
                 .child(render_sidebar_layout_section(snapshot, cx)),
         )
         .into_any_element()
@@ -167,6 +169,7 @@ fn render_wallpaper_swatch(
 }
 
 fn render_appearance_rows(
+    shell: &mut ElyShell,
     snapshot: &BrowserSnapshot,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
@@ -177,16 +180,17 @@ fn render_appearance_rows(
         .flex_col()
         .child(render_theme_mode_row(appearance.theme_mode(), cx))
         .child(render_accent_row())
-        .child(render_translucency_row(appearance.translucency_pct(), cx))
+        .child(render_translucency_row(shell, appearance.translucency_pct()))
         .child(render_reduce_motion_row(appearance.reduce_motion(), cx))
         .child(render_reset_row(cx))
         .into_any_element()
 }
 
 fn render_translucency_row(
+    shell: &mut ElyShell,
     pct: u8,
-    cx: &mut Context<ElyShell>,
 ) -> AnyElement {
+    let slider_state = shell.translucency_slider.clone();
     settings_row(
         "Translucency",
         "Glass density of sidebar & panels.",
@@ -194,44 +198,41 @@ fn render_translucency_row(
             .flex()
             .items_center()
             .gap(px(10.0))
-            .child(render_translucency_track(pct))
-            .child(translucency_preset("Solid", 0, pct, cx))
-            .child(translucency_preset("Default", 40, pct, cx))
-            .child(translucency_preset("Glassy", 75, pct, cx))
+            .child(div().w(px(160.0)).child(Slider::new(&slider_state)))
+            .child(
+                div()
+                    .min_w(px(36.0))
+                    .text_size(px(11.0))
+                    .text_color(rgb(colors::INK_3))
+                    .child(format!("{pct}%")),
+            )
             .into_any_element(),
     )
 }
 
-fn render_translucency_track(pct: u8) -> AnyElement {
-    let clamped = pct.min(100) as f32;
-
+fn render_translucency_presets(cx: &mut Context<ElyShell>) -> AnyElement {
     div()
-        .w(px(120.0))
-        .h(px(4.0))
-        .rounded(px(2.0))
-        .bg(rgba(TRACK_BG))
-        .relative()
+        .flex()
+        .items_center()
+        .gap(px(8.0))
+        .pt(px(2.0))
         .child(
             div()
-                .absolute()
-                .left_0()
-                .top_0()
-                .bottom_0()
-                .w(px(120.0 * clamped / 100.0))
-                .rounded(px(2.0))
-                .bg(rgb(colors::ACCENT)),
+                .text_size(px(10.5))
+                .text_color(rgb(colors::INK_4))
+                .child("Presets"),
         )
+        .child(translucency_preset("Solid", 0, cx))
+        .child(translucency_preset("Default", 40, cx))
+        .child(translucency_preset("Glassy", 75, cx))
         .into_any_element()
 }
 
 fn translucency_preset(
     label: &'static str,
     target_pct: u8,
-    active_pct: u8,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
-    let selected = active_pct == target_pct;
-    let bg = if selected { 0xffffffff } else { 0x281e140d };
     let id = SharedString::from(format!("translucency-{}", label.to_ascii_lowercase()));
 
     div()
@@ -239,15 +240,15 @@ fn translucency_preset(
         .px(px(10.0))
         .py(px(4.0))
         .rounded(px(6.0))
-        .bg(rgba(bg))
+        .bg(rgba(SEGMENT_BG))
         .text_size(px(11.5))
         .font_weight(FontWeight(500.0))
         .text_color(rgb(colors::INK_2))
         .cursor_pointer()
         .hover(|style| style.opacity(0.92))
         .active(|style| style.opacity(0.82))
-        .on_click(cx.listener(move |shell, _, _, cx| {
-            shell.set_translucency_pct(target_pct, cx);
+        .on_click(cx.listener(move |shell, _, window, cx| {
+            shell.set_translucency_pct_from_preset(target_pct, window, cx);
         }))
         .child(label)
         .into_any_element()
@@ -377,7 +378,9 @@ fn render_reset_row(cx: &mut Context<ElyShell>) -> AnyElement {
             .cursor_pointer()
             .hover(|style| style.opacity(0.92))
             .active(|style| style.opacity(0.82))
-            .on_click(cx.listener(|shell, _, _, cx| shell.reset_appearance(cx)))
+            .on_click(cx.listener(|shell, _, window, cx| {
+                shell.reset_appearance(window, cx);
+            }))
             .child("Reset")
             .into_any_element(),
     )
@@ -455,4 +458,3 @@ fn transparent_like(color: Hsla) -> Hsla {
 }
 
 const SEGMENT_BG: u32 = 0x281e140d;
-const TRACK_BG: u32 = 0x281e1414;

@@ -1,9 +1,10 @@
 use ely_domain::{
-    ArchivePolicy, DiagnosticsReportingPolicy, DownloadPolicy, FavoriteLimit,
-    HistoryRecordingPolicy, NewTabDestination, ProfileId, ProfileSyncPolicy, SearchEngine,
-    SyncObjectKind, SyncObjectPolicy, ThemeMode, UpdatePolicy, WallpaperTheme,
+    ArchivePolicy, DEFAULT_TRANSLUCENCY_PCT, DiagnosticsReportingPolicy, DownloadPolicy,
+    FavoriteLimit, HistoryRecordingPolicy, NewTabDestination, ProfileId, ProfileSyncPolicy,
+    SearchEngine, SyncObjectKind, SyncObjectPolicy, ThemeMode, UpdatePolicy, WallpaperTheme,
 };
 use gpui::Context;
+use gpui_component::slider::SliderValue;
 
 use super::{ElyShell, ShellState};
 
@@ -86,11 +87,36 @@ impl ElyShell {
         }
     }
 
-    pub(super) fn reset_appearance(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn set_translucency_pct_from_preset(
+        &mut self,
+        value: u8,
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_translucency_pct(value, cx);
+        let slider = self.translucency_slider.clone();
+        slider.update(cx, |state, cx| {
+            state.set_value(SliderValue::Single(f32::from(value)), window, cx);
+        });
+    }
+
+    pub(super) fn reset_appearance(
+        &mut self,
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) {
         if let ShellState::Ready(core) = &mut self.state {
             core.reset_appearance();
             cx.notify();
         }
+        let slider = self.translucency_slider.clone();
+        slider.update(cx, |state, cx| {
+            state.set_value(
+                SliderValue::Single(f32::from(DEFAULT_TRANSLUCENCY_PCT)),
+                window,
+                cx,
+            );
+        });
     }
 
     pub(super) fn reset_general_settings(&mut self, cx: &mut Context<Self>) {

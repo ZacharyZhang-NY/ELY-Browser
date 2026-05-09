@@ -10,6 +10,6 @@ impl ElyShell {
         snapshot: &BrowserSnapshot,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        render_settings_landing(snapshot, "ely://settings/appearance", cx)
+        render_settings_landing(self, snapshot, "ely://settings/appearance", cx)
     }
 }

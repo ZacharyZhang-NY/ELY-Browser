@@ -112,6 +112,7 @@ const NAV_GROUPS: &[NavGroup] = &[
 ];
 
 pub(crate) fn render_settings_landing(
+    shell: &mut ElyShell,
     snapshot: &BrowserSnapshot,
     active_route: &str,
     cx: &mut Context<ElyShell>,
@@ -121,7 +122,7 @@ pub(crate) fn render_settings_landing(
         .h_full()
         .flex()
         .child(render_nav_column(snapshot, active_route, cx))
-        .child(render_appearance_form(snapshot, cx))
+        .child(render_appearance_form(shell, snapshot, cx))
         .into_any_element()
 }
 

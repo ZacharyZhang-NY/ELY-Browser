@@ -10,6 +10,6 @@ impl ElyShell {
         snapshot: &BrowserSnapshot,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        render_appearance_form(snapshot, cx)
+        render_appearance_form(self, snapshot, cx)
     }
 }

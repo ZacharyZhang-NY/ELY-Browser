@@ -36,9 +36,10 @@ mod web_surface_view;
 use std::time::Duration;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{ProfileId, SpaceId, TabId};
+use ely_domain::{DEFAULT_TRANSLUCENCY_PCT, ProfileId, SpaceId, TabId};
 use gpui::{AppContext, Context, Entity, FocusHandle, Subscription, Timer, Window};
 use gpui_component::input::{InputEvent, InputState};
+use gpui_component::slider::{SliderEvent, SliderState, SliderValue};
 
 use crate::shortcuts::ShortcutProfile;
 use bookmarks::PendingBookmarkEdit;
@@ -63,6 +64,7 @@ pub struct ElyShell {
     focus_handle: FocusHandle,
     command_input: Entity<InputState>,
     pub(crate) plugin_search_input: Entity<InputState>,
+    pub(crate) translucency_slider: Entity<SliderState>,
     download_action_error: Option<String>,
     download_clear_confirmation: bool,
     download_security_confirmation: Option<PendingDownloadFileAction>,
@@ -87,6 +89,7 @@ pub struct ElyShell {
     pending_plugin_uninstall: Option<PendingPluginUninstall>,
     web_surfaces: WebSurfaceStore,
     _command_subscription: Subscription,
+    _translucency_subscription: Subscription,
 }
 
 impl ElyShell {
@@ -107,6 +110,22 @@ impl ElyShell {
             cx.new(|cx| InputState::new(window, cx).placeholder("Search or enter address"));
         let plugin_search_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Search plugins…"));
+        let translucency_slider = cx.new(|_cx| {
+            SliderState::new()
+                .min(0.0)
+                .max(100.0)
+                .step(1.0)
+                .default_value(f32::from(DEFAULT_TRANSLUCENCY_PCT))
+        });
+
+        let translucency_subscription =
+            cx.subscribe(&translucency_slider, |shell: &mut Self, _state, event: &SliderEvent, cx| {
+                let SliderEvent::Change(SliderValue::Single(value)) = event else {
+                    return;
+                };
+                let pct = value.clamp(0.0, 100.0).round() as u8;
+                shell.set_translucency_pct(pct, cx);
+            });
 
         let command_subscription = cx.subscribe_in(
             &command_input,
@@ -155,6 +174,7 @@ impl ElyShell {
             focus_handle: cx.focus_handle(),
             command_input,
             plugin_search_input,
+            translucency_slider,
             download_action_error: None,
             download_clear_confirmation: false,
             download_security_confirmation: None,
@@ -179,6 +199,7 @@ impl ElyShell {
             pending_plugin_uninstall: None,
             web_surfaces: WebSurfaceStore::new(),
             _command_subscription: command_subscription,
+            _translucency_subscription: translucency_subscription,
         };
         start_external_web_surface_timer(cx);
         shell
