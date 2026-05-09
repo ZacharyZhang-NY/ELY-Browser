@@ -18,6 +18,9 @@ pub enum CoreError {
     #[error("space not found: {id}")]
     SpaceNotFound { id: SpaceId },
 
+    #[error("invalid .elyspace package: {reason}")]
+    InvalidSpacePackage { reason: String },
+
     #[error("trashed space not found: {id}")]
     TrashedSpaceNotFound { id: SpaceId },
 

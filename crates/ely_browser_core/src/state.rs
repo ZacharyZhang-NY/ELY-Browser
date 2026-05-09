@@ -21,6 +21,7 @@ mod profiles;
 mod reading_list;
 mod site_data;
 mod site_permissions;
+mod space_exports;
 mod spaces;
 mod splits;
 mod sync;
@@ -33,6 +34,9 @@ mod tabs;
 
 pub use plugins::{InstalledPlugin, PluginAuditAction, PluginAuditEvent};
 pub use site_data::SiteDataClearance;
+pub use space_exports::{
+    ELYSPACE_FILE_EXTENSION, ELYSPACE_SCHEMA_VERSION, ElySpacePackage, SpaceImportProfileMapping,
+};
 pub use spaces::TrashedSpace;
 
 #[derive(Clone, Debug)]
