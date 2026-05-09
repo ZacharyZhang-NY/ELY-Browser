@@ -17,7 +17,12 @@ const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
 
 #[test]
 fn accepts_loading_report_with_visible_content() -> Result<(), ServoSidecarError> {
-    let snapshot = SidecarSnapshot::from_report(report_with_state("loading"), visible_frame())?;
+    let profile_id = ProfileId::new();
+    let snapshot = SidecarSnapshot::from_report(
+        report_with_state("loading", &profile_id),
+        &profile_id,
+        visible_frame(),
+    )?;
 
     assert_eq!(snapshot.loaded_url(), Some("https://example.com/"));
     assert_eq!(snapshot.title(), Some("Example Domain"));
@@ -31,7 +36,12 @@ fn accepts_loading_report_with_visible_content() -> Result<(), ServoSidecarError
 
 #[test]
 fn rejects_created_report_with_visible_content() {
-    let result = SidecarSnapshot::from_report(report_with_state("created"), visible_frame());
+    let profile_id = ProfileId::new();
+    let result = SidecarSnapshot::from_report(
+        report_with_state("created", &profile_id),
+        &profile_id,
+        visible_frame(),
+    );
 
     assert!(
         matches!(result, Err(ServoSidecarError::IncompleteRender { state }) if state == "created")
@@ -39,8 +49,23 @@ fn rejects_created_report_with_visible_content() {
 }
 
 #[test]
+fn rejects_report_from_different_profile() {
+    let expected_profile_id = ProfileId::new();
+    let actual_profile_id = ProfileId::new();
+    let result = SidecarSnapshot::from_report(
+        report_with_state("loading", &actual_profile_id),
+        &expected_profile_id,
+        visible_frame(),
+    );
+
+    assert!(matches!(result, Err(ServoSidecarError::ProfileMismatch { expected, actual })
+            if expected == expected_profile_id.as_str() && actual == actual_profile_id.as_str()));
+}
+
+#[test]
 fn retries_navigation_snapshots() -> Result<(), Box<dyn Error>> {
-    let request = SidecarSnapshotRequest::new(UrlText::parse("https://example.com")?, 2, 1);
+    let request =
+        SidecarSnapshotRequest::new(UrlText::parse("https://example.com")?, ProfileId::new(), 2, 1);
 
     assert_eq!(request.max_attempts(), SIDECAR_NAVIGATION_ATTEMPTS);
     Ok(())
@@ -48,9 +73,10 @@ fn retries_navigation_snapshots() -> Result<(), Box<dyn Error>> {
 
 #[test]
 fn keeps_page_interactions_single_attempt() -> Result<(), Box<dyn Error>> {
-    let request = SidecarSnapshotRequest::new(UrlText::parse("https://example.com")?, 2, 1)
-        .with_click_point(1, 1)
-        .with_typed_text("ely".to_string());
+    let request =
+        SidecarSnapshotRequest::new(UrlText::parse("https://example.com")?, ProfileId::new(), 2, 1)
+            .with_click_point(1, 1)
+            .with_typed_text("ely".to_string());
 
     assert_eq!(request.max_attempts(), SIDECAR_INTERACTION_ATTEMPTS);
     Ok(())
@@ -80,6 +106,7 @@ fn assert_live_sites_render(cases: &[LiveSiteCase]) -> Result<(), Box<dyn Error>
     for case in cases {
         let request = SidecarSnapshotRequest::new(
             UrlText::parse(case.url)?,
+            ProfileId::new(),
             LIVE_SITE_WIDTH,
             LIVE_SITE_HEIGHT,
         );
@@ -122,9 +149,10 @@ fn assert_title_contains(snapshot: &SidecarSnapshot, fragment: &str) -> Result<(
     Ok(())
 }
 
-fn report_with_state(state: &str) -> SidecarReport {
+fn report_with_state(state: &str, profile_id: &ProfileId) -> SidecarReport {
     SidecarReport {
         requested_url: "https://example.com".to_string(),
+        profile_id: profile_id.as_str().to_string(),
         loaded_url: Some("https://example.com/".to_string()),
         title: Some("Example Domain".to_string()),
         state: state.to_string(),

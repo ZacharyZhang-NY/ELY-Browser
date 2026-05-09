@@ -1,6 +1,8 @@
 #![cfg(feature = "servo-engine")]
 
-use std::{collections::BTreeSet, error::Error, fs, path::PathBuf};
+use std::{collections::BTreeSet, error::Error, fs, path::PathBuf, process::Command};
+
+use ely_domain::ProfileId;
 
 #[path = "sidecar/support.rs"]
 mod support;
@@ -37,8 +39,71 @@ fn sidecar_opens_and_renders_prd_sites_to_rgba_files() -> Result<(), Box<dyn Err
     Ok(())
 }
 
+#[test]
+fn sidecar_report_uses_requested_profile_id() -> Result<(), Box<dyn Error>> {
+    let profile_id = ProfileId::new();
+    let profile_data_dir = std::env::temp_dir().join(format!(
+        "ely-servo-sidecar-profile-test-{}-{}",
+        std::process::id(),
+        profile_id.as_str()
+    ));
+    let rgba_path = std::env::temp_dir().join(format!(
+        "ely-servo-sidecar-profile-test-{}-{}.rgba",
+        std::process::id(),
+        profile_id.as_str()
+    ));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ely_servo_sidecar"))
+        .arg("snapshot")
+        .arg("--url")
+        .arg("data:text/html,%3Ctitle%3EProfile%20Probe%3C%2Ftitle%3EProfile%20Probe")
+        .arg("--profile-id")
+        .arg(profile_id.as_str())
+        .arg("--profile-data-dir")
+        .arg(&profile_data_dir)
+        .arg("--rgba-out")
+        .arg(&rgba_path)
+        .arg("--width")
+        .arg("64")
+        .arg("--height")
+        .arg("64")
+        .output()?;
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    assert_eq!(
+        report.get("profile_id").and_then(serde_json::Value::as_str),
+        Some(profile_id.as_str())
+    );
+
+    remove_file_if_present(rgba_path)?;
+    remove_dir_if_present(profile_data_dir)?;
+    Ok(())
+}
+
 fn prd_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("PRD.md")
+}
+
+fn remove_file_if_present(path: PathBuf) -> Result<(), Box<dyn Error>> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn remove_dir_if_present(path: PathBuf) -> Result<(), Box<dyn Error>> {
+    match fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
 }
 
 fn prd_reference_urls(prd: &str) -> Vec<String> {

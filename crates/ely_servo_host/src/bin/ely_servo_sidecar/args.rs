@@ -1,6 +1,6 @@
 use std::{env, num::ParseIntError, path::PathBuf};
 
-use ely_domain::UrlText;
+use ely_domain::{ProfileId, UrlText};
 use thiserror::Error;
 
 pub(super) enum SidecarCommand {
@@ -9,6 +9,8 @@ pub(super) enum SidecarCommand {
 
 pub(super) struct SnapshotArgs {
     pub(super) url: UrlText,
+    pub(super) profile_id: ProfileId,
+    pub(super) profile_data_dir: PathBuf,
     pub(super) rgba_out: PathBuf,
     pub(super) width: u32,
     pub(super) height: u32,
@@ -69,8 +71,8 @@ pub(super) enum SidecarArgsError {
     #[error("--touch-x and --touch-y must be provided together")]
     IncompleteTouchPoint,
 
-    #[error("rgba output path is empty")]
-    EmptyRgbaOutputPath,
+    #[error("{name} path is empty")]
+    EmptyPath { name: &'static str },
 
     #[error(transparent)]
     Domain(#[from] ely_domain::DomainError),
@@ -98,6 +100,8 @@ fn parse_snapshot_args(
 ) -> Result<SnapshotArgs, SidecarArgsError> {
     let mut args = args.into_iter();
     let mut url = None;
+    let mut profile_id = None;
+    let mut profile_data_dir = None;
     let mut rgba_out = None;
     let mut width = None;
     let mut height = None;
@@ -116,8 +120,17 @@ fn parse_snapshot_args(
     while let Some(name) = args.next() {
         match name.as_str() {
             "--url" => url = Some(UrlText::parse(next_argument(&mut args, "--url")?)?),
+            "--profile-id" => {
+                profile_id = Some(ProfileId::parse(next_argument(&mut args, "--profile-id")?)?)
+            }
+            "--profile-data-dir" => {
+                profile_data_dir = Some(parse_path(
+                    "--profile-data-dir",
+                    next_argument(&mut args, "--profile-data-dir")?,
+                )?)
+            }
             "--rgba-out" => {
-                rgba_out = Some(parse_output_path(next_argument(&mut args, "--rgba-out")?)?)
+                rgba_out = Some(parse_path("--rgba-out", next_argument(&mut args, "--rgba-out")?)?)
             }
             "--width" => {
                 width = Some(parse_dimension("--width", next_argument(&mut args, "--width")?)?)
@@ -207,6 +220,10 @@ fn parse_snapshot_args(
 
     Ok(SnapshotArgs {
         url: url.ok_or(SidecarArgsError::MissingRequiredArgument { name: "--url" })?,
+        profile_id: profile_id
+            .ok_or(SidecarArgsError::MissingRequiredArgument { name: "--profile-id" })?,
+        profile_data_dir: profile_data_dir
+            .ok_or(SidecarArgsError::MissingRequiredArgument { name: "--profile-data-dir" })?,
         rgba_out: rgba_out
             .ok_or(SidecarArgsError::MissingRequiredArgument { name: "--rgba-out" })?,
         width: width.ok_or(SidecarArgsError::MissingRequiredArgument { name: "--width" })?,
@@ -248,10 +265,81 @@ fn parse_click_coordinate(name: &'static str, value: String) -> Result<u32, Side
     value.parse::<u32>().map_err(|source| SidecarArgsError::InvalidInteger { name, value, source })
 }
 
-fn parse_output_path(value: String) -> Result<PathBuf, SidecarArgsError> {
+fn parse_path(name: &'static str, value: String) -> Result<PathBuf, SidecarArgsError> {
     if value.trim().is_empty() {
-        return Err(SidecarArgsError::EmptyRgbaOutputPath);
+        return Err(SidecarArgsError::EmptyPath { name });
     }
 
     Ok(PathBuf::from(value))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, path::PathBuf};
+
+    use super::{SidecarArgsError, SidecarCommand, parse_command};
+    use ely_domain::{DomainError, ProfileId};
+
+    #[test]
+    fn parses_snapshot_profile_identity() -> Result<(), SidecarArgsError> {
+        let profile_id = ProfileId::new();
+        let profile_data_dir = env::temp_dir().join(profile_id.as_str());
+        let command = parse_snapshot_command(&profile_id, profile_data_dir.clone())?;
+
+        let SidecarCommand::Snapshot(args) = command;
+        assert_eq!(args.profile_id, profile_id);
+        assert_eq!(args.profile_data_dir, profile_data_dir);
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_invalid_snapshot_profile_id() {
+        let command = parse_command(
+            [
+                "ely_servo_sidecar",
+                "snapshot",
+                "--url",
+                "https://example.com",
+                "--profile-id",
+                "profile_invalid",
+                "--profile-data-dir",
+                "/tmp/profile",
+                "--rgba-out",
+                "/tmp/frame.rgba",
+                "--width",
+                "64",
+                "--height",
+                "64",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        );
+
+        assert!(matches!(
+            command,
+            Err(SidecarArgsError::Domain(DomainError::InvalidEntityId { .. }))
+        ));
+    }
+
+    fn parse_snapshot_command(
+        profile_id: &ProfileId,
+        profile_data_dir: PathBuf,
+    ) -> Result<SidecarCommand, SidecarArgsError> {
+        parse_command([
+            "ely_servo_sidecar".to_string(),
+            "snapshot".to_string(),
+            "--url".to_string(),
+            "https://example.com".to_string(),
+            "--profile-id".to_string(),
+            profile_id.as_str().to_string(),
+            "--profile-data-dir".to_string(),
+            profile_data_dir.display().to_string(),
+            "--rgba-out".to_string(),
+            "/tmp/frame.rgba".to_string(),
+            "--width".to_string(),
+            "64".to_string(),
+            "--height".to_string(),
+            "64".to_string(),
+        ])
+    }
 }

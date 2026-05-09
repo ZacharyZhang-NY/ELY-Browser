@@ -102,9 +102,13 @@ impl WebSurfaceStore {
             },
         );
 
-        let mut snapshot_request =
-            SidecarSnapshotRequest::new(tab.url().clone(), size.width, size.height)
-                .with_scroll_offset(scroll_offset.x(), scroll_offset.y());
+        let mut snapshot_request = SidecarSnapshotRequest::new(
+            tab.url().clone(),
+            tab.profile_id().clone(),
+            size.width,
+            size.height,
+        )
+        .with_scroll_offset(scroll_offset.x(), scroll_offset.y());
         if let Some(click_point) = click_point {
             snapshot_request = snapshot_request.with_click_point(click_point.x(), click_point.y());
         }
@@ -427,6 +431,7 @@ mod tests {
 
         assert_eq!(request.typed_text.as_deref(), Some("el"));
         assert_eq!(request.snapshot_request.typed_text_for_test(), Some("el"));
+        assert_eq!(request.snapshot_request.profile_id_for_test(), tab.profile_id());
         Ok(())
     }
 

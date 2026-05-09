@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ely_domain::{ProfileId, TabId};
+use ely_domain::TabId;
 use ely_servo_host::{
     KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest, ScrollRequest,
     ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, TouchTapRequest,
@@ -51,10 +51,13 @@ enum SidecarError {
 }
 
 fn run_snapshot(args: SnapshotArgs) -> Result<(), SidecarError> {
-    let mut host = SoftwareServoHost::new(ServoSurfaceSize::new(args.width, args.height))?;
+    std::fs::create_dir_all(&args.profile_data_dir)?;
+    let mut host = SoftwareServoHost::new_with_config_dir(
+        ServoSurfaceSize::new(args.width, args.height),
+        Some(args.profile_data_dir.clone()),
+    )?;
     let tab_id = TabId::new();
-    let profile_id = ProfileId::new();
-    let webview_id = host.create_webview(tab_id.clone(), profile_id)?;
+    let webview_id = host.create_webview(tab_id.clone(), args.profile_id.clone())?;
 
     host.navigate(NavigationRequest {
         webview_id: webview_id.clone(),

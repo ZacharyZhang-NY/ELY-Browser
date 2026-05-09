@@ -1,6 +1,7 @@
 use std::{
     cell::{Cell, RefCell},
     collections::HashMap,
+    path::PathBuf,
     rc::Rc,
     sync::{
         Arc,
@@ -13,7 +14,7 @@ use std::{
 use dpi::PhysicalSize;
 use ely_domain::{ProfileId, TabId, WebViewId};
 use servo::{
-    DeviceIntPoint, DeviceIntRect, DeviceIntSize, DevicePoint, DeviceVector2D, LoadStatus,
+    DeviceIntPoint, DeviceIntRect, DeviceIntSize, DevicePoint, DeviceVector2D, LoadStatus, Opts,
     RenderingContext, Scroll, Servo, ServoBuilder, WebView, WebViewBuilder, WebViewDelegate,
     WebViewPoint, WebViewVector,
 };
@@ -24,6 +25,7 @@ use crate::{
     PermissionDecision, PermissionRequest, RenderedFrame, ResizeRequest, ScreenshotRequest,
     ScrollRequest, ServoHost, ServoHostError, TouchTapRequest, WebViewSnapshot, WebViewState,
     runtime_input::{send_keyboard_text, send_mouse_click, send_mouse_drag, send_touch_tap},
+    runtime_permissions::{PermissionKey, PermissionStore},
     runtime_waker::ServoWakeFlag,
 };
 
@@ -59,6 +61,13 @@ pub struct SoftwareServoHost {
 
 impl SoftwareServoHost {
     pub fn new(size: ServoSurfaceSize) -> Result<Self, ServoHostError> {
+        Self::new_with_config_dir(size, None)
+    }
+
+    pub fn new_with_config_dir(
+        size: ServoSurfaceSize,
+        config_dir: Option<PathBuf>,
+    ) -> Result<Self, ServoHostError> {
         if SERVO_RUNTIME_STARTED
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
@@ -66,14 +75,17 @@ impl SoftwareServoHost {
             return Err(ServoHostError::RuntimeAlreadyStarted);
         }
 
-        let host = Self::new_started(size);
+        let host = Self::new_started(size, config_dir);
         if host.is_err() {
             SERVO_RUNTIME_STARTED.store(false, Ordering::Release);
         }
         host
     }
 
-    fn new_started(size: ServoSurfaceSize) -> Result<Self, ServoHostError> {
+    fn new_started(
+        size: ServoSurfaceSize,
+        config_dir: Option<PathBuf>,
+    ) -> Result<Self, ServoHostError> {
         let rendering_context = Rc::new(
             servo::SoftwareRenderingContext::new(size.physical())
                 .map_err(|_| ServoHostError::RenderingContextUnavailable)?,
@@ -81,9 +93,12 @@ impl SoftwareServoHost {
         rendering_context.make_current().map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
 
         let wake_requested = Arc::new(AtomicBool::new(false));
-        let servo = ServoBuilder::default()
-            .event_loop_waker(Box::new(ServoWakeFlag::new(wake_requested.clone())))
-            .build();
+        let mut builder = ServoBuilder::default()
+            .event_loop_waker(Box::new(ServoWakeFlag::new(wake_requested.clone())));
+        if let Some(config_dir) = config_dir {
+            builder = builder.opts(Opts { config_dir: Some(config_dir), ..Opts::default() });
+        }
+        let servo = builder.build();
 
         Ok(Self {
             servo,
@@ -479,20 +494,5 @@ impl WebViewDelegate for HostWebViewDelegate {
                 permission_request.deny();
             }
         }
-    }
-}
-
-type PermissionStore = Rc<RefCell<HashMap<PermissionKey, PermissionDecision>>>;
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct PermissionKey {
-    profile_id: ProfileId,
-    tab_id: TabId,
-    feature: String,
-}
-
-impl PermissionKey {
-    fn new(profile_id: ProfileId, tab_id: TabId, feature: String) -> Self {
-        Self { profile_id, tab_id, feature }
     }
 }

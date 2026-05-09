@@ -7,6 +7,8 @@ mod runtime;
 #[cfg(feature = "servo-engine")]
 mod runtime_input;
 #[cfg(feature = "servo-engine")]
+mod runtime_permissions;
+#[cfg(feature = "servo-engine")]
 mod runtime_waker;
 
 pub use error::ServoHostError;

@@ -14,6 +14,9 @@ pub enum DomainError {
     #[error("invalid file name: {value}")]
     InvalidFileName { value: String },
 
+    #[error("invalid {kind} id: {value}")]
+    InvalidEntityId { kind: &'static str, value: String },
+
     #[error("invalid {algorithm} download checksum: {value}")]
     InvalidDownloadChecksum { algorithm: &'static str, value: String },
 

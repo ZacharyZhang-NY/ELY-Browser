@@ -6,26 +6,33 @@ use std::{
     time::{Duration, Instant, SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
-use ely_domain::UrlText;
+use ely_domain::{ProfileId, UrlText};
 use serde::Deserialize;
 use thiserror::Error;
 
-const SIDECAR_BINARY_TIMEOUT: Duration = Duration::from_secs(45);
-const SIDECAR_CARGO_TIMEOUT: Duration = Duration::from_secs(180);
+use super::{
+    servo_profile_data::{default_profile_data_root, profile_data_dir},
+    servo_sidecar_command::{SidecarCommandTarget, default_sidecar_command},
+};
+
 const SIDECAR_POLL_INTERVAL: Duration = Duration::from_millis(20);
 const SIDECAR_RETRY_INTERVAL: Duration = Duration::from_millis(250);
 const SIDECAR_NAVIGATION_ATTEMPTS: usize = 3;
 const SIDECAR_INTERACTION_ATTEMPTS: usize = 1;
-const SIDECAR_PATH_ENV: &str = "ELY_SERVO_SIDECAR";
 
 #[derive(Clone, Debug)]
 pub struct ServoSidecarClient {
     command_target: SidecarCommandTarget,
+    profile_data_root: PathBuf,
 }
 
 impl ServoSidecarClient {
     pub fn new() -> Result<Self, ServoSidecarError> {
-        Ok(Self { command_target: default_sidecar_command()? })
+        Ok(Self {
+            command_target: default_sidecar_command()?,
+            profile_data_root: default_profile_data_root()
+                .ok_or(ServoSidecarError::ProfileDataRootUnavailable)?,
+        })
     }
 
     pub fn snapshot(
@@ -56,7 +63,8 @@ impl ServoSidecarClient {
         request: &SidecarSnapshotRequest,
     ) -> Result<SidecarSnapshot, ServoSidecarError> {
         let rgba_path = temporary_rgba_path()?;
-        let output = match self.run_snapshot_command(request, &rgba_path) {
+        let profile_data_dir = profile_data_dir(&self.profile_data_root, &request.profile_id);
+        let output = match self.run_snapshot_command(request, &rgba_path, &profile_data_dir) {
             Ok(output) => output,
             Err(error) => {
                 remove_temporary_file(&rgba_path)?;
@@ -72,7 +80,7 @@ impl ServoSidecarClient {
             });
         }
 
-        let snapshot = read_sidecar_snapshot(&output.stdout, &rgba_path);
+        let snapshot = read_sidecar_snapshot(&output.stdout, &rgba_path, &request.profile_id);
         let cleanup = remove_temporary_file(&rgba_path);
         match (snapshot, cleanup) {
             (Ok(snapshot), Ok(())) => Ok(snapshot),
@@ -85,9 +93,10 @@ impl ServoSidecarClient {
         &self,
         request: &SidecarSnapshotRequest,
         rgba_path: &Path,
+        profile_data_dir: &Path,
     ) -> Result<Output, ServoSidecarError> {
         let mut command = self.command_target.command();
-        append_snapshot_args(&mut command, request, rgba_path);
+        append_snapshot_args(&mut command, request, rgba_path, profile_data_dir);
         if let Some(click_point) = request.click_point {
             command
                 .arg("--click-x")
@@ -125,55 +134,20 @@ impl ServoSidecarClient {
     }
 }
 
-#[derive(Clone, Debug)]
-enum SidecarCommandTarget {
-    Binary(PathBuf),
-    Cargo { manifest_path: PathBuf },
-}
-
-impl SidecarCommandTarget {
-    fn command(&self) -> Command {
-        match self {
-            Self::Binary(path) => Command::new(path),
-            Self::Cargo { manifest_path } => {
-                let mut command = Command::new("cargo");
-                command
-                    .arg("run")
-                    .arg("--quiet")
-                    .arg("--manifest-path")
-                    .arg(manifest_path)
-                    .arg("-p")
-                    .arg("ely_servo_host")
-                    .arg("--features")
-                    .arg("servo-engine")
-                    .arg("--bin")
-                    .arg("ely_servo_sidecar")
-                    .arg("--");
-                command
-            }
-        }
-    }
-
-    fn timeout(&self) -> Duration {
-        match self {
-            Self::Binary(_) => SIDECAR_BINARY_TIMEOUT,
-            Self::Cargo { .. } => SIDECAR_CARGO_TIMEOUT,
-        }
-    }
-
-    fn missing_binary_path(&self) -> Option<&Path> {
-        match self {
-            Self::Binary(path) if !path.is_file() => Some(path.as_path()),
-            Self::Binary(_) | Self::Cargo { .. } => None,
-        }
-    }
-}
-
-fn append_snapshot_args(command: &mut Command, request: &SidecarSnapshotRequest, rgba_path: &Path) {
+fn append_snapshot_args(
+    command: &mut Command,
+    request: &SidecarSnapshotRequest,
+    rgba_path: &Path,
+    profile_data_dir: &Path,
+) {
     command
         .arg("snapshot")
         .arg("--url")
         .arg(request.url.as_str())
+        .arg("--profile-id")
+        .arg(request.profile_id.as_str())
+        .arg("--profile-data-dir")
+        .arg(profile_data_dir)
         .arg("--rgba-out")
         .arg(rgba_path)
         .arg("--width")
@@ -189,6 +163,7 @@ fn append_snapshot_args(command: &mut Command, request: &SidecarSnapshotRequest,
 #[derive(Clone, Debug)]
 pub struct SidecarSnapshotRequest {
     url: UrlText,
+    profile_id: ProfileId,
     width: u32,
     height: u32,
     scroll_x: i32,
@@ -199,8 +174,17 @@ pub struct SidecarSnapshotRequest {
 
 impl SidecarSnapshotRequest {
     #[must_use]
-    pub fn new(url: UrlText, width: u32, height: u32) -> Self {
-        Self { url, width, height, scroll_x: 0, scroll_y: 0, click_point: None, typed_text: None }
+    pub fn new(url: UrlText, profile_id: ProfileId, width: u32, height: u32) -> Self {
+        Self {
+            url,
+            profile_id,
+            width,
+            height,
+            scroll_x: 0,
+            scroll_y: 0,
+            click_point: None,
+            typed_text: None,
+        }
     }
 
     #[must_use]
@@ -225,6 +209,11 @@ impl SidecarSnapshotRequest {
     #[cfg(test)]
     pub(crate) fn typed_text_for_test(&self) -> Option<&str> {
         self.typed_text.as_deref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn profile_id_for_test(&self) -> &ProfileId {
+        &self.profile_id
     }
 
     fn max_attempts(&self) -> usize {
@@ -258,8 +247,18 @@ pub struct SidecarSnapshot {
 }
 
 impl SidecarSnapshot {
-    fn from_report(report: SidecarReport, rgba_bytes: Vec<u8>) -> Result<Self, ServoSidecarError> {
+    fn from_report(
+        report: SidecarReport,
+        expected_profile_id: &ProfileId,
+        rgba_bytes: Vec<u8>,
+    ) -> Result<Self, ServoSidecarError> {
         let expected_byte_count = expected_rgba_byte_count(report.width, report.height)?;
+        if report.profile_id != expected_profile_id.as_str() {
+            return Err(ServoSidecarError::ProfileMismatch {
+                expected: expected_profile_id.as_str().to_string(),
+                actual: report.profile_id,
+            });
+        }
         if !is_renderable_state(&report.state) {
             return Err(ServoSidecarError::IncompleteRender { state: report.state });
         }
@@ -337,6 +336,9 @@ pub enum ServoSidecarError {
     #[error("temporary frame directory is unavailable: {0}")]
     TempDirectory(#[source] io::Error),
 
+    #[error("profile data root is unavailable")]
+    ProfileDataRootUnavailable,
+
     #[error("system clock is before UNIX epoch")]
     SystemClock(#[from] SystemTimeError),
 
@@ -361,6 +363,9 @@ pub enum ServoSidecarError {
     #[error("servo sidecar returned incomplete render state: {state}")]
     IncompleteRender { state: String },
 
+    #[error("servo sidecar returned profile {actual}, expected {expected}")]
+    ProfileMismatch { expected: String, actual: String },
+
     #[error(
         "servo frame byte count mismatch: expected {expected}, reported {reported}, actual {actual}"
     )]
@@ -383,6 +388,7 @@ fn is_renderable_state(state: &str) -> bool {
 #[derive(Deserialize)]
 struct SidecarReport {
     requested_url: String,
+    profile_id: String,
     loaded_url: Option<String>,
     title: Option<String>,
     state: String,
@@ -393,47 +399,6 @@ struct SidecarReport {
     content_pixel_count: u64,
     #[cfg(test)]
     sample_hash: u64,
-}
-
-fn default_sidecar_command() -> Result<SidecarCommandTarget, ServoSidecarError> {
-    if let Some(path) = env::var_os(SIDECAR_PATH_ENV) {
-        return Ok(SidecarCommandTarget::Binary(PathBuf::from(path)));
-    }
-
-    let current_exe = env::current_exe().map_err(ServoSidecarError::CurrentExecutable)?;
-    let exe_dir = current_exe.parent().ok_or_else(|| {
-        ServoSidecarError::CurrentExecutableDirectoryUnavailable { path: current_exe.clone() }
-    })?;
-    let adjacent_sidecar = exe_dir.join(sidecar_binary_name());
-    if adjacent_sidecar.is_file() {
-        return Ok(SidecarCommandTarget::Binary(adjacent_sidecar));
-    }
-
-    if let Some(manifest_path) = workspace_manifest_path() {
-        if let Some(target_sidecar) = workspace_target_sidecar_path(&manifest_path)
-            && target_sidecar.is_file()
-        {
-            return Ok(SidecarCommandTarget::Binary(target_sidecar));
-        }
-        if manifest_path.is_file() {
-            return Ok(SidecarCommandTarget::Cargo { manifest_path });
-        }
-    }
-
-    Ok(SidecarCommandTarget::Binary(adjacent_sidecar))
-}
-
-fn workspace_manifest_path() -> Option<PathBuf> {
-    option_env!("ELY_WORKSPACE_MANIFEST").map(PathBuf::from)
-}
-
-fn workspace_target_sidecar_path(manifest_path: &Path) -> Option<PathBuf> {
-    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
-    Some(manifest_path.parent()?.join("target").join(profile).join(sidecar_binary_name()))
-}
-
-fn sidecar_binary_name() -> String {
-    format!("ely_servo_sidecar{}", env::consts::EXE_SUFFIX)
 }
 
 fn temporary_rgba_path() -> Result<PathBuf, ServoSidecarError> {
@@ -465,10 +430,11 @@ fn terminate_child(mut child: std::process::Child) -> Result<(), ServoSidecarErr
 fn read_sidecar_snapshot(
     stdout: &[u8],
     rgba_path: &Path,
+    expected_profile_id: &ProfileId,
 ) -> Result<SidecarSnapshot, ServoSidecarError> {
     let report: SidecarReport = serde_json::from_slice(stdout)?;
     let rgba_bytes = fs::read(rgba_path).map_err(ServoSidecarError::FrameRead)?;
-    SidecarSnapshot::from_report(report, rgba_bytes)
+    SidecarSnapshot::from_report(report, expected_profile_id, rgba_bytes)
 }
 
 fn expected_rgba_byte_count(width: u32, height: u32) -> Result<usize, ServoSidecarError> {

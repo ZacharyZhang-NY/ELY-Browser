@@ -1,11 +1,14 @@
 use std::{
     error::Error,
     io,
+    path::{Path, PathBuf},
     process::{Child, Command, Output, Stdio},
     sync::Mutex,
     thread,
     time::{Duration, Instant},
 };
+
+use ely_domain::ProfileId;
 
 pub(super) const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
 const SIDECAR_TIMEOUT: Duration = Duration::from_secs(45);
@@ -313,7 +316,7 @@ fn snapshot_probe(
 
 fn run_sidecar_snapshot(
     site_url: &str,
-    output_path: &std::path::Path,
+    output_path: &Path,
     size: FrameSize,
     scroll_offset: ScrollOffset,
     input: SnapshotInput<'_>,
@@ -321,11 +324,17 @@ fn run_sidecar_snapshot(
     let _guard = SIDECAR_COMMAND_LOCK
         .lock()
         .map_err(|_| io::Error::other("sidecar command lock poisoned"))?;
+    let profile_id = ProfileId::new();
+    let profile_data_dir = temporary_profile_data_dir(&profile_id);
     let mut command = Command::new(env!("CARGO_BIN_EXE_ely_servo_sidecar"));
     command
         .arg("snapshot")
         .arg("--url")
         .arg(site_url)
+        .arg("--profile-id")
+        .arg(profile_id.as_str())
+        .arg("--profile-data-dir")
+        .arg(&profile_data_dir)
         .arg("--rgba-out")
         .arg(output_path)
         .arg("--width")
@@ -361,12 +370,14 @@ fn run_sidecar_snapshot(
     loop {
         if child.try_wait()?.is_some() {
             let output = child.wait_with_output()?;
+            remove_temporary_dir(&profile_data_dir)?;
             thread::sleep(SIDECAR_COMMAND_COOLDOWN);
             return Ok(output);
         }
 
         if started_at.elapsed() >= SIDECAR_TIMEOUT {
             terminate_child(child)?;
+            remove_temporary_dir(&profile_data_dir)?;
             thread::sleep(SIDECAR_COMMAND_COOLDOWN);
             return Err(format!(
                 "timed out rendering {site_url} at {}x{}",
@@ -376,6 +387,22 @@ fn run_sidecar_snapshot(
         }
 
         thread::sleep(SIDECAR_POLL_INTERVAL);
+    }
+}
+
+fn temporary_profile_data_dir(profile_id: &ProfileId) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "ely-servo-sidecar-profile-{}-{}",
+        std::process::id(),
+        profile_id.as_str()
+    ))
+}
+
+fn remove_temporary_dir(path: &Path) -> Result<(), Box<dyn Error>> {
+    match std::fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
     }
 }
 

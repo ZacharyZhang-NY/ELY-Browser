@@ -14,6 +14,7 @@ pub(super) struct SnapshotInputChanges {
 #[derive(Serialize)]
 pub(super) struct SnapshotReport {
     requested_url: String,
+    profile_id: String,
     loaded_url: Option<String>,
     title: Option<String>,
     rgba_path: String,
@@ -52,6 +53,7 @@ impl SnapshotReport {
     ) -> Self {
         Self {
             requested_url: args.url.as_str().to_string(),
+            profile_id: snapshot.profile_id().as_str().to_string(),
             loaded_url: snapshot.url().map(str::to_string),
             title: snapshot.title().map(str::to_string),
             rgba_path: args.rgba_out.display().to_string(),
