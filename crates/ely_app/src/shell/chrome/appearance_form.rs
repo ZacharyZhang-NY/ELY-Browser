@@ -8,6 +8,8 @@ use gpui::{
 };
 use gpui_component::{IconName, scroll::ScrollableElement};
 
+use super::appearance_layout_cards::render_sidebar_layout_section;
+
 use crate::shell::ElyShell;
 use crate::shell::chrome::SERIF_FAMILY;
 
@@ -31,7 +33,8 @@ pub(crate) fn render_appearance_form(
                 .gap(px(28.0))
                 .child(render_header())
                 .child(render_wallpaper_grid(snapshot, cx))
-                .child(render_appearance_rows(snapshot, cx)),
+                .child(render_appearance_rows(snapshot, cx))
+                .child(render_sidebar_layout_section(snapshot, cx)),
         )
         .into_any_element()
 }

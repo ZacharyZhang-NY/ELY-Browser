@@ -112,6 +112,20 @@ impl ElyShell {
         }
     }
 
+    pub(crate) fn set_active_sidebar_width(&mut self, width_px: u16, cx: &mut Context<Self>) {
+        let ShellState::Ready(core) = &mut self.state else {
+            return;
+        };
+        let active_space_id = match core.snapshot() {
+            Ok(snapshot) => snapshot.active_space_id,
+            Err(_) => return,
+        };
+
+        if core.set_space_sidebar_width(&active_space_id, width_px).is_ok() {
+            cx.notify();
+        }
+    }
+
     fn render_compact_space_button(
         &mut self,
         index: usize,
