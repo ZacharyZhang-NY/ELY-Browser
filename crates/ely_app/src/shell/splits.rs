@@ -10,6 +10,10 @@ use gpui_component::{
     button::{Button, ButtonVariants},
 };
 
+use super::chrome::{
+    pane_host_label, pane_path_label, pane_url_is_secure, render_compact_split_canvas,
+    render_split_pane_header,
+};
 use super::{ElyShell, ShellState};
 use crate::SplitRight;
 
@@ -208,80 +212,12 @@ impl ElyShell {
             .on_click(cx.listener(move |shell, _, window, cx| {
                 shell.select_tab(&tab_id, window, cx);
             }))
-            .child(self.render_split_pane_header(host, path, secure, dot_color, close_tab_id, cx))
+            .child(render_split_pane_header(host, path, secure, dot_color, close_tab_id, cx))
             .child(div().flex_1().min_h_0().overflow_hidden().child(if compact_canvas {
                 render_compact_split_canvas(tab)
             } else {
                 self.render_web_canvas(tab, snapshot, cx)
             }))
-            .into_any_element()
-    }
-
-    fn render_split_pane_header(
-        &mut self,
-        host: String,
-        path: String,
-        secure: bool,
-        dot_color: u32,
-        close_tab_id: ely_domain::TabId,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let lock_or_globe = if secure { IconName::Search } else { IconName::Globe };
-
-        div()
-            .h(px(30.0))
-            .px(px(10.0))
-            .gap(px(8.0))
-            .flex()
-            .items_center()
-            .flex_shrink_0()
-            .border_b_1()
-            .border_color(rgb(colors::HAIRLINE))
-            .bg(rgb(0xf6f4ef))
-            .child(
-                div()
-                    .size(px(8.0))
-                    .rounded_full()
-                    .bg(rgb(dot_color)),
-            )
-            .child(
-                div()
-                    .text_color(rgb(colors::INK_3))
-                    .text_size(px(11.0))
-                    .child(lock_or_globe),
-            )
-            .child(
-                div()
-                    .text_size(px(11.0))
-                    .font_weight(gpui::FontWeight(500.0))
-                    .text_color(rgb(colors::INK))
-                    .child(host),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_size(px(11.0))
-                    .text_color(rgb(colors::INK_4))
-                    .child(path),
-            )
-            .child(
-                div()
-                    .id(SharedString::from(format!(
-                        "split-pane-close-{}",
-                        close_tab_id.as_str()
-                    )))
-                    .text_color(rgb(colors::INK_4))
-                    .text_size(px(11.0))
-                    .cursor_pointer()
-                    .hover(|style| style.text_color(rgb(colors::INK)))
-                    .on_click(cx.listener(move |shell, _, window, cx| {
-                        shell.select_tab(&close_tab_id, window, cx);
-                        shell.close_active_tab(window, cx);
-                    }))
-                    .child(IconName::Close),
-            )
             .into_any_element()
     }
 
@@ -484,68 +420,3 @@ fn active_split_layout<'a>(
     snapshot.split_layouts.iter().find(|layout| layout.id() == split_id)
 }
 
-fn render_compact_split_canvas(tab: &BrowserTab) -> AnyElement {
-    div()
-        .flex_1()
-        .min_h_0()
-        .p_2()
-        .child(
-            div()
-                .size_full()
-                .min_h_0()
-                .rounded(px(10.0))
-                .bg(rgba(colors::GLASS_2))
-                .px(px(10.0))
-                .py(px(8.0))
-                .gap(px(8.0))
-                .flex()
-                .items_center()
-                .child(div().text_color(rgb(colors::INK_4)).child(IconName::Globe))
-                .child(
-                    div()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .child(
-                            div()
-                                .truncate()
-                                .text_size(px(13.0))
-                                .font_weight(gpui::FontWeight(500.0))
-                                .child(tab.title().to_string()),
-                        )
-                        .child(
-                            div()
-                                .truncate()
-                                .text_size(px(11.0))
-                                .text_color(rgb(colors::INK_4))
-                                .child(split_canvas_status(tab)),
-                        ),
-                ),
-        )
-        .into_any_element()
-}
-
-fn split_canvas_status(tab: &BrowserTab) -> String {
-    if tab.url().as_str() == "ely://new-tab" { "Ready".to_string() } else { tab.display_url() }
-}
-
-fn pane_host_label(tab: &BrowserTab) -> String {
-    tab.url()
-        .host()
-        .map(|host| host.to_string())
-        .unwrap_or_else(|| tab.title().to_string())
-}
-
-fn pane_path_label(tab: &BrowserTab) -> String {
-    let url = tab.url().as_str();
-    let path_start = url.find("://").map(|prefix| prefix + 3).unwrap_or(0);
-    let from_path = &url[path_start..];
-    match from_path.find('/') {
-        Some(slash) => from_path[slash..].to_string(),
-        None => String::new(),
-    }
-}
-
-fn pane_url_is_secure(tab: &BrowserTab) -> bool {
-    tab.url().as_str().starts_with("https://") || tab.url().as_str().starts_with("ely://")
-}
