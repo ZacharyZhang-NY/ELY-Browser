@@ -1,7 +1,11 @@
-use ely_domain::{BrowserTab, TabId};
+use ely_browser_core::BrowserSnapshot;
+use ely_domain::{BrowserTab, ProfileKind, TabId};
 use gpui::{AnyElement, Bounds, Context, Pixels, Point};
 
-use crate::services::servo_sidecar::{ServoSidecarError, SidecarSnapshot};
+use crate::services::{
+    ProfileDataMode,
+    servo_sidecar::{ServoSidecarError, SidecarSnapshot},
+};
 
 use super::{
     ElyShell,
@@ -26,11 +30,16 @@ impl ElyShell {
     pub(super) fn render_external_web_canvas(
         &mut self,
         tab: &BrowserTab,
+        snapshot: &BrowserSnapshot,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        self.ensure_external_web_frame(tab, cx);
-
         let state_entity = cx.entity().clone();
+        let Some(profile_data_mode) = profile_data_mode_for(tab, snapshot) else {
+            return render_failed_web_surface(tab, "Profile context is unavailable.", state_entity);
+        };
+
+        self.ensure_external_web_frame(tab, profile_data_mode, cx);
+
         match self.web_surfaces.state(tab.id()) {
             Some(WebSurfaceState::Ready(frame)) => {
                 render_ready_web_surface(frame, tab, state_entity)
@@ -47,8 +56,13 @@ impl ElyShell {
         }
     }
 
-    fn ensure_external_web_frame(&mut self, tab: &BrowserTab, cx: &mut Context<Self>) {
-        let Some(request) = self.web_surfaces.prepare_request(tab) else {
+    fn ensure_external_web_frame(
+        &mut self,
+        tab: &BrowserTab,
+        profile_data_mode: ProfileDataMode,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(request) = self.web_surfaces.prepare_request(tab, profile_data_mode) else {
             return;
         };
 
@@ -189,4 +203,13 @@ impl ElyShell {
 
         false
     }
+}
+
+fn profile_data_mode_for(tab: &BrowserTab, snapshot: &BrowserSnapshot) -> Option<ProfileDataMode> {
+    snapshot.profiles.iter().find(|profile| profile.id() == tab.profile_id()).map(|profile| {
+        match profile.kind() {
+            ProfileKind::Standard => ProfileDataMode::Persistent,
+            ProfileKind::Private => ProfileDataMode::Transient,
+        }
+    })
 }

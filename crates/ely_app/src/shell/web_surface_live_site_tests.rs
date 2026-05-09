@@ -4,6 +4,7 @@ use ely_domain::{BrowserTab, ProfileId, SpaceId, TabId, UrlText};
 use gpui::{Bounds, point, px, size};
 
 use crate::{
+    services::ProfileDataMode,
     services::prd_live_sites::{
         LiveSiteCase, PRD_REFERENCE_SITE_CASES, PRD_TOP_SITE_CASES,
         assert_prd_reference_urls_are_covered,
@@ -42,7 +43,7 @@ fn assert_web_surfaces_render(cases: &[LiveSiteCase]) -> Result<(), Box<dyn Erro
 
         assert!(store.record_viewport_size(tab.id(), bounds), "{}", case.url);
         let request = store
-            .prepare_request(&tab)
+            .prepare_request(&tab, ProfileDataMode::Persistent)
             .ok_or_else(|| format!("missing web surface request for {}", case.url))?;
         let snapshot = request.client.snapshot(request.snapshot_request)?;
         let frame = WebSurfaceFrame::from_snapshot(

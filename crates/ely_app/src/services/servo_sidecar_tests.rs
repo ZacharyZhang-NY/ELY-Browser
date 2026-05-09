@@ -1,5 +1,7 @@
 use std::error::Error;
 
+use ely_domain::UrlText;
+
 use super::*;
 
 #[cfg(feature = "live-site-smoke")]
@@ -79,6 +81,46 @@ fn keeps_page_interactions_single_attempt() -> Result<(), Box<dyn Error>> {
             .with_typed_text("ely".to_string());
 
     assert_eq!(request.max_attempts(), SIDECAR_INTERACTION_ATTEMPTS);
+    Ok(())
+}
+
+#[test]
+fn persistent_profile_data_uses_profile_root() -> Result<(), Box<dyn Error>> {
+    let profile_id = ProfileId::new();
+    let request = SidecarSnapshotRequest::new(
+        UrlText::parse("https://example.com")?,
+        profile_id.clone(),
+        2,
+        1,
+    );
+    let root = std::env::temp_dir().join("ely-browser-profile-root-test");
+
+    assert_eq!(request.profile_data_mode_for_test(), ProfileDataMode::Persistent);
+    assert_eq!(request.profile_data_dir(&root)?, root.join(profile_id.as_str()).join("servo"));
+    Ok(())
+}
+
+#[test]
+fn transient_profile_data_uses_temporary_directory_and_cleans_up() -> Result<(), Box<dyn Error>> {
+    let profile_id = ProfileId::new();
+    let request = SidecarSnapshotRequest::new(
+        UrlText::parse("https://example.com")?,
+        profile_id.clone(),
+        2,
+        1,
+    )
+    .with_profile_data_mode(ProfileDataMode::Transient);
+    let root = std::env::temp_dir().join("ely-browser-profile-root-test");
+    let profile_data_dir = request.profile_data_dir(&root)?;
+
+    assert!(profile_data_dir.starts_with(std::env::temp_dir().join("ely-browser-servo-profiles")));
+    assert!(profile_data_dir.to_string_lossy().contains(profile_id.as_str()));
+    std::fs::create_dir_all(&profile_data_dir)?;
+    std::fs::write(profile_data_dir.join("probe"), b"private")?;
+
+    request.cleanup_profile_data_dir(&profile_data_dir)?;
+
+    assert!(!profile_data_dir.exists());
     Ok(())
 }
 

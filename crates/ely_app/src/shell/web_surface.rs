@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use ely_domain::{BrowserTab, TabId};
 use gpui::{Bounds, Pixels, Point};
 
-use crate::services::servo_sidecar::SidecarSnapshotRequest;
+use crate::services::{ProfileDataMode, servo_sidecar::SidecarSnapshotRequest};
 
 use super::{
     web_surface_frame::WebSurfaceFrame,
@@ -47,7 +47,11 @@ impl WebSurfaceStore {
         self.states.get(tab_id)
     }
 
-    pub(super) fn prepare_request(&mut self, tab: &BrowserTab) -> Option<WebSurfaceRequest> {
+    pub(super) fn prepare_request(
+        &mut self,
+        tab: &BrowserTab,
+        profile_data_mode: ProfileDataMode,
+    ) -> Option<WebSurfaceRequest> {
         if !is_external_web_url(tab.url().as_str()) {
             return None;
         }
@@ -108,6 +112,7 @@ impl WebSurfaceStore {
             size.width,
             size.height,
         )
+        .with_profile_data_mode(profile_data_mode)
         .with_scroll_offset(scroll_offset.x(), scroll_offset.y());
         if let Some(click_point) = click_point {
             snapshot_request = snapshot_request.with_click_point(click_point.x(), click_point.y());
@@ -410,7 +415,7 @@ mod tests {
     use ely_domain::{BrowserTab, ProfileId, SpaceId, TabId, UrlText};
     use gpui::{Bounds, point, px, size};
 
-    use super::WebSurfaceStore;
+    use super::{ProfileDataMode, WebSurfaceStore};
 
     #[test]
     fn typed_text_enters_snapshot_request_after_clicked_viewport() -> Result<(), Box<dyn Error>> {
@@ -427,11 +432,32 @@ mod tests {
         assert!(store.record_typed_text(tab.id(), tab.url().as_str(), "e"));
         assert!(store.record_typed_text(tab.id(), tab.url().as_str(), "l"));
 
-        let request = store.prepare_request(&tab).ok_or("missing web surface request")?;
+        let request = store
+            .prepare_request(&tab, ProfileDataMode::Persistent)
+            .ok_or("missing web surface request")?;
 
         assert_eq!(request.typed_text.as_deref(), Some("el"));
         assert_eq!(request.snapshot_request.typed_text_for_test(), Some("el"));
         assert_eq!(request.snapshot_request.profile_id_for_test(), tab.profile_id());
+        Ok(())
+    }
+
+    #[test]
+    fn private_profile_enters_transient_snapshot_request() -> Result<(), Box<dyn Error>> {
+        let mut store = WebSurfaceStore::new();
+        let tab = web_tab("https://example.com/private")?;
+
+        let bounds = Bounds::new(point(px(0.0), px(0.0)), size(px(640.0), px(480.0)));
+        assert!(store.record_viewport_size(tab.id(), bounds));
+
+        let request = store
+            .prepare_request(&tab, ProfileDataMode::Transient)
+            .ok_or("missing web surface request")?;
+
+        assert_eq!(
+            request.snapshot_request.profile_data_mode_for_test(),
+            ProfileDataMode::Transient
+        );
         Ok(())
     }
 

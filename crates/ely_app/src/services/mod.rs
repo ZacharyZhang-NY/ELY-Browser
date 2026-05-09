@@ -6,6 +6,9 @@ pub mod plugin_signatures;
 mod servo_profile_data;
 pub mod servo_sidecar;
 mod servo_sidecar_command;
+mod servo_sidecar_request;
+
+pub(crate) use servo_profile_data::ProfileDataMode;
 
 #[cfg(all(test, feature = "live-site-smoke"))]
 pub(crate) mod prd_live_sites;

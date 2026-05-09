@@ -6,12 +6,16 @@ use std::{
     time::{Duration, Instant, SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
-use ely_domain::{ProfileId, UrlText};
+use ely_domain::ProfileId;
 use serde::Deserialize;
 use thiserror::Error;
 
+pub use super::servo_sidecar_request::SidecarSnapshotRequest;
+
 use super::{
-    servo_profile_data::{default_profile_data_root, profile_data_dir},
+    servo_profile_data::{
+        ProfileDataMode, default_profile_data_root, profile_data_dir, transient_profile_data_dir,
+    },
     servo_sidecar_command::{SidecarCommandTarget, default_sidecar_command},
 };
 
@@ -63,29 +67,30 @@ impl ServoSidecarClient {
         request: &SidecarSnapshotRequest,
     ) -> Result<SidecarSnapshot, ServoSidecarError> {
         let rgba_path = temporary_rgba_path()?;
-        let profile_data_dir = profile_data_dir(&self.profile_data_root, &request.profile_id);
+        let profile_data_dir = request.profile_data_dir(&self.profile_data_root)?;
         let output = match self.run_snapshot_command(request, &rgba_path, &profile_data_dir) {
             Ok(output) => output,
             Err(error) => {
-                remove_temporary_file(&rgba_path)?;
-                return Err(error);
+                return cleanup_failed_snapshot(request, &rgba_path, &profile_data_dir, error);
             }
         };
 
         if !output.status.success() {
-            remove_temporary_file(&rgba_path)?;
-            return Err(ServoSidecarError::SidecarFailed {
+            let error = ServoSidecarError::SidecarFailed {
                 status: output.status.to_string(),
                 stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
-            });
+            };
+            return cleanup_failed_snapshot(request, &rgba_path, &profile_data_dir, error);
         }
 
         let snapshot = read_sidecar_snapshot(&output.stdout, &rgba_path, &request.profile_id);
         let cleanup = remove_temporary_file(&rgba_path);
-        match (snapshot, cleanup) {
-            (Ok(snapshot), Ok(())) => Ok(snapshot),
-            (Err(error), Ok(())) => Err(error),
-            (Ok(_), Err(error)) | (Err(_), Err(error)) => Err(error),
+        let profile_cleanup = request.cleanup_profile_data_dir(&profile_data_dir);
+        match (snapshot, cleanup, profile_cleanup) {
+            (Ok(snapshot), Ok(()), Ok(())) => Ok(snapshot),
+            (Err(error), Ok(()), Ok(())) => Err(error),
+            (Ok(_), Err(error), _) | (Err(_), Err(error), _) => Err(error),
+            (Ok(_), Ok(()), Err(error)) | (Err(_), Ok(()), Err(error)) => Err(error),
         }
     }
 
@@ -160,60 +165,24 @@ fn append_snapshot_args(
         .arg(request.scroll_y.to_string());
 }
 
-#[derive(Clone, Debug)]
-pub struct SidecarSnapshotRequest {
-    url: UrlText,
-    profile_id: ProfileId,
-    width: u32,
-    height: u32,
-    scroll_x: i32,
-    scroll_y: i32,
-    click_point: Option<SidecarClickPoint>,
-    typed_text: Option<String>,
-}
-
 impl SidecarSnapshotRequest {
-    #[must_use]
-    pub fn new(url: UrlText, profile_id: ProfileId, width: u32, height: u32) -> Self {
-        Self {
-            url,
-            profile_id,
-            width,
-            height,
-            scroll_x: 0,
-            scroll_y: 0,
-            click_point: None,
-            typed_text: None,
+    fn profile_data_dir(&self, profile_data_root: &Path) -> Result<PathBuf, ServoSidecarError> {
+        match self.profile_data_mode {
+            ProfileDataMode::Persistent => {
+                Ok(profile_data_dir(profile_data_root, &self.profile_id))
+            }
+            ProfileDataMode::Transient => {
+                transient_profile_data_dir(&self.profile_id).map_err(ServoSidecarError::SystemClock)
+            }
         }
     }
 
-    #[must_use]
-    pub fn with_scroll_offset(mut self, scroll_x: i32, scroll_y: i32) -> Self {
-        self.scroll_x = scroll_x;
-        self.scroll_y = scroll_y;
-        self
-    }
+    fn cleanup_profile_data_dir(&self, profile_data_dir: &Path) -> Result<(), ServoSidecarError> {
+        if self.profile_data_mode == ProfileDataMode::Persistent {
+            return Ok(());
+        }
 
-    #[must_use]
-    pub fn with_click_point(mut self, x: u32, y: u32) -> Self {
-        self.click_point = Some(SidecarClickPoint { x, y });
-        self
-    }
-
-    #[must_use]
-    pub fn with_typed_text(mut self, typed_text: String) -> Self {
-        self.typed_text = Some(typed_text);
-        self
-    }
-
-    #[cfg(test)]
-    pub(crate) fn typed_text_for_test(&self) -> Option<&str> {
-        self.typed_text.as_deref()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn profile_id_for_test(&self) -> &ProfileId {
-        &self.profile_id
+        remove_temporary_directory(profile_data_dir)
     }
 
     fn max_attempts(&self) -> usize {
@@ -223,12 +192,6 @@ impl SidecarSnapshotRequest {
 
         SIDECAR_NAVIGATION_ATTEMPTS
     }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct SidecarClickPoint {
-    x: u32,
-    y: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -360,6 +323,9 @@ pub enum ServoSidecarError {
     #[error("failed to remove servo frame file: {0}")]
     FrameCleanup(#[source] io::Error),
 
+    #[error("failed to remove transient servo profile data at {path}: {source}")]
+    ProfileDataCleanup { path: PathBuf, source: io::Error },
+
     #[error("servo sidecar returned incomplete render state: {state}")]
     IncompleteRender { state: String },
 
@@ -413,6 +379,31 @@ fn remove_temporary_file(path: &Path) -> Result<(), ServoSidecarError> {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(ServoSidecarError::FrameCleanup(error)),
+    }
+}
+
+fn remove_temporary_directory(path: &Path) -> Result<(), ServoSidecarError> {
+    match fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => {
+            Err(ServoSidecarError::ProfileDataCleanup { path: path.to_path_buf(), source: error })
+        }
+    }
+}
+
+fn cleanup_failed_snapshot(
+    request: &SidecarSnapshotRequest,
+    rgba_path: &Path,
+    profile_data_dir: &Path,
+    snapshot_error: ServoSidecarError,
+) -> Result<SidecarSnapshot, ServoSidecarError> {
+    let frame_cleanup = remove_temporary_file(rgba_path);
+    let profile_cleanup = request.cleanup_profile_data_dir(profile_data_dir);
+    match (frame_cleanup, profile_cleanup) {
+        (Ok(()), Ok(())) => Err(snapshot_error),
+        (Err(error), _) => Err(error),
+        (Ok(()), Err(error)) => Err(error),
     }
 }
 
