@@ -1,7 +1,7 @@
 use ely_domain::{
     ArchivePolicy, DiagnosticsReportingPolicy, DownloadPolicy, FavoriteLimit,
     HistoryRecordingPolicy, NewTabDestination, ProfileId, ProfileSyncPolicy, SearchEngine,
-    SyncObjectKind, SyncObjectPolicy, UpdatePolicy,
+    SyncObjectKind, SyncObjectPolicy, ThemeMode, UpdatePolicy, WallpaperTheme,
 };
 use gpui::Context;
 
@@ -45,6 +45,43 @@ impl ElyShell {
     ) {
         if let ShellState::Ready(core) = &mut self.state {
             core.set_new_tab_destination(destination);
+            cx.notify();
+        }
+    }
+
+    pub(super) fn set_wallpaper_theme(
+        &mut self,
+        wallpaper: WallpaperTheme,
+        cx: &mut Context<Self>,
+    ) {
+        if let ShellState::Ready(core) = &mut self.state {
+            core.set_wallpaper_theme(wallpaper);
+            cx.notify();
+        }
+    }
+
+    pub(super) fn set_theme_mode(
+        &mut self,
+        theme_mode: ThemeMode,
+        cx: &mut Context<Self>,
+    ) {
+        if let ShellState::Ready(core) = &mut self.state {
+            core.set_theme_mode(theme_mode);
+            cx.notify();
+        }
+    }
+
+    pub(super) fn toggle_reduce_motion(&mut self, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state {
+            let next = !core.appearance().reduce_motion();
+            core.set_reduce_motion(next);
+            cx.notify();
+        }
+    }
+
+    pub(super) fn reset_appearance(&mut self, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state {
+            core.reset_appearance();
             cx.notify();
         }
     }
