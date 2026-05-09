@@ -108,13 +108,6 @@ impl ElyShell {
         self.open_internal_tab(PLUGIN_SETTINGS_URL, window, cx);
     }
 
-    fn active_tab_matches_url(&self, url: &str) -> bool {
-        match &self.state {
-            ShellState::Ready(core) => core.active_tab().is_ok_and(|tab| tab.url().as_str() == url),
-            ShellState::StartupError(_) => false,
-        }
-    }
-
     pub(super) fn confirm_plugin_install(&mut self, cx: &mut Context<Self>) {
         let Some(pending) = self.pending_plugin_install.take() else {
             cx.notify();

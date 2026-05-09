@@ -5,12 +5,14 @@ mod downloads;
 mod focus;
 mod history;
 mod internal_pages;
+mod navigation;
 mod notes;
 mod plugins;
 mod reading_list;
 mod render;
 mod sidebar;
 mod site_permissions;
+mod space_files;
 mod spaces;
 mod splits;
 mod tab_groups;
@@ -28,10 +30,9 @@ use ely_browser_core::{BrowserCore, InitialBrowserConfig};
 use ely_domain::{
     ArchivePolicy, DownloadPolicy, FavoriteLimit, HistoryRecordingPolicy, NewTabDestination,
     ProfileId, ProfileSyncPolicy, SearchEngine, SpaceId, SyncObjectKind, SyncObjectPolicy, TabId,
-    UrlText,
 };
 use gpui::{AppContext, Context, Entity, FocusHandle, Subscription, Window};
-use gpui_component::input::{InputEvent, InputState, SelectAll};
+use gpui_component::input::{InputEvent, InputState};
 
 use bookmarks::PendingBookmarkEdit;
 use downloads::PendingDownloadFileAction;
@@ -62,6 +63,8 @@ pub struct ElyShell {
     pending_history_time_clear: Option<PendingHistoryTimeClear>,
     site_permissions_clear_confirmation: Option<ProfileId>,
     pending_space_trash: Option<SpaceId>,
+    space_file_error: Option<String>,
+    space_file_notice: Option<String>,
     pending_bookmark_edit: Option<PendingBookmarkEdit>,
     bookmark_edit_error: Option<String>,
     plugin_install_error: Option<String>,
@@ -130,6 +133,8 @@ impl ElyShell {
             pending_history_time_clear: None,
             site_permissions_clear_confirmation: None,
             pending_space_trash: None,
+            space_file_error: None,
+            space_file_notice: None,
             pending_bookmark_edit: None,
             bookmark_edit_error: None,
             plugin_install_error: None,
@@ -138,54 +143,6 @@ impl ElyShell {
             web_surfaces: WebSurfaceStore::new(),
             _command_subscription: command_subscription,
         }
-    }
-
-    fn open_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let ShellState::Ready(core) = &mut self.state
-            && core.open_new_tab().is_ok()
-        {
-            self.sync_address_input(window, cx);
-            self.focus_address_bar(window, cx);
-            cx.notify();
-        }
-    }
-
-    fn open_downloads(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.open_internal_tab("ely://downloads", window, cx);
-    }
-
-    fn open_history(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.open_internal_tab("ely://history", window, cx);
-    }
-
-    fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.open_internal_tab("ely://settings", window, cx);
-    }
-
-    fn open_task_manager(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.open_internal_tab("ely://task-manager", window, cx);
-    }
-
-    fn open_internal_tab(&mut self, url_text: &str, window: &mut Window, cx: &mut Context<Self>) {
-        if let Ok(url) = UrlText::parse(url_text) {
-            self.open_url(url, window, cx);
-        }
-    }
-
-    fn open_url(&mut self, url: UrlText, window: &mut Window, cx: &mut Context<Self>) {
-        if let ShellState::Ready(core) = &mut self.state {
-            core.open_tab(url);
-            self.sync_address_input(window, cx);
-            self.focus_address_bar(window, cx);
-            cx.notify();
-        }
-    }
-
-    fn focus_address_bar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.command_input.update(cx, |input, cx| {
-            input.focus(window, cx);
-        });
-        window.dispatch_action(Box::new(SelectAll), cx);
     }
 
     fn focus_command_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {

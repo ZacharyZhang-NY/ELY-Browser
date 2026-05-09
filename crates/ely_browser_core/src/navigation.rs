@@ -206,6 +206,10 @@ pub(crate) fn plugin_settings_url() -> Result<UrlText, CoreError> {
     internal_page_url("ely://settings/plugins")
 }
 
+pub(crate) fn space_settings_url() -> Result<UrlText, CoreError> {
+    internal_page_url("ely://settings/spaces")
+}
+
 pub(crate) fn plugin_detail_url(plugin_id: &PluginId) -> Result<UrlText, CoreError> {
     let route = format!("ely://plugin/{}", plugin_id.as_str());
     internal_page_url(&route)

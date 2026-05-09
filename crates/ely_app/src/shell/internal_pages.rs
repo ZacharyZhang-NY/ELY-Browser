@@ -25,6 +25,7 @@ mod sidebar_tabs;
 mod site_permissions_settings;
 mod site_settings;
 mod sleep;
+mod space_actions;
 mod spaces;
 mod sync;
 mod tab_context;
