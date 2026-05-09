@@ -12,6 +12,7 @@ use crate::{
     shell::{
         web_surface_frame::WebSurfaceFrame,
         web_surface_geometry::{WebSurfaceScrollOffset, WebSurfaceSize},
+        web_surface_state::WebSurfaceState,
     },
 };
 
@@ -45,6 +46,7 @@ fn assert_web_surfaces_render(cases: &[LiveSiteCase]) -> Result<(), Box<dyn Erro
         let request = store
             .prepare_request(&tab, ProfileDataMode::Persistent)
             .ok_or_else(|| format!("missing web surface request for {}", case.url))?;
+        let tab_id = request.tab_id.clone();
         let snapshot = request.client.snapshot(request.snapshot_request)?;
         let frame = WebSurfaceFrame::from_snapshot(
             request.requested_url,
@@ -54,18 +56,27 @@ fn assert_web_surfaces_render(cases: &[LiveSiteCase]) -> Result<(), Box<dyn Erro
             snapshot,
         )?;
 
-        assert_eq!(
-            frame.size(),
-            WebSurfaceSize { width: LIVE_SURFACE_WIDTH, height: LIVE_SURFACE_HEIGHT },
-            "{}",
-            case.url
-        );
-        assert_eq!(frame.scroll_offset(), WebSurfaceScrollOffset::default(), "{}", case.url);
-        assert!(frame.url_label().contains(normalized_url(case.url)), "{}", frame.url_label());
-        assert!(frame.title_label().contains(case.title_fragment), "{}", frame.title_label());
-        assert_eq!(frame.detail_label(), "934x657", "{}", case.url);
+        assert_prd_frame_is_ready(&frame, case);
+        store.finish(tab_id, WebSurfaceState::Ready(frame));
+        let Some(WebSurfaceState::Ready(frame)) = store.state(tab.id()) else {
+            return Err(format!("web surface state is not ready for {}", case.url).into());
+        };
+        assert_prd_frame_is_ready(frame, case);
     }
     Ok(())
+}
+
+fn assert_prd_frame_is_ready(frame: &WebSurfaceFrame, case: &LiveSiteCase) {
+    assert_eq!(
+        frame.size(),
+        WebSurfaceSize { width: LIVE_SURFACE_WIDTH, height: LIVE_SURFACE_HEIGHT },
+        "{}",
+        case.url
+    );
+    assert_eq!(frame.scroll_offset(), WebSurfaceScrollOffset::default(), "{}", case.url);
+    assert!(frame.url_label().contains(normalized_url(case.url)), "{}", frame.url_label());
+    assert!(frame.title_label().contains(case.title_fragment), "{}", frame.title_label());
+    assert_eq!(frame.detail_label(), "934x657", "{}", case.url);
 }
 
 fn live_surface_bounds() -> Bounds<gpui::Pixels> {
