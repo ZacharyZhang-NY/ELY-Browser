@@ -96,6 +96,7 @@ fn render_omnibar(
                 .flex_1()
                 .min_w_0()
                 .cursor_pointer()
+                .hover(|style| style.opacity(0.92))
                 .on_click(cx.listener(|shell, _, window, cx| {
                     shell.focus_address_bar(window, cx);
                 }))

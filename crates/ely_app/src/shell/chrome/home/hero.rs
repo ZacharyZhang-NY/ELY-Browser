@@ -62,6 +62,8 @@ fn render_search_bar(cx: &mut Context<ElyShell>) -> AnyElement {
         .items_center()
         .gap(px(12.0))
         .cursor_pointer()
+        .hover(|style| style.opacity(0.94))
+        .active(|style| style.opacity(0.85))
         .on_click(cx.listener(|shell, _, window, cx| {
             shell.focus_address_bar(window, cx);
         }))

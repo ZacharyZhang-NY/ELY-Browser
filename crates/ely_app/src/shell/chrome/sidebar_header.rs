@@ -86,8 +86,8 @@ fn render_workspaces_tile(cx: &mut Context<ElyShell>) -> AnyElement {
         .justify_center()
         .text_color(rgb(colors::ACCENT))
         .cursor_pointer()
-        .hover(|style| style.opacity(0.85))
-        .active(|style| style.opacity(0.7))
+        .hover(|style| style.opacity(0.92))
+        .active(|style| style.opacity(0.82))
         .on_click(cx.listener(|shell, _, window, cx| {
             shell.open_internal_tab("ely://settings/spaces", window, cx);
         }))
@@ -171,7 +171,7 @@ fn render_add_workspace_button(cx: &mut Context<ElyShell>) -> AnyElement {
         .text_color(rgb(colors::INK_3))
         .cursor_pointer()
         .hover(|style| style.bg(rgba(PICKER_BG)).text_color(rgb(colors::INK)))
-        .active(|style| style.opacity(0.7))
+        .active(|style| style.opacity(0.82))
         .on_click(cx.listener(|shell, _, window, cx| {
             shell.open_internal_tab("ely://settings/spaces", window, cx);
         }))
