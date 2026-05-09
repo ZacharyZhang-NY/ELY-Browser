@@ -22,6 +22,7 @@ mod search;
 mod settings;
 mod shortcuts;
 mod sidebar_tabs;
+mod site_compatibility;
 mod site_permissions_settings;
 mod site_settings;
 mod sleep;
@@ -67,6 +68,7 @@ impl ElyShell {
             "ely://history" => self.render_history_page(snapshot, cx),
             "ely://archive" => self.render_archive_page(snapshot, cx),
             "ely://task-manager" => self.render_task_manager_page(snapshot),
+            "ely://site-compatibility" => self.render_site_compatibility_page(snapshot),
             "ely://plugins" => self.render_plugin_catalog_page(snapshot, cx),
             url if url.starts_with("ely://crash/") => self.render_crash_route(snapshot, url, cx),
             url if url.starts_with("ely://plugin/") => {

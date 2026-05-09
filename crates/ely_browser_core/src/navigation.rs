@@ -23,6 +23,7 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
         "ely://history" => Some("History"),
         "ely://archive" => Some("Archived Tabs"),
         "ely://task-manager" => Some("Task Manager"),
+        "ely://site-compatibility" => Some("Site Compatibility"),
         "ely://plugins" => Some("Plugin Marketplace"),
         url if crash_route_tab_id(url).is_some() => Some("Tab Recovery"),
         url if plugin_detail_route_id(url).is_some() => Some("Plugin Details"),
@@ -198,6 +199,10 @@ pub(crate) fn task_manager_url() -> Result<UrlText, CoreError> {
     internal_page_url("ely://task-manager")
 }
 
+pub(crate) fn site_compatibility_url() -> Result<UrlText, CoreError> {
+    internal_page_url("ely://site-compatibility")
+}
+
 pub(crate) fn plugins_url() -> Result<UrlText, CoreError> {
     internal_page_url("ely://plugins")
 }
@@ -263,13 +268,22 @@ const SETTINGS_ROUTE_MATCHES: &[SettingsRouteMatch] = &[
     },
     SettingsRouteMatch {
         route: "ely://settings/advanced",
-        exact_terms: &["advanced", "advanced settings", "runtime", "diagnostics", "diagnostic"],
+        exact_terms: &[
+            "advanced",
+            "advanced settings",
+            "runtime",
+            "diagnostics",
+            "diagnostic",
+            "compatibility",
+            "site compatibility",
+        ],
         search_terms: &[
             "Advanced",
             "Local runtime policies and audit counters.",
             "runtime policy",
             "audit counters",
             "diagnostics",
+            "site compatibility",
         ],
     },
     SettingsRouteMatch {

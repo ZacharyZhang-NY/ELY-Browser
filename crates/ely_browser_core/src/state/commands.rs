@@ -11,9 +11,9 @@ use crate::{
         move_tab_space_name, new_private_profile_name, new_profile_name, new_space_name, note_body,
         notes_url, plugin_detail_url, plugin_settings_url, plugins_url, reading_list_url,
         reading_progress_percent, rename_tab_group_name, search_url, settings_page_url,
-        settings_url, shortcut_settings_url, space_icon, space_settings_url, split_group_name,
-        switch_profile_name, sync_status_url, tab_group_color_hex, tab_group_name, tab_note_body,
-        task_manager_url,
+        settings_url, shortcut_settings_url, site_compatibility_url, space_icon,
+        space_settings_url, split_group_name, switch_profile_name, sync_status_url,
+        tab_group_color_hex, tab_group_name, tab_note_body, task_manager_url,
     },
 };
 
@@ -265,6 +265,17 @@ impl BrowserCore {
             }
             "task-manager" | "tasks" | "open-task-manager" | "open task manager" => {
                 self.open_tab(task_manager_url()?);
+                Ok(true)
+            }
+            "site-compatibility"
+            | "site compatibility"
+            | "open-site-compatibility"
+            | "open site compatibility"
+            | "compatibility"
+            | "diagnostics"
+            | "site-diagnostics"
+            | "site diagnostics" => {
+                self.open_tab(site_compatibility_url()?);
                 Ok(true)
             }
             "plugins"
