@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "tsc -p tsconfig.json --outDir dist",
     "check": "tsc --noEmit -p tsconfig.json",
+    "public-cache:publish": "npm run build && node scripts/publish_public_cache.mjs",
     "test": "tsc -p tsconfig.test.json --outDir dist && node --test dist/tests/*.test.js"
   },
   "devDependencies": {
