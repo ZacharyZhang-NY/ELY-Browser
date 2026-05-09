@@ -259,6 +259,12 @@ impl BrowserCore {
                 self.open_tab(downloads_url()?);
                 Ok(true)
             }
+            "download-current-page"
+            | "download current page"
+            | "save-page"
+            | "save page"
+            | "save-current-page"
+            | "save current page" => Ok(true),
             "bookmarks" | "open-bookmarks" | "open bookmarks" => {
                 self.open_tab(bookmarks_url()?);
                 Ok(true)

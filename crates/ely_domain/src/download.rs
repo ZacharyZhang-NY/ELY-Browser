@@ -218,6 +218,46 @@ impl DownloadEntry {
         })
     }
 
+    pub fn started_at_path(
+        profile_id: ProfileId,
+        source_url: UrlText,
+        destination: DownloadDestination,
+        target_file_path: impl Into<PathBuf>,
+        total_bytes: Option<u64>,
+        started_at: SystemTime,
+    ) -> Result<Self, DomainError> {
+        let target_file_path = target_file_path.into();
+        if !target_file_path.is_absolute() {
+            return Err(DomainError::InvalidDownloadTargetPath {
+                path: target_file_path.display().to_string(),
+            });
+        }
+
+        let Some(file_name) = target_file_path.file_name().and_then(|value| value.to_str()) else {
+            return Err(DomainError::InvalidDownloadTargetPath {
+                path: target_file_path.display().to_string(),
+            });
+        };
+        let file_name = file_name.to_string();
+        validate_file_name(&file_name)?;
+
+        Ok(Self {
+            id: DownloadId::new(),
+            profile_id,
+            source_url,
+            file_name: file_name.clone(),
+            destination,
+            target_file_path: Some(target_file_path),
+            security: DownloadSecurity::for_file_name(&file_name),
+            state: DownloadState::InProgress,
+            received_bytes: 0,
+            total_bytes,
+            checksum: None,
+            security_prompt_confirmed: false,
+            started_at,
+        })
+    }
+
     pub fn pause(&mut self) -> Result<(), DomainError> {
         self.require_state("pause", &[DownloadState::InProgress])?;
         self.state = DownloadState::Paused;

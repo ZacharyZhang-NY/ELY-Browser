@@ -2,6 +2,7 @@ mod archive_labels;
 mod bookmark_files;
 mod bookmarks;
 mod command_actions;
+mod download_targets;
 mod downloads;
 mod focus;
 mod history;
@@ -44,9 +45,9 @@ use plugins::{PendingPluginInstall, PendingPluginUninstall};
 use web_surface::WebSurfaceStore;
 
 use crate::{
-    CloseCurrentTab, FocusAddressBar, FocusCommandMode, OpenDownloads, OpenHistory, OpenNewTab,
-    OpenSettings, OpenTaskManager, ResetZoom, RestoreClosedTab, SelectNextTab, SelectPreviousTab,
-    ToggleFavoriteTab, TogglePinnedTab, ZoomIn, ZoomOut,
+    CloseCurrentTab, DownloadCurrentPage, FocusAddressBar, FocusCommandMode, OpenDownloads,
+    OpenHistory, OpenNewTab, OpenSettings, OpenTaskManager, ResetZoom, RestoreClosedTab,
+    SelectNextTab, SelectPreviousTab, ToggleFavoriteTab, TogglePinnedTab, ZoomIn, ZoomOut,
 };
 
 enum ShellState {
@@ -346,6 +347,15 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) {
         self.open_downloads(window, cx);
+    }
+
+    fn on_download_current_page(
+        &mut self,
+        _: &DownloadCurrentPage,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.download_active_tab(window, cx);
     }
 
     fn on_open_history(&mut self, _: &OpenHistory, window: &mut Window, cx: &mut Context<Self>) {

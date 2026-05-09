@@ -67,6 +67,22 @@ fn open_downloads_command_opens_downloads_page() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn download_current_page_command_keeps_active_tab_for_shell_download() -> Result<(), Box<dyn Error>>
+{
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let active_tab_id = core.active_tab()?.id().clone();
+
+    core.set_command_query(">download-current-page");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("download-current-page".to_string())));
+    assert_eq!(snapshot.active_tab_id, active_tab_id);
+    assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
+#[test]
 fn open_history_command_opens_history_page() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
 

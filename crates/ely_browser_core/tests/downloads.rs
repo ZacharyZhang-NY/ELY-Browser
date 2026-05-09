@@ -92,6 +92,25 @@ fn controls_download_lifecycle() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn records_prompted_download_target_path() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let target_path = Path::new("/tmp/ely-prompted-download/report.pdf");
+
+    let download_id = core.record_download_started_at_path(
+        UrlText::parse("https://example.com/report.pdf")?,
+        target_path,
+        None,
+    )?;
+    let entry = active_download(&core)?;
+
+    assert_eq!(entry.id(), &download_id);
+    assert_eq!(entry.file_name(), "report.pdf");
+    assert_eq!(entry.destination(), &DownloadDestination::AskEveryTime);
+    assert_eq!(entry.target_file_path(), Some(target_path));
+    Ok(())
+}
+
+#[test]
 fn records_checksum_after_download_completion() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let download_id = core.record_download_started(

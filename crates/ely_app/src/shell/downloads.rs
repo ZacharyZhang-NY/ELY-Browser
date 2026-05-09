@@ -1,11 +1,18 @@
-use ely_domain::DownloadId;
-use gpui::Context;
+use std::path::PathBuf;
+
+use ely_domain::{DownloadId, UrlText};
+use gpui::{Context, Window};
 
 use crate::services::{
-    download_checksums::DownloadChecksumCalculator, download_files::DownloadFileAction,
+    download_checksums::DownloadChecksumCalculator,
+    download_files::DownloadFileAction,
+    http_downloads::{HttpDownloadError, HttpDownloadPlan, HttpDownloadResult, download_to_file},
 };
 
-use super::{ElyShell, ShellState};
+use super::{
+    ElyShell, ShellState,
+    download_targets::{ActiveTabDownloadTarget, active_tab_download_target},
+};
 
 #[derive(Clone, Debug)]
 pub(super) struct PendingDownloadFileAction {
@@ -29,6 +36,57 @@ impl PendingDownloadFileAction {
 }
 
 impl ElyShell {
+    pub(super) fn download_active_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.download_action_error = None;
+        let target = match &self.state {
+            ShellState::Ready(core) => active_tab_download_target(core),
+            ShellState::StartupError(message) => Err(message.clone()),
+        };
+        let target = match target {
+            Ok(target) => target,
+            Err(message) => {
+                self.set_download_action_error(message, cx);
+                return;
+            }
+        };
+
+        match target {
+            ActiveTabDownloadTarget::Ready { url, target_path } => {
+                self.start_download_to_path(url, target_path, window, cx);
+            }
+            ActiveTabDownloadTarget::Prompt { url, directory, file_name } => {
+                let prompt = cx.prompt_for_new_path(&directory, Some(&file_name));
+
+                cx.spawn_in(window, async move |shell, window| {
+                    let selected_path = match prompt.await {
+                        Ok(Ok(path)) => path,
+                        Ok(Err(error)) => {
+                            _ = shell.update_in(window, |shell, _, cx| {
+                                shell.set_download_action_error(error.to_string(), cx);
+                            });
+                            return;
+                        }
+                        Err(error) => {
+                            _ = shell.update_in(window, |shell, _, cx| {
+                                shell.set_download_action_error(error.to_string(), cx);
+                            });
+                            return;
+                        }
+                    };
+
+                    let Some(path) = selected_path else {
+                        return;
+                    };
+
+                    _ = shell.update_in(window, |shell, window, cx| {
+                        shell.start_download_to_path(url, path, window, cx);
+                    });
+                })
+                .detach();
+            }
+        }
+    }
+
     pub(super) fn pause_download(&mut self, download_id: &DownloadId, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state
             && core.pause_download(download_id).is_ok()
@@ -100,6 +158,80 @@ impl ElyShell {
         };
 
         self.download_action_error = result.err();
+        cx.notify();
+    }
+
+    fn start_download_to_path(
+        &mut self,
+        source_url: UrlText,
+        target_path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let download_id = match &mut self.state {
+            ShellState::Ready(core) => match core.record_download_started_at_path(
+                source_url.clone(),
+                target_path.clone(),
+                None,
+            ) {
+                Ok(download_id) => Ok(download_id),
+                Err(error) => Err(error.to_string()),
+            },
+            ShellState::StartupError(message) => Err(message.clone()),
+        };
+
+        let download_id = match download_id {
+            Ok(download_id) => download_id,
+            Err(message) => {
+                self.set_download_action_error(message, cx);
+                return;
+            }
+        };
+
+        self.open_downloads(window, cx);
+        cx.notify();
+
+        let plan = HttpDownloadPlan::new(source_url, target_path);
+        cx.spawn_in(window, async move |shell, window| {
+            let result =
+                window.background_executor().spawn(async move { download_to_file(plan) }).await;
+            _ = shell.update_in(window, |shell, _, cx| {
+                shell.handle_http_download_result(download_id, result, cx);
+            });
+        })
+        .detach();
+    }
+
+    fn handle_http_download_result(
+        &mut self,
+        download_id: DownloadId,
+        result: Result<HttpDownloadResult, HttpDownloadError>,
+        cx: &mut Context<Self>,
+    ) {
+        let update_result = match (&mut self.state, result) {
+            (ShellState::Ready(core), Ok(result)) => core
+                .complete_download(&download_id, result.received_bytes())
+                .map(|()| None)
+                .map_err(|error| error.to_string()),
+            (ShellState::Ready(core), Err(error)) => {
+                let message = error.to_string();
+                match core.fail_download(&download_id) {
+                    Ok(()) => Ok(Some(message)),
+                    Err(state_error) => Err(format!("{message}; {state_error}")),
+                }
+            }
+            (ShellState::StartupError(message), _) => Err(message.clone()),
+        };
+
+        match update_result {
+            Ok(message) => self.download_action_error = message,
+            Err(message) => self.download_action_error = Some(message),
+        }
+        cx.notify();
+    }
+
+    fn set_download_action_error(&mut self, message: String, cx: &mut Context<Self>) {
+        self.download_action_error = Some(message);
         cx.notify();
     }
 

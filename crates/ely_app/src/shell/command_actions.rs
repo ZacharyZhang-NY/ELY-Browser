@@ -42,6 +42,9 @@ impl ElyShell {
         if install_plugin_from_file_command(command) {
             self.choose_plugin_package(window, cx);
         }
+        if download_current_page_command(command) {
+            self.download_active_tab(window, cx);
+        }
 
         match space_file_command(command) {
             Some(SpaceFileCommand::ExportActiveSpace) => self.export_active_space(window, cx),
@@ -80,6 +83,18 @@ fn install_plugin_from_file_command(command: &str) -> bool {
             | "install plugin from file"
             | "install-plugin"
             | "install plugin"
+    )
+}
+
+fn download_current_page_command(command: &str) -> bool {
+    matches!(
+        command.trim().to_ascii_lowercase().as_str(),
+        "download-current-page"
+            | "download current page"
+            | "save-page"
+            | "save page"
+            | "save-current-page"
+            | "save current page"
     )
 }
 
@@ -134,8 +149,8 @@ fn local_data_file_command(command: &str) -> Option<LocalDataFileCommand> {
 mod tests {
     use super::{
         BookmarkFileCommand, LocalDataFileCommand, ShortcutFileCommand, SpaceFileCommand,
-        bookmark_file_command, install_plugin_from_file_command, local_data_file_command,
-        shortcut_file_command, space_file_command,
+        bookmark_file_command, download_current_page_command, install_plugin_from_file_command,
+        local_data_file_command, shortcut_file_command, space_file_command,
     };
 
     #[test]
@@ -149,6 +164,13 @@ mod tests {
     fn install_plugin_from_file_command_rejects_other_plugin_commands() {
         assert!(!install_plugin_from_file_command("plugins"));
         assert!(!install_plugin_from_file_command("open plugins"));
+    }
+
+    #[test]
+    fn download_current_page_command_matches_save_aliases() {
+        assert!(download_current_page_command("download-current-page"));
+        assert!(download_current_page_command("save current page"));
+        assert!(!download_current_page_command("open downloads"));
     }
 
     #[test]

@@ -29,6 +29,9 @@ pub enum DomainError {
     #[error("invalid download directory: {path}")]
     InvalidDownloadDirectory { path: String },
 
+    #[error("invalid download target path: {path}")]
+    InvalidDownloadTargetPath { path: String },
+
     #[error("invalid command query")]
     InvalidCommand,
 

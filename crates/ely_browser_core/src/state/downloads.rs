@@ -27,6 +27,26 @@ impl BrowserCore {
         Ok(download_id)
     }
 
+    pub fn record_download_started_at_path(
+        &mut self,
+        source_url: UrlText,
+        target_file_path: impl Into<PathBuf>,
+        total_bytes: Option<u64>,
+    ) -> Result<DownloadId, CoreError> {
+        let destination = self.active_profile()?.download_policy().destination().clone();
+        let entry = DownloadEntry::started_at_path(
+            self.active_profile_id.clone(),
+            source_url,
+            destination,
+            target_file_path,
+            total_bytes,
+            SystemTime::now(),
+        )?;
+        let download_id = entry.id().clone();
+        self.download_entries.push(entry);
+        Ok(download_id)
+    }
+
     pub fn pause_download(&mut self, download_id: &DownloadId) -> Result<(), CoreError> {
         self.download_entry_mut(download_id)?.pause()?;
         Ok(())

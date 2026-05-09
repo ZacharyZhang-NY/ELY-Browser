@@ -46,6 +46,7 @@ impl ElyShell {
             .on_action(cx.listener(Self::on_close_current_tab))
             .on_action(cx.listener(Self::on_focus_address_bar))
             .on_action(cx.listener(Self::on_focus_command_mode))
+            .on_action(cx.listener(Self::on_download_current_page))
             .on_action(cx.listener(Self::on_open_downloads))
             .on_action(cx.listener(Self::on_open_history))
             .on_action(cx.listener(Self::on_open_new_tab))
