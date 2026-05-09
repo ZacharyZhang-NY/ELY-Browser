@@ -117,21 +117,25 @@ impl ElyShell {
         div()
             .h(px(spacing::TOPBAR_HEIGHT))
             .px(px(14.0))
-            .gap_2()
+            .gap(px(8.0))
             .flex()
             .items_center()
             .flex_shrink_0()
+            .border_b_1()
+            .border_color(rgba(colors::DIVIDER))
             .children(if sidebar_collapsed {
                 Some(render_command_bar_identity(snapshot, 56.0, true))
             } else {
                 None
             })
+            .child(render_icon_button("nav-back", IconName::ChevronLeft, false))
+            .child(render_icon_button("nav-forward", IconName::ChevronRight, false))
             .child(
                 div()
                     .flex_1()
                     .h(px(spacing::OMNIBAR_HEIGHT))
                     .rounded(px(spacing::RADIUS_PILL))
-                    .bg(rgba(colors::GLASS_2))
+                    .bg(rgba(OMNIBAR_BG))
                     .px(px(14.0))
                     .flex()
                     .items_center()
@@ -333,7 +337,7 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let space_id = space.id().clone();
-        let bg_color = if active { colors::GLASS_3 } else { 0x00000000 };
+        let bg_color = if active { ACTIVE_NAV_BG } else { 0x00000000 };
         let text_color = if active { colors::INK } else { colors::INK_2 };
 
         div()
@@ -345,7 +349,7 @@ impl ElyShell {
             .flex()
             .items_center()
             .cursor_pointer()
-            .hover(|style| style.bg(rgba(colors::GLASS_3)))
+            .hover(|style| style.bg(rgba(ACTIVE_NAV_BG)))
             .active(|style| style.opacity(0.82))
             .bg(rgba(bg_color))
             .on_click(cx.listener(move |shell, _, window, cx| {
@@ -392,7 +396,7 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let tab_id = tab.id().clone();
-        let bg_color = if active { colors::GLASS_3 } else { 0x00000000 };
+        let bg_color = if active { ACTIVE_NAV_BG } else { 0x00000000 };
         let text_color = if active { colors::INK } else { colors::INK_2 };
 
         div()
@@ -404,7 +408,7 @@ impl ElyShell {
             .flex()
             .items_center()
             .cursor_pointer()
-            .hover(|style| style.bg(rgba(colors::GLASS_3)))
+            .hover(|style| style.bg(rgba(ACTIVE_NAV_BG)))
             .active(|style| style.opacity(0.82))
             .bg(rgba(bg_color))
             .on_click(cx.listener(move |shell, _, window, cx| {
@@ -430,7 +434,7 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let tab_id = tab.id().clone();
-        let bg_color = if active { colors::GLASS_3 } else { 0x00000000 };
+        let bg_color = if active { ACTIVE_NAV_BG } else { 0x00000000 };
         let text_color = if active { colors::INK } else { colors::INK_2 };
 
         div()
@@ -442,7 +446,7 @@ impl ElyShell {
             .flex()
             .flex_col()
             .cursor_pointer()
-            .hover(|style| style.bg(rgba(colors::GLASS_3)))
+            .hover(|style| style.bg(rgba(ACTIVE_NAV_BG)))
             .active(|style| style.opacity(0.82))
             .bg(rgba(bg_color))
             .on_click(cx.listener(move |shell, _, window, cx| {
@@ -485,7 +489,7 @@ impl ElyShell {
             .flex()
             .items_center()
             .cursor_pointer()
-            .hover(|style| style.bg(rgba(colors::GLASS_3)))
+            .hover(|style| style.bg(rgba(ACTIVE_NAV_BG)))
             .active(|style| style.opacity(0.82))
             .on_click(cx.listener(move |shell, _, window, cx| {
                 shell.restore_archived_tab(&tab_id, window, cx);
@@ -515,6 +519,28 @@ impl ElyShell {
             )
             .into_any_element()
     }
+}
+
+const OMNIBAR_BG: u32 = 0xffffff8c; // rgba(255,255,255,0.55)
+const ACTIVE_NAV_BG: u32 = 0xffffffd9; // rgba(255,255,255,0.85)
+
+fn render_icon_button(
+    id: &'static str,
+    icon: IconName,
+    _active: bool,
+) -> impl IntoElement {
+    div()
+        .id(id)
+        .size(px(30.0))
+        .rounded(px(8.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .cursor_pointer()
+        .text_color(rgb(colors::INK_3))
+        .hover(|style| style.bg(rgba(OMNIBAR_BG)).text_color(rgb(colors::INK)))
+        .active(|style| style.opacity(0.82))
+        .child(icon)
 }
 
 fn render_error(message: String) -> AnyElement {
