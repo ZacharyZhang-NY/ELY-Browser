@@ -11,6 +11,7 @@ mod plugins;
 mod reading_list;
 mod render;
 mod settings_actions;
+mod shortcut_files;
 mod sidebar;
 mod site_permissions;
 mod space_files;
@@ -33,6 +34,7 @@ use ely_domain::{ProfileId, SpaceId, TabId};
 use gpui::{AppContext, Context, Entity, FocusHandle, Subscription, Window};
 use gpui_component::input::{InputEvent, InputState};
 
+use crate::shortcuts::ShortcutProfile;
 use bookmarks::PendingBookmarkEdit;
 use downloads::PendingDownloadFileAction;
 use history::{PendingHistoryDomainClear, PendingHistoryTimeClear};
@@ -64,6 +66,9 @@ pub struct ElyShell {
     pending_space_trash: Option<SpaceId>,
     space_file_error: Option<String>,
     space_file_notice: Option<String>,
+    shortcut_file_error: Option<String>,
+    shortcut_file_notice: Option<String>,
+    shortcut_profile: ShortcutProfile,
     pending_bookmark_edit: Option<PendingBookmarkEdit>,
     bookmark_edit_error: Option<String>,
     plugin_install_error: Option<String>,
@@ -146,6 +151,9 @@ impl ElyShell {
             pending_space_trash: None,
             space_file_error: None,
             space_file_notice: None,
+            shortcut_file_error: None,
+            shortcut_file_notice: None,
+            shortcut_profile: ShortcutProfile::default_profile(),
             pending_bookmark_edit: None,
             bookmark_edit_error: None,
             plugin_install_error: None,

@@ -88,7 +88,7 @@ impl ElyShell {
             "ely://settings/site-permissions" => {
                 self.render_site_permissions_settings_page(snapshot, cx)
             }
-            "ely://settings/shortcuts" => self.render_shortcuts_page(snapshot),
+            "ely://settings/shortcuts" => self.render_shortcuts_page(snapshot, cx),
             "ely://settings/plugins" => self.render_plugins_page(snapshot, cx),
             "ely://settings/profiles" => self.render_profiles_page(snapshot, cx),
             "ely://settings/sync" => self.render_sync_page(snapshot, cx),

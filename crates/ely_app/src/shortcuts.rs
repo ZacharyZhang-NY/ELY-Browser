@@ -1,6 +1,12 @@
-use std::collections::BTreeMap;
-
 use gpui::{App, KeyBinding};
+use serde::{Deserialize, Serialize};
+
+mod profile;
+
+pub(crate) use profile::{
+    ELYKEYS_FILE_EXTENSION, ShortcutProfile, parse_shortcut_profile_json,
+    shortcut_rebinding_key_bindings,
+};
 
 use crate::{
     CloseCurrentTab, FocusAddressBar, FocusCommandMode, OpenDownloads, OpenHistory, OpenNewTab,
@@ -9,7 +15,8 @@ use crate::{
     ToggleSidebar,
 };
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum ShortcutPlatform {
     Macos,
     WindowsLinux,
@@ -24,7 +31,8 @@ impl ShortcutPlatform {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum ShortcutAction {
     FocusAddressBar,
     FocusCommandMode,
@@ -122,15 +130,23 @@ pub(crate) struct ShortcutBinding {
 }
 
 impl ShortcutBinding {
-    pub(crate) fn display_keystroke(self) -> String {
-        display_keystroke(self.keystroke, self.platform)
+    pub(crate) fn action(self) -> ShortcutAction {
+        self.action
+    }
+
+    pub(crate) fn platform(self) -> ShortcutPlatform {
+        self.platform
+    }
+
+    pub(crate) fn keystroke(self) -> &'static str {
+        self.keystroke
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ShortcutConflict {
     pub(crate) platform: ShortcutPlatform,
-    pub(crate) keystroke: &'static str,
+    pub(crate) keystroke: String,
     pub(crate) actions: Vec<ShortcutAction>,
 }
 
@@ -209,81 +225,38 @@ pub(crate) fn bind_shortcuts(cx: &mut App) {
     cx.bind_keys(SHORTCUT_BINDINGS.iter().map(|binding| binding.key_binding()));
 }
 
-pub(crate) fn bindings_for_action(
-    action: ShortcutAction,
-    platform: ShortcutPlatform,
-) -> impl Iterator<Item = ShortcutBinding> {
-    SHORTCUT_BINDINGS
-        .iter()
-        .copied()
-        .filter(move |binding| binding.action == action && binding.platform == platform)
-}
-
-pub(crate) fn shortcut_conflicts() -> Vec<ShortcutConflict> {
-    let mut bindings_by_key: BTreeMap<(ShortcutPlatform, &'static str), Vec<ShortcutAction>> =
-        BTreeMap::new();
-
-    for binding in SHORTCUT_BINDINGS {
-        bindings_by_key
-            .entry((binding.platform, binding.keystroke))
-            .or_default()
-            .push(binding.action);
-    }
-
-    bindings_by_key
-        .into_iter()
-        .filter_map(|((platform, keystroke), actions)| {
-            (actions.len() > 1).then_some(ShortcutConflict { platform, keystroke, actions })
-        })
-        .collect()
-}
-
 impl ShortcutBinding {
     fn key_binding(self) -> KeyBinding {
-        match self.action {
-            ShortcutAction::CloseCurrentTab => {
-                KeyBinding::new(self.keystroke, CloseCurrentTab, None)
-            }
-            ShortcutAction::FocusAddressBar => {
-                KeyBinding::new(self.keystroke, FocusAddressBar, None)
-            }
-            ShortcutAction::FocusCommandMode => {
-                KeyBinding::new(self.keystroke, FocusCommandMode, None)
-            }
-            ShortcutAction::OpenDownloads => KeyBinding::new(self.keystroke, OpenDownloads, None),
-            ShortcutAction::OpenHistory => KeyBinding::new(self.keystroke, OpenHistory, None),
-            ShortcutAction::OpenNewTab => KeyBinding::new(self.keystroke, OpenNewTab, None),
-            ShortcutAction::OpenPrivateWindow => {
-                KeyBinding::new(self.keystroke, OpenPrivateWindow, None)
-            }
-            ShortcutAction::OpenSettings => KeyBinding::new(self.keystroke, OpenSettings, None),
-            ShortcutAction::OpenTaskManager => {
-                KeyBinding::new(self.keystroke, OpenTaskManager, None)
-            }
-            ShortcutAction::Quit => KeyBinding::new(self.keystroke, Quit, None),
-            ShortcutAction::RestoreClosedTab => {
-                KeyBinding::new(self.keystroke, RestoreClosedTab, None)
-            }
-            ShortcutAction::SelectNextSpace => {
-                KeyBinding::new(self.keystroke, SelectNextSpace, None)
-            }
-            ShortcutAction::SelectNextTab => KeyBinding::new(self.keystroke, SelectNextTab, None),
-            ShortcutAction::SelectPreviousSpace => {
-                KeyBinding::new(self.keystroke, SelectPreviousSpace, None)
-            }
-            ShortcutAction::SelectPreviousTab => {
-                KeyBinding::new(self.keystroke, SelectPreviousTab, None)
-            }
-            ShortcutAction::SplitRight => KeyBinding::new(self.keystroke, SplitRight, None),
-            ShortcutAction::ToggleFavoriteTab => {
-                KeyBinding::new(self.keystroke, ToggleFavoriteTab, None)
-            }
-            ShortcutAction::ToggleSidebar => KeyBinding::new(self.keystroke, ToggleSidebar, None),
-        }
+        key_binding_for_action(self.action, self.keystroke)
     }
 }
 
-fn display_keystroke(keystroke: &str, platform: ShortcutPlatform) -> String {
+pub(crate) fn key_binding_for_action(action: ShortcutAction, keystroke: &str) -> KeyBinding {
+    match action {
+        ShortcutAction::CloseCurrentTab => KeyBinding::new(keystroke, CloseCurrentTab, None),
+        ShortcutAction::FocusAddressBar => KeyBinding::new(keystroke, FocusAddressBar, None),
+        ShortcutAction::FocusCommandMode => KeyBinding::new(keystroke, FocusCommandMode, None),
+        ShortcutAction::OpenDownloads => KeyBinding::new(keystroke, OpenDownloads, None),
+        ShortcutAction::OpenHistory => KeyBinding::new(keystroke, OpenHistory, None),
+        ShortcutAction::OpenNewTab => KeyBinding::new(keystroke, OpenNewTab, None),
+        ShortcutAction::OpenPrivateWindow => KeyBinding::new(keystroke, OpenPrivateWindow, None),
+        ShortcutAction::OpenSettings => KeyBinding::new(keystroke, OpenSettings, None),
+        ShortcutAction::OpenTaskManager => KeyBinding::new(keystroke, OpenTaskManager, None),
+        ShortcutAction::Quit => KeyBinding::new(keystroke, Quit, None),
+        ShortcutAction::RestoreClosedTab => KeyBinding::new(keystroke, RestoreClosedTab, None),
+        ShortcutAction::SelectNextSpace => KeyBinding::new(keystroke, SelectNextSpace, None),
+        ShortcutAction::SelectNextTab => KeyBinding::new(keystroke, SelectNextTab, None),
+        ShortcutAction::SelectPreviousSpace => {
+            KeyBinding::new(keystroke, SelectPreviousSpace, None)
+        }
+        ShortcutAction::SelectPreviousTab => KeyBinding::new(keystroke, SelectPreviousTab, None),
+        ShortcutAction::SplitRight => KeyBinding::new(keystroke, SplitRight, None),
+        ShortcutAction::ToggleFavoriteTab => KeyBinding::new(keystroke, ToggleFavoriteTab, None),
+        ShortcutAction::ToggleSidebar => KeyBinding::new(keystroke, ToggleSidebar, None),
+    }
+}
+
+pub(crate) fn display_keystroke(keystroke: &str, platform: ShortcutPlatform) -> String {
     keystroke
         .split('-')
         .map(|part| display_key_part(part, platform))
@@ -306,73 +279,39 @@ fn display_key_part(part: &str, platform: ShortcutPlatform) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        SHORTCUT_ACTIONS, SHORTCUT_BINDINGS, ShortcutAction, ShortcutPlatform, bindings_for_action,
-        shortcut_conflicts,
+        SHORTCUT_ACTIONS, SHORTCUT_BINDINGS, ShortcutAction, ShortcutPlatform, ShortcutProfile,
     };
 
     #[test]
     fn registered_shortcuts_have_no_conflicts() {
-        assert_eq!(shortcut_conflicts(), Vec::new());
+        assert_eq!(ShortcutProfile::default_profile().conflicts(), Vec::new());
     }
 
     #[test]
     fn open_settings_shortcut_has_platform_bindings() {
-        let bindings = bindings_for_action(ShortcutAction::OpenSettings, ShortcutPlatform::Macos)
-            .chain(bindings_for_action(
-                ShortcutAction::OpenSettings,
-                ShortcutPlatform::WindowsLinux,
-            ))
-            .map(|binding| binding.display_keystroke())
-            .collect::<Vec<_>>();
+        let bindings = platform_labels(ShortcutAction::OpenSettings);
 
         assert_eq!(bindings, vec!["Cmd + ,".to_string(), "Ctrl + ,".to_string()]);
     }
 
     #[test]
     fn private_window_shortcut_has_platform_bindings() {
-        let bindings =
-            bindings_for_action(ShortcutAction::OpenPrivateWindow, ShortcutPlatform::Macos)
-                .chain(bindings_for_action(
-                    ShortcutAction::OpenPrivateWindow,
-                    ShortcutPlatform::WindowsLinux,
-                ))
-                .map(|binding| binding.display_keystroke())
-                .collect::<Vec<_>>();
+        let bindings = platform_labels(ShortcutAction::OpenPrivateWindow);
 
         assert_eq!(bindings, vec!["Cmd + Shift + N".to_string(), "Ctrl + Shift + N".to_string()]);
     }
 
     #[test]
     fn toggle_sidebar_shortcut_has_platform_bindings() {
-        let bindings = bindings_for_action(ShortcutAction::ToggleSidebar, ShortcutPlatform::Macos)
-            .chain(bindings_for_action(
-                ShortcutAction::ToggleSidebar,
-                ShortcutPlatform::WindowsLinux,
-            ))
-            .map(|binding| binding.display_keystroke())
-            .collect::<Vec<_>>();
+        let bindings = platform_labels(ShortcutAction::ToggleSidebar);
 
         assert_eq!(bindings, vec!["Cmd + B".to_string(), "Ctrl + B".to_string()]);
     }
 
     #[test]
     fn space_switch_shortcuts_have_platform_bindings() {
-        let next_bindings =
-            bindings_for_action(ShortcutAction::SelectNextSpace, ShortcutPlatform::Macos)
-                .chain(bindings_for_action(
-                    ShortcutAction::SelectNextSpace,
-                    ShortcutPlatform::WindowsLinux,
-                ))
-                .map(|binding| binding.display_keystroke())
-                .collect::<Vec<_>>();
-        let previous_bindings =
-            bindings_for_action(ShortcutAction::SelectPreviousSpace, ShortcutPlatform::Macos)
-                .chain(bindings_for_action(
-                    ShortcutAction::SelectPreviousSpace,
-                    ShortcutPlatform::WindowsLinux,
-                ))
-                .map(|binding| binding.display_keystroke())
-                .collect::<Vec<_>>();
+        let next_bindings = platform_labels(ShortcutAction::SelectNextSpace);
+        let previous_bindings = platform_labels(ShortcutAction::SelectPreviousSpace);
 
         assert_eq!(
             next_bindings,
@@ -387,7 +326,15 @@ mod tests {
     #[test]
     fn every_declared_action_has_a_binding() {
         for action in SHORTCUT_ACTIONS {
-            assert!(SHORTCUT_BINDINGS.iter().any(|binding| binding.action == *action));
+            assert!(SHORTCUT_BINDINGS.iter().any(|binding| binding.action() == *action));
         }
+    }
+
+    fn platform_labels(action: ShortcutAction) -> Vec<String> {
+        let profile = ShortcutProfile::default_profile();
+        [ShortcutPlatform::Macos, ShortcutPlatform::WindowsLinux]
+            .into_iter()
+            .map(|platform| profile.display_bindings_for_action(action, platform))
+            .collect()
     }
 }

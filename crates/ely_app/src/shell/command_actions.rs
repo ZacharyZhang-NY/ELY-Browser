@@ -11,6 +11,12 @@ enum SpaceFileCommand {
     ImportPreservingProfiles,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ShortcutFileCommand {
+    Export,
+    Import,
+}
+
 impl ElyShell {
     pub(super) fn handle_shell_command_intent(
         &mut self,
@@ -34,6 +40,12 @@ impl ElyShell {
             Some(SpaceFileCommand::ImportPreservingProfiles) => {
                 self.choose_space_import(SpaceImportProfileMapping::PreserveExisting, window, cx);
             }
+            None => {}
+        }
+
+        match shortcut_file_command(command) {
+            Some(ShortcutFileCommand::Export) => self.export_shortcuts(window, cx),
+            Some(ShortcutFileCommand::Import) => self.choose_shortcut_import(window, cx),
             None => {}
         }
     }
@@ -66,9 +78,24 @@ fn space_file_command(command: &str) -> Option<SpaceFileCommand> {
     }
 }
 
+fn shortcut_file_command(command: &str) -> Option<ShortcutFileCommand> {
+    match command.trim().to_ascii_lowercase().as_str() {
+        "export-shortcuts" | "export shortcuts" | "export-keybindings" | "export keybindings" => {
+            Some(ShortcutFileCommand::Export)
+        }
+        "import-shortcuts" | "import shortcuts" | "import-keybindings" | "import keybindings" => {
+            Some(ShortcutFileCommand::Import)
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{SpaceFileCommand, install_plugin_from_file_command, space_file_command};
+    use super::{
+        ShortcutFileCommand, SpaceFileCommand, install_plugin_from_file_command,
+        shortcut_file_command, space_file_command,
+    };
 
     #[test]
     fn install_plugin_from_file_command_matches_prd_aliases() {
@@ -100,5 +127,11 @@ mod tests {
     fn space_file_command_rejects_other_space_commands() {
         assert_eq!(space_file_command("new-space Research"), None);
         assert_eq!(space_file_command("spaces"), None);
+    }
+
+    #[test]
+    fn shortcut_file_command_matches_export_and_import_aliases() {
+        assert_eq!(shortcut_file_command("export-shortcuts"), Some(ShortcutFileCommand::Export));
+        assert_eq!(shortcut_file_command("import keybindings"), Some(ShortcutFileCommand::Import));
     }
 }

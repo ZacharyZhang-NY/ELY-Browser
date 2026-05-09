@@ -1,11 +1,14 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use gpui::{AnyElement, IntoElement, ParentElement, Styled, div, px, rgb};
-use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
+use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, px, rgb};
+use gpui_component::{
+    IconName, Sizable, StyledExt,
+    button::{Button, ButtonVariants},
+    scroll::ScrollableElement,
+};
 
 use crate::shortcuts::{
-    SHORTCUT_ACTIONS, ShortcutAction, ShortcutConflict, ShortcutPlatform, bindings_for_action,
-    shortcut_conflicts,
+    SHORTCUT_ACTIONS, ShortcutAction, ShortcutConflict, ShortcutPlatform, ShortcutProfile,
 };
 
 use super::{ElyShell, render_canvas_surface};
@@ -13,8 +16,12 @@ use super::{ElyShell, render_canvas_surface};
 const SHORTCUT_CATEGORIES: &[&str] = &["Command", "Tabs", "Library", "System", "Application"];
 
 impl ElyShell {
-    pub(super) fn render_shortcuts_page(&mut self, snapshot: &BrowserSnapshot) -> AnyElement {
-        let conflicts = shortcut_conflicts();
+    pub(super) fn render_shortcuts_page(
+        &mut self,
+        snapshot: &BrowserSnapshot,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let conflicts = self.shortcut_profile.conflicts();
 
         render_canvas_surface(
             div()
@@ -23,14 +30,22 @@ impl ElyShell {
                 .flex()
                 .flex_col()
                 .gap_5()
-                .child(render_shortcuts_header(snapshot, conflicts.len()))
+                .child(render_shortcuts_header(snapshot, conflicts.len(), cx))
+                .child(render_shortcut_file_message(
+                    self.shortcut_file_notice.as_deref(),
+                    self.shortcut_file_error.as_deref(),
+                ))
                 .child(render_conflict_panel(&conflicts))
-                .child(render_shortcut_categories(&conflicts)),
+                .child(render_shortcut_categories(&self.shortcut_profile, &conflicts)),
         )
     }
 }
 
-fn render_shortcuts_header(snapshot: &BrowserSnapshot, conflict_count: usize) -> AnyElement {
+fn render_shortcuts_header(
+    snapshot: &BrowserSnapshot,
+    conflict_count: usize,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
     let status = if conflict_count == 0 {
         "Ready".to_string()
     } else {
@@ -62,12 +77,66 @@ fn render_shortcuts_header(snapshot: &BrowserSnapshot, conflict_count: usize) ->
                 .flex()
                 .items_center()
                 .gap_2()
-                .text_xs()
-                .font_semibold()
-                .text_color(rgb(shortcut_status_color(conflict_count)))
-                .child(shortcut_status_icon(conflict_count))
-                .child(status),
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .text_xs()
+                        .font_semibold()
+                        .text_color(rgb(shortcut_status_color(conflict_count)))
+                        .child(shortcut_status_icon(conflict_count))
+                        .child(status),
+                )
+                .child(
+                    Button::new("export-shortcuts")
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::ArrowUp)
+                        .label("Export")
+                        .tooltip("Export Shortcuts")
+                        .on_click(cx.listener(|shell, _, window, cx| {
+                            shell.export_shortcuts(window, cx);
+                        })),
+                )
+                .child(
+                    Button::new("import-shortcuts")
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::ArrowDown)
+                        .label("Import")
+                        .tooltip("Import Shortcuts")
+                        .on_click(cx.listener(|shell, _, window, cx| {
+                            shell.choose_shortcut_import(window, cx);
+                        })),
+                ),
         )
+        .into_any_element()
+}
+
+fn render_shortcut_file_message(notice: Option<&str>, error: Option<&str>) -> AnyElement {
+    let Some((message, color, icon)) = error
+        .map(|message| (message, colors::ERROR, IconName::TriangleAlert))
+        .or_else(|| notice.map(|message| (message, colors::SUCCESS, IconName::CircleCheck)))
+    else {
+        return div().hidden().into_any_element();
+    };
+
+    div()
+        .rounded_md()
+        .border_1()
+        .border_color(rgb(color))
+        .bg(rgb(colors::CANVAS_SOFT))
+        .px_4()
+        .py_2()
+        .flex()
+        .items_center()
+        .gap_2()
+        .text_xs()
+        .font_semibold()
+        .text_color(rgb(color))
+        .child(icon)
+        .child(message.to_string())
         .into_any_element()
 }
 
@@ -132,7 +201,10 @@ fn render_conflict_panel(conflicts: &[ShortcutConflict]) -> AnyElement {
         .into_any_element()
 }
 
-fn render_shortcut_categories(conflicts: &[ShortcutConflict]) -> AnyElement {
+fn render_shortcut_categories(
+    profile: &ShortcutProfile,
+    conflicts: &[ShortcutConflict],
+) -> AnyElement {
     div()
         .flex_1()
         .min_h_0()
@@ -144,12 +216,16 @@ fn render_shortcut_categories(conflicts: &[ShortcutConflict]) -> AnyElement {
         .children(
             SHORTCUT_CATEGORIES
                 .iter()
-                .map(|category| render_shortcut_category(category, conflicts)),
+                .map(|category| render_shortcut_category(profile, category, conflicts)),
         )
         .into_any_element()
 }
 
-fn render_shortcut_category(category: &'static str, conflicts: &[ShortcutConflict]) -> AnyElement {
+fn render_shortcut_category(
+    profile: &ShortcutProfile,
+    category: &'static str,
+    conflicts: &[ShortcutConflict],
+) -> AnyElement {
     div()
         .flex()
         .flex_col()
@@ -159,7 +235,7 @@ fn render_shortcut_category(category: &'static str, conflicts: &[ShortcutConflic
                 .iter()
                 .copied()
                 .filter(move |action| action.category() == category)
-                .map(|action| render_shortcut_row(action, conflicts)),
+                .map(|action| render_shortcut_row(profile, action, conflicts)),
         )
         .into_any_element()
 }
@@ -175,7 +251,11 @@ fn render_category_header(category: &'static str) -> AnyElement {
         .into_any_element()
 }
 
-fn render_shortcut_row(action: ShortcutAction, conflicts: &[ShortcutConflict]) -> AnyElement {
+fn render_shortcut_row(
+    profile: &ShortcutProfile,
+    action: ShortcutAction,
+    conflicts: &[ShortcutConflict],
+) -> AnyElement {
     let has_conflict = conflicts
         .iter()
         .any(|conflict| conflict.actions.iter().any(|conflict_action| conflict_action == &action));
@@ -229,14 +309,18 @@ fn render_shortcut_row(action: ShortcutAction, conflicts: &[ShortcutConflict]) -
                 .justify_end()
                 .gap_3()
                 .text_xs()
-                .child(shortcut_platform_label(action, ShortcutPlatform::Macos))
-                .child(shortcut_platform_label(action, ShortcutPlatform::WindowsLinux))
+                .child(shortcut_platform_label(profile, action, ShortcutPlatform::Macos))
+                .child(shortcut_platform_label(profile, action, ShortcutPlatform::WindowsLinux))
                 .child(shortcut_row_status(has_conflict)),
         )
         .into_any_element()
 }
 
-fn shortcut_platform_label(action: ShortcutAction, platform: ShortcutPlatform) -> AnyElement {
+fn shortcut_platform_label(
+    profile: &ShortcutProfile,
+    action: ShortcutAction,
+    platform: ShortcutPlatform,
+) -> AnyElement {
     div()
         .min_w(px(170.0))
         .flex()
@@ -247,7 +331,7 @@ fn shortcut_platform_label(action: ShortcutAction, platform: ShortcutPlatform) -
             div()
                 .font_semibold()
                 .text_color(rgb(colors::INK))
-                .child(shortcut_keys_label(action, platform)),
+                .child(profile.display_bindings_for_action(action, platform)),
         )
         .into_any_element()
 }
@@ -257,18 +341,6 @@ fn shortcut_row_status(has_conflict: bool) -> AnyElement {
         if has_conflict { ("Conflict", colors::ERROR) } else { ("Ready", colors::SUCCESS) };
 
     div().min_w(px(72.0)).font_semibold().text_color(rgb(color)).child(label).into_any_element()
-}
-
-fn shortcut_keys_label(action: ShortcutAction, platform: ShortcutPlatform) -> String {
-    let bindings = bindings_for_action(action, platform)
-        .map(|binding| binding.display_keystroke())
-        .collect::<Vec<_>>();
-
-    if bindings.is_empty() {
-        return "Unassigned".to_string();
-    }
-
-    bindings.join(" / ")
 }
 
 fn shortcut_status_color(conflict_count: usize) -> u32 {
