@@ -3,7 +3,10 @@ use ely_design_system::{colors, spacing};
 use ely_domain::{
     ArchivedTab, BrowserTab, COLLAPSED_SIDEBAR_WIDTH_PX, DEFAULT_SIDEBAR_WIDTH_PX, Space,
 };
-use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, Window, div, px, rgb, rgba};
+use gpui::{
+    AnyElement, BoxShadow, Context, IntoElement, ParentElement, Styled, Window, div, hsla, point,
+    px, rgb, rgba,
+};
 use gpui_component::{
     IconName, Selectable, Sizable, StyledExt,
     button::{Button, ButtonVariants},
@@ -37,7 +40,8 @@ impl ElyShell {
             .gap_2()
             .p_2()
             .rounded(px(spacing::RADIUS_CARD))
-            .bg(rgba(colors::GLASS))
+            .bg(rgba(PANEL_BG))
+            .shadow(panel_shadow())
             .children(snapshot.favorites.iter().enumerate().map(|(index, tab)| {
                 self.render_compact_tab_button(
                     ("compact-favorite", index),
@@ -218,4 +222,23 @@ pub(super) fn render_command_bar_identity(
 
 pub(super) fn collapsed_sidebar_active(sidebar_width: f32) -> bool {
     sidebar_width <= f32::from(COLLAPSED_SIDEBAR_WIDTH_PX)
+}
+
+const PANEL_BG: u32 = 0xffffffe0;
+
+fn panel_shadow() -> Vec<BoxShadow> {
+    vec![
+        BoxShadow {
+            color: hsla(25.0 / 360.0, 0.33, 0.12, 0.30),
+            offset: point(px(0.), px(20.)),
+            blur_radius: px(50.),
+            spread_radius: px(-15.),
+        },
+        BoxShadow {
+            color: hsla(0., 0., 1., 0.5),
+            offset: point(px(0.), px(0.)),
+            blur_radius: px(0.),
+            spread_radius: px(1.),
+        },
+    ]
 }

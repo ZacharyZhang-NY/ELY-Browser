@@ -2,8 +2,9 @@ use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
 use ely_domain::{ArchivedTab, BrowserTab, Profile, Space};
 use gpui::{
-    AnyElement, Context, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, px, rgb, rgba,
+    AnyElement, BoxShadow, Context, InteractiveElement, IntoElement, ParentElement, Render,
+    SharedString, StatefulInteractiveElement, Styled, Window, div, hsla, linear_gradient, point,
+    linear_color_stop, prelude::FluentBuilder, px, rgb, rgba,
 };
 use gpui_component::{
     IconName, Selectable, Sizable, StyledExt,
@@ -65,13 +66,26 @@ impl ElyShell {
             .on_action(cx.listener(Self::on_toggle_sidebar))
             .on_action(cx.listener(Self::on_zoom_in))
             .on_action(cx.listener(Self::on_zoom_out))
-            .bg(rgb(colors::CANVAS))
+            .bg(linear_gradient(
+                135.0,
+                linear_color_stop(hsla(20.0 / 360.0, 0.35, 0.92, 1.0), 0.0),
+                linear_color_stop(hsla(220.0 / 360.0, 0.25, 0.88, 1.0), 1.0),
+            ))
             .text_color(rgb(colors::INK))
-            .p(px(spacing::SHELL_INSET))
-            .gap(px(spacing::SIDEBAR_MAIN_GAP))
-            .flex()
-            .child(self.render_sidebar(&snapshot, sidebar_width, sidebar_collapsed, cx))
-            .child(self.render_main_pane(&snapshot, &active_tab, sidebar_collapsed, cx))
+            .child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .p(px(spacing::SHELL_INSET))
+                    .gap(px(spacing::SIDEBAR_MAIN_GAP))
+                    .flex()
+                    .child(
+                        self.render_sidebar(&snapshot, sidebar_width, sidebar_collapsed, cx),
+                    )
+                    .child(
+                        self.render_main_pane(&snapshot, &active_tab, sidebar_collapsed, cx),
+                    ),
+            )
             .into_any_element()
     }
 
@@ -89,7 +103,8 @@ impl ElyShell {
             .flex()
             .flex_col()
             .rounded(px(spacing::RADIUS_CARD))
-            .bg(rgba(colors::GLASS))
+            .bg(rgba(PANEL_BG))
+            .shadow(panel_shadow())
             .overflow_hidden()
             .child(self.render_topbar(snapshot, active_tab, sidebar_collapsed, cx))
             .child(
@@ -128,23 +143,20 @@ impl ElyShell {
             } else {
                 None
             })
-            .child(render_icon_button("nav-back", IconName::ChevronLeft, false))
-            .child(render_icon_button("nav-forward", IconName::ChevronRight, false))
+            .child(render_icon_button("nav-back", IconName::ChevronLeft))
+            .child(render_icon_button("nav-forward", IconName::ChevronRight))
             .child(
                 div()
                     .flex_1()
                     .h(px(spacing::OMNIBAR_HEIGHT))
                     .rounded(px(spacing::RADIUS_PILL))
                     .bg(rgba(OMNIBAR_BG))
+                    .shadow(soft_shadow())
                     .px(px(14.0))
                     .flex()
                     .items_center()
                     .gap(px(10.0))
-                    .child(
-                        div()
-                            .text_color(rgb(colors::INK_3))
-                            .child(IconName::Search),
-                    )
+                    .child(div().text_color(rgb(colors::INK_3)).child(IconName::Search))
                     .child(
                         div()
                             .flex_1()
@@ -201,7 +213,8 @@ impl ElyShell {
             .flex()
             .flex_col()
             .rounded(px(spacing::RADIUS_CARD))
-            .bg(rgba(colors::GLASS))
+            .bg(rgba(PANEL_BG))
+            .shadow(panel_shadow())
             .overflow_hidden()
             .child(self.render_sidebar_header(snapshot))
             .child(
@@ -301,7 +314,11 @@ impl ElyShell {
                 div()
                     .size(px(26.0))
                     .rounded_full()
-                    .bg(rgb(colors::ACCENT))
+                    .bg(linear_gradient(
+                        135.0,
+                        linear_color_stop(hsla(20.0 / 360.0, 0.6, 0.84, 1.0), 0.0),
+                        linear_color_stop(hsla(15.0 / 360.0, 0.55, 0.53, 1.0), 1.0),
+                    ))
                     .flex()
                     .items_center()
                     .justify_center()
@@ -309,7 +326,7 @@ impl ElyShell {
                         div()
                             .text_size(px(10.0))
                             .font_semibold()
-                            .text_color(rgb(colors::SURFACE_CARD))
+                            .text_color(rgb(0xffffff))
                             .child(
                                 snapshot
                                     .active_profile_name
@@ -324,6 +341,7 @@ impl ElyShell {
             .child(
                 div()
                     .text_size(px(13.0))
+                    .font_weight(gpui::FontWeight(500.0))
                     .text_color(rgb(colors::INK_2))
                     .child(snapshot.active_profile_name.clone()),
             )
@@ -352,6 +370,7 @@ impl ElyShell {
             .hover(|style| style.bg(rgba(ACTIVE_NAV_BG)))
             .active(|style| style.opacity(0.82))
             .bg(rgba(bg_color))
+            .when(active, |el| el.shadow(soft_shadow()))
             .on_click(cx.listener(move |shell, _, window, cx| {
                 shell.select_space(&space_id, window, cx);
             }))
@@ -411,6 +430,7 @@ impl ElyShell {
             .hover(|style| style.bg(rgba(ACTIVE_NAV_BG)))
             .active(|style| style.opacity(0.82))
             .bg(rgba(bg_color))
+            .when(active, |el| el.shadow(soft_shadow()))
             .on_click(cx.listener(move |shell, _, window, cx| {
                 shell.select_tab(&tab_id, window, cx);
             }))
@@ -449,6 +469,7 @@ impl ElyShell {
             .hover(|style| style.bg(rgba(ACTIVE_NAV_BG)))
             .active(|style| style.opacity(0.82))
             .bg(rgba(bg_color))
+            .when(active, |el| el.shadow(soft_shadow()))
             .on_click(cx.listener(move |shell, _, window, cx| {
                 shell.select_tab(&tab_id, window, cx);
             }))
@@ -521,14 +542,48 @@ impl ElyShell {
     }
 }
 
-const OMNIBAR_BG: u32 = 0xffffff8c; // rgba(255,255,255,0.55)
-const ACTIVE_NAV_BG: u32 = 0xffffffd9; // rgba(255,255,255,0.85)
+// rgba(255,255,255,0.55) — omnibar background
+const OMNIBAR_BG: u32 = 0xffffff8c;
+// rgba(255,255,255,0.85) — active nav item background
+const ACTIVE_NAV_BG: u32 = 0xffffffd9;
+// rgba(255,255,255,0.88) — glass panel background
+const PANEL_BG: u32 = 0xffffffe0;
 
-fn render_icon_button(
-    id: &'static str,
-    icon: IconName,
-    _active: bool,
-) -> impl IntoElement {
+fn panel_shadow() -> Vec<BoxShadow> {
+    vec![
+        BoxShadow {
+            color: hsla(25.0 / 360.0, 0.33, 0.12, 0.30),
+            offset: point(px(0.), px(20.)),
+            blur_radius: px(50.),
+            spread_radius: px(-15.),
+        },
+        BoxShadow {
+            color: hsla(0., 0., 1., 0.5),
+            offset: point(px(0.), px(0.)),
+            blur_radius: px(0.),
+            spread_radius: px(1.),
+        },
+    ]
+}
+
+fn soft_shadow() -> Vec<BoxShadow> {
+    vec![
+        BoxShadow {
+            color: hsla(0., 0., 1., 0.7),
+            offset: point(px(0.), px(1.)),
+            blur_radius: px(0.),
+            spread_radius: px(0.),
+        },
+        BoxShadow {
+            color: hsla(25.0 / 360.0, 0.33, 0.12, 0.08),
+            offset: point(px(0.), px(0.)),
+            blur_radius: px(0.),
+            spread_radius: px(1.),
+        },
+    ]
+}
+
+fn render_icon_button(id: &'static str, icon: IconName) -> impl IntoElement {
     div()
         .id(id)
         .size(px(30.0))
@@ -570,7 +625,12 @@ fn render_workspace_tile(space: &Space) -> impl IntoElement {
     div()
         .size(px(32.0))
         .rounded(px(9.0))
-        .bg(rgba(colors::GLASS_3))
+        .bg(linear_gradient(
+            135.0,
+            linear_color_stop(hsla(0., 0., 1., 1.0), 0.0),
+            linear_color_stop(hsla(20.0 / 360.0, 0.6, 0.94, 1.0), 1.0),
+        ))
+        .shadow(soft_shadow())
         .flex()
         .items_center()
         .justify_center()
