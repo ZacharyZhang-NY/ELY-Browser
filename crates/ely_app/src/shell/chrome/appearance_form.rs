@@ -177,8 +177,79 @@ fn render_appearance_rows(
         .flex_col()
         .child(render_theme_mode_row(appearance.theme_mode(), cx))
         .child(render_accent_row())
+        .child(render_translucency_row(appearance.translucency_pct(), cx))
         .child(render_reduce_motion_row(appearance.reduce_motion(), cx))
         .child(render_reset_row(cx))
+        .into_any_element()
+}
+
+fn render_translucency_row(
+    pct: u8,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    settings_row(
+        "Translucency",
+        "Glass density of sidebar & panels.",
+        div()
+            .flex()
+            .items_center()
+            .gap(px(10.0))
+            .child(render_translucency_track(pct))
+            .child(translucency_preset("Solid", 0, pct, cx))
+            .child(translucency_preset("Default", 40, pct, cx))
+            .child(translucency_preset("Glassy", 75, pct, cx))
+            .into_any_element(),
+    )
+}
+
+fn render_translucency_track(pct: u8) -> AnyElement {
+    let clamped = pct.min(100) as f32;
+
+    div()
+        .w(px(120.0))
+        .h(px(4.0))
+        .rounded(px(2.0))
+        .bg(rgba(TRACK_BG))
+        .relative()
+        .child(
+            div()
+                .absolute()
+                .left_0()
+                .top_0()
+                .bottom_0()
+                .w(px(120.0 * clamped / 100.0))
+                .rounded(px(2.0))
+                .bg(rgb(colors::ACCENT)),
+        )
+        .into_any_element()
+}
+
+fn translucency_preset(
+    label: &'static str,
+    target_pct: u8,
+    active_pct: u8,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let selected = active_pct == target_pct;
+    let bg = if selected { 0xffffffff } else { 0x281e140d };
+    let id = SharedString::from(format!("translucency-{}", label.to_ascii_lowercase()));
+
+    div()
+        .id(id)
+        .px(px(10.0))
+        .py(px(4.0))
+        .rounded(px(6.0))
+        .bg(rgba(bg))
+        .text_size(px(11.5))
+        .font_weight(FontWeight(500.0))
+        .text_color(rgb(colors::INK_2))
+        .cursor_pointer()
+        .hover(|style| style.opacity(0.92))
+        .active(|style| style.opacity(0.82))
+        .on_click(cx.listener(move |shell, _, _, cx| {
+            shell.set_translucency_pct(target_pct, cx);
+        }))
+        .child(label)
         .into_any_element()
 }
 
@@ -384,3 +455,4 @@ fn transparent_like(color: Hsla) -> Hsla {
 }
 
 const SEGMENT_BG: u32 = 0x281e140d;
+const TRACK_BG: u32 = 0x281e1414;

@@ -19,11 +19,26 @@ pub enum ThemeMode {
     Dark,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub const DEFAULT_TRANSLUCENCY_PCT: u8 = 40;
+pub const MAX_TRANSLUCENCY_PCT: u8 = 100;
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct AppearanceSettings {
     wallpaper: WallpaperTheme,
     theme_mode: ThemeMode,
     reduce_motion: bool,
+    translucency_pct: u8,
+}
+
+impl Default for AppearanceSettings {
+    fn default() -> Self {
+        Self {
+            wallpaper: WallpaperTheme::default(),
+            theme_mode: ThemeMode::default(),
+            reduce_motion: false,
+            translucency_pct: DEFAULT_TRANSLUCENCY_PCT,
+        }
+    }
 }
 
 impl AppearanceSettings {
@@ -39,6 +54,10 @@ impl AppearanceSettings {
         self.reduce_motion
     }
 
+    pub fn translucency_pct(&self) -> u8 {
+        self.translucency_pct
+    }
+
     pub fn set_wallpaper(&mut self, wallpaper: WallpaperTheme) {
         self.wallpaper = wallpaper;
     }
@@ -49,6 +68,10 @@ impl AppearanceSettings {
 
     pub fn set_reduce_motion(&mut self, reduce_motion: bool) {
         self.reduce_motion = reduce_motion;
+    }
+
+    pub fn set_translucency_pct(&mut self, value: u8) {
+        self.translucency_pct = value.min(MAX_TRANSLUCENCY_PCT);
     }
 }
 
@@ -62,6 +85,7 @@ mod tests {
         assert_eq!(settings.wallpaper(), WallpaperTheme::Dawn);
         assert_eq!(settings.theme_mode(), ThemeMode::System);
         assert!(!settings.reduce_motion());
+        assert_eq!(settings.translucency_pct(), super::DEFAULT_TRANSLUCENCY_PCT);
     }
 
     #[test]
@@ -71,23 +95,33 @@ mod tests {
         settings.set_wallpaper(WallpaperTheme::Violet);
         settings.set_theme_mode(ThemeMode::Dark);
         settings.set_reduce_motion(true);
+        settings.set_translucency_pct(75);
 
         assert_eq!(settings.wallpaper(), WallpaperTheme::Violet);
         assert_eq!(settings.theme_mode(), ThemeMode::Dark);
         assert!(settings.reduce_motion());
+        assert_eq!(settings.translucency_pct(), 75);
+    }
+
+    #[test]
+    fn translucency_setter_clamps_above_max() {
+        let mut settings = AppearanceSettings::default();
+        settings.set_translucency_pct(200);
+        assert_eq!(settings.translucency_pct(), super::MAX_TRANSLUCENCY_PCT);
     }
 
     #[test]
     fn json_round_trip_preserves_kebab_case_variants() {
-        let settings = AppearanceSettings {
-            wallpaper: WallpaperTheme::Mint,
-            theme_mode: ThemeMode::Light,
-            reduce_motion: true,
-        };
+        let mut settings = AppearanceSettings::default();
+        settings.set_wallpaper(WallpaperTheme::Mint);
+        settings.set_theme_mode(ThemeMode::Light);
+        settings.set_reduce_motion(true);
+        settings.set_translucency_pct(60);
 
         let json = serde_json::to_string(&settings).unwrap();
         assert!(json.contains("\"wallpaper\":\"mint\""));
         assert!(json.contains("\"theme_mode\":\"light\""));
+        assert!(json.contains("\"translucency_pct\":60"));
 
         let restored: AppearanceSettings = serde_json::from_str(&json).unwrap();
         assert_eq!(restored, settings);

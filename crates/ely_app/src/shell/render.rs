@@ -7,7 +7,7 @@ use gpui::{
 };
 
 use super::chrome::{
-    PANEL_BG, panel_shadow, render_command_overlay,
+    panel_bg, panel_shadow, render_command_overlay,
     render_topbar as render_topbar_chrome, render_wallpaper,
 };
 use super::sidebar::collapsed_sidebar_active;
@@ -86,6 +86,7 @@ impl ElyShell {
         sidebar_collapsed: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let panel_color = panel_bg(snapshot);
         div()
             .flex_1()
             .h_full()
@@ -93,7 +94,7 @@ impl ElyShell {
             .flex()
             .flex_col()
             .rounded(px(spacing::RADIUS_CARD))
-            .bg(rgba(PANEL_BG))
+            .bg(rgba(panel_color))
             .shadow(panel_shadow())
             .overflow_hidden()
             .child(render_topbar_chrome(self, snapshot, active_tab, sidebar_collapsed, cx))

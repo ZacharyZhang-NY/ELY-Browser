@@ -24,7 +24,9 @@ mod tab_group;
 mod update;
 mod url_text;
 
-pub use appearance::{AppearanceSettings, ThemeMode, WallpaperTheme};
+pub use appearance::{
+    AppearanceSettings, DEFAULT_TRANSLUCENCY_PCT, MAX_TRANSLUCENCY_PCT, ThemeMode, WallpaperTheme,
+};
 pub use archive::{ArchiveSource, ArchivedTab};
 pub use bookmark::BookmarkEntry;
 pub use command::{CommandIntent, CommandScope};

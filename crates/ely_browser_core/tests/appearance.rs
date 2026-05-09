@@ -21,11 +21,13 @@ fn setters_persist_into_subsequent_snapshots() -> Result<(), Box<dyn Error>> {
     core.set_wallpaper_theme(WallpaperTheme::Mint);
     core.set_theme_mode(ThemeMode::Dark);
     core.set_reduce_motion(true);
+    core.set_translucency_pct(75);
 
     let snapshot = core.snapshot()?;
     assert_eq!(snapshot.appearance.wallpaper(), WallpaperTheme::Mint);
     assert_eq!(snapshot.appearance.theme_mode(), ThemeMode::Dark);
     assert!(snapshot.appearance.reduce_motion());
+    assert_eq!(snapshot.appearance.translucency_pct(), 75);
     Ok(())
 }
 

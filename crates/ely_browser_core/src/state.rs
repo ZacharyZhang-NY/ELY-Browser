@@ -385,6 +385,10 @@ impl BrowserCore {
         self.appearance.set_reduce_motion(reduce_motion);
     }
 
+    pub fn set_translucency_pct(&mut self, value: u8) {
+        self.appearance.set_translucency_pct(value);
+    }
+
     pub fn reset_appearance(&mut self) {
         self.appearance = AppearanceSettings::default();
     }

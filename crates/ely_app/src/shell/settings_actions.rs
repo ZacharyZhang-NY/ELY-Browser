@@ -79,6 +79,13 @@ impl ElyShell {
         }
     }
 
+    pub(crate) fn set_translucency_pct(&mut self, value: u8, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state {
+            core.set_translucency_pct(value);
+            cx.notify();
+        }
+    }
+
     pub(super) fn reset_appearance(&mut self, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state {
             core.reset_appearance();

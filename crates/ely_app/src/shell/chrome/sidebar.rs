@@ -18,13 +18,14 @@ impl ElyShell {
         sidebar_width: f32,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let panel_color = panel_bg(snapshot);
         div()
             .w(px(sidebar_width))
             .h_full()
             .flex()
             .flex_col()
             .rounded(px(spacing::RADIUS_CARD))
-            .bg(rgba(PANEL_BG))
+            .bg(rgba(panel_color))
             .shadow(panel_shadow())
             .overflow_hidden()
             .child(render_sidebar_header(snapshot, cx))
@@ -408,8 +409,20 @@ fn section_label(label: &'static str) -> impl IntoElement {
 }
 
 pub(crate) const ACTIVE_NAV_BG: u32 = 0xffffffd9;
-pub(crate) const PANEL_BG: u32 = 0xffffffe0;
 const UNREAD_BADGE_BG: u32 = 0x281e140f;
+
+/// Maps appearance translucency_pct to a panel rgba u32.
+///
+/// translucency_pct 0   → alpha 0xff (fully opaque)
+/// translucency_pct 100 → alpha 0xb3 (mostly opaque, ~70%) so panels stay
+/// readable without backdrop blur.
+pub(crate) fn panel_bg(snapshot: &BrowserSnapshot) -> u32 {
+    let pct = snapshot.appearance.translucency_pct().min(100) as u32;
+    let max_alpha: u32 = 0xff;
+    let min_alpha: u32 = 0xb3;
+    let alpha = max_alpha - (pct * (max_alpha - min_alpha)) / 100;
+    0xffffff00 | alpha
+}
 
 pub(crate) fn panel_shadow() -> Vec<BoxShadow> {
     vec![

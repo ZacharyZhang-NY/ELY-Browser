@@ -12,6 +12,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
 };
 
+use super::chrome::panel_bg;
 use super::{ElyShell, ShellState, render::tab_profile_label};
 use crate::ToggleSidebar;
 
@@ -31,6 +32,7 @@ impl ElyShell {
         sidebar_width: f32,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let panel_color = panel_bg(snapshot);
         div()
             .w(px(sidebar_width))
             .h_full()
@@ -40,7 +42,7 @@ impl ElyShell {
             .gap_2()
             .p_2()
             .rounded(px(spacing::RADIUS_CARD))
-            .bg(rgba(PANEL_BG))
+            .bg(rgba(panel_color))
             .shadow(panel_shadow())
             .children(snapshot.favorites.iter().enumerate().map(|(index, tab)| {
                 self.render_compact_tab_button(
@@ -237,8 +239,6 @@ pub(super) fn render_command_bar_identity(
 pub(super) fn collapsed_sidebar_active(sidebar_width: f32) -> bool {
     sidebar_width <= f32::from(COLLAPSED_SIDEBAR_WIDTH_PX)
 }
-
-const PANEL_BG: u32 = 0xffffffe0;
 
 fn panel_shadow() -> Vec<BoxShadow> {
     vec![
