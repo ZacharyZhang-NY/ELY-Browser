@@ -14,6 +14,7 @@ export interface TestEnvOptions {
   diagnosticEvents?: ElyAnalyticsDataPoint[];
   d1?: RecordedD1Database;
   kvEntries?: [string, string][];
+  kvDeletes?: string[];
   kvReads?: string[];
   r2Deletes?: string[];
   r2Gets?: string[];
@@ -49,6 +50,11 @@ export function testEnv(options: TestEnvOptions): Env {
       get(key: string): Promise<string | null> {
         options.kvReads?.push(key);
         return Promise.resolve(values.get(key) ?? null);
+      },
+      delete(key: string): Promise<void> {
+        options.kvDeletes?.push(key);
+        values.delete(key);
+        return Promise.resolve();
       },
     },
     ELY_STORAGE: testR2Bucket(

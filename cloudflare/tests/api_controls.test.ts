@@ -319,6 +319,10 @@ function testEnv(options: TestEnvOptions = {}): Env {
         options.kvReads?.push(key);
         return Promise.resolve(values.get(key) ?? null);
       },
+      delete(key: string): Promise<void> {
+        values.delete(key);
+        return Promise.resolve();
+      },
     },
     ELY_STORAGE: testR2Bucket(),
     ELY_RATE_LIMITER: {

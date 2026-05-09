@@ -1,5 +1,14 @@
 import type { Env } from "./bindings.js";
-import { withAuthenticatedApiControls, withPublicApiControls } from "./api_controls.js";
+import {
+  withApprovedDeviceApiControls,
+  withAuthenticatedApiControls,
+  withPublicApiControls,
+} from "./api_controls.js";
+import {
+  AccountDeletionPersistenceError,
+  AccountDeletionRequestError,
+  accountDeletionDocument,
+} from "./account_deletion.js";
 import { handleBetterAuthRoute } from "./better_auth.js";
 import {
   DevicePermissionError,
@@ -169,6 +178,37 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
           if (error instanceof DevicePersistenceError) {
             return jsonResponse(
               { error: "device_revocation_failed" },
+              500,
+              { "Cache-Control": "no-store" },
+            );
+          }
+          throw error;
+        }
+      },
+    );
+  }
+  if (url.pathname === "/api/account/delete") {
+    return withApprovedDeviceApiControls(
+      request,
+      env,
+      "account.delete",
+      ["POST"],
+      async (context) => {
+        try {
+          return jsonResponse(await accountDeletionDocument(request, env, context), 200, {
+            "Cache-Control": "no-store",
+          });
+        } catch (error) {
+          if (error instanceof AccountDeletionRequestError) {
+            return jsonResponse(
+              { error: "invalid_account_deletion" },
+              400,
+              { "Cache-Control": "no-store" },
+            );
+          }
+          if (error instanceof AccountDeletionPersistenceError) {
+            return jsonResponse(
+              { error: "account_deletion_failed" },
               500,
               { "Cache-Control": "no-store" },
             );

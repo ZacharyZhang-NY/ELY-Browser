@@ -1,5 +1,6 @@
 export interface ElyKvNamespace {
   get(key: string): Promise<string | null>;
+  delete(key: string): Promise<void>;
 }
 
 export interface ElyR2Object {
