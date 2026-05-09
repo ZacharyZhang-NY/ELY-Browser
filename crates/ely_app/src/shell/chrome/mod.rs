@@ -1,3 +1,4 @@
+pub(crate) mod brand_glyph;
 pub(crate) mod command_overlay;
 pub(crate) mod home;
 pub(crate) mod settings_layout;
@@ -7,6 +8,7 @@ pub(crate) mod split_pane;
 pub(crate) mod topbar;
 pub(crate) mod wallpaper;
 
+pub(crate) use brand_glyph::render_glyph_for;
 pub(crate) use command_overlay::render_command_overlay;
 pub(crate) use home::render_home_page;
 pub(crate) use settings_layout::render_settings_landing;

@@ -2,12 +2,13 @@ use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
 use ely_domain::BrowserTab;
 use gpui::{
-    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
+    AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, div, px, rgb, rgba,
 };
 use gpui_component::IconName;
 
 use crate::shell::ElyShell;
+use crate::shell::chrome::render_glyph_for;
 
 use super::section::render_section_chevron_label;
 use super::style::{ADD_TILE_BG, CARD_BG, CARD_BG_HOVER, card_shadow};
@@ -48,14 +49,9 @@ fn render_favorite_tile(
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let tab_id = tab.id().clone();
-    let initial = tab
-        .title()
-        .chars()
-        .next()
-        .unwrap_or('?')
-        .to_uppercase()
-        .to_string();
+    let host = tab.url().host().map(|host| host.to_string());
     let title = tab.title().to_string();
+    let initial = title.chars().next().unwrap_or('?').to_string();
 
     div()
         .id(SharedString::from(format!("fav-tile-{index}")))
@@ -74,19 +70,7 @@ fn render_favorite_tile(
         .on_click(cx.listener(move |shell, _, window, cx| {
             shell.select_tab(&tab_id, window, cx);
         }))
-        .child(
-            div()
-                .size(px(28.0))
-                .rounded(px(7.0))
-                .bg(rgb(colors::ACCENT))
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_size(px(14.0))
-                .font_weight(FontWeight(600.0))
-                .text_color(rgb(0xffffff))
-                .child(initial),
-        )
+        .child(render_glyph_for(host.as_deref(), &initial, 28.0))
         .child(
             div()
                 .text_size(px(11.5))
