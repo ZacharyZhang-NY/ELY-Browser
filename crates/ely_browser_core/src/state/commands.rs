@@ -167,6 +167,10 @@ impl BrowserCore {
                 self.open_new_tab()?;
                 Ok(true)
             }
+            "move-tab-up" | "move tab up" | "tab-up" | "tab up" => self.move_active_tab_up(),
+            "move-tab-down" | "move tab down" | "tab-down" | "tab down" => {
+                self.move_active_tab_down()
+            }
             "split-right" | "split right" => {
                 self.split_active_tab_right()?;
                 Ok(true)
