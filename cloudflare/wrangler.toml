@@ -17,6 +17,10 @@ bucket_name = "ely-browser-storage"
 binding = "ELY_KV"
 id = "ba8f06dd5cc34bc4bc0f8a305c570cfb"
 
+[[send_email]]
+name = "SEND_EMAIL"
+allowed_sender_addresses = ["auth@elydora.com"]
+
 [vars]
 ELY_ENVIRONMENT = "production"
 ELY_AUTH_BASE_URL = "https://ely-browser-cloud.zhangyanghaha0407.workers.dev"

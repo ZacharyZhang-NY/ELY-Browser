@@ -439,7 +439,7 @@ function testD1PreparedStatement(): ReturnType<Env["ELY_DB"]["prepare"]> {
       return Promise.resolve(null);
     },
     all() {
-      return Promise.resolve({ results: [] });
+      return Promise.resolve({ results: [], meta: { changes: 1, last_row_id: 1 } });
     },
     run() {
       return Promise.resolve({});

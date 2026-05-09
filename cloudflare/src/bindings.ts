@@ -22,8 +22,16 @@ export interface ElyR2Bucket {
 export interface ElyD1PreparedStatement {
   bind(...values: unknown[]): ElyD1PreparedStatement;
   first<T = unknown>(): Promise<T | null>;
-  all<T = unknown>(): Promise<{ results: T[] }>;
+  all<T = unknown>(): Promise<ElyD1Result<T>>;
   run(): Promise<unknown>;
+}
+
+export interface ElyD1Result<T = unknown> {
+  results: T[];
+  meta?: {
+    changes?: number;
+    last_row_id?: number | null;
+  };
 }
 
 export interface ElyD1Database {
@@ -46,6 +54,31 @@ export interface ElyAnalyticsDataset {
   writeDataPoint(event?: ElyAnalyticsDataPoint): void;
 }
 
+export interface ElyEmailAddress {
+  email: string;
+  name: string;
+}
+
+export interface ElyEmailMessageBuilder {
+  from: string | ElyEmailAddress;
+  to: string | string[];
+  subject: string;
+  text?: string;
+  html?: string;
+  replyTo?: string | ElyEmailAddress;
+  cc?: string | string[];
+  bcc?: string | string[];
+  headers?: Record<string, string>;
+}
+
+export interface ElyEmailSendResult {
+  messageId: string;
+}
+
+export interface ElySendEmail {
+  send(message: ElyEmailMessageBuilder): Promise<ElyEmailSendResult>;
+}
+
 export interface Env {
   ELY_DB: ElyD1Database;
   ELY_KV: ElyKvNamespace;
@@ -60,6 +93,5 @@ export interface Env {
   ELY_AUTH_GOOGLE_CLIENT_SECRET?: string;
   ELY_AUTH_GITHUB_CLIENT_ID?: string;
   ELY_AUTH_GITHUB_CLIENT_SECRET?: string;
-  ELY_AUTH_EMAIL_OTP_ENDPOINT?: string;
-  ELY_AUTH_EMAIL_OTP_TOKEN?: string;
+  SEND_EMAIL?: ElySendEmail;
 }
