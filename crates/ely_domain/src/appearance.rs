@@ -19,21 +19,11 @@ pub enum ThemeMode {
     Dark,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct AppearanceSettings {
     wallpaper: WallpaperTheme,
     theme_mode: ThemeMode,
     reduce_motion: bool,
-}
-
-impl Default for AppearanceSettings {
-    fn default() -> Self {
-        Self {
-            wallpaper: WallpaperTheme::default(),
-            theme_mode: ThemeMode::default(),
-            reduce_motion: false,
-        }
-    }
 }
 
 impl AppearanceSettings {

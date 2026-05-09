@@ -166,12 +166,10 @@ fn render_styled_url(active_tab: &BrowserTab) -> AnyElement {
 }
 
 fn render_lock_or_search(secure: bool, show_styled: bool) -> AnyElement {
-    let icon = if !show_styled {
-        IconName::Search
-    } else if secure {
-        IconName::Search
-    } else {
+    let icon = if show_styled && !secure {
         IconName::Globe
+    } else {
+        IconName::Search
     };
     div()
         .text_color(rgb(colors::INK_3))

@@ -175,12 +175,14 @@ fn render_tab_rows(tabs: Vec<&BrowserTab>, cx: &mut Context<ElyShell>) -> AnyEle
             let initial = title.chars().next().unwrap_or('?').to_string();
 
             render_row_with_glyph(
-                format!("cmd-tab-{index}"),
+                CommandRowContent {
+                    id: format!("cmd-tab-{index}"),
+                    title,
+                    hint: Some(host_label),
+                    keys: None,
+                },
                 host.as_deref(),
                 &initial,
-                title,
-                Some(host_label),
-                None,
                 cx,
                 move |shell, window, cx| {
                     shell.select_tab(&tab_id, window, cx);
@@ -208,12 +210,14 @@ fn render_history_rows(
             let initial = title.chars().next().unwrap_or('?').to_string();
 
             render_row_with_glyph(
-                format!("cmd-history-{index}"),
+                CommandRowContent {
+                    id: format!("cmd-history-{index}"),
+                    title,
+                    hint: Some(display),
+                    keys: None,
+                },
                 host.as_deref(),
                 &initial,
-                title,
-                Some(display),
-                None,
                 cx,
                 move |shell, window, cx| {
                     shell.open_internal_tab(url.as_str(), window, cx);
@@ -291,11 +295,13 @@ fn render_action_rows(
             let icon = action.icon.clone();
 
             render_row(
-                format!("cmd-action-{index}"),
+                CommandRowContent {
+                    id: format!("cmd-action-{index}"),
+                    title: action.title.to_string(),
+                    hint: Some(action.hint.to_string()),
+                    keys,
+                },
                 icon,
-                action.title.to_string(),
-                Some(action.hint.to_string()),
-                keys,
                 cx,
                 move |shell, window, cx| {
                     shell.open_internal_tab(route, window, cx);
@@ -306,12 +312,16 @@ fn render_action_rows(
         .into_any_element()
 }
 
-fn render_row<F>(
+struct CommandRowContent {
     id: String,
-    icon: IconName,
     title: String,
     hint: Option<String>,
     keys: Option<String>,
+}
+
+fn render_row<F>(
+    content: CommandRowContent,
+    icon: IconName,
     cx: &mut Context<ElyShell>,
     handler: F,
 ) -> AnyElement
@@ -328,16 +338,13 @@ where
         .text_color(rgb(colors::INK_2))
         .child(icon)
         .into_any_element();
-    render_row_inner(id, leading, title, hint, keys, cx, handler)
+    render_row_inner(content, leading, cx, handler)
 }
 
 fn render_row_with_glyph<F>(
-    id: String,
+    content: CommandRowContent,
     host: Option<&str>,
     fallback_initial: &str,
-    title: String,
-    hint: Option<String>,
-    keys: Option<String>,
     cx: &mut Context<ElyShell>,
     handler: F,
 ) -> AnyElement
@@ -345,21 +352,20 @@ where
     F: Fn(&mut ElyShell, &mut gpui::Window, &mut Context<ElyShell>) + 'static,
 {
     let leading = render_glyph_for(host, fallback_initial, 24.0);
-    render_row_inner(id, leading, title, hint, keys, cx, handler)
+    render_row_inner(content, leading, cx, handler)
 }
 
 fn render_row_inner<F>(
-    id: String,
+    content: CommandRowContent,
     leading: AnyElement,
-    title: String,
-    hint: Option<String>,
-    keys: Option<String>,
     cx: &mut Context<ElyShell>,
     handler: F,
 ) -> AnyElement
 where
     F: Fn(&mut ElyShell, &mut gpui::Window, &mut Context<ElyShell>) + 'static,
 {
+    let CommandRowContent { id, title, hint, keys } = content;
+
     div()
         .id(SharedString::from(id))
         .flex()
