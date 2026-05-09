@@ -1,11 +1,12 @@
 use ely_browser_core::{BrowserSnapshot, InstalledPlugin};
 use ely_design_system::colors;
-use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, px, rgb};
-use gpui_component::{
-    IconName, Sizable, StyledExt,
-    button::{Button, ButtonVariants},
-    scroll::ScrollableElement,
+use ely_domain::ProfileKind;
+use gpui::{
+    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, div, hsla, linear_color_stop, linear_gradient, px, rgb,
+    rgba,
 };
+use gpui_component::{IconName, scroll::ScrollableElement};
 
 use super::{ElyShell, render_canvas_surface};
 
@@ -18,243 +19,474 @@ impl ElyShell {
         render_canvas_surface(
             div()
                 .size_full()
-                .p_8()
+                .pt(px(40.0))
+                .px(px(56.0))
+                .pb(px(40.0))
                 .flex()
                 .flex_col()
-                .gap_5()
-                .child(render_plugin_catalog_header(snapshot, cx))
-                .child(render_plugin_catalog_summary(snapshot))
-                .child(render_plugin_catalog_list(snapshot, cx)),
+                .gap(px(24.0))
+                .child(render_hero(snapshot, cx))
+                .child(render_summary(snapshot))
+                .child(render_grid(snapshot, cx)),
         )
     }
 }
 
-fn render_plugin_catalog_header(
+fn render_hero(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
+    div()
+        .grid()
+        .grid_cols(2)
+        .gap(px(28.0))
+        .child(render_hero_left(snapshot, cx))
+        .child(render_editors_pick(snapshot, cx))
+        .into_any_element()
+}
+
+fn render_hero_left(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
+    let total = snapshot.installed_plugins.len();
+
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(10.0))
+        .child(
+            div()
+                .text_size(px(11.0))
+                .text_color(rgb(colors::INK_4))
+                .child("PLUGINS · NATIVE TO ELY"),
+        )
+        .child(
+            div()
+                .text_size(px(48.0))
+                .font_weight(FontWeight(400.0))
+                .text_color(rgb(colors::INK))
+                .child("Quiet tools. Everyday magic."),
+        )
+        .child(
+            div()
+                .max_w(px(520.0))
+                .text_size(px(13.5))
+                .text_color(rgb(colors::INK_2))
+                .child(
+                    "ELY plugins are sandboxed, theme-aware, and ship with their own controls in \
+                     your sidebar — no Chrome extension framework required.",
+                ),
+        )
+        .child(render_install_button(total, cx))
+        .into_any_element()
+}
+
+fn render_install_button(total: usize, cx: &mut Context<ElyShell>) -> AnyElement {
+    div().flex().child(
+    div()
+        .id(SharedString::from("plugin-install"))
+        .h(px(42.0))
+        .px(px(16.0))
+        .rounded(px(12.0))
+        .bg(rgba(SEARCH_BG))
+        .flex()
+        .items_center()
+        .gap(px(10.0))
+        .text_size(px(13.0))
+        .text_color(rgb(colors::INK_3))
+        .cursor_pointer()
+        .hover(|style| style.bg(rgba(SEARCH_BG_HOVER)))
+        .active(|style| style.opacity(0.85))
+        .on_click(cx.listener(|shell, _, window, cx| {
+            shell.choose_plugin_package(window, cx);
+        }))
+        .child(
+            div()
+                .text_color(rgb(colors::INK_3))
+                .child(IconName::Plus),
+        )
+        .child(format!(
+            "Install plugin · {} active",
+            total
+        )))
+        .into_any_element()
+}
+
+fn render_editors_pick(
     snapshot: &BrowserSnapshot,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
+    let featured = featured_plugin(snapshot);
+
     div()
+        .p(px(20.0))
+        .rounded(px(16.0))
+        .bg(linear_gradient(
+            135.0,
+            linear_color_stop(hsla(0.0, 0.0, 1.0, 0.94), 0.0),
+            linear_color_stop(hsla(263.0 / 360.0, 0.6, 0.86, 0.65), 1.0),
+        ))
         .flex()
-        .items_end()
-        .justify_between()
-        .gap_4()
+        .flex_col()
+        .gap(px(14.0))
         .child(
             div()
+                .text_size(px(11.0))
+                .text_color(rgb(colors::INK_3))
+                .child("EDITOR'S PICK"),
+        )
+        .child(render_featured_body(featured))
+        .child(render_featured_actions(featured, cx))
+        .into_any_element()
+}
+
+fn render_featured_body(featured: Option<&InstalledPlugin>) -> AnyElement {
+    let (name, desc) = match featured {
+        Some(plugin) => (
+            plugin.manifest().name().to_string(),
+            plugin.manifest().description().to_string(),
+        ),
+        None => (
+            "Install your first plugin".to_string(),
+            "Drop a signed .rplug package onto ELY to extend the browser with sandboxed tools."
+                .to_string(),
+        ),
+    };
+
+    div()
+        .flex()
+        .gap(px(14.0))
+        .child(
+            div()
+                .size(px(56.0))
+                .rounded(px(14.0))
+                .bg(linear_gradient(
+                    135.0,
+                    linear_color_stop(hsla(341.0 / 360.0, 0.78, 0.85, 1.0), 0.0),
+                    linear_color_stop(hsla(228.0 / 360.0, 1.0, 0.86, 1.0), 1.0),
+                ))
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(px(28.0))
+                .text_color(rgb(0xffffff))
+                .child(name.chars().next().unwrap_or('✦').to_uppercase().to_string()),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
                 .flex()
                 .flex_col()
-                .gap_2()
+                .gap_1()
                 .child(
                     div()
-                        .text_size(px(26.0))
+                        .text_size(px(15.0))
+                        .font_weight(FontWeight(600.0))
                         .text_color(rgb(colors::INK))
-                        .child("Plugin Marketplace"),
+                        .child(name),
                 )
                 .child(
                     div()
-                        .text_sm()
-                        .text_color(rgb(colors::MUTED))
-                        .child("Signed local .rplug packages"),
-                ),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_3()
-                .text_xs()
-                .text_color(rgb(colors::MUTED))
-                .child(format!("{} installed", snapshot.installed_plugins.len()))
-                .child(
-                    Button::new("plugin-market-install")
-                        .primary()
-                        .small()
-                        .icon(IconName::Plus)
-                        .label("Install")
-                        .tooltip("Install Plugin from File")
-                        .on_click(cx.listener(|shell, _, window, cx| {
-                            shell.choose_plugin_package(window, cx);
-                        })),
+                        .text_size(px(12.5))
+                        .text_color(rgb(colors::INK_3))
+                        .child(desc),
                 ),
         )
         .into_any_element()
 }
 
-fn render_plugin_catalog_summary(snapshot: &BrowserSnapshot) -> AnyElement {
-    div()
-        .border_t_1()
-        .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
-        .py_3()
-        .flex()
-        .items_center()
-        .justify_between()
-        .gap_4()
-        .children([
-            plugin_metric("Installed", snapshot.installed_plugins.len()),
-            plugin_metric("Enabled", enabled_plugin_count(snapshot)),
-            plugin_metric("High Risk", high_risk_plugin_count(snapshot)),
-            plugin_metric("Audit Events", snapshot.plugin_audit_events.len()),
-        ])
-        .into_any_element()
-}
-
-fn plugin_metric(label: &'static str, value: usize) -> AnyElement {
-    div()
-        .min_w_0()
-        .flex()
-        .flex_col()
-        .gap_1()
-        .child(div().text_xs().text_color(rgb(colors::MUTED)).child(label))
-        .child(
-            div().text_sm().font_semibold().text_color(rgb(colors::INK)).child(value.to_string()),
-        )
-        .into_any_element()
-}
-
-fn render_plugin_catalog_list(
-    snapshot: &BrowserSnapshot,
+fn render_featured_actions(
+    featured: Option<&InstalledPlugin>,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
-    if snapshot.installed_plugins.is_empty() {
-        return div()
-            .flex_1()
-            .border_t_1()
-            .border_color(rgb(colors::HAIRLINE))
-            .pt_5()
+    if let Some(plugin) = featured {
+        let detail_route = format!("ely://plugin/{}", plugin.id().as_str());
+
+        div()
             .flex()
-            .items_start()
-            .justify_between()
-            .gap_4()
+            .items_center()
+            .gap(px(8.0))
+            .child(action_button(
+                "featured-open",
+                "Open detail",
+                cx,
+                move |shell, window, cx| {
+                    shell.open_internal_tab(&detail_route, window, cx);
+                },
+            ))
             .child(
                 div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_semibold()
-                            .text_color(rgb(colors::INK))
-                            .child("No plugins installed."),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(colors::MUTED))
-                            .child("Install a signed .rplug package from local disk."),
-                    ),
+                    .ml_auto()
+                    .text_size(px(11.5))
+                    .text_color(rgb(colors::INK_3))
+                    .child(format!(
+                        "{} permissions",
+                        plugin.manifest().permissions().len()
+                    )),
             )
-            .child(
-                Button::new("plugin-market-empty-install")
-                    .primary()
-                    .small()
-                    .icon(IconName::Plus)
-                    .label("Install")
-                    .tooltip("Install Plugin from File")
-                    .on_click(cx.listener(|shell, _, window, cx| {
-                        shell.choose_plugin_package(window, cx);
-                    })),
-            )
-            .into_any_element();
+            .into_any_element()
+    } else {
+        div()
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .child(action_button(
+                "featured-install",
+                "Install",
+                cx,
+                |shell, window, cx| shell.choose_plugin_package(window, cx),
+            ))
+            .into_any_element()
+    }
+}
+
+fn action_button<F>(
+    id: &'static str,
+    label: &'static str,
+    cx: &mut Context<ElyShell>,
+    handler: F,
+) -> AnyElement
+where
+    F: Fn(&mut ElyShell, &mut gpui::Window, &mut Context<ElyShell>) + 'static,
+{
+    div()
+        .id(SharedString::from(id))
+        .px(px(14.0))
+        .py(px(7.0))
+        .rounded(px(8.0))
+        .bg(rgb(colors::INK))
+        .text_size(px(12.0))
+        .font_weight(FontWeight(500.0))
+        .text_color(rgb(0xffffff))
+        .cursor_pointer()
+        .hover(|style| style.opacity(0.92))
+        .active(|style| style.opacity(0.78))
+        .on_click(cx.listener(move |shell, _, window, cx| handler(shell, window, cx)))
+        .child(label)
+        .into_any_element()
+}
+
+fn render_summary(snapshot: &BrowserSnapshot) -> AnyElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(6.0))
+        .child(category_chip("All", true))
+        .child(category_chip("Installed", false))
+        .child(category_chip(
+            sandbox_chip_label(snapshot),
+            false,
+        ))
+        .child(
+            div()
+                .ml_auto()
+                .text_size(px(11.5))
+                .text_color(rgb(colors::INK_3))
+                .child(format!(
+                    "{} signed · {} high-risk",
+                    snapshot.installed_plugins.len(),
+                    high_risk_plugin_count(snapshot)
+                )),
+        )
+        .into_any_element()
+}
+
+fn category_chip(label: &'static str, active: bool) -> AnyElement {
+    let bg = if active { 0x1d1c1aff } else { 0xffffffb3 };
+    let text_color = if active { 0xffffff } else { colors::INK_2 };
+
+    div()
+        .px(px(12.0))
+        .py(px(6.0))
+        .rounded(px(999.0))
+        .bg(rgba(bg))
+        .text_size(px(12.0))
+        .font_weight(FontWeight(500.0))
+        .text_color(rgb(text_color))
+        .child(label)
+        .into_any_element()
+}
+
+fn render_grid(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
+    if snapshot.installed_plugins.is_empty() {
+        return render_empty_state(cx);
     }
 
     div()
         .flex_1()
         .min_h_0()
-        .flex()
-        .flex_col()
         .overflow_y_scrollbar()
-        .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
-        .children(snapshot.installed_plugins.iter().enumerate().map(|(index, plugin)| {
-            render_plugin_catalog_row(index, plugin, &snapshot.active_profile_kind, cx)
-        }))
+        .grid()
+        .grid_cols(4)
+        .gap(px(14.0))
+        .children(
+            snapshot
+                .installed_plugins
+                .iter()
+                .enumerate()
+                .map(|(index, plugin)| {
+                    render_plugin_card(index, plugin, &snapshot.active_profile_kind, cx)
+                }),
+        )
         .into_any_element()
 }
 
-fn render_plugin_catalog_row(
+fn render_empty_state(cx: &mut Context<ElyShell>) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap(px(12.0))
+        .py(px(60.0))
+        .child(
+            div()
+                .text_size(px(15.0))
+                .font_weight(FontWeight(500.0))
+                .text_color(rgb(colors::INK))
+                .child("No plugins yet."),
+        )
+        .child(
+            div()
+                .max_w(px(420.0))
+                .text_size(px(13.0))
+                .text_color(rgb(colors::INK_3))
+                .child(
+                    "Drop a signed .rplug package on ELY to extend the browser with sandboxed \
+                     tools. Plugins ship with their own sidebar controls.",
+                ),
+        )
+        .child(action_button(
+            "empty-install",
+            "Install plugin",
+            cx,
+            |shell, window, cx| shell.choose_plugin_package(window, cx),
+        ))
+        .into_any_element()
+}
+
+fn render_plugin_card(
     index: usize,
     plugin: &InstalledPlugin,
-    profile_kind: &ely_domain::ProfileKind,
+    profile_kind: &ProfileKind,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let detail_route = format!("ely://plugin/{}", plugin.id().as_str());
-    let high_risk_count = plugin.manifest().high_risk_permissions().count();
-    let status_color =
-        if plugin.enabled_for_profile(profile_kind) { colors::SUCCESS } else { colors::MUTED };
-    let status_label =
-        if plugin.enabled_for_profile(profile_kind) { "Enabled" } else { "Disabled" };
+    let enabled = plugin.enabled_for_profile(profile_kind);
+    let status = if enabled { "Enabled" } else { "Disabled" };
+    let status_color = if enabled { colors::SUCCESS } else { colors::INK_4 };
+    let high_risk = plugin.manifest().high_risk_permissions().count();
+    let glyph = plugin.manifest().name().chars().next().unwrap_or('◇').to_string();
+    let initial = glyph.to_uppercase().to_string();
 
     div()
-        .py_3()
-        .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .id(SharedString::from(format!("plugin-card-{index}")))
+        .p(px(14.0))
+        .rounded(px(16.0))
+        .bg(rgba(CARD_BG))
         .flex()
-        .items_center()
-        .justify_between()
-        .gap_4()
+        .flex_col()
+        .gap(px(10.0))
+        .cursor_pointer()
+        .hover(|style| style.bg(rgba(CARD_BG_HOVER)))
+        .active(|style| style.opacity(0.85))
+        .on_click(cx.listener(move |shell, _, window, cx| {
+            shell.open_internal_tab(&detail_route, window, cx);
+        }))
         .child(
             div()
-                .min_w_0()
+                .h(px(108.0))
+                .rounded(px(10.0))
+                .bg(linear_gradient(
+                    135.0,
+                    linear_color_stop(hsla(341.0 / 360.0, 0.78, 0.85, 1.0), 0.0),
+                    linear_color_stop(hsla(228.0 / 360.0, 1.0, 0.86, 1.0), 1.0),
+                ))
                 .flex()
                 .items_center()
-                .gap_3()
-                .child(div().text_color(rgb(colors::MUTED_SOFT)).child(IconName::Asterisk))
+                .justify_center()
+                .text_size(px(36.0))
+                .text_color(rgb(0xffffff))
+                .child(initial),
+        )
+        .child(
+            div()
+                .flex()
+                .items_start()
+                .gap(px(8.0))
                 .child(
                     div()
+                        .flex_1()
                         .min_w_0()
                         .flex()
                         .flex_col()
                         .gap_1()
                         .child(
                             div()
-                                .text_sm()
-                                .font_semibold()
-                                .truncate()
+                                .text_size(px(13.5))
+                                .font_weight(FontWeight(600.0))
                                 .text_color(rgb(colors::INK))
+                                .truncate()
                                 .child(plugin.manifest().name().to_string()),
                         )
                         .child(
                             div()
-                                .text_xs()
+                                .text_size(px(11.0))
+                                .text_color(rgb(colors::INK_4))
                                 .truncate()
-                                .text_color(rgb(colors::MUTED))
-                                .child(plugin.manifest().description().to_string()),
+                                .child(plugin.manifest().author().to_string()),
                         ),
+                )
+                .child(
+                    div()
+                        .px(px(9.0))
+                        .py(px(3.0))
+                        .rounded(px(6.0))
+                        .bg(rgba(STATUS_BG))
+                        .text_size(px(11.0))
+                        .font_weight(FontWeight(500.0))
+                        .text_color(rgb(status_color))
+                        .child(status),
                 ),
+        )
+        .child(
+            div()
+                .text_size(px(12.0))
+                .text_color(rgb(colors::INK_3))
+                .max_h(px(48.0))
+                .overflow_hidden()
+                .child(plugin.manifest().description().to_string()),
         )
         .child(
             div()
                 .flex()
                 .items_center()
-                .justify_end()
-                .gap_3()
-                .text_xs()
-                .text_color(rgb(colors::MUTED))
-                .child(format!("{} permissions", plugin.manifest().permissions().len()))
-                .child(format!("{high_risk_count} high risk"))
-                .child(div().text_color(rgb(status_color)).child(status_label))
+                .gap(px(8.0))
+                .pt(px(8.0))
+                .border_t_1()
+                .border_color(rgba(colors::DIVIDER))
+                .text_size(px(10.5))
+                .text_color(rgb(colors::INK_4))
+                .child(format!(
+                    "{} permissions",
+                    plugin.manifest().permissions().len()
+                ))
+                .child("·")
+                .child(format!("{high_risk} high risk"))
                 .child(
-                    Button::new(("plugin-market-details", index))
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::ExternalLink)
-                        .label("Details")
-                        .tooltip("Open Plugin Details")
-                        .on_click(cx.listener(move |shell, _, window, cx| {
-                            shell.open_internal_tab(&detail_route, window, cx);
-                        })),
+                    div()
+                        .ml_auto()
+                        .flex()
+                        .items_center()
+                        .gap(px(3.0))
+                        .text_color(rgb(colors::SUCCESS))
+                        .child("Sandboxed"),
                 ),
         )
         .into_any_element()
 }
 
-fn enabled_plugin_count(snapshot: &BrowserSnapshot) -> usize {
+fn featured_plugin(snapshot: &BrowserSnapshot) -> Option<&InstalledPlugin> {
     snapshot
         .installed_plugins
         .iter()
-        .filter(|plugin| plugin.enabled_for_profile(&snapshot.active_profile_kind))
-        .count()
+        .find(|plugin| plugin.enabled_for_profile(&snapshot.active_profile_kind))
+        .or_else(|| snapshot.installed_plugins.first())
 }
 
 fn high_risk_plugin_count(snapshot: &BrowserSnapshot) -> usize {
@@ -264,3 +496,21 @@ fn high_risk_plugin_count(snapshot: &BrowserSnapshot) -> usize {
         .filter(|plugin| plugin.manifest().high_risk_permissions().next().is_some())
         .count()
 }
+
+fn sandbox_chip_label(snapshot: &BrowserSnapshot) -> &'static str {
+    if snapshot
+        .installed_plugins
+        .iter()
+        .all(|plugin| plugin.manifest().high_risk_permissions().next().is_none())
+    {
+        "Sandboxed"
+    } else {
+        "Audit needed"
+    }
+}
+
+const SEARCH_BG: u32 = 0xffffffd9;
+const SEARCH_BG_HOVER: u32 = 0xffffffeb;
+const CARD_BG: u32 = 0xffffffc7;
+const CARD_BG_HOVER: u32 = 0xffffffeb;
+const STATUS_BG: u32 = 0xffffffd9;
