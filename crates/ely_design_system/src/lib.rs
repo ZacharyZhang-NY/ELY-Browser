@@ -22,10 +22,10 @@ pub const ELY_THEME: Theme = Theme {
     canvas_soft: colors::CANVAS_SOFT,
     surface: colors::SURFACE_CARD,
     ink: colors::INK,
-    body: colors::BODY,
-    muted: colors::MUTED,
+    body: colors::INK_2,
+    muted: colors::INK_3,
     hairline: colors::HAIRLINE,
-    accent: colors::PRIMARY,
+    accent: colors::ACCENT,
     success: colors::SUCCESS,
     error: colors::ERROR,
 };

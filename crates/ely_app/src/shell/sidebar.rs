@@ -3,7 +3,7 @@ use ely_design_system::{colors, spacing};
 use ely_domain::{
     ArchivedTab, BrowserTab, COLLAPSED_SIDEBAR_WIDTH_PX, DEFAULT_SIDEBAR_WIDTH_PX, Space,
 };
-use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, Window, div, px, rgb};
+use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, Window, div, px, rgb, rgba};
 use gpui_component::{
     IconName, Selectable, Sizable, StyledExt,
     button::{Button, ButtonVariants},
@@ -36,9 +36,8 @@ impl ElyShell {
             .items_center()
             .gap_2()
             .p_2()
-            .border_r_1()
-            .border_color(rgb(colors::HAIRLINE))
-            .bg(rgb(colors::CANVAS))
+            .rounded(px(spacing::RADIUS_CARD))
+            .bg(rgba(colors::GLASS))
             .children(snapshot.favorites.iter().enumerate().map(|(index, tab)| {
                 self.render_compact_tab_button(
                     ("compact-favorite", index),
@@ -174,23 +173,20 @@ impl ElyShell {
 
 pub(super) fn render_command_bar_identity(
     snapshot: &BrowserSnapshot,
-    sidebar_width: f32,
+    _sidebar_width: f32,
     sidebar_collapsed: bool,
 ) -> AnyElement {
-    let width = sidebar_width - spacing::XL;
     if sidebar_collapsed {
         return div()
-            .w(px(width))
             .flex()
             .items_center()
-            .justify_center()
             .child(
                 div()
                     .size(px(28.0))
-                    .rounded_md()
-                    .bg(rgb(colors::PRIMARY))
-                    .text_color(rgb(colors::CANVAS))
-                    .text_xs()
+                    .rounded(px(spacing::RADIUS_NAV))
+                    .bg(rgb(colors::ACCENT))
+                    .text_color(rgb(colors::SURFACE_CARD))
+                    .text_size(px(10.0))
                     .font_semibold()
                     .flex()
                     .items_center()
@@ -201,15 +197,20 @@ pub(super) fn render_command_bar_identity(
     }
 
     div()
-        .w(px(width))
         .flex()
         .items_center()
         .gap_2()
-        .child(div().text_size(px(18.0)).font_semibold().child("ELY Browser"))
         .child(
             div()
-                .text_xs()
-                .text_color(rgb(colors::MUTED))
+                .text_size(px(15.0))
+                .font_semibold()
+                .text_color(rgb(colors::INK))
+                .child("ELY Browser"),
+        )
+        .child(
+            div()
+                .text_size(px(11.0))
+                .text_color(rgb(colors::INK_3))
                 .child(snapshot.active_space_name.clone()),
         )
         .into_any_element()
