@@ -1,3 +1,4 @@
+mod appearance;
 mod archive;
 mod bookmark;
 mod command;
@@ -23,6 +24,7 @@ mod tab_group;
 mod update;
 mod url_text;
 
+pub use appearance::{AppearanceSettings, ThemeMode, WallpaperTheme};
 pub use archive::{ArchiveSource, ArchivedTab};
 pub use bookmark::BookmarkEntry;
 pub use command::{CommandIntent, CommandScope};
