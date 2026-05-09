@@ -214,14 +214,18 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let tab_id = tab.id().clone();
+        let close_tab_id = tab.id().clone();
         let bg_color = if active { ACTIVE_NAV_BG } else { 0x00000000 };
         let text_color = if active { colors::INK } else { colors::INK_2 };
         let host = tab.url().host().map(|host| host.to_string());
         let title = tab.title().to_string();
         let initial = title.chars().next().unwrap_or('?').to_string();
+        let group_name = SharedString::from(format!("launcher-{}", tab.id().as_str()));
+        let close_id = SharedString::from(format!("launcher-close-{}", tab.id().as_str()));
 
         div()
             .id(SharedString::from(format!("nav-{}", tab.id().as_str())))
+            .group(group_name.clone())
             .rounded(px(spacing::RADIUS_NAV))
             .px(px(10.0))
             .py(px(7.0))
@@ -247,6 +251,25 @@ impl ElyShell {
                     .font_weight(gpui::FontWeight(500.0))
                     .text_color(rgb(text_color))
                     .child(title),
+            )
+            .child(
+                div()
+                    .id(close_id)
+                    .size(px(16.0))
+                    .rounded(px(4.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_color(rgb(colors::INK_4))
+                    .opacity(0.0)
+                    .group_hover(group_name, |style| style.opacity(1.0))
+                    .hover(|style| style.bg(rgba(0x281e1414)).text_color(rgb(colors::INK)))
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |shell, _, window, cx| {
+                        shell.select_tab(&close_tab_id, window, cx);
+                        shell.close_active_tab(window, cx);
+                    }))
+                    .child(IconName::Close),
             )
             .into_any_element()
     }
