@@ -1,13 +1,21 @@
-use std::error::Error;
+use std::{
+    env,
+    error::Error,
+    process::{Command, Stdio},
+    thread,
+    time::{Duration, Instant},
+};
 
 use ely_domain::{BrowserTab, ProfileId, SpaceId, TabId, UrlText};
 use gpui::{Bounds, point, px, size};
 
 use crate::{
-    services::ProfileDataMode,
-    services::prd_live_sites::{
-        LiveSiteCase, PRD_REFERENCE_SITE_CASES, PRD_TOP_SITE_CASES,
-        assert_prd_reference_urls_are_covered,
+    services::{
+        ProfileDataMode,
+        prd_live_sites::{
+            LiveSiteCase, PRD_REFERENCE_SITE_CASES, PRD_TOP_SITE_CASES,
+            assert_prd_reference_urls_are_covered,
+        },
     },
     shell::{
         web_surface_frame::WebSurfaceFrame,
@@ -22,6 +30,9 @@ const LIVE_SURFACE_WIDTH: u32 = 934;
 const LIVE_SURFACE_HEIGHT: u32 = 657;
 const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
 const LIVE_SITE_RENDER_ATTEMPTS: usize = 3;
+const LIVE_SITE_WAIT_TIMEOUT: Duration = Duration::from_secs(20);
+const LIVE_SITE_WAIT_INTERVAL: Duration = Duration::from_millis(2);
+const LIVE_SITE_CHILD_ENV: &str = "ELY_APP_WEB_SURFACE_LIVE_CHILD";
 
 #[test]
 fn web_surface_cases_cover_prd_reference_urls() -> Result<(), Box<dyn Error>> {
@@ -30,61 +41,108 @@ fn web_surface_cases_cover_prd_reference_urls() -> Result<(), Box<dyn Error>> {
 
 #[test]
 fn web_surface_opens_and_renders_prd_top_sites() -> Result<(), Box<dyn Error>> {
-    assert_web_surfaces_render(PRD_TOP_SITE_CASES)
+    run_isolated_live_site_test("web_surface_opens_and_renders_prd_top_sites", || {
+        assert_web_surfaces_render(PRD_TOP_SITE_CASES)
+    })
 }
 
 #[test]
 fn web_surface_opens_and_renders_prd_reference_sites() -> Result<(), Box<dyn Error>> {
-    assert_web_surfaces_render(PRD_REFERENCE_SITE_CASES)
+    run_isolated_live_site_test("web_surface_opens_and_renders_prd_reference_sites", || {
+        assert_web_surfaces_render(PRD_REFERENCE_SITE_CASES)
+    })
+}
+
+fn run_isolated_live_site_test(
+    test_name: &str,
+    test: impl FnOnce() -> Result<(), Box<dyn Error>>,
+) -> Result<(), Box<dyn Error>> {
+    if env::var_os(LIVE_SITE_CHILD_ENV).is_some() {
+        return test();
+    }
+
+    let output = Command::new(env::current_exe()?)
+        .arg(test_name)
+        .env(LIVE_SITE_CHILD_ENV, "1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "isolated web surface live-site test failed\nstatus: {}\nstdout: {}\nstderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+    .into())
 }
 
 fn assert_web_surfaces_render(cases: &[LiveSiteCase]) -> Result<(), Box<dyn Error>> {
+    let mut store = WebSurfaceStore::new();
+    let profile_id = ProfileId::new();
+
     for case in cases {
-        let frame = render_web_surface_frame(case)?;
+        let frame = render_web_surface_frame(&mut store, &profile_id, case)?;
         log_prd_frame("web-surface", &frame, case);
     }
     Ok(())
 }
 
-fn render_web_surface_frame(case: &LiveSiteCase) -> Result<WebSurfaceFrame, Box<dyn Error>> {
+fn render_web_surface_frame(
+    store: &mut WebSurfaceStore,
+    profile_id: &ProfileId,
+    case: &LiveSiteCase,
+) -> Result<WebSurfaceFrame, Box<dyn Error>> {
     let mut last_error = String::new();
 
     for attempt in 0..LIVE_SITE_RENDER_ATTEMPTS {
-        let mut store = WebSurfaceStore::new();
-        let tab = web_tab(case.url)?;
+        let tab = web_tab(profile_id.clone(), case.url)?;
         assert!(store.record_viewport_size(tab.id(), live_surface_bounds()), "{}", case.url);
-        let request = store
-            .prepare_request(&tab, ProfileDataMode::Persistent)
-            .ok_or_else(|| format!("missing web surface request for {}", case.url))?;
-        let tab_id = request.tab_id.clone();
-        let snapshot = request.client.snapshot(request.snapshot_request)?;
-        let frame = WebSurfaceFrame::from_snapshot(
-            request.requested_url,
-            request.scroll_offset,
-            request.zoom_percent,
-            request.click_point,
-            request.typed_text,
-            snapshot,
-        )?;
+        store.ensure_surface(&tab, ProfileDataMode::Transient, &[]);
 
-        match validate_prd_frame(&frame, case) {
-            Ok(()) => {
-                store.finish(tab_id, WebSurfaceState::Ready(frame.clone()));
-                let Some(WebSurfaceState::Ready(stored_frame)) = store.state(tab.id()) else {
-                    return Err(format!("web surface state is not ready for {}", case.url).into());
-                };
-                validate_prd_frame(stored_frame, case)?;
-                return Ok(frame);
-            }
+        match wait_for_ready_frame(store, tab.id(), case) {
+            Ok(frame) => return Ok(frame),
             Err(error) => last_error = error,
         }
 
         if attempt + 1 < LIVE_SITE_RENDER_ATTEMPTS {
-            std::thread::sleep(std::time::Duration::from_millis(250));
+            thread::sleep(Duration::from_millis(250));
         }
     }
 
     Err(last_error.into())
+}
+
+fn wait_for_ready_frame(
+    store: &mut WebSurfaceStore,
+    tab_id: &TabId,
+    case: &LiveSiteCase,
+) -> Result<WebSurfaceFrame, String> {
+    let started_at = Instant::now();
+
+    loop {
+        if started_at.elapsed() >= LIVE_SITE_WAIT_TIMEOUT {
+            return Err(format!("timed out rendering {}", case.url));
+        }
+
+        store.tick();
+        match store.state(tab_id) {
+            Some(WebSurfaceState::Ready(frame)) => {
+                validate_prd_frame(frame, case)?;
+                return Ok(frame.clone());
+            }
+            Some(WebSurfaceState::Failed { message, .. }) => {
+                return Err(format!("{} failed: {message}", case.url));
+            }
+            Some(WebSurfaceState::Loading { .. }) | None => {}
+        }
+
+        thread::sleep(LIVE_SITE_WAIT_INTERVAL);
+    }
 }
 
 fn validate_prd_frame(frame: &WebSurfaceFrame, case: &LiveSiteCase) -> Result<(), String> {
@@ -147,8 +205,8 @@ fn live_surface_bounds() -> Bounds<gpui::Pixels> {
     )
 }
 
-fn web_tab(url: &str) -> Result<BrowserTab, Box<dyn Error>> {
-    Ok(BrowserTab::new(TabId::new(), SpaceId::new(), ProfileId::new(), "Web", UrlText::parse(url)?))
+fn web_tab(profile_id: ProfileId, url: &str) -> Result<BrowserTab, Box<dyn Error>> {
+    Ok(BrowserTab::new(TabId::new(), SpaceId::new(), profile_id, "Web", UrlText::parse(url)?))
 }
 
 fn normalized_url(url: &str) -> &str {

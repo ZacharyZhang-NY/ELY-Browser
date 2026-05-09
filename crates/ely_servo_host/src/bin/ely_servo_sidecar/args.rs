@@ -8,7 +8,12 @@ use serde::Deserialize;
 use thiserror::Error;
 
 pub(super) enum SidecarCommand {
+    Live(LiveArgs),
     Snapshot(SnapshotArgs),
+}
+
+pub(super) struct LiveArgs {
+    pub(super) profile_data_dir: PathBuf,
 }
 
 pub(super) struct SnapshotArgs {
@@ -109,9 +114,32 @@ fn parse_command(
     let command = args.next().ok_or(SidecarArgsError::MissingCommand)?;
 
     match command.as_str() {
+        "live" => parse_live_args(args).map(SidecarCommand::Live),
         "snapshot" => parse_snapshot_args(args).map(SidecarCommand::Snapshot),
         _ => Err(SidecarArgsError::UnknownCommand { value: command }),
     }
+}
+
+fn parse_live_args(args: impl IntoIterator<Item = String>) -> Result<LiveArgs, SidecarArgsError> {
+    let mut args = args.into_iter();
+    let mut profile_data_dir = None;
+
+    while let Some(name) = args.next() {
+        match name.as_str() {
+            "--profile-data-dir" => {
+                profile_data_dir = Some(parse_path(
+                    "--profile-data-dir",
+                    next_argument(&mut args, "--profile-data-dir")?,
+                )?)
+            }
+            _ => return Err(SidecarArgsError::UnknownArgument { value: name }),
+        }
+    }
+
+    Ok(LiveArgs {
+        profile_data_dir: profile_data_dir
+            .ok_or(SidecarArgsError::MissingRequiredArgument { name: "--profile-data-dir" })?,
+    })
 }
 
 fn parse_snapshot_args(
@@ -344,9 +372,8 @@ mod tests {
     fn parses_snapshot_profile_identity() -> Result<(), SidecarArgsError> {
         let profile_id = ProfileId::new();
         let profile_data_dir = env::temp_dir().join(profile_id.as_str());
-        let command = parse_snapshot_command(&profile_id, profile_data_dir.clone())?;
+        let args = parse_snapshot_command(&profile_id, profile_data_dir.clone())?;
 
-        let SidecarCommand::Snapshot(args) = command;
         assert_eq!(args.profile_id, profile_id);
         assert_eq!(args.profile_data_dir, profile_data_dir);
         assert_eq!(args.page_zoom_percent, DEFAULT_ZOOM_PERCENT);
@@ -393,7 +420,7 @@ mod tests {
                 .to_string(),
         );
 
-        let SidecarCommand::Snapshot(args) = parse_command(command)?;
+        let args = snapshot_args(parse_command(command)?);
         assert_eq!(args.site_permissions.len(), 1);
         let permission = &args.site_permissions[0];
         assert_eq!(permission.origin.as_str(), "https://example.com");
@@ -410,7 +437,7 @@ mod tests {
         command.push("--page-zoom-percent".to_string());
         command.push("125".to_string());
 
-        let SidecarCommand::Snapshot(args) = parse_command(command)?;
+        let args = snapshot_args(parse_command(command)?);
         assert_eq!(args.page_zoom_percent, 125);
         Ok(())
     }
@@ -432,8 +459,15 @@ mod tests {
     fn parse_snapshot_command(
         profile_id: &ProfileId,
         profile_data_dir: PathBuf,
-    ) -> Result<SidecarCommand, SidecarArgsError> {
-        parse_command(snapshot_command_args(profile_id, profile_data_dir))
+    ) -> Result<super::SnapshotArgs, SidecarArgsError> {
+        Ok(snapshot_args(parse_command(snapshot_command_args(profile_id, profile_data_dir))?))
+    }
+
+    fn snapshot_args(command: SidecarCommand) -> super::SnapshotArgs {
+        match command {
+            SidecarCommand::Snapshot(args) => args,
+            SidecarCommand::Live(_) => unreachable!("expected snapshot command"),
+        }
     }
 
     fn snapshot_command_args(profile_id: &ProfileId, profile_data_dir: PathBuf) -> Vec<String> {

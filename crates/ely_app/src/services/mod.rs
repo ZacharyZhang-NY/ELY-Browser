@@ -4,10 +4,9 @@ pub mod http_downloads;
 pub mod plugin_package_store;
 pub mod plugin_packages;
 pub mod plugin_signatures;
-mod servo_profile_data;
-pub mod servo_sidecar;
+pub mod servo_live;
+pub(crate) mod servo_profile_data;
 mod servo_sidecar_command;
-mod servo_sidecar_request;
 
 pub(crate) use servo_profile_data::ProfileDataMode;
 

@@ -1,7 +1,7 @@
 use std::{cell::Cell, cell::RefCell, rc::Rc};
 
 use ely_domain::{ProfileId, TabId, WebViewId};
-use servo::{LoadStatus, WebView, WebViewDelegate};
+use servo::{LoadStatus, RenderingContext, WebView, WebViewDelegate};
 use url::Url;
 
 use crate::{
@@ -12,6 +12,7 @@ use crate::{
 pub(super) struct HostWebView {
     pub(super) tab_id: TabId,
     pub(super) profile_id: ProfileId,
+    pub(super) rendering_context: Rc<dyn RenderingContext>,
     pub(super) webview: WebView,
     pub(super) delegate: Rc<HostWebViewDelegate>,
     pub(super) requested_url: Option<String>,

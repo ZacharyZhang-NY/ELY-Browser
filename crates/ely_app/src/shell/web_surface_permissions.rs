@@ -1,12 +1,39 @@
 use ely_browser_core::BrowserSnapshot;
-use ely_domain::{BrowserTab, SiteOrigin};
+use ely_domain::{BrowserTab, SiteOrigin, SitePermissionDecision, SitePermissionFeature};
 
-use crate::services::servo_sidecar::SidecarSitePermission;
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct WebSurfaceSitePermission {
+    origin: SiteOrigin,
+    feature: SitePermissionFeature,
+    decision: SitePermissionDecision,
+}
 
-pub(super) fn sidecar_site_permissions_for_tab(
+impl WebSurfaceSitePermission {
+    pub(super) fn new(
+        origin: SiteOrigin,
+        feature: SitePermissionFeature,
+        decision: SitePermissionDecision,
+    ) -> Self {
+        Self { origin, feature, decision }
+    }
+
+    pub(super) fn origin(&self) -> &SiteOrigin {
+        &self.origin
+    }
+
+    pub(super) fn feature(&self) -> SitePermissionFeature {
+        self.feature
+    }
+
+    pub(super) fn decision(&self) -> SitePermissionDecision {
+        self.decision
+    }
+}
+
+pub(super) fn web_surface_site_permissions_for_tab(
     tab: &BrowserTab,
     snapshot: &BrowserSnapshot,
-) -> Vec<SidecarSitePermission> {
+) -> Vec<WebSurfaceSitePermission> {
     let Ok(Some(origin)) = SiteOrigin::from_url(tab.url()) else {
         return Vec::new();
     };
@@ -17,7 +44,7 @@ pub(super) fn sidecar_site_permissions_for_tab(
         .filter(|entry| entry.profile_id() == tab.profile_id())
         .filter(|entry| entry.origin() == &origin)
         .map(|entry| {
-            SidecarSitePermission::new(entry.origin().clone(), entry.feature(), entry.decision())
+            WebSurfaceSitePermission::new(entry.origin().clone(), entry.feature(), entry.decision())
         })
         .collect()
 }
@@ -31,7 +58,7 @@ mod tests {
         BrowserTab, SiteOrigin, SitePermissionDecision, SitePermissionFeature, UrlText,
     };
 
-    use super::sidecar_site_permissions_for_tab;
+    use super::web_surface_site_permissions_for_tab;
 
     #[test]
     fn includes_matching_profile_and_origin_permissions() -> Result<(), Box<dyn Error>> {
@@ -45,7 +72,7 @@ mod tests {
 
         let snapshot = core.snapshot()?;
         let tab = active_tab(&snapshot)?;
-        let permissions = sidecar_site_permissions_for_tab(tab, &snapshot);
+        let permissions = web_surface_site_permissions_for_tab(tab, &snapshot);
 
         assert_eq!(permissions.len(), 1);
         assert_eq!(permissions[0].origin().as_str(), "https://example.com");
@@ -66,7 +93,7 @@ mod tests {
         let snapshot = core.snapshot()?;
         let tab = active_tab(&snapshot)?;
 
-        assert!(sidecar_site_permissions_for_tab(tab, &snapshot).is_empty());
+        assert!(web_surface_site_permissions_for_tab(tab, &snapshot).is_empty());
         Ok(())
     }
 

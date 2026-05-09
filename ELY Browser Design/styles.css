@@ -1,0 +1,302 @@
+/* ELY Browser – global tokens & shared chrome */
+
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;450;500;600;700&family=Geist+Mono:wght@400;500&display=swap');
+
+:root {
+  --ely-ink:        #1d1c1a;
+  --ely-ink-2:      #3a3733;
+  --ely-ink-3:      #6b6660;
+  --ely-ink-4:      #9a948c;
+  --ely-ink-5:      #c8c2b8;
+
+  --ely-glass:      rgba(255,255,255,0.62);
+  --ely-glass-2:    rgba(255,255,255,0.78);
+  --ely-glass-3:    rgba(255,255,255,0.92);
+  --ely-tint:       rgba(255,255,255,0.42);
+  --ely-stroke:     rgba(40,30,20,0.08);
+  --ely-stroke-2:   rgba(40,30,20,0.04);
+  --ely-divider:    rgba(40,30,20,0.06);
+
+  --ely-accent:     #c96442;          /* warm clay */
+  --ely-accent-2:   #d97757;
+  --ely-violet:     #7c6cf7;
+  --ely-rose:       #ec6a8e;
+  --ely-mint:       #4fb59a;
+
+  --ely-radius-card: 18px;
+  --ely-radius-pane: 14px;
+  --ely-radius-pill: 999px;
+
+  --ely-shadow-window: 0 30px 70px -20px rgba(40,30,20,0.35), 0 0 0 1px rgba(255,255,255,0.5) inset, 0 1px 0 rgba(255,255,255,0.7) inset;
+  --ely-shadow-card:   0 8px 24px -10px rgba(40,30,20,0.18), 0 0 0 1px var(--ely-stroke) inset;
+  --ely-shadow-soft:   0 1px 0 rgba(255,255,255,0.7) inset, 0 0 0 1px var(--ely-stroke);
+
+  --ely-font-sans: 'Geist', ui-sans-serif, sans-serif;
+  --ely-font-serif: 'Newsreader', 'Source Serif 4', Georgia, serif;
+  --ely-font-mono: 'Geist Mono', ui-monospace, monospace;
+}
+
+/* ============== BROWSER FRAME ============== */
+
+.ely-window {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  font-family: var(--ely-font-sans);
+  color: var(--ely-ink);
+  font-feature-settings: 'cv11', 'ss01';
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  border-radius: 14px;
+  isolation: isolate;
+}
+
+/* the dreamy gradient wallpaper */
+.ely-wallpaper {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(60% 50% at 85% 18%, #ffd1d8 0%, rgba(255,209,216,0) 70%),
+    radial-gradient(55% 60% at 15% 95%, #b9c7ff 0%, rgba(185,199,255,0) 75%),
+    radial-gradient(80% 80% at 50% 50%, #fff3ee 0%, #efe8e1 100%);
+  z-index: 0;
+}
+.ely-wallpaper.ely-wp-dawn {
+  background:
+    radial-gradient(60% 50% at 85% 18%, #ffd1d8 0%, rgba(255,209,216,0) 70%),
+    radial-gradient(55% 60% at 15% 95%, #b9c7ff 0%, rgba(185,199,255,0) 75%),
+    radial-gradient(80% 80% at 50% 50%, #fff3ee 0%, #efe8e1 100%);
+}
+.ely-wallpaper.ely-wp-violet {
+  background:
+    radial-gradient(50% 50% at 80% 20%, #d6c4ff 0%, rgba(214,196,255,0) 70%),
+    radial-gradient(50% 50% at 12% 90%, #ffe0c0 0%, rgba(255,224,192,0) 70%),
+    radial-gradient(80% 80% at 50% 50%, #f4eef9 0%, #e9e2ee 100%);
+}
+.ely-wallpaper.ely-wp-mint {
+  background:
+    radial-gradient(50% 50% at 85% 25%, #c5f0db 0%, rgba(197,240,219,0) 70%),
+    radial-gradient(55% 55% at 10% 95%, #ffe5b8 0%, rgba(255,229,184,0) 70%),
+    radial-gradient(80% 80% at 50% 50%, #f0f5ee 0%, #e6ece2 100%);
+}
+
+.ely-shell {
+  position: absolute;
+  inset: 16px;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 256px 1fr;
+  gap: 12px;
+}
+
+/* ============== SIDEBAR ============== */
+
+.ely-sidebar {
+  background: var(--ely-glass);
+  backdrop-filter: blur(28px) saturate(140%);
+  -webkit-backdrop-filter: blur(28px) saturate(140%);
+  border-radius: var(--ely-radius-card);
+  box-shadow: var(--ely-shadow-window);
+  display: flex;
+  flex-direction: column;
+  padding: 10px 10px 12px;
+  gap: 10px;
+  position: relative;
+}
+
+.ely-traffic {
+  display: flex; gap: 8px; padding: 6px 6px 4px;
+  align-items: center;
+}
+.ely-traffic .dot { width: 12px; height: 12px; border-radius: 50%; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.18); }
+.ely-traffic .dot.red    { background: #ff5f57; }
+.ely-traffic .dot.yellow { background: #febc2e; }
+.ely-traffic .dot.green  { background: #28c840; }
+.ely-traffic .title {
+  margin-left: 8px;
+  font-size: 12.5px; font-weight: 500;
+  color: var(--ely-ink-2);
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.ely-traffic .title svg { opacity: .6; }
+
+.ely-ws-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 2px;
+}
+.ely-ws-tile {
+  width: 32px; height: 32px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #fff 0%, #ffe9e0 100%);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--ely-shadow-soft);
+  color: var(--ely-accent);
+  flex: 0 0 auto;
+}
+.ely-ws-pick {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px;
+  border-radius: 9px;
+  background: rgba(255,255,255,0.6);
+  box-shadow: var(--ely-shadow-soft);
+  font-size: 13px; font-weight: 500; color: var(--ely-ink);
+}
+.ely-ws-pick .ws-glyph {
+  width: 18px; height: 18px; border-radius: 5px;
+  background: linear-gradient(135deg, #ec6a8e, #c96442);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 10px;
+}
+.ely-ws-pick .grow { flex: 1; }
+.ely-ws-pick svg { color: var(--ely-ink-3); }
+.ely-ws-add {
+  width: 32px; height: 32px;
+  border-radius: 9px;
+  background: rgba(255,255,255,0.4);
+  box-shadow: var(--ely-shadow-soft);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ely-ink-3);
+  flex: 0 0 auto;
+}
+
+.ely-nav { display: flex; flex-direction: column; gap: 1px; padding: 4px 0 0; }
+.ely-nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--ely-ink-2);
+  position: relative;
+}
+.ely-nav-item .ico {
+  width: 18px; height: 18px; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--ely-ink-3);
+}
+.ely-nav-item .ico-tile {
+  width: 18px; height: 18px; flex: 0 0 auto;
+  border-radius: 4px;
+  background: #fff; box-shadow: 0 0 0 1px var(--ely-stroke);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 600;
+}
+.ely-nav-item .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ely-nav-item .badge {
+  font-size: 10px;
+  background: rgba(40,30,20,0.06);
+  color: var(--ely-ink-3);
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+.ely-nav-item .dot-unread {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ely-accent);
+}
+.ely-nav-item.active {
+  background: rgba(255,255,255,0.85);
+  color: var(--ely-ink);
+  box-shadow: var(--ely-shadow-soft);
+}
+.ely-nav-item .close {
+  width: 16px; height: 16px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 4px;
+  color: var(--ely-ink-4);
+  opacity: 0;
+}
+.ely-nav-item:hover .close { opacity: 1; }
+
+.ely-sec-label {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--ely-ink-4);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px 4px;
+}
+
+.ely-sidebar-foot {
+  margin-top: auto;
+  display: flex; flex-direction: column; gap: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ely-divider);
+}
+.ely-profile-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px;
+  border-radius: 9px;
+}
+.ely-avatar {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: linear-gradient(135deg, #f4c8b8, #c96442);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 600; color: #fff;
+  flex: 0 0 auto;
+}
+.ely-profile-row .name { font-size: 13px; font-weight: 500; flex: 1; }
+
+/* ============== MAIN PANE ============== */
+
+.ely-main {
+  background: var(--ely-glass);
+  backdrop-filter: blur(28px) saturate(140%);
+  -webkit-backdrop-filter: blur(28px) saturate(140%);
+  border-radius: var(--ely-radius-card);
+  box-shadow: var(--ely-shadow-window);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.ely-topbar {
+  height: 54px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--ely-divider);
+  flex: 0 0 auto;
+}
+.ely-iconbtn {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--ely-ink-3);
+  background: transparent;
+  border: 0;
+}
+.ely-iconbtn:hover { background: rgba(255,255,255,0.55); color: var(--ely-ink); }
+.ely-iconbtn.is-on { background: rgba(255,255,255,0.85); color: var(--ely-ink); box-shadow: var(--ely-shadow-soft); }
+.ely-iconbtn.disabled { color: var(--ely-ink-5); }
+
+.ely-omnibar {
+  flex: 1;
+  height: 36px;
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(255,255,255,0.55);
+  border-radius: var(--ely-radius-pill);
+  padding: 0 14px;
+  font-size: 13px;
+  color: var(--ely-ink-3);
+  box-shadow: var(--ely-shadow-soft);
+}
+.ely-omnibar .url-host { color: var(--ely-ink); font-weight: 500; }
+.ely-omnibar .url-path { color: var(--ely-ink-3); }
+.ely-omnibar .right { margin-left: auto; display: flex; align-items: center; gap: 4px; color: var(--ely-ink-4); }
+
+/* generic glass card */
+.ely-card {
+  background: var(--ely-glass-2);
+  border-radius: 16px;
+  box-shadow: var(--ely-shadow-card);
+}
+
+/* utility */
+.ely-row { display: flex; align-items: center; }
+.ely-col { display: flex; flex-direction: column; }
+.ely-grow { flex: 1; min-width: 0; }
+.ely-mono { font-family: var(--ely-font-mono); }
+.ely-serif { font-family: var(--ely-font-serif); }
+
+/* scrollbar invisibilize within artboards (already done by canvas) */
+.ely-scroll::-webkit-scrollbar { display: none; }

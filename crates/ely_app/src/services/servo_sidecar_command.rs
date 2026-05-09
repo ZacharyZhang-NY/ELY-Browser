@@ -1,14 +1,11 @@
 use std::{
-    env,
+    env, io,
     path::{Path, PathBuf},
     process::Command,
-    time::Duration,
 };
 
-use super::servo_sidecar::ServoSidecarError;
+use thiserror::Error;
 
-const SIDECAR_BINARY_TIMEOUT: Duration = Duration::from_secs(45);
-const SIDECAR_CARGO_TIMEOUT: Duration = Duration::from_secs(180);
 const SIDECAR_PATH_ENV: &str = "ELY_SERVO_SIDECAR";
 
 #[derive(Clone, Debug)]
@@ -40,13 +37,6 @@ impl SidecarCommandTarget {
         }
     }
 
-    pub(super) fn timeout(&self) -> Duration {
-        match self {
-            Self::Binary(_) => SIDECAR_BINARY_TIMEOUT,
-            Self::Cargo { .. } => SIDECAR_CARGO_TIMEOUT,
-        }
-    }
-
     pub(super) fn missing_binary_path(&self) -> Option<&Path> {
         match self {
             Self::Binary(path) if !path.is_file() => Some(path.as_path()),
@@ -55,14 +45,23 @@ impl SidecarCommandTarget {
     }
 }
 
-pub(super) fn default_sidecar_command() -> Result<SidecarCommandTarget, ServoSidecarError> {
+#[derive(Debug, Error)]
+pub(crate) enum SidecarCommandError {
+    #[error("current executable path is unavailable: {0}")]
+    CurrentExecutable(#[source] io::Error),
+
+    #[error("current executable directory is unavailable for {path}")]
+    CurrentExecutableDirectoryUnavailable { path: PathBuf },
+}
+
+pub(super) fn default_sidecar_command() -> Result<SidecarCommandTarget, SidecarCommandError> {
     if let Some(path) = env::var_os(SIDECAR_PATH_ENV) {
         return Ok(SidecarCommandTarget::Binary(PathBuf::from(path)));
     }
 
-    let current_exe = env::current_exe().map_err(ServoSidecarError::CurrentExecutable)?;
+    let current_exe = env::current_exe().map_err(SidecarCommandError::CurrentExecutable)?;
     let exe_dir = current_exe.parent().ok_or_else(|| {
-        ServoSidecarError::CurrentExecutableDirectoryUnavailable { path: current_exe.clone() }
+        SidecarCommandError::CurrentExecutableDirectoryUnavailable { path: current_exe.clone() }
     })?;
     let adjacent_sidecar = exe_dir.join(sidecar_binary_name());
     if adjacent_sidecar.is_file() {

@@ -1,6 +1,6 @@
 use gpui::{Bounds, Pixels, Point};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct WebSurfaceSize {
     pub(super) width: u32,
     pub(super) height: u32,
@@ -32,6 +32,7 @@ impl WebSurfaceClickPoint {
         })
     }
 
+    #[cfg(all(test, feature = "live-site-smoke"))]
     pub(super) fn detail_label(self) -> String {
         format!("click={},{}", self.x, self.y)
     }
@@ -59,6 +60,7 @@ impl WebSurfaceScrollOffset {
         }
     }
 
+    #[cfg(all(test, feature = "live-site-smoke"))]
     pub(super) fn detail_label(self, size: WebSurfaceSize) -> String {
         match (self.x, self.y) {
             (0, 0) => format!("{}x{}", size.width, size.height),
@@ -67,10 +69,7 @@ impl WebSurfaceScrollOffset {
         }
     }
 
-    pub(super) fn x(self) -> i32 {
-        self.x
-    }
-
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn y(self) -> i32 {
         self.y
     }
@@ -91,6 +90,18 @@ impl WebSurfaceScrollDelta {
         }
 
         Some(Self { x, y })
+    }
+
+    pub(super) fn x(self) -> i32 {
+        self.x
+    }
+
+    pub(super) fn y(self) -> i32 {
+        self.y
+    }
+
+    pub(super) fn combined_with(self, next: Self) -> Self {
+        Self { x: combined_scroll_delta(self.x, next.x), y: combined_scroll_delta(self.y, next.y) }
     }
 }
 
@@ -132,4 +143,9 @@ fn positive_scroll_component(current: i32, delta: i32) -> i32 {
     let value = i64::from(current) + i64::from(delta);
     let clamped = value.clamp(0, i64::from(i32::MAX));
     clamped as i32
+}
+
+fn combined_scroll_delta(current: i32, next: i32) -> i32 {
+    let value = i64::from(current) + i64::from(next);
+    value.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
 }

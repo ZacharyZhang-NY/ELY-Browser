@@ -6,6 +6,7 @@ members = [
     "crates/ely_domain",
     "crates/ely_servo_host",
 ]
+default-members = ["crates/ely_app"]
 resolver = "2"
 
 [workspace.package]

@@ -14,6 +14,8 @@ use thiserror::Error;
 
 #[path = "ely_servo_sidecar/args.rs"]
 mod args;
+#[path = "ely_servo_sidecar/live.rs"]
+mod live;
 #[path = "ely_servo_sidecar/report.rs"]
 mod report;
 
@@ -28,6 +30,7 @@ const INPUT_SETTLE_TIMEOUT: Duration = Duration::from_millis(700);
 
 fn main() -> Result<(), SidecarError> {
     match args::parse_env_command()? {
+        SidecarCommand::Live(args) => live::run_live(args).map_err(SidecarError::Live),
         SidecarCommand::Snapshot(args) => run_snapshot(args),
     }
 }
@@ -42,6 +45,9 @@ enum SidecarError {
 
     #[error(transparent)]
     Host(#[from] ServoHostError),
+
+    #[error(transparent)]
+    Live(#[from] live::LiveSidecarError),
 
     #[error(transparent)]
     Io(#[from] std::io::Error),

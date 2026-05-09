@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>ELY Browser — Design System</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="stylesheet" href="styles.css"/>
+<style>
+  html, body { margin:0; padding:0; background:#f0eee9; font-family: 'Geist', system-ui, sans-serif; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="shared.jsx"></script>
+<script type="text/babel" src="screens/home.jsx"></script>
+<script type="text/babel" src="screens/browsing.jsx"></script>
+<script type="text/babel" src="screens/split.jsx"></script>
+<script type="text/babel" src="screens/command.jsx"></script>
+<script type="text/babel" src="screens/settings.jsx"></script>
+<script type="text/babel" src="screens/sync.jsx"></script>
+<script type="text/babel" src="screens/plugins.jsx"></script>
+
+<script type="text/babel">
+  const W = 1500, H = 940;
+  function App() {
+    return (
+      <DesignCanvas title="ELY Browser" subtitle="A calm, glassy desktop browser — full design across 7 surfaces.">
+        <DCSection id="primary" title="Primary surfaces" subtitle="Home, browsing, split view">
+          <DCArtboard id="home" label="01 · Home / New Tab" width={W} height={H}>
+            <HomeScreen/>
+          </DCArtboard>
+          <DCArtboard id="browse" label="02 · Main Browsing Page" width={W} height={H}>
+            <BrowsingScreen/>
+          </DCArtboard>
+          <DCArtboard id="split" label="03 · Split View" width={W} height={H}>
+            <SplitScreen/>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="overlays" title="Overlays & system" subtitle="Quick switcher, settings">
+          <DCArtboard id="cmd" label="04 · Command Bar / Quick Switcher" width={W} height={H}>
+            <CommandScreen/>
+          </DCArtboard>
+          <DCArtboard id="set" label="05 · Settings" width={W} height={H}>
+            <SettingsScreen/>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="account" title="Account & extensibility" subtitle="Sync sign-in, plugin marketplace">
+          <DCArtboard id="sync" label="06 · Sync / Sign In" width={W} height={H}>
+            <SyncScreen/>
+          </DCArtboard>
+          <DCArtboard id="plugins" label="07 · Plugin Marketplace + Detail" width={W} height={H}>
+            <PluginsScreen/>
+          </DCArtboard>
+        </DCSection>
+      </DesignCanvas>
+    );
+  }
+  ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

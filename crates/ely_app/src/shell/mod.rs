@@ -26,15 +26,17 @@ mod web_surface;
 mod web_surface_controller;
 mod web_surface_frame;
 mod web_surface_geometry;
-mod web_surface_image;
 mod web_surface_keyboard;
 mod web_surface_permissions;
+mod web_surface_runtime;
 mod web_surface_state;
 mod web_surface_view;
 
+use std::time::Duration;
+
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
 use ely_domain::{ProfileId, SpaceId, TabId};
-use gpui::{AppContext, Context, Entity, FocusHandle, Subscription, Window};
+use gpui::{AppContext, Context, Entity, FocusHandle, Subscription, Timer, Window};
 use gpui_component::input::{InputEvent, InputState};
 
 use crate::shortcuts::ShortcutProfile;
@@ -144,7 +146,7 @@ impl ElyShell {
             Err(error) => ShellState::StartupError(error.to_string()),
         };
 
-        Self {
+        let shell = Self {
             state,
             focus_handle: cx.focus_handle(),
             command_input,
@@ -172,7 +174,9 @@ impl ElyShell {
             pending_plugin_uninstall: None,
             web_surfaces: WebSurfaceStore::new(),
             _command_subscription: command_subscription,
-        }
+        };
+        start_external_web_surface_timer(cx);
+        shell
     }
 
     fn focus_command_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -431,4 +435,21 @@ impl ElyShell {
     fn on_zoom_out(&mut self, _: &ZoomOut, _: &mut Window, cx: &mut Context<Self>) {
         self.zoom_active_tab_out(cx);
     }
+}
+
+fn start_external_web_surface_timer(cx: &mut Context<ElyShell>) {
+    cx.spawn(async move |shell, cx| {
+        loop {
+            Timer::after(Duration::from_millis(16)).await;
+            let result = shell.update(cx, |shell, cx| {
+                if shell.tick_external_web_surfaces() {
+                    cx.notify();
+                }
+            });
+            if result.is_err() {
+                break;
+            }
+        }
+    })
+    .detach();
 }
