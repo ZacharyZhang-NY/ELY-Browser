@@ -8,11 +8,11 @@ use gpui::{
     StatefulInteractiveElement, Styled, div, hsla, linear_color_stop, linear_gradient, px, rgb,
     rgba,
 };
-use gpui_component::IconName;
 
 use crate::shell::ElyShell;
+use crate::shell::chrome::render_glyph_for;
 
-use super::style::{CARD_BG, CARD_BG_HOVER, card_shadow};
+use super::style::{CARD_BG, card_shadow};
 use super::time::relative_time_label;
 
 pub(crate) fn render_recap(
@@ -113,9 +113,10 @@ fn render_history_row(
 ) -> AnyElement {
     let url = entry.url().clone();
     let title = entry.title().to_string();
-    let host = entry.url().host().unwrap_or_default().to_string();
+    let host = entry.url().host().map(|host| host.to_string());
+    let host_label = host.clone().unwrap_or_default();
     let when = relative_time_label(now, entry.visited_at());
-    let initial = title.chars().next().unwrap_or('?').to_uppercase().to_string();
+    let initial = title.chars().next().unwrap_or('?').to_string();
 
     div()
         .id(SharedString::from(format!("continue-row-{index}")))
@@ -124,22 +125,11 @@ fn render_history_row(
         .gap(px(12.0))
         .py(px(4.0))
         .cursor_pointer()
+        .hover(|style| style.opacity(0.85))
         .on_click(cx.listener(move |shell, _, window, cx| {
             shell.open_internal_tab(url.as_str(), window, cx);
         }))
-        .child(
-            div()
-                .size(px(26.0))
-                .rounded(px(7.0))
-                .bg(rgba(CARD_BG_HOVER))
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_size(px(12.0))
-                .font_weight(FontWeight(600.0))
-                .text_color(rgb(colors::INK_2))
-                .child(initial),
-        )
+        .child(render_glyph_for(host.as_deref(), &initial, 26.0))
         .child(
             div()
                 .min_w_0()
@@ -160,7 +150,7 @@ fn render_history_row(
                         .text_size(px(11.5))
                         .text_color(rgb(colors::INK_4))
                         .truncate()
-                        .child(format!("{host} · {when}")),
+                        .child(format!("{host_label} · {when}")),
                 ),
         )
         .into_any_element()
@@ -297,6 +287,8 @@ fn render_activity_row(
     let url = entry.url().clone();
     let title = entry.title().to_string();
     let display_url = entry.url().as_str().to_string();
+    let host = entry.url().host().map(|host| host.to_string());
+    let initial = title.chars().next().unwrap_or('?').to_string();
     let when = relative_time_label(now, entry.visited_at());
 
     div()
@@ -305,20 +297,11 @@ fn render_activity_row(
         .items_start()
         .gap(px(10.0))
         .cursor_pointer()
+        .hover(|style| style.opacity(0.85))
         .on_click(cx.listener(move |shell, _, window, cx| {
             shell.open_internal_tab(url.as_str(), window, cx);
         }))
-        .child(
-            div()
-                .size(px(24.0))
-                .rounded(px(6.0))
-                .bg(rgba(CARD_BG_HOVER))
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_color(rgb(colors::INK_3))
-                .child(IconName::Globe),
-        )
+        .child(render_glyph_for(host.as_deref(), &initial, 24.0))
         .child(
             div()
                 .min_w_0()
