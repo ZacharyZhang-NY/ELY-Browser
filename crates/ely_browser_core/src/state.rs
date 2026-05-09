@@ -40,6 +40,7 @@ pub use bookmarks::{
     ElyBookmarksPackage,
 };
 pub use plugins::{InstalledPlugin, PluginAuditAction, PluginAuditEvent};
+pub use privacy::LocalDataInventory;
 pub use site_data::SiteDataClearance;
 pub use space_exports::{
     ELYSPACE_FILE_EXTENSION, ELYSPACE_SCHEMA_VERSION, ElySpacePackage, SpaceImportProfileMapping,
@@ -97,6 +98,7 @@ pub struct BrowserSnapshot {
     pub download_entries: Vec<DownloadEntry>,
     pub history_entries: Vec<HistoryEntry>,
     pub active_profile_history_entry_count: usize,
+    pub local_data_inventory: LocalDataInventory,
     pub tab_groups: Vec<TabGroup>,
     pub split_layouts: Vec<SplitLayout>,
     pub installed_plugins: Vec<InstalledPlugin>,
@@ -385,6 +387,7 @@ impl BrowserCore {
             download_entries: self.visible_downloads(),
             history_entries: self.visible_history(),
             active_profile_history_entry_count: self.active_profile_history_count(),
+            local_data_inventory: self.active_profile_local_data_inventory(),
             tab_groups: self.visible_tab_groups(),
             split_layouts: self.visible_split_layouts(),
             installed_plugins: self.installed_plugins.clone(),

@@ -9,7 +9,7 @@ use gpui_component::{
     scroll::ScrollableElement,
 };
 
-use super::{ElyShell, render_canvas_surface};
+use super::{ElyShell, privacy_data_inventory::render_local_data_inventory, render_canvas_surface};
 
 impl ElyShell {
     pub(super) fn render_privacy_security_page(
@@ -32,6 +32,7 @@ impl ElyShell {
                 .when(snapshot.active_profile_history_entry_count > 0, |this| {
                     this.child(render_history_clear_controls(confirming_clear, cx))
                 })
+                .child(render_local_data_inventory(snapshot))
                 .child(render_privacy_settings_rows(snapshot, cx)),
         )
     }
