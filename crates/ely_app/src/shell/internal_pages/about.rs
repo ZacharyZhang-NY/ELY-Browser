@@ -3,10 +3,10 @@ use ely_design_system::colors;
 use gpui::{AnyElement, IntoElement, ParentElement, Styled, div, px, rgb};
 use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
 
+use crate::brand::{COMPANY_NAME, FORMAL_PRODUCT_NAME, PRODUCT_NAME, SYNC_SERVICE_NAME};
+
 use super::{ElyShell, render_canvas_surface};
 
-const PRODUCT_NAME: &str = "ELY Browser";
-const COMPANY_NAME: &str = "Elydora";
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 const BUILD_REVISION: &str = env!("ELY_BUILD_REVISION");
 const WORKSPACE_LICENSE: &str = env!("ELY_WORKSPACE_LICENSE");
@@ -46,7 +46,7 @@ fn render_about_header() -> AnyElement {
                         .text_color(rgb(colors::INK))
                         .child(format!("About {PRODUCT_NAME}")),
                 )
-                .child(div().text_sm().text_color(rgb(colors::MUTED)).child(COMPANY_NAME)),
+                .child(div().text_sm().text_color(rgb(colors::MUTED)).child(FORMAL_PRODUCT_NAME)),
         )
         .child(
             div()
@@ -71,7 +71,14 @@ fn render_about_rows(snapshot: &BrowserSnapshot) -> AnyElement {
         .overflow_y_scrollbar()
         .border_t_1()
         .border_color(rgb(colors::HAIRLINE))
-        .child(about_row(IconName::Building2, "Product", PRODUCT_NAME, COMPANY_NAME))
+        .child(about_row(
+            IconName::Building2,
+            "Product",
+            FORMAL_PRODUCT_NAME,
+            "Native Rust desktop browser",
+        ))
+        .child(about_row(IconName::Building2, "Publisher", COMPANY_NAME, "Brand owner"))
+        .child(about_row(IconName::Globe, "Service", SYNC_SERVICE_NAME, "Sync and release service"))
         .child(about_row(IconName::Info, "Version", APP_VERSION, "Cargo package version"))
         .child(about_row(IconName::GitHub, "Build", BUILD_REVISION, "Git revision"))
         .child(about_row(

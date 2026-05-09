@@ -5,6 +5,8 @@ use ely_design_system::colors;
 use gpui::{AnyElement, IntoElement, ParentElement, Styled, div, px, rgb};
 use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
 
+use crate::brand::SYNC_SERVICE_NAME;
+
 use super::{ElyShell, render_canvas_surface};
 
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -99,7 +101,7 @@ fn render_updates_summary() -> AnyElement {
                         )
                         .child(div().text_xs().truncate().text_color(rgb(colors::MUTED)).child(
                             format!(
-                                "{} target through Elydora Cloud release APIs",
+                                "{} target through {SYNC_SERVICE_NAME} release APIs",
                                 release_target()
                             ),
                         )),

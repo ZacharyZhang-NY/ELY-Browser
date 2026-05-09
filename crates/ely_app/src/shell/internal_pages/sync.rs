@@ -14,6 +14,8 @@ use gpui_component::{
     scroll::ScrollableElement,
 };
 
+use crate::brand::SYNC_SERVICE_NAME;
+
 use super::{ElyShell, render_canvas_surface};
 
 impl ElyShell {
@@ -63,7 +65,10 @@ fn render_sync_header(snapshot: &BrowserSnapshot) -> AnyElement {
                 .font_semibold()
                 .text_color(rgb(colors::MUTED))
                 .child(IconName::Globe)
-                .child(connection_label(snapshot.sync_status.connection())),
+                .child(format!(
+                    "{SYNC_SERVICE_NAME}: {}",
+                    connection_label(snapshot.sync_status.connection())
+                )),
         )
         .into_any_element()
 }

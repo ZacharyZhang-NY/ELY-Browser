@@ -1,3 +1,4 @@
+mod brand;
 mod services;
 mod shell;
 mod shortcuts;
@@ -17,6 +18,8 @@ use gpui::{
 use gpui_component_assets::Assets;
 use shell::ElyShell;
 use shortcuts::bind_shortcuts;
+
+use crate::brand::PRODUCT_NAME;
 
 actions!(
     ely_app,
@@ -56,11 +59,11 @@ fn main() {
         cx.on_action(open_private_window);
         cx.set_menus(vec![
             Menu {
-                name: "ELY Browser".into(),
+                name: PRODUCT_NAME.into(),
                 items: vec![
                     MenuItem::os_submenu("Services", SystemMenuType::Services),
                     MenuItem::separator(),
-                    MenuItem::action("Quit ELY Browser", Quit),
+                    MenuItem::action(format!("Quit {PRODUCT_NAME}"), Quit),
                 ],
             },
             Menu {
@@ -140,7 +143,7 @@ enum BrowserWindowMode {
 impl BrowserWindowMode {
     fn title(self) -> &'static str {
         match self {
-            Self::Standard => "ELY Browser",
+            Self::Standard => PRODUCT_NAME,
             Self::Private => "ELY Browser - Private",
         }
     }
