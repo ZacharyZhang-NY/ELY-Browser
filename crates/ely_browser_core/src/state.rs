@@ -1,12 +1,12 @@
 use std::{collections::BTreeMap, time::SystemTime};
 
 use ely_domain::{
-    ArchivePolicy, ArchivedTab, BookmarkEntry, BrowserTab, DEFAULT_SIDEBAR_WIDTH_PX,
-    DiagnosticEvent, DiagnosticsReportingPolicy, DomainError, DownloadEntry, DownloadPolicy,
-    FavoriteLimit, HistoryEntry, HistoryRecordingPolicy, NewTabDestination, NoteEntry, Profile,
-    ProfileId, ProfileKind, ReadingListEntry, SearchEngine, SitePermissionAuditEvent,
-    SitePermissionEntry, Space, SpaceId, SplitLayout, SyncStatus, TabGroup, TabId, UpdatePolicy,
-    UrlText,
+    AppearanceSettings, ArchivePolicy, ArchivedTab, BookmarkEntry, BrowserTab,
+    DEFAULT_SIDEBAR_WIDTH_PX, DiagnosticEvent, DiagnosticsReportingPolicy, DomainError,
+    DownloadEntry, DownloadPolicy, FavoriteLimit, HistoryEntry, HistoryRecordingPolicy,
+    NewTabDestination, NoteEntry, Profile, ProfileId, ProfileKind, ReadingListEntry, SearchEngine,
+    SitePermissionAuditEvent, SitePermissionEntry, Space, SpaceId, SplitLayout, SyncStatus,
+    TabGroup, TabId, ThemeMode, UpdatePolicy, UrlText, WallpaperTheme,
 };
 
 use crate::{CoreError, navigation::tab_title};
@@ -124,6 +124,7 @@ pub struct BrowserSnapshot {
     pub diagnostics_reporting_policy: DiagnosticsReportingPolicy,
     pub favorite_limit: FavoriteLimit,
     pub update_policy: UpdatePolicy,
+    pub appearance: AppearanceSettings,
     pub command_query: String,
 }
 
@@ -158,6 +159,7 @@ pub struct BrowserCore {
     diagnostics_reporting_policy: DiagnosticsReportingPolicy,
     favorite_limit: FavoriteLimit,
     update_policy: UpdatePolicy,
+    appearance: AppearanceSettings,
     sync_object_policies: SyncObjectPolicies,
     command_query: String,
 }
@@ -205,6 +207,7 @@ impl BrowserCore {
             diagnostics_reporting_policy: DiagnosticsReportingPolicy::default(),
             favorite_limit: FavoriteLimit::default(),
             update_policy: UpdatePolicy::default(),
+            appearance: AppearanceSettings::default(),
             sync_object_policies: SyncObjectPolicies::default(),
             spaces: vec![space],
             profiles: vec![profile],
@@ -365,6 +368,27 @@ impl BrowserCore {
         self.update_policy
     }
 
+    #[must_use]
+    pub fn appearance(&self) -> AppearanceSettings {
+        self.appearance
+    }
+
+    pub fn set_wallpaper_theme(&mut self, wallpaper: WallpaperTheme) {
+        self.appearance.set_wallpaper(wallpaper);
+    }
+
+    pub fn set_theme_mode(&mut self, theme_mode: ThemeMode) {
+        self.appearance.set_theme_mode(theme_mode);
+    }
+
+    pub fn set_reduce_motion(&mut self, reduce_motion: bool) {
+        self.appearance.set_reduce_motion(reduce_motion);
+    }
+
+    pub fn reset_appearance(&mut self) {
+        self.appearance = AppearanceSettings::default();
+    }
+
     pub fn set_command_query(&mut self, query: impl Into<String>) {
         self.command_query = query.into();
     }
@@ -414,6 +438,7 @@ impl BrowserCore {
             diagnostics_reporting_policy: self.diagnostics_reporting_policy,
             favorite_limit: self.favorite_limit,
             update_policy: self.update_policy,
+            appearance: self.appearance,
             command_query: self.command_query.clone(),
         })
     }
