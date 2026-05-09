@@ -15,6 +15,7 @@ mod notes;
 mod notes_markdown;
 mod plugin_catalog;
 mod plugin_details;
+mod plugin_editors_pick;
 mod plugins;
 mod privacy_data_inventory;
 mod privacy_security;
