@@ -58,6 +58,7 @@ fn assert_web_surfaces_render(cases: &[LiveSiteCase]) -> Result<(), Box<dyn Erro
         )?;
 
         assert_prd_frame_is_ready(&frame, case);
+        log_prd_frame("web-surface", &frame, case);
         store.finish(tab_id, WebSurfaceState::Ready(frame));
         let Some(WebSurfaceState::Ready(frame)) = store.state(tab.id()) else {
             return Err(format!("web surface state is not ready for {}", case.url).into());
@@ -82,6 +83,21 @@ fn assert_prd_frame_is_ready(frame: &WebSurfaceFrame, case: &LiveSiteCase) {
     assert!(frame.non_white_pixel_count() > 0, "{}", case.url);
     assert!(frame.content_pixel_count() >= MINIMUM_CONTENT_PIXELS, "{}", case.url);
     assert!(frame.sample_hash() > 0, "{}", case.url);
+}
+
+fn log_prd_frame(label: &str, frame: &WebSurfaceFrame, case: &LiveSiteCase) {
+    eprintln!(
+        "prd-live-site {label} url={} loaded={} title={} state={} size={}x{} content_pixels={} non_white_pixels={} sample_hash={}",
+        case.url,
+        frame.url_label(),
+        frame.title_label(),
+        frame.render_state(),
+        frame.size().width,
+        frame.size().height,
+        frame.content_pixel_count(),
+        frame.non_white_pixel_count(),
+        frame.sample_hash()
+    );
 }
 
 fn assert_render_state_is_open(state: &str, url: &str) {

@@ -98,6 +98,8 @@ pub(super) fn snapshot_prd_site(
     assert!(report_field_as_u64(&report, "sample_hash")? > 0, "{}", case.url);
     assert_eq!(std::fs::metadata(&output_path)?.len(), size.width * size.height * 4);
 
+    log_prd_report(&report, case, size)?;
+
     std::fs::remove_file(&output_path)?;
     Ok(report)
 }
@@ -340,6 +342,26 @@ fn assert_report_text_contains(
 fn assert_report_state_is_renderable(report: &serde_json::Value) -> Result<(), Box<dyn Error>> {
     let state = report_field_as_text(report, "state")?;
     assert!(matches!(state, "complete" | "loading"), "state: {state}");
+    Ok(())
+}
+
+fn log_prd_report(
+    report: &serde_json::Value,
+    case: &PrdSiteCompatibilityCase,
+    size: FrameSize,
+) -> Result<(), Box<dyn Error>> {
+    eprintln!(
+        "prd-live-site servo-sidecar url={} loaded={} title={} state={} size={}x{} content_pixels={} non_white_pixels={} sample_hash={}",
+        case.url,
+        report_field_as_text(report, "loaded_url")?,
+        report_field_as_text(report, "title")?,
+        report_field_as_text(report, "state")?,
+        size.width,
+        size.height,
+        report_field_as_u64(report, "content_pixel_count")?,
+        report_field_as_u64(report, "non_white_pixel_count")?,
+        report_field_as_u64(report, "sample_hash")?
+    );
     Ok(())
 }
 
