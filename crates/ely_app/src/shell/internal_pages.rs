@@ -96,7 +96,7 @@ impl ElyShell {
             "ely://settings/plugins" => self.render_plugins_page(snapshot, cx),
             "ely://settings/profiles" => self.render_profiles_page(snapshot, cx),
             "ely://settings/sync" => self.render_sync_page(snapshot, cx),
-            "ely://settings/updates" => self.render_updates_page(snapshot),
+            "ely://settings/updates" => self.render_updates_page(snapshot, cx),
             "ely://sync/status" => self.render_sync_page(snapshot, cx),
             url if super::web_surface::is_external_web_url(url) => {
                 self.render_external_web_canvas(tab, snapshot, cx)

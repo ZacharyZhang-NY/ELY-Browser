@@ -19,6 +19,7 @@ mod split;
 mod sync;
 mod tab;
 mod tab_group;
+mod update;
 mod url_text;
 
 pub use archive::{ArchiveSource, ArchivedTab};
@@ -57,4 +58,5 @@ pub use sync::{
 };
 pub use tab::{BrowserTab, TabFlags, TabState};
 pub use tab_group::TabGroup;
+pub use update::UpdatePolicy;
 pub use url_text::UrlText;

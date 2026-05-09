@@ -5,7 +5,7 @@ use ely_domain::{
     DownloadEntry, DownloadPolicy, FavoriteLimit, HistoryEntry, HistoryRecordingPolicy,
     NewTabDestination, NoteEntry, Profile, ProfileId, ProfileKind, ReadingListEntry, SearchEngine,
     SitePermissionAuditEvent, SitePermissionEntry, Space, SpaceId, SplitLayout, SyncStatus,
-    TabGroup, TabId, UrlText,
+    TabGroup, TabId, UpdatePolicy, UrlText,
 };
 
 use crate::{CoreError, navigation::tab_title};
@@ -113,6 +113,7 @@ pub struct BrowserSnapshot {
     pub new_tab_destination: NewTabDestination,
     pub history_recording_policy: HistoryRecordingPolicy,
     pub favorite_limit: FavoriteLimit,
+    pub update_policy: UpdatePolicy,
     pub command_query: String,
 }
 
@@ -144,6 +145,7 @@ pub struct BrowserCore {
     new_tab_destination: NewTabDestination,
     history_recording_policy: HistoryRecordingPolicy,
     favorite_limit: FavoriteLimit,
+    update_policy: UpdatePolicy,
     sync_object_policies: SyncObjectPolicies,
     command_query: String,
 }
@@ -189,6 +191,7 @@ impl BrowserCore {
             new_tab_destination,
             history_recording_policy: HistoryRecordingPolicy::default(),
             favorite_limit: FavoriteLimit::default(),
+            update_policy: UpdatePolicy::default(),
             sync_object_policies: SyncObjectPolicies::default(),
             spaces: vec![space],
             profiles: vec![profile],
@@ -348,6 +351,19 @@ impl BrowserCore {
         self.favorite_limit
     }
 
+    pub fn set_update_policy(&mut self, update_policy: UpdatePolicy) {
+        self.update_policy = update_policy;
+    }
+
+    pub fn reset_update_settings(&mut self) {
+        self.set_update_policy(UpdatePolicy::default());
+    }
+
+    #[must_use]
+    pub fn update_policy(&self) -> UpdatePolicy {
+        self.update_policy
+    }
+
     pub fn set_command_query(&mut self, query: impl Into<String>) {
         self.command_query = query.into();
     }
@@ -393,6 +409,7 @@ impl BrowserCore {
             new_tab_destination: self.new_tab_destination,
             history_recording_policy: self.history_recording_policy,
             favorite_limit: self.favorite_limit,
+            update_policy: self.update_policy,
             command_query: self.command_query.clone(),
         })
     }

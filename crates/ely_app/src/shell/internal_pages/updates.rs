@@ -2,10 +2,13 @@ use std::env;
 
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
+use ely_domain::UpdatePolicy;
 use gpui::{AnyElement, IntoElement, ParentElement, Styled, div, px, rgb};
-use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
-
-use crate::brand::SYNC_SERVICE_NAME;
+use gpui_component::{
+    IconName, Selectable, Sizable, StyledExt,
+    button::{Button, ButtonVariants},
+    scroll::ScrollableElement,
+};
 
 use super::{ElyShell, render_canvas_surface};
 
@@ -17,7 +20,11 @@ const RELEASE_MANIFEST_CACHE: &str = "release_manifest_cache";
 const RELEASE_INTEGRITY: &str = "SHA-256 + Ed25519";
 
 impl ElyShell {
-    pub(super) fn render_updates_page(&mut self, snapshot: &BrowserSnapshot) -> AnyElement {
+    pub(super) fn render_updates_page(
+        &mut self,
+        snapshot: &BrowserSnapshot,
+        cx: &mut gpui::Context<Self>,
+    ) -> AnyElement {
         render_canvas_surface(
             div()
                 .size_full()
@@ -26,7 +33,8 @@ impl ElyShell {
                 .flex_col()
                 .gap_5()
                 .child(render_updates_header(snapshot))
-                .child(render_updates_summary())
+                .child(render_updates_summary(snapshot.update_policy, cx))
+                .child(render_update_policy_rows(snapshot.update_policy, cx))
                 .child(render_update_contract_rows()),
         )
     }
@@ -67,7 +75,10 @@ fn render_updates_header(snapshot: &BrowserSnapshot) -> AnyElement {
         .into_any_element()
 }
 
-fn render_updates_summary() -> AnyElement {
+fn render_updates_summary(
+    update_policy: UpdatePolicy,
+    cx: &mut gpui::Context<ElyShell>,
+) -> AnyElement {
     div()
         .rounded_md()
         .border_1()
@@ -99,15 +110,120 @@ fn render_updates_summary() -> AnyElement {
                                 .text_color(rgb(colors::INK))
                                 .child("Release Manifest Contract"),
                         )
-                        .child(div().text_xs().truncate().text_color(rgb(colors::MUTED)).child(
-                            format!(
-                                "{} target through {SYNC_SERVICE_NAME} release APIs",
-                                release_target()
-                            ),
-                        )),
+                        .child(
+                            div()
+                                .text_xs()
+                                .truncate()
+                                .text_color(rgb(colors::MUTED))
+                                .child(update_policy.detail()),
+                        ),
                 ),
         )
-        .child(div().text_xs().font_semibold().text_color(rgb(colors::SUCCESS)).child(APP_VERSION))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    div()
+                        .text_xs()
+                        .font_semibold()
+                        .text_color(rgb(colors::SUCCESS))
+                        .child(update_policy.name()),
+                )
+                .child(
+                    Button::new("reset-update-settings")
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Undo2)
+                        .label("Reset")
+                        .tooltip("Restore Update Defaults")
+                        .on_click(cx.listener(|shell, _, _, cx| {
+                            shell.reset_update_settings(cx);
+                        })),
+                ),
+        )
+        .into_any_element()
+}
+
+fn render_update_policy_rows(
+    active_policy: UpdatePolicy,
+    cx: &mut gpui::Context<ElyShell>,
+) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .border_t_1()
+        .border_color(rgb(colors::HAIRLINE))
+        .children(
+            UpdatePolicy::ALL
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(index, policy)| render_update_policy_row(index, policy, active_policy, cx)),
+        )
+        .into_any_element()
+}
+
+fn render_update_policy_row(
+    index: usize,
+    policy: UpdatePolicy,
+    active_policy: UpdatePolicy,
+    cx: &mut gpui::Context<ElyShell>,
+) -> AnyElement {
+    let selected = policy == active_policy;
+
+    div()
+        .py_3()
+        .border_b_1()
+        .border_color(rgb(colors::HAIRLINE))
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap_4()
+        .child(
+            div()
+                .min_w_0()
+                .flex()
+                .items_center()
+                .gap_3()
+                .child(
+                    div().text_color(rgb(policy_icon_color(selected))).child(policy_icon(selected)),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(
+                            div()
+                                .text_sm()
+                                .font_semibold()
+                                .truncate()
+                                .text_color(rgb(colors::INK))
+                                .child(policy.name()),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .truncate()
+                                .text_color(rgb(colors::MUTED))
+                                .child(policy.detail()),
+                        ),
+                ),
+        )
+        .child(
+            Button::new(("update-policy", index))
+                .ghost()
+                .xsmall()
+                .selected(selected)
+                .label(policy_button_label(selected))
+                .tooltip(policy.name())
+                .on_click(cx.listener(move |shell, _, _, cx| {
+                    shell.set_update_policy(policy, cx);
+                })),
+        )
         .into_any_element()
 }
 
@@ -147,6 +263,18 @@ fn render_update_contract_rows() -> AnyElement {
             "Release manifest requires package hash and signature",
         ))
         .into_any_element()
+}
+
+fn policy_icon(selected: bool) -> IconName {
+    if selected { IconName::CircleCheck } else { IconName::LoaderCircle }
+}
+
+fn policy_icon_color(selected: bool) -> u32 {
+    if selected { colors::PRIMARY } else { colors::MUTED_SOFT }
+}
+
+fn policy_button_label(selected: bool) -> &'static str {
+    if selected { "Active" } else { "Select" }
 }
 
 fn update_row(

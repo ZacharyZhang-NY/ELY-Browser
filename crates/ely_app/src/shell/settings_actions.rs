@@ -1,6 +1,6 @@
 use ely_domain::{
     ArchivePolicy, DownloadPolicy, FavoriteLimit, HistoryRecordingPolicy, NewTabDestination,
-    ProfileId, ProfileSyncPolicy, SearchEngine, SyncObjectKind, SyncObjectPolicy,
+    ProfileId, ProfileSyncPolicy, SearchEngine, SyncObjectKind, SyncObjectPolicy, UpdatePolicy,
 };
 use gpui::Context;
 
@@ -147,6 +147,24 @@ impl ElyShell {
     pub(super) fn reset_sync_settings(&mut self, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state {
             core.reset_sync_settings();
+            cx.notify();
+        }
+    }
+
+    pub(super) fn set_update_policy(
+        &mut self,
+        update_policy: UpdatePolicy,
+        cx: &mut Context<Self>,
+    ) {
+        if let ShellState::Ready(core) = &mut self.state {
+            core.set_update_policy(update_policy);
+            cx.notify();
+        }
+    }
+
+    pub(super) fn reset_update_settings(&mut self, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state {
+            core.reset_update_settings();
             cx.notify();
         }
     }
