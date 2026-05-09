@@ -25,7 +25,9 @@ use crate::{
     PermissionDecision, PermissionRequest, RenderedFrame, ResizeRequest, ScreenshotRequest,
     ScrollRequest, ServoHost, ServoHostError, TouchTapRequest, WebViewSnapshot, WebViewState,
     runtime_input::{send_keyboard_text, send_mouse_click, send_mouse_drag, send_touch_tap},
-    runtime_permissions::{PermissionKey, PermissionStore},
+    runtime_permissions::{
+        PermissionStore, permission_decision_for_webview, set_permission_decision,
+    },
     runtime_waker::ServoWakeFlag,
 };
 
@@ -118,11 +120,8 @@ impl ServoHost for SoftwareServoHost {
         profile_id: ProfileId,
     ) -> Result<WebViewId, ServoHostError> {
         let webview_id = WebViewId::new();
-        let delegate = Rc::new(HostWebViewDelegate::new(
-            tab_id.clone(),
-            profile_id.clone(),
-            self.permissions.clone(),
-        ));
+        let delegate =
+            Rc::new(HostWebViewDelegate::new(profile_id.clone(), self.permissions.clone()));
         let webview = WebViewBuilder::new(&self.servo, self.rendering_context.clone())
             .delegate(delegate.clone())
             .build();
@@ -281,14 +280,19 @@ impl ServoHost for SoftwareServoHost {
         request: PermissionRequest,
         decision: PermissionDecision,
     ) -> Result<(), ServoHostError> {
-        self.webviews
+        let webview = self
+            .webviews
             .get(&request.webview_id)
             .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
+        if webview.profile_id != request.profile_id {
+            return Err(ServoHostError::PermissionProfileMismatch {
+                webview_id: request.webview_id,
+                expected: webview.profile_id.clone(),
+                actual: request.profile_id,
+            });
+        }
 
-        self.permissions.borrow_mut().insert(
-            PermissionKey::new(request.profile_id, request.tab_id, request.feature),
-            decision,
-        );
+        set_permission_decision(&self.permissions, request, decision);
         Ok(())
     }
 
@@ -399,7 +403,6 @@ impl HostWebView {
 }
 
 struct HostWebViewDelegate {
-    tab_id: TabId,
     profile_id: ProfileId,
     permissions: PermissionStore,
     state: RefCell<WebViewState>,
@@ -409,9 +412,8 @@ struct HostWebViewDelegate {
 }
 
 impl HostWebViewDelegate {
-    fn new(tab_id: TabId, profile_id: ProfileId, permissions: PermissionStore) -> Self {
+    fn new(profile_id: ProfileId, permissions: PermissionStore) -> Self {
         Self {
-            tab_id,
             profile_id,
             permissions,
             state: RefCell::new(WebViewState::Created),
@@ -444,15 +446,6 @@ impl HostWebViewDelegate {
     fn mark_frame_presented(&self) {
         self.has_pending_frame.set(false);
     }
-
-    fn permission_decision(&self, feature: String) -> Option<PermissionDecision> {
-        let key = PermissionKey::new(self.profile_id.clone(), self.tab_id.clone(), feature);
-        let mut permissions = self.permissions.borrow_mut();
-        match permissions.get(&key).cloned() {
-            Some(PermissionDecision::AllowOnce) => permissions.remove(&key),
-            decision => decision,
-        }
-    }
 }
 
 impl WebViewDelegate for HostWebViewDelegate {
@@ -484,9 +477,14 @@ impl WebViewDelegate for HostWebViewDelegate {
         navigation_request.allow();
     }
 
-    fn request_permission(&self, _webview: WebView, permission_request: servo::PermissionRequest) {
-        let feature = format!("{:?}", permission_request.feature());
-        match self.permission_decision(feature) {
+    fn request_permission(&self, webview: WebView, permission_request: servo::PermissionRequest) {
+        match permission_decision_for_webview(
+            &self.permissions,
+            &self.profile_id,
+            &webview,
+            self.url(),
+            permission_request.feature(),
+        ) {
             Some(PermissionDecision::AllowOnce | PermissionDecision::AllowAlways) => {
                 permission_request.allow();
             }

@@ -1,4 +1,4 @@
-use ely_domain::{ProfileId, TabId, UrlText, WebViewId};
+use ely_domain::{ProfileId, SiteOrigin, SitePermissionFeature, TabId, UrlText, WebViewId};
 
 use crate::ServoHostError;
 
@@ -264,9 +264,9 @@ pub struct ScreenshotRequest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PermissionRequest {
     pub webview_id: WebViewId,
-    pub tab_id: TabId,
     pub profile_id: ProfileId,
-    pub feature: String,
+    pub origin: SiteOrigin,
+    pub feature: SitePermissionFeature,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

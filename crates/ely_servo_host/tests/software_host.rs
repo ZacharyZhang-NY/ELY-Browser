@@ -8,11 +8,11 @@ use std::{
     time::Duration,
 };
 
-use ely_domain::{ProfileId, TabId, UrlText};
+use ely_domain::{ProfileId, SiteOrigin, SitePermissionFeature, TabId, UrlText};
 use ely_servo_host::{
-    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest, ResizeRequest,
-    ScreenshotRequest, ScrollRequest, ServoHost, ServoHostError, ServoSurfaceSize,
-    SoftwareServoHost, TouchTapRequest, WebViewState,
+    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest,
+    PermissionDecision, PermissionRequest, ResizeRequest, ScreenshotRequest, ScrollRequest,
+    ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, TouchTapRequest, WebViewState,
 };
 
 const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
@@ -79,6 +79,34 @@ fn exercise_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
     assert_eq!(snapshot.tab_id(), &tab_id);
     assert_eq!(snapshot.profile_id(), &profile_id);
     assert_eq!(snapshot.state(), &WebViewState::Created);
+
+    host.set_permission(
+        PermissionRequest {
+            webview_id: webview_id.clone(),
+            profile_id: profile_id.clone(),
+            origin: SiteOrigin::parse("https://example.com")?,
+            feature: SitePermissionFeature::Camera,
+        },
+        PermissionDecision::AllowOnce,
+    )?;
+    let other_profile_id = ProfileId::new();
+    let mismatch = host.set_permission(
+        PermissionRequest {
+            webview_id: webview_id.clone(),
+            profile_id: other_profile_id.clone(),
+            origin: SiteOrigin::parse("https://example.com")?,
+            feature: SitePermissionFeature::Camera,
+        },
+        PermissionDecision::AllowAlways,
+    );
+    assert!(
+        matches!(
+            mismatch,
+            Err(ServoHostError::PermissionProfileMismatch { ref expected, ref actual, .. })
+                if expected == &profile_id && actual == &other_profile_id
+        ),
+        "mismatch: {mismatch:?}"
+    );
 
     let url = UrlText::parse(CLICK_PROBE_URL)?;
 

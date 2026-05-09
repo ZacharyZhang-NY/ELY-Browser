@@ -4,10 +4,10 @@ use url::Url;
 
 use crate::{DomainError, ProfileId, UrlText};
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SiteOrigin(String);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SitePermissionFeature {
     Camera,
     Microphone,

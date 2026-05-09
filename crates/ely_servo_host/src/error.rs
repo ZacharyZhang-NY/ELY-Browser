@@ -1,4 +1,4 @@
-use ely_domain::WebViewId;
+use ely_domain::{ProfileId, WebViewId};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -11,6 +11,9 @@ pub enum ServoHostError {
 
     #[error("permission request missing profile context")]
     MissingProfileContext,
+
+    #[error("permission profile mismatch for {webview_id}: expected {expected}, got {actual}")]
+    PermissionProfileMismatch { webview_id: WebViewId, expected: ProfileId, actual: ProfileId },
 
     #[error("servo runtime is already started in this process")]
     RuntimeAlreadyStarted,
