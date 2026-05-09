@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{CommandIntent, TabState, UrlText};
+use ely_domain::{CommandIntent, DiagnosticEventKind, TabState, UrlText, WebViewCrashKind};
 
 #[test]
 fn crash_active_tab_preserves_tab_metadata() -> Result<(), Box<dyn Error>> {
@@ -18,6 +18,23 @@ fn crash_active_tab_preserves_tab_metadata() -> Result<(), Box<dyn Error>> {
     assert_eq!(active_tab.url().as_str(), "https://example.com/form");
     assert_eq!(active_tab.title(), title);
     assert_eq!(active_tab.favicon_key(), Some("favicons/example.ico"));
+    assert_eq!(
+        core.diagnostic_events().last().map(ely_domain::DiagnosticEvent::kind),
+        Some(&DiagnosticEventKind::WebViewCrash { crash_kind: WebViewCrashKind::TabCrashed })
+    );
+    Ok(())
+}
+
+#[test]
+fn new_browser_core_records_startup_success_diagnostic() -> Result<(), Box<dyn Error>> {
+    let core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let events = core.diagnostic_events();
+
+    assert_eq!(events.len(), 1);
+    assert!(matches!(
+        events[0].kind(),
+        DiagnosticEventKind::AppStartup { outcome: ely_domain::DiagnosticOutcome::Success }
+    ));
     Ok(())
 }
 

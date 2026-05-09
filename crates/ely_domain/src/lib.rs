@@ -1,6 +1,7 @@
 mod archive;
 mod bookmark;
 mod command;
+mod diagnostics;
 mod download;
 mod error;
 mod favorite;
@@ -25,6 +26,9 @@ mod url_text;
 pub use archive::{ArchiveSource, ArchivedTab};
 pub use bookmark::BookmarkEntry;
 pub use command::{CommandIntent, CommandScope};
+pub use diagnostics::{
+    DiagnosticCode, DiagnosticEvent, DiagnosticEventKind, DiagnosticOutcome, WebViewCrashKind,
+};
 pub use download::{
     DownloadChecksum, DownloadChecksumAlgorithm, DownloadDestination, DownloadEntry,
     DownloadPolicy, DownloadSecurity, DownloadState,

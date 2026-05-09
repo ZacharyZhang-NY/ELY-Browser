@@ -2,10 +2,11 @@ use std::{collections::BTreeMap, time::SystemTime};
 
 use ely_domain::{
     ArchivePolicy, ArchivedTab, BookmarkEntry, BrowserTab, DEFAULT_SIDEBAR_WIDTH_PX,
-    DiagnosticsReportingPolicy, DomainError, DownloadEntry, DownloadPolicy, FavoriteLimit,
-    HistoryEntry, HistoryRecordingPolicy, NewTabDestination, NoteEntry, Profile, ProfileId,
-    ProfileKind, ReadingListEntry, SearchEngine, SitePermissionAuditEvent, SitePermissionEntry,
-    Space, SpaceId, SplitLayout, SyncStatus, TabGroup, TabId, UpdatePolicy, UrlText,
+    DiagnosticEvent, DiagnosticsReportingPolicy, DomainError, DownloadEntry, DownloadPolicy,
+    FavoriteLimit, HistoryEntry, HistoryRecordingPolicy, NewTabDestination, NoteEntry, Profile,
+    ProfileId, ProfileKind, ReadingListEntry, SearchEngine, SitePermissionAuditEvent,
+    SitePermissionEntry, Space, SpaceId, SplitLayout, SyncStatus, TabGroup, TabId, UpdatePolicy,
+    UrlText,
 };
 
 use crate::{CoreError, navigation::tab_title};
@@ -13,10 +14,12 @@ use sync::SyncObjectPolicies;
 
 mod bookmarks;
 mod commands;
+mod diagnostics;
 mod downloads;
 mod history;
 mod notes;
 mod plugins;
+mod privacy;
 mod profiles;
 mod reading_list;
 mod site_data;
@@ -98,6 +101,7 @@ pub struct BrowserSnapshot {
     pub split_layouts: Vec<SplitLayout>,
     pub installed_plugins: Vec<InstalledPlugin>,
     pub plugin_audit_events: Vec<PluginAuditEvent>,
+    pub diagnostic_events: Vec<DiagnosticEvent>,
     pub spaces: Vec<Space>,
     pub trashed_spaces: Vec<TrashedSpace>,
     pub profiles: Vec<Profile>,
@@ -137,6 +141,7 @@ pub struct BrowserCore {
     trashed_spaces: Vec<TrashedSpace>,
     installed_plugins: Vec<InstalledPlugin>,
     plugin_audit_events: Vec<PluginAuditEvent>,
+    diagnostic_events: Vec<DiagnosticEvent>,
     active_space_id: SpaceId,
     active_profile_id: ProfileId,
     active_tab_id: TabId,
@@ -213,6 +218,7 @@ impl BrowserCore {
             trashed_spaces: Vec::new(),
             installed_plugins: Vec::new(),
             plugin_audit_events: Vec::new(),
+            diagnostic_events: vec![DiagnosticEvent::startup_success(SystemTime::now())],
             command_query: String::new(),
         })
     }
@@ -324,29 +330,6 @@ impl BrowserCore {
         self.new_tab_destination
     }
 
-    pub fn set_history_recording_policy(&mut self, policy: HistoryRecordingPolicy) {
-        self.history_recording_policy = policy;
-    }
-
-    pub fn set_diagnostics_reporting_policy(&mut self, policy: DiagnosticsReportingPolicy) {
-        self.diagnostics_reporting_policy = policy;
-    }
-
-    pub fn reset_privacy_settings(&mut self) {
-        self.set_history_recording_policy(HistoryRecordingPolicy::default());
-        self.set_diagnostics_reporting_policy(DiagnosticsReportingPolicy::default());
-    }
-
-    #[must_use]
-    pub fn history_recording_policy(&self) -> HistoryRecordingPolicy {
-        self.history_recording_policy
-    }
-
-    #[must_use]
-    pub fn diagnostics_reporting_policy(&self) -> DiagnosticsReportingPolicy {
-        self.diagnostics_reporting_policy
-    }
-
     pub fn set_favorite_limit(&mut self, favorite_limit: FavoriteLimit) {
         self.favorite_limit = favorite_limit;
     }
@@ -406,6 +389,7 @@ impl BrowserCore {
             split_layouts: self.visible_split_layouts(),
             installed_plugins: self.installed_plugins.clone(),
             plugin_audit_events: self.plugin_audit_events.clone(),
+            diagnostic_events: self.diagnostic_events.clone(),
             spaces: self.sorted_spaces(),
             trashed_spaces: self.trashed_spaces.clone(),
             profiles: self.profiles.clone(),

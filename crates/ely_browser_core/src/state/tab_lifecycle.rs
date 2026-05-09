@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use ely_domain::TabId;
+use ely_domain::{DiagnosticEventKind, TabId, WebViewCrashKind};
 
 use super::BrowserCore;
 use crate::CoreError;
@@ -18,6 +18,9 @@ impl BrowserCore {
             .find(|tab| tab.id() == tab_id)
             .ok_or_else(|| CoreError::TabNotFound { id: tab_id.clone() })?;
         tab.mark_crashed();
+        self.record_diagnostic_event(DiagnosticEventKind::WebViewCrash {
+            crash_kind: WebViewCrashKind::TabCrashed,
+        });
         Ok(tab_id.clone())
     }
 

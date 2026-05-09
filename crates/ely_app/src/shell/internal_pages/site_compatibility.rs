@@ -337,6 +337,8 @@ fn diagnostic_report(
         format!("Space: {}", snapshot.active_space_name),
         format!("Profile: {}", snapshot.active_profile_name),
         format!("Profile kind: {}", profile_kind_label(&snapshot.active_profile_kind)),
+        format!("Diagnostics reporting: {}", snapshot.diagnostics_reporting_policy.status()),
+        format!("Local diagnostics: {}", snapshot.diagnostic_events.len()),
         format!("URL scope: {}", diagnostic_url_scope(active_tab)),
         format!("Tab title: {}", active_tab.title()),
         format!("Tab state: {}", tab_state_label(active_tab.state())),
@@ -395,9 +397,10 @@ fn tab_state_label(state: &TabState) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use ely_browser_core::{BrowserCore, InitialBrowserConfig};
     use ely_domain::{ProfileId, SpaceId, TabId, UrlText};
 
-    use super::{BrowserTab, diagnostic_url_scope};
+    use super::{BrowserTab, active_tab, diagnostic_report, diagnostic_url_scope, origin_for_tab};
 
     #[test]
     fn diagnostic_url_scope_omits_path_and_query() -> Result<(), Box<dyn std::error::Error>> {
@@ -424,6 +427,21 @@ mod tests {
         );
 
         assert_eq!(diagnostic_url_scope(&tab), "ely://settings/advanced");
+        Ok(())
+    }
+
+    #[test]
+    fn diagnostic_report_includes_privacy_and_local_event_count()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+        let snapshot = core.snapshot()?;
+        let active_tab = active_tab(&snapshot)
+            .ok_or_else(|| std::io::Error::other("default browser starts with an active tab"))?;
+        let origin = origin_for_tab(active_tab);
+        let report = diagnostic_report(&snapshot, active_tab, origin.as_ref());
+
+        assert!(report.contains("Diagnostics reporting: Diagnostics reporting is on"));
+        assert!(report.contains("Local diagnostics: 1"));
         Ok(())
     }
 }

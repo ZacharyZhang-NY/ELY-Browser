@@ -79,4 +79,7 @@ pub enum DomainError {
 
     #[error("invalid plugin signature: {value}")]
     InvalidPluginSignature { value: String },
+
+    #[error("invalid diagnostic code: {value}")]
+    InvalidDiagnosticCode { value: String },
 }
