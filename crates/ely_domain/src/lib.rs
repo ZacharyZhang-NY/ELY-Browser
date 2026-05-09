@@ -64,7 +64,7 @@ pub use sync::{
 };
 pub use tab::{
     BrowserTab, DEFAULT_ZOOM_PERCENT, MAX_ZOOM_PERCENT, MIN_ZOOM_PERCENT, TabFlags, TabState,
-    ZOOM_PERCENT_STEP, validate_zoom_percent,
+    ZOOM_PERCENT_STEP, parse_title_unread_count, validate_zoom_percent,
 };
 pub use tab_group::TabGroup;
 pub use update::UpdatePolicy;

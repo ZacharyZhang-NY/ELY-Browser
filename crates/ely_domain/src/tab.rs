@@ -107,6 +107,11 @@ impl BrowserTab {
     }
 
     #[must_use]
+    pub fn unread_count(&self) -> u32 {
+        parse_title_unread_count(&self.title)
+    }
+
+    #[must_use]
     pub fn url(&self) -> &UrlText {
         &self.url
     }
@@ -273,4 +278,47 @@ pub fn validate_zoom_percent(value: u16) -> Result<u16, DomainError> {
     }
 
     Err(DomainError::InvalidZoomPercent { value, min: MIN_ZOOM_PERCENT, max: MAX_ZOOM_PERCENT })
+}
+
+#[must_use]
+pub fn parse_title_unread_count(title: &str) -> u32 {
+    let trimmed = title.trim_start();
+    let Some(rest) = trimmed.strip_prefix('(') else {
+        return 0;
+    };
+    let Some(close) = rest.find(')') else {
+        return 0;
+    };
+    rest[..close].parse::<u32>().unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_title_unread_count;
+
+    #[test]
+    fn parses_leading_parenthesised_count() {
+        assert_eq!(parse_title_unread_count("(12) Slack"), 12);
+        assert_eq!(parse_title_unread_count("(3) Inbox — Linear"), 3);
+        assert_eq!(parse_title_unread_count("(0) Quiet"), 0);
+    }
+
+    #[test]
+    fn ignores_non_prefixed_titles() {
+        assert_eq!(parse_title_unread_count("Slack"), 0);
+        assert_eq!(parse_title_unread_count("Inbox (12)"), 0);
+        assert_eq!(parse_title_unread_count(""), 0);
+    }
+
+    #[test]
+    fn rejects_non_numeric_or_overflow_counts() {
+        assert_eq!(parse_title_unread_count("(99+) Gmail"), 0);
+        assert_eq!(parse_title_unread_count("(abc) Mail"), 0);
+        assert_eq!(parse_title_unread_count("(99999999999999999999) huge"), 0);
+    }
+
+    #[test]
+    fn tolerates_leading_whitespace() {
+        assert_eq!(parse_title_unread_count("   (7) Slack"), 7);
+    }
 }

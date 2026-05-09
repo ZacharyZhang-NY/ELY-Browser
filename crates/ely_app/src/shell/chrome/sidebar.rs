@@ -220,6 +220,7 @@ impl ElyShell {
         let host = tab.url().host().map(|host| host.to_string());
         let title = tab.title().to_string();
         let initial = title.chars().next().unwrap_or('?').to_string();
+        let unread = tab.unread_count();
         let group_name = SharedString::from(format!("launcher-{}", tab.id().as_str()));
         let close_id = SharedString::from(format!("launcher-close-{}", tab.id().as_str()));
 
@@ -252,6 +253,7 @@ impl ElyShell {
                     .text_color(rgb(text_color))
                     .child(title),
             )
+            .when(unread > 0, |el| el.child(render_unread_badge(unread)))
             .child(
                 div()
                     .id(close_id)
@@ -354,6 +356,24 @@ fn profile_initial(name: &str) -> String {
         .to_string()
 }
 
+fn render_unread_badge(count: u32) -> impl IntoElement {
+    let label = if count > 99 {
+        "99+".to_string()
+    } else {
+        count.to_string()
+    };
+
+    div()
+        .px(px(6.0))
+        .py(px(1.0))
+        .rounded(px(999.0))
+        .bg(rgba(UNREAD_BADGE_BG))
+        .text_size(px(10.0))
+        .font_weight(gpui::FontWeight(500.0))
+        .text_color(rgb(colors::INK_3))
+        .child(label)
+}
+
 fn section_tabs_label(count: usize) -> impl IntoElement {
     div()
         .pt(px(12.0))
@@ -389,6 +409,7 @@ fn section_label(label: &'static str) -> impl IntoElement {
 
 pub(crate) const ACTIVE_NAV_BG: u32 = 0xffffffd9;
 pub(crate) const PANEL_BG: u32 = 0xffffffe0;
+const UNREAD_BADGE_BG: u32 = 0x281e140f;
 
 pub(crate) fn panel_shadow() -> Vec<BoxShadow> {
     vec![
