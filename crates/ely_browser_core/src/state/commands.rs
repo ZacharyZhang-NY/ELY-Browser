@@ -285,6 +285,12 @@ impl BrowserCore {
                 self.open_tab(url);
                 Ok(true)
             }
+            "clear-site-data"
+            | "clear site data"
+            | "clear-site-data-for-this-profile"
+            | "clear site data for this profile" => {
+                Ok(self.clear_active_profile_site_data()?.is_some())
+            }
             "about" | "open-about" | "open about" => {
                 self.open_tab(about_url()?);
                 Ok(true)

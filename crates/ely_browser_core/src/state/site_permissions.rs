@@ -174,7 +174,7 @@ impl BrowserCore {
         })
     }
 
-    fn record_site_permission_audit_event(
+    pub(super) fn record_site_permission_audit_event(
         &mut self,
         profile_id: ProfileId,
         origin: SiteOrigin,

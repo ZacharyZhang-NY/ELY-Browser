@@ -19,6 +19,7 @@ mod notes;
 mod plugins;
 mod profiles;
 mod reading_list;
+mod site_data;
 mod site_permissions;
 mod spaces;
 mod splits;
@@ -30,6 +31,7 @@ mod tab_order;
 mod tabs;
 
 pub use plugins::{InstalledPlugin, PluginAuditAction, PluginAuditEvent};
+pub use site_data::SiteDataClearance;
 pub use spaces::TrashedSpace;
 
 #[derive(Clone, Debug)]
