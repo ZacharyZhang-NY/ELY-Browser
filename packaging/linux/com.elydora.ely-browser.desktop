@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ELY Browser
+GenericName=Web Browser
+Comment=ELY Browser by Elydora
+Exec=ely_app %u
+Icon=com.elydora.ely-browser
+Terminal=false
+Categories=Network;WebBrowser;
+MimeType=x-scheme-handler/ely;

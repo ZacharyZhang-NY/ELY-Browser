@@ -50,6 +50,9 @@ jobs:
       - name: Verify macOS bundle metadata
         run: scripts/verify_macos_bundle_metadata.sh
 
+      - name: Verify Linux desktop metadata
+        run: scripts/verify_linux_desktop_metadata.sh
+
       - name: Build macOS app bundle
         run: scripts/create_macos_app_bundle.sh
 
