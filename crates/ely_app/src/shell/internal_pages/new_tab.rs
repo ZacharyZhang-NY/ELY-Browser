@@ -54,29 +54,30 @@ fn render_hero_section() -> AnyElement {
         .flex()
         .flex_col()
         .items_center()
-        .gap(px(20.0))
+        .gap(px(28.0))
         .pt(px(24.0))
-        .pb(px(12.0))
+        .pb(px(14.0))
         .child(
             div()
-                .text_size(px(48.0))
+                .text_size(px(64.0))
                 .font_weight(gpui::FontWeight(400.0))
                 .text_color(rgb(colors::INK))
                 .child("Where focus finds flow."),
         )
         .child(
             div()
-                .w(px(420.0))
-                .h(px(44.0))
-                .rounded(px(999.0))
-                .bg(rgba(colors::GLASS_2))
+                .w(px(640.0))
+                .h(px(54.0))
+                .rounded(px(14.0))
+                .bg(rgba(SEARCH_BAR_BG))
                 .px(px(16.0))
                 .flex()
                 .items_center()
-                .gap(px(10.0))
-                .child(div().text_color(rgb(colors::INK_4)).child(IconName::Search))
+                .gap(px(12.0))
+                .child(div().text_color(rgb(colors::INK_3)).child(IconName::Search))
                 .child(
                     div()
+                        .flex_1()
                         .text_size(px(14.0))
                         .text_color(rgb(colors::INK_4))
                         .child("Search the web or ELY"),
@@ -84,6 +85,8 @@ fn render_hero_section() -> AnyElement {
         )
         .into_any_element()
 }
+
+const SEARCH_BAR_BG: u32 = 0xffffffd9; // rgba(255,255,255,0.85)
 
 fn render_quick_actions(cx: &mut Context<ElyShell>) -> AnyElement {
     div()
@@ -143,8 +146,8 @@ fn render_favorites_grid(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>)
         )
         .child(
             div()
-                .flex()
-                .flex_wrap()
+                .grid()
+                .grid_cols(7)
                 .gap(px(10.0))
                 .children(snapshot.favorites.iter().enumerate().map(|(index, tab)| {
                     render_favorite_card(index, tab, cx)
@@ -169,9 +172,8 @@ fn render_favorite_card(
 
     div()
         .id(SharedString::from(format!("fav-card-{index}")))
-        .w(px(96.0))
         .h(px(96.0))
-        .rounded(px(14.0))
+        .rounded(px(16.0))
         .bg(rgba(colors::GLASS_2))
         .flex()
         .flex_col()
