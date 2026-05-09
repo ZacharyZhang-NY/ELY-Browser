@@ -1,4 +1,5 @@
 mod about;
+mod appearance;
 mod bookmarks;
 mod crash;
 mod download_actions;
@@ -73,6 +74,7 @@ impl ElyShell {
             }
             "ely://about" => self.render_about_page(snapshot),
             "ely://settings" => self.render_settings_page(snapshot, cx),
+            "ely://settings/appearance" => self.render_appearance_page(snapshot),
             "ely://settings/general" => self.render_general_page(snapshot, cx),
             "ely://settings/sidebar-tabs" => self.render_sidebar_tabs_page(snapshot, cx),
             "ely://settings/search" => self.render_search_page(snapshot, cx),

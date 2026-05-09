@@ -25,6 +25,12 @@ const SETTINGS_ROUTES: &[SettingsRoute] = &[
         route: "ely://settings/general",
     },
     SettingsRoute {
+        icon: IconName::Palette,
+        title: "Appearance",
+        detail: "Theme tokens, Space accent, and Profile color.",
+        route: "ely://settings/appearance",
+    },
+    SettingsRoute {
         icon: IconName::LayoutDashboard,
         title: "Sidebar & Tabs",
         detail: "Vertical tabs, pinned area, and auto archive policy.",

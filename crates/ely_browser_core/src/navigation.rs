@@ -30,6 +30,7 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
         "ely://about" => Some("About ELY Browser"),
         "ely://settings" => Some("Settings"),
         "ely://settings/general" => Some("General Settings"),
+        "ely://settings/appearance" => Some("Appearance Settings"),
         "ely://settings/sidebar-tabs" => Some("Sidebar & Tabs Settings"),
         "ely://settings/search" => Some("Search Settings"),
         "ely://settings/privacy-security" => Some("Privacy & Security Settings"),
@@ -233,6 +234,9 @@ fn settings_page_route(query: &str) -> Option<&'static str> {
     match query {
         "settings" => Some("ely://settings"),
         "general" | "browser" | "new tab" | "new-tab" | "startup" => Some("ely://settings/general"),
+        "appearance" | "theme" | "visual" | "design" | "colors" => {
+            Some("ely://settings/appearance")
+        }
         "about" | "about ely browser" => Some("ely://about"),
         "sidebar" | "tabs" | "sidebar tabs" | "sidebar & tabs" => {
             Some("ely://settings/sidebar-tabs")
