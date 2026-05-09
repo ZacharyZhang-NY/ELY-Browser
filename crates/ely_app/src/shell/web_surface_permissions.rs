@@ -74,7 +74,10 @@ mod tests {
         let mut core = BrowserCore::new(InitialBrowserConfig {
             space_name: "Work".to_string(),
             space_icon: "W".to_string(),
+            space_color_hex: 0xf54e00,
             profile_name: "Default".to_string(),
+            profile_color_hex: 0x26251e,
+            profile_kind: ely_domain::ProfileKind::Standard,
             new_tab_destination: Default::default(),
         })?;
         core.open_tab(UrlText::parse(url)?);

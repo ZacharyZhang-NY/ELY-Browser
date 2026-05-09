@@ -4,8 +4,9 @@ use gpui::{App, KeyBinding};
 
 use crate::{
     CloseCurrentTab, FocusAddressBar, FocusCommandMode, OpenDownloads, OpenHistory, OpenNewTab,
-    OpenSettings, OpenTaskManager, Quit, RestoreClosedTab, SelectNextSpace, SelectNextTab,
-    SelectPreviousSpace, SelectPreviousTab, SplitRight, ToggleFavoriteTab, ToggleSidebar,
+    OpenPrivateWindow, OpenSettings, OpenTaskManager, Quit, RestoreClosedTab, SelectNextSpace,
+    SelectNextTab, SelectPreviousSpace, SelectPreviousTab, SplitRight, ToggleFavoriteTab,
+    ToggleSidebar,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -28,6 +29,7 @@ pub(crate) enum ShortcutAction {
     FocusAddressBar,
     FocusCommandMode,
     OpenNewTab,
+    OpenPrivateWindow,
     CloseCurrentTab,
     RestoreClosedTab,
     SelectNextSpace,
@@ -50,6 +52,7 @@ impl ShortcutAction {
             Self::FocusAddressBar => "Command Bar",
             Self::FocusCommandMode => "Command Mode",
             Self::OpenNewTab => "New Tab",
+            Self::OpenPrivateWindow => "New Private Window",
             Self::CloseCurrentTab => "Close Tab",
             Self::RestoreClosedTab => "Restore Closed Tab",
             Self::SelectNextSpace => "Next Space",
@@ -71,6 +74,7 @@ impl ShortcutAction {
         match self {
             Self::FocusAddressBar | Self::FocusCommandMode => "Command",
             Self::OpenNewTab
+            | Self::OpenPrivateWindow
             | Self::CloseCurrentTab
             | Self::RestoreClosedTab
             | Self::SelectNextSpace
@@ -91,6 +95,7 @@ impl ShortcutAction {
             Self::FocusAddressBar => None,
             Self::FocusCommandMode => None,
             Self::OpenNewTab => Some(">new-tab"),
+            Self::OpenPrivateWindow => None,
             Self::CloseCurrentTab => Some(">close-tab"),
             Self::RestoreClosedTab => Some(">restore-tab"),
             Self::SelectNextSpace => None,
@@ -133,6 +138,7 @@ pub(crate) const SHORTCUT_ACTIONS: &[ShortcutAction] = &[
     ShortcutAction::FocusAddressBar,
     ShortcutAction::FocusCommandMode,
     ShortcutAction::OpenNewTab,
+    ShortcutAction::OpenPrivateWindow,
     ShortcutAction::CloseCurrentTab,
     ShortcutAction::RestoreClosedTab,
     ShortcutAction::SelectNextSpace,
@@ -152,6 +158,8 @@ pub(crate) const SHORTCUT_ACTIONS: &[ShortcutAction] = &[
 pub(crate) const SHORTCUT_BINDINGS: &[ShortcutBinding] = &[
     shortcut(ShortcutAction::OpenNewTab, ShortcutPlatform::Macos, "cmd-t"),
     shortcut(ShortcutAction::OpenNewTab, ShortcutPlatform::WindowsLinux, "ctrl-t"),
+    shortcut(ShortcutAction::OpenPrivateWindow, ShortcutPlatform::Macos, "cmd-shift-n"),
+    shortcut(ShortcutAction::OpenPrivateWindow, ShortcutPlatform::WindowsLinux, "ctrl-shift-n"),
     shortcut(ShortcutAction::SplitRight, ShortcutPlatform::Macos, "cmd-\\"),
     shortcut(ShortcutAction::SplitRight, ShortcutPlatform::WindowsLinux, "ctrl-\\"),
     shortcut(ShortcutAction::ToggleSidebar, ShortcutPlatform::Macos, "cmd-b"),
@@ -245,6 +253,9 @@ impl ShortcutBinding {
             ShortcutAction::OpenDownloads => KeyBinding::new(self.keystroke, OpenDownloads, None),
             ShortcutAction::OpenHistory => KeyBinding::new(self.keystroke, OpenHistory, None),
             ShortcutAction::OpenNewTab => KeyBinding::new(self.keystroke, OpenNewTab, None),
+            ShortcutAction::OpenPrivateWindow => {
+                KeyBinding::new(self.keystroke, OpenPrivateWindow, None)
+            }
             ShortcutAction::OpenSettings => KeyBinding::new(self.keystroke, OpenSettings, None),
             ShortcutAction::OpenTaskManager => {
                 KeyBinding::new(self.keystroke, OpenTaskManager, None)
@@ -315,6 +326,20 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(bindings, vec!["Cmd + ,".to_string(), "Ctrl + ,".to_string()]);
+    }
+
+    #[test]
+    fn private_window_shortcut_has_platform_bindings() {
+        let bindings =
+            bindings_for_action(ShortcutAction::OpenPrivateWindow, ShortcutPlatform::Macos)
+                .chain(bindings_for_action(
+                    ShortcutAction::OpenPrivateWindow,
+                    ShortcutPlatform::WindowsLinux,
+                ))
+                .map(|binding| binding.display_keystroke())
+                .collect::<Vec<_>>();
+
+        assert_eq!(bindings, vec!["Cmd + Shift + N".to_string(), "Ctrl + Shift + N".to_string()]);
     }
 
     #[test]

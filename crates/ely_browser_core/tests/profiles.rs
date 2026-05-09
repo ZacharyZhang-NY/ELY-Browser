@@ -25,6 +25,26 @@ fn new_private_profile_command_creates_private_profile() -> Result<(), Box<dyn E
 }
 
 #[test]
+fn private_window_config_starts_with_private_profile() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::private_window()?)?;
+    let snapshot = core.snapshot()?;
+    let Some(private_profile) =
+        snapshot.profiles.iter().find(|profile| profile.id() == &snapshot.active_profile_id)
+    else {
+        return Err("missing active private profile".into());
+    };
+
+    assert_eq!(snapshot.active_space_name, "Private");
+    assert_eq!(snapshot.active_profile_name, "Private");
+    assert_eq!(private_profile.kind(), &ProfileKind::Private);
+    assert_eq!(private_profile.sync_policy(), ProfileSyncPolicy::Paused);
+
+    core.open_tab(UrlText::parse("https://example.com/private-window")?);
+    assert!(core.snapshot()?.history_entries.is_empty());
+    Ok(())
+}
+
+#[test]
 fn private_profiles_do_not_record_history() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let default_profile_id = core.snapshot()?.active_profile_id;

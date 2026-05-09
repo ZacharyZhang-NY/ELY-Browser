@@ -77,6 +77,18 @@ pub struct ElyShell {
 
 impl ElyShell {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self::new_with_config(InitialBrowserConfig::ely_defaults(), window, cx)
+    }
+
+    pub fn new_private(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self::new_with_config(InitialBrowserConfig::private_window(), window, cx)
+    }
+
+    fn new_with_config(
+        config: Result<InitialBrowserConfig, ely_domain::DomainError>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let command_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Search or enter address"));
 
@@ -112,7 +124,7 @@ impl ElyShell {
             },
         );
 
-        let state = match InitialBrowserConfig::ely_defaults().and_then(|config| {
+        let state = match config.and_then(|config| {
             BrowserCore::new(config).map_err(|error| match error {
                 ely_browser_core::CoreError::Domain(source) => source,
                 _ => ely_domain::DomainError::InvalidCommand,

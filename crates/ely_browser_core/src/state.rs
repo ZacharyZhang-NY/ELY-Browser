@@ -43,7 +43,10 @@ pub use spaces::TrashedSpace;
 pub struct InitialBrowserConfig {
     pub space_name: String,
     pub space_icon: String,
+    pub space_color_hex: u32,
     pub profile_name: String,
+    pub profile_color_hex: u32,
+    pub profile_kind: ProfileKind,
     pub new_tab_destination: NewTabDestination,
 }
 
@@ -52,7 +55,22 @@ impl InitialBrowserConfig {
         Ok(Self {
             space_name: "Work".to_string(),
             space_icon: "W".to_string(),
+            space_color_hex: 0xf54e00,
             profile_name: "Default".to_string(),
+            profile_color_hex: 0x26251e,
+            profile_kind: ProfileKind::Standard,
+            new_tab_destination: NewTabDestination::default(),
+        })
+    }
+
+    pub fn private_window() -> Result<Self, DomainError> {
+        Ok(Self {
+            space_name: "Private".to_string(),
+            space_icon: "P".to_string(),
+            space_color_hex: 0x807d72,
+            profile_name: "Private".to_string(),
+            profile_color_hex: 0x807d72,
+            profile_kind: ProfileKind::Private,
             new_tab_destination: NewTabDestination::default(),
         })
     }
@@ -127,12 +145,13 @@ pub struct BrowserCore {
 
 impl BrowserCore {
     pub fn new(config: InitialBrowserConfig) -> Result<Self, CoreError> {
-        let profile = Profile::new(config.profile_name, 0x26251e, ProfileKind::Standard);
+        let profile =
+            Profile::new(config.profile_name, config.profile_color_hex, config.profile_kind);
         let active_profile_id = profile.id().clone();
         let space = Space::new(
             config.space_name,
             config.space_icon,
-            0xf54e00,
+            config.space_color_hex,
             active_profile_id.clone(),
             0,
         );
