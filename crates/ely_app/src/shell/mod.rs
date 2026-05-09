@@ -1,5 +1,6 @@
 mod archive_labels;
 mod bookmarks;
+mod command_actions;
 mod downloads;
 mod focus;
 mod history;
@@ -25,9 +26,9 @@ mod web_surface_view;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
 use ely_domain::{
-    ArchivePolicy, CommandIntent, DownloadPolicy, FavoriteLimit, HistoryRecordingPolicy,
-    NewTabDestination, ProfileId, ProfileSyncPolicy, SearchEngine, SpaceId, SyncObjectKind,
-    SyncObjectPolicy, TabId, UrlText,
+    ArchivePolicy, DownloadPolicy, FavoriteLimit, HistoryRecordingPolicy, NewTabDestination,
+    ProfileId, ProfileSyncPolicy, SearchEngine, SpaceId, SyncObjectKind, SyncObjectPolicy, TabId,
+    UrlText,
 };
 use gpui::{AppContext, Context, Entity, FocusHandle, Subscription, Window};
 use gpui_component::input::{InputEvent, InputState, SelectAll};
@@ -53,7 +54,6 @@ pub struct ElyShell {
     state: ShellState,
     focus_handle: FocusHandle,
     command_input: Entity<InputState>,
-    last_intent: Option<CommandIntent>,
     download_action_error: Option<String>,
     download_clear_confirmation: bool,
     download_security_confirmation: Option<PendingDownloadFileAction>,
@@ -84,21 +84,21 @@ impl ElyShell {
                 let mut sync_address = false;
                 let submitted = matches!(event, InputEvent::PressEnter { .. });
 
-                let ShellState::Ready(core) = &mut shell.state else {
-                    return;
-                };
+                {
+                    let ShellState::Ready(core) = &mut shell.state else {
+                        return;
+                    };
 
-                let value = input.read(cx).value().to_string();
-                core.set_command_query(value);
+                    let value = input.read(cx).value().to_string();
+                    core.set_command_query(value);
 
-                if submitted {
-                    submitted_intent = core.submit_command().ok().flatten();
-                    sync_address = core.command_query().is_empty();
+                    if submitted {
+                        submitted_intent = core.submit_command().ok().flatten();
+                        sync_address = core.command_query().is_empty();
+                    }
                 }
 
-                if submitted {
-                    shell.last_intent = submitted_intent;
-                }
+                shell.handle_shell_command_intent(submitted_intent.as_ref(), window, cx);
 
                 if sync_address {
                     shell.sync_address_input(window, cx);
@@ -122,7 +122,6 @@ impl ElyShell {
             state,
             focus_handle: cx.focus_handle(),
             command_input,
-            last_intent: None,
             download_action_error: None,
             download_clear_confirmation: false,
             download_security_confirmation: None,

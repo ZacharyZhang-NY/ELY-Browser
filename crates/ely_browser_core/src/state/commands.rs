@@ -9,10 +9,10 @@ use crate::{
     navigation::{
         about_url, archive_idle_days, archive_url, bookmarks_url, downloads_url, history_url,
         move_tab_space_name, new_private_profile_name, new_profile_name, new_space_name, note_body,
-        notes_url, plugin_detail_url, plugins_url, reading_list_url, reading_progress_percent,
-        rename_tab_group_name, search_url, settings_page_url, settings_url, shortcut_settings_url,
-        space_icon, split_group_name, switch_profile_name, sync_status_url, tab_group_color_hex,
-        tab_group_name, tab_note_body, task_manager_url,
+        notes_url, plugin_detail_url, plugin_settings_url, plugins_url, reading_list_url,
+        reading_progress_percent, rename_tab_group_name, search_url, settings_page_url,
+        settings_url, shortcut_settings_url, space_icon, split_group_name, switch_profile_name,
+        sync_status_url, tab_group_color_hex, tab_group_name, tab_note_body, task_manager_url,
     },
 };
 
@@ -269,6 +269,13 @@ impl BrowserCore {
             | "open-plugin-marketplace"
             | "open plugin marketplace" => {
                 self.open_tab(plugins_url()?);
+                Ok(true)
+            }
+            "install-plugin-from-file"
+            | "install plugin from file"
+            | "install-plugin"
+            | "install plugin" => {
+                self.open_tab(plugin_settings_url()?);
                 Ok(true)
             }
             "site-settings" | "open-site-settings" | "open site settings" => {

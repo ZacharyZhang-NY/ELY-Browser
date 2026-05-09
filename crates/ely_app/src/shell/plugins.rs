@@ -10,6 +10,8 @@ use crate::services::{
 
 use super::{ElyShell, ShellState};
 
+const PLUGIN_SETTINGS_URL: &str = "ely://settings/plugins";
+
 #[derive(Clone, Debug)]
 pub(super) struct PendingPluginInstall {
     package: VerifiedPluginPackage,
@@ -56,6 +58,8 @@ impl PendingPluginUninstall {
 
 impl ElyShell {
     pub(super) fn choose_plugin_package(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.ensure_plugin_install_surface(window, cx);
+
         let prompt = cx.prompt_for_paths(PathPromptOptions {
             files: false,
             directories: true,
@@ -94,6 +98,21 @@ impl ElyShell {
             });
         })
         .detach();
+    }
+
+    fn ensure_plugin_install_surface(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.active_tab_matches_url(PLUGIN_SETTINGS_URL) {
+            return;
+        }
+
+        self.open_internal_tab(PLUGIN_SETTINGS_URL, window, cx);
+    }
+
+    fn active_tab_matches_url(&self, url: &str) -> bool {
+        match &self.state {
+            ShellState::Ready(core) => core.active_tab().is_ok_and(|tab| tab.url().as_str() == url),
+            ShellState::StartupError(_) => false,
+        }
     }
 
     pub(super) fn confirm_plugin_install(&mut self, cx: &mut Context<Self>) {

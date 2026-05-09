@@ -4,6 +4,21 @@ use ely_browser_core::{BrowserCore, CoreError, InitialBrowserConfig, PluginAudit
 use ely_domain::{CommandIntent, CommandScope, PluginId, PluginManifest};
 
 #[test]
+fn install_plugin_from_file_command_opens_plugin_settings_page() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query(">install-plugin-from-file");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(intent, Some(CommandIntent::Command("install-plugin-from-file".to_string())));
+    assert_eq!(active_tab.title(), "Plugin Settings");
+    assert_eq!(active_tab.url().as_str(), "ely://settings/plugins");
+    assert_eq!(core.snapshot()?.command_query, "");
+    Ok(())
+}
+
+#[test]
 fn installs_standard_plugin_and_records_audit_event() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let manifest = plugin_manifest("com.elydora.reader", &["page:metadata", "ui:command"])?;
