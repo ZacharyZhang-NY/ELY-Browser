@@ -1,4 +1,5 @@
 mod archive_labels;
+mod bookmark_files;
 mod bookmarks;
 mod command_actions;
 mod downloads;
@@ -71,6 +72,8 @@ pub struct ElyShell {
     shortcut_profile: ShortcutProfile,
     pending_bookmark_edit: Option<PendingBookmarkEdit>,
     bookmark_edit_error: Option<String>,
+    bookmark_file_error: Option<String>,
+    bookmark_file_notice: Option<String>,
     plugin_install_error: Option<String>,
     pending_plugin_install: Option<PendingPluginInstall>,
     pending_plugin_uninstall: Option<PendingPluginUninstall>,
@@ -156,6 +159,8 @@ impl ElyShell {
             shortcut_profile: ShortcutProfile::default_profile(),
             pending_bookmark_edit: None,
             bookmark_edit_error: None,
+            bookmark_file_error: None,
+            bookmark_file_notice: None,
             plugin_install_error: None,
             pending_plugin_install: None,
             pending_plugin_uninstall: None,

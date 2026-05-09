@@ -17,6 +17,12 @@ enum ShortcutFileCommand {
     Import,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BookmarkFileCommand {
+    Export,
+    Import,
+}
+
 impl ElyShell {
     pub(super) fn handle_shell_command_intent(
         &mut self,
@@ -46,6 +52,12 @@ impl ElyShell {
         match shortcut_file_command(command) {
             Some(ShortcutFileCommand::Export) => self.export_shortcuts(window, cx),
             Some(ShortcutFileCommand::Import) => self.choose_shortcut_import(window, cx),
+            None => {}
+        }
+
+        match bookmark_file_command(command) {
+            Some(BookmarkFileCommand::Export) => self.export_bookmarks(window, cx),
+            Some(BookmarkFileCommand::Import) => self.choose_bookmark_import(window, cx),
             None => {}
         }
     }
@@ -90,11 +102,19 @@ fn shortcut_file_command(command: &str) -> Option<ShortcutFileCommand> {
     }
 }
 
+fn bookmark_file_command(command: &str) -> Option<BookmarkFileCommand> {
+    match command.trim().to_ascii_lowercase().as_str() {
+        "export-bookmarks" | "export bookmarks" => Some(BookmarkFileCommand::Export),
+        "import-bookmarks" | "import bookmarks" => Some(BookmarkFileCommand::Import),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        ShortcutFileCommand, SpaceFileCommand, install_plugin_from_file_command,
-        shortcut_file_command, space_file_command,
+        BookmarkFileCommand, ShortcutFileCommand, SpaceFileCommand, bookmark_file_command,
+        install_plugin_from_file_command, shortcut_file_command, space_file_command,
     };
 
     #[test]
@@ -133,5 +153,11 @@ mod tests {
     fn shortcut_file_command_matches_export_and_import_aliases() {
         assert_eq!(shortcut_file_command("export-shortcuts"), Some(ShortcutFileCommand::Export));
         assert_eq!(shortcut_file_command("import keybindings"), Some(ShortcutFileCommand::Import));
+    }
+
+    #[test]
+    fn bookmark_file_command_matches_export_and_import_aliases() {
+        assert_eq!(bookmark_file_command("export-bookmarks"), Some(BookmarkFileCommand::Export));
+        assert_eq!(bookmark_file_command("import bookmarks"), Some(BookmarkFileCommand::Import));
     }
 }

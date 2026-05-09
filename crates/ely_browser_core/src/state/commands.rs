@@ -247,6 +247,10 @@ impl BrowserCore {
                 self.open_tab(bookmarks_url()?);
                 Ok(true)
             }
+            "export-bookmarks" | "export bookmarks" | "import-bookmarks" | "import bookmarks" => {
+                self.open_tab(bookmarks_url()?);
+                Ok(true)
+            }
             "reading-list" | "open-reading-list" | "open reading list" => {
                 self.open_tab(reading_list_url()?);
                 Ok(true)

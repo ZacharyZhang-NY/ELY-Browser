@@ -32,6 +32,10 @@ mod tab_order;
 mod tab_selection;
 mod tabs;
 
+pub use bookmarks::{
+    BookmarkImportSummary, ELYBOOKMARKS_FILE_EXTENSION, ELYBOOKMARKS_SCHEMA_VERSION,
+    ElyBookmarksPackage,
+};
 pub use plugins::{InstalledPlugin, PluginAuditAction, PluginAuditEvent};
 pub use site_data::SiteDataClearance;
 pub use space_exports::{

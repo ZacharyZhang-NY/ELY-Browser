@@ -27,7 +27,13 @@ impl ElyShell {
                 .flex()
                 .flex_col()
                 .gap_5()
-                .child(render_bookmarks_header(snapshot))
+                .child(self.render_bookmarks_header(snapshot, cx))
+                .when_some(self.bookmark_file_error.clone(), |this, message| {
+                    this.child(render_bookmark_file_message(message, colors::ERROR))
+                })
+                .when_some(self.bookmark_file_notice.clone(), |this, message| {
+                    this.child(render_bookmark_file_message(message, colors::SUCCESS))
+                })
                 .child(self.render_bookmark_list(snapshot, cx)),
         )
     }
@@ -251,30 +257,84 @@ fn render_bookmark_edit_field(label: &'static str, input: &Entity<InputState>) -
         .into_any_element()
 }
 
-fn render_bookmarks_header(snapshot: &BrowserSnapshot) -> AnyElement {
+impl ElyShell {
+    fn render_bookmarks_header(
+        &mut self,
+        snapshot: &BrowserSnapshot,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .flex()
+            .items_end()
+            .justify_between()
+            .gap_4()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(
+                        div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("Bookmarks"),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(colors::MUTED))
+                            .child(format!("Profile: {}", snapshot.active_profile_name)),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(rgb(colors::MUTED))
+                            .child(bookmark_count_label(snapshot.bookmarks.len())),
+                    )
+                    .child(
+                        Button::new("export-bookmarks")
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::File)
+                            .label("Export")
+                            .tooltip("Export Bookmarks")
+                            .on_click(cx.listener(|shell, _, window, cx| {
+                                shell.export_bookmarks(window, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("import-bookmarks")
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::FolderOpen)
+                            .label("Import")
+                            .tooltip("Import Bookmarks")
+                            .on_click(cx.listener(|shell, _, window, cx| {
+                                shell.choose_bookmark_import(window, cx);
+                            })),
+                    ),
+            )
+            .into_any_element()
+    }
+}
+
+fn render_bookmark_file_message(message: String, color: u32) -> AnyElement {
     div()
+        .rounded_md()
+        .border_1()
+        .border_color(rgb(color))
+        .px_3()
+        .py_2()
         .flex()
-        .items_end()
-        .justify_between()
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("Bookmarks"))
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(rgb(colors::MUTED))
-                        .child(format!("Profile: {}", snapshot.active_profile_name)),
-                ),
-        )
-        .child(
-            div()
-                .text_xs()
-                .text_color(rgb(colors::MUTED))
-                .child(bookmark_count_label(snapshot.bookmarks.len())),
-        )
+        .items_center()
+        .gap_2()
+        .text_xs()
+        .text_color(rgb(color))
+        .child(IconName::Info)
+        .child(message)
         .into_any_element()
 }
 

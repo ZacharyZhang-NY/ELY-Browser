@@ -1,7 +1,8 @@
 use std::error::Error;
 
-use ely_browser_core::{BrowserCore, CoreError, InitialBrowserConfig};
+use ely_browser_core::{BrowserCore, CoreError, ELYBOOKMARKS_SCHEMA_VERSION, InitialBrowserConfig};
 use ely_domain::{BookmarkId, CommandIntent, CommandScope, DomainError, ProfileKind, UrlText};
+use serde_json::Value;
 
 #[test]
 fn bookmark_active_tab_records_current_context() -> Result<(), Box<dyn Error>> {
@@ -237,6 +238,120 @@ fn open_bookmarks_command_opens_bookmarks_page() -> Result<(), Box<dyn Error>> {
     assert_eq!(intent, Some(CommandIntent::Command("open-bookmarks".to_string())));
     assert_eq!(active_tab.title(), "Bookmarks");
     assert_eq!(active_tab.url().as_str(), "ely://bookmarks");
+    assert_eq!(core.snapshot()?.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn export_bookmarks_package_json_contains_active_profile_bookmarks() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let default_profile_id = core.snapshot()?.active_profile_id;
+    core.open_tab(UrlText::parse("https://example.com/research")?);
+    let bookmark_id = core.bookmark_active_tab()?;
+    core.set_bookmark_collection_name(&bookmark_id, "Research")?;
+    core.set_bookmark_tags(&bookmark_id, vec!["rust".to_string(), "gpui".to_string()])?;
+    core.set_bookmark_note(&bookmark_id, "Servo reference")?;
+    core.set_bookmark_thumbnail_key(&bookmark_id, "screenshots/example.avif")?;
+
+    core.create_profile("Personal", 0xf54e00, ProfileKind::Standard)?;
+    core.open_tab(UrlText::parse("https://example.com/personal")?);
+    core.bookmark_active_tab()?;
+    core.select_profile(&default_profile_id)?;
+
+    let package = core.export_bookmarks_package()?;
+    let package_json = core.export_bookmarks_package_json()?;
+    let value: Value = serde_json::from_str(&package_json)?;
+    let bookmarks = value["bookmarks"].as_array().ok_or("missing bookmarks array")?;
+
+    assert_eq!(package.version(), ELYBOOKMARKS_SCHEMA_VERSION);
+    assert_eq!(package.bookmark_count(), 1);
+    assert_eq!(bookmarks.len(), 1);
+    assert_eq!(bookmarks[0]["title"], "example.com");
+    assert_eq!(bookmarks[0]["url"], "https://example.com/research");
+    assert_eq!(bookmarks[0]["collection_name"], "Research");
+    assert_eq!(bookmarks[0]["space_name"], "Work");
+    assert_eq!(bookmarks[0]["tags"], serde_json::json!(["rust", "gpui"]));
+    assert_eq!(bookmarks[0]["note"], "Servo reference");
+    assert_eq!(bookmarks[0]["thumbnail_key"], "screenshots/example.avif");
+    Ok(())
+}
+
+#[test]
+fn import_bookmarks_package_json_creates_active_profile_bookmarks() -> Result<(), Box<dyn Error>> {
+    let mut source = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    source.open_tab(UrlText::parse("https://example.com/research")?);
+    let bookmark_id = source.bookmark_active_tab()?;
+    source.set_bookmark_collection_name(&bookmark_id, "Research")?;
+    source.set_bookmark_tags(&bookmark_id, vec!["rust".to_string()])?;
+    source.set_bookmark_note(&bookmark_id, "Read later")?;
+    let package_json = source.export_bookmarks_package_json()?;
+
+    let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let active_profile_id = target.snapshot()?.active_profile_id;
+    let active_space_id = target.snapshot()?.active_space_id;
+    let summary = target.import_bookmarks_package_json(&package_json)?;
+    let snapshot = target.snapshot()?;
+
+    assert_eq!(summary.imported(), 1);
+    assert_eq!(summary.skipped(), 0);
+    assert_eq!(summary.label(), "Imported 1 bookmarks, skipped 0");
+    assert_eq!(snapshot.bookmarks.len(), 1);
+    assert_eq!(snapshot.bookmarks[0].profile_id(), &active_profile_id);
+    assert_eq!(snapshot.bookmarks[0].space_id(), &active_space_id);
+    assert_eq!(snapshot.bookmarks[0].collection_name(), "Research");
+    assert_eq!(snapshot.bookmarks[0].tags(), &["rust".to_string()]);
+    assert_eq!(snapshot.bookmarks[0].note(), Some("Read later"));
+    Ok(())
+}
+
+#[test]
+fn import_bookmarks_package_skips_duplicate_active_profile_urls() -> Result<(), Box<dyn Error>> {
+    let mut source = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    source.open_tab(UrlText::parse("https://example.com/research")?);
+    source.bookmark_active_tab()?;
+    let package_json = source.export_bookmarks_package_json()?;
+
+    let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    target.open_tab(UrlText::parse("https://example.com/research")?);
+    target.bookmark_active_tab()?;
+    let summary = target.import_bookmarks_package_json(&package_json)?;
+
+    assert_eq!(summary.imported(), 0);
+    assert_eq!(summary.skipped(), 1);
+    assert_eq!(target.snapshot()?.bookmarks.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn import_bookmarks_package_rejects_unknown_fields() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let package_json = r#"{
+        "version": 1,
+        "unexpected": true,
+        "bookmarks": []
+    }"#;
+
+    let Err(error) = core.import_bookmarks_package_json(package_json) else {
+        return Err("expected invalid bookmark package".into());
+    };
+
+    assert!(matches!(error, CoreError::InvalidBookmarkPackage { .. }));
+    Ok(())
+}
+
+#[test]
+fn bookmark_file_commands_open_bookmarks_page() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query(">export-bookmarks");
+    let export_intent = core.submit_command()?;
+    assert_eq!(export_intent, Some(CommandIntent::Command("export-bookmarks".to_string())));
+    assert_eq!(core.active_tab()?.url().as_str(), "ely://bookmarks");
+
+    core.set_command_query(">import-bookmarks");
+    let import_intent = core.submit_command()?;
+    assert_eq!(import_intent, Some(CommandIntent::Command("import-bookmarks".to_string())));
+    assert_eq!(core.active_tab()?.title(), "Bookmarks");
     assert_eq!(core.snapshot()?.command_query, "");
     Ok(())
 }
