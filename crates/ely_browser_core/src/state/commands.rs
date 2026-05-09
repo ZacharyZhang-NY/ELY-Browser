@@ -381,6 +381,13 @@ impl BrowserCore {
                 self.archive_idle_tabs(SystemTime::now())?;
                 Ok(true)
             }
+            "purge-expired-spaces"
+            | "purge expired spaces"
+            | "purge-space-trash"
+            | "purge space trash" => {
+                self.purge_expired_trashed_spaces(SystemTime::now());
+                Ok(true)
+            }
             "favorite" | "toggle-favorite" => {
                 self.toggle_active_tab_favorite()?;
                 Ok(true)

@@ -51,6 +51,11 @@ impl TrashedSpace {
     pub fn purge_at(&self) -> SystemTime {
         self.purge_at
     }
+
+    #[must_use]
+    pub fn is_expired(&self, now: SystemTime) -> bool {
+        now >= self.purge_at
+    }
 }
 
 impl BrowserCore {
@@ -188,6 +193,12 @@ impl BrowserCore {
         self.archived_tabs.extend(trashed_space.archived_tabs);
         self.select_space(&restored_space_id)?;
         Ok(true)
+    }
+
+    pub fn purge_expired_trashed_spaces(&mut self, now: SystemTime) -> usize {
+        let previous_count = self.trashed_spaces.len();
+        self.trashed_spaces.retain(|space| !space.is_expired(now));
+        previous_count - self.trashed_spaces.len()
     }
 
     pub fn move_space_up(&mut self, space_id: &SpaceId) -> Result<bool, CoreError> {

@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use ely_domain::{ProfileId, SpaceId};
 use gpui::{Context, Window};
 
@@ -67,6 +69,14 @@ impl ElyShell {
             && core.restore_trashed_space(space_id).is_ok()
         {
             self.sync_address_input(window, cx);
+            cx.notify();
+        }
+    }
+
+    pub(super) fn purge_expired_trashed_spaces(&mut self, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.purge_expired_trashed_spaces(SystemTime::now()) > 0
+        {
             cx.notify();
         }
     }

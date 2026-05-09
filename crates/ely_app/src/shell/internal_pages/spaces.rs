@@ -1,3 +1,5 @@
+use std::time::{Duration, SystemTime};
+
 use ely_browser_core::{BrowserSnapshot, SpaceImportProfileMapping, TrashedSpace};
 use ely_design_system::colors;
 use ely_domain::{ArchivePolicy, Profile, Space, SpaceId};
@@ -271,6 +273,10 @@ fn render_trashed_spaces_list(
         return div().into_any_element();
     }
 
+    let now = SystemTime::now();
+    let expired_count =
+        snapshot.trashed_spaces.iter().filter(|space| space.is_expired(now)).count();
+
     div()
         .flex()
         .flex_col()
@@ -278,6 +284,41 @@ fn render_trashed_spaces_list(
         .border_t_1()
         .border_color(rgb(colors::HAIRLINE))
         .pt_3()
+        .child(render_trashed_spaces_header(expired_count, cx))
+        .children(
+            snapshot.trashed_spaces.iter().enumerate().map(|(index, trashed_space)| {
+                render_trashed_space_row(index, trashed_space, now, cx)
+            }),
+        )
+        .into_any_element()
+}
+
+fn render_trashed_spaces_header(expired_count: usize, cx: &mut Context<ElyShell>) -> AnyElement {
+    let action = if expired_count == 0 {
+        div()
+            .text_xs()
+            .font_semibold()
+            .text_color(rgb(colors::MUTED_SOFT))
+            .child("30 day retention")
+            .into_any_element()
+    } else {
+        Button::new("purge-expired-spaces")
+            .small()
+            .danger()
+            .icon(IconName::Delete)
+            .label("Purge Expired")
+            .tooltip("Purge Expired Spaces")
+            .on_click(cx.listener(|shell, _, _, cx| {
+                shell.purge_expired_trashed_spaces(cx);
+            }))
+            .into_any_element()
+    };
+
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap_3()
         .child(
             div()
                 .text_xs()
@@ -285,19 +326,14 @@ fn render_trashed_spaces_list(
                 .text_color(rgb(colors::MUTED))
                 .child("Recently Trashed"),
         )
-        .children(
-            snapshot
-                .trashed_spaces
-                .iter()
-                .enumerate()
-                .map(|(index, trashed_space)| render_trashed_space_row(index, trashed_space, cx)),
-        )
+        .child(action)
         .into_any_element()
 }
 
 fn render_trashed_space_row(
     index: usize,
     trashed_space: &TrashedSpace,
+    now: SystemTime,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let space_id = trashed_space.space().id().clone();
@@ -333,7 +369,7 @@ fn render_trashed_space_row(
                                 .text_xs()
                                 .truncate()
                                 .text_color(rgb(colors::MUTED))
-                                .child(trashed_space_detail_label(trashed_space)),
+                                .child(trashed_space_detail_label(trashed_space, now)),
                         ),
                 ),
         )
@@ -369,12 +405,31 @@ fn space_avatar(space: &Space) -> AnyElement {
         .into_any_element()
 }
 
-fn trashed_space_detail_label(trashed_space: &TrashedSpace) -> String {
+fn trashed_space_detail_label(trashed_space: &TrashedSpace, now: SystemTime) -> String {
     format!(
-        "{} open tabs - {} archived tabs - retained 30 days",
+        "{} open tabs - {} archived tabs - {}",
         trashed_space.tabs().len(),
-        trashed_space.archived_tabs().len()
+        trashed_space.archived_tabs().len(),
+        trash_retention_label(trashed_space, now)
     )
+}
+
+fn trash_retention_label(trashed_space: &TrashedSpace, now: SystemTime) -> String {
+    if trashed_space.is_expired(now) {
+        return "eligible for permanent purge".to_string();
+    }
+
+    format!("purges in {}", time_until_purge(trashed_space.purge_at(), now))
+}
+
+fn time_until_purge(purge_at: SystemTime, now: SystemTime) -> String {
+    let remaining = purge_at.duration_since(now).unwrap_or(Duration::ZERO);
+    if remaining < Duration::from_secs(3_600) {
+        return "under 1 hour".to_string();
+    }
+
+    let days = remaining.as_secs().div_ceil(86_400);
+    if days == 1 { "1 day".to_string() } else { format!("{days} days") }
 }
 
 fn space_detail_label(space: &Space, profiles: &[Profile]) -> String {

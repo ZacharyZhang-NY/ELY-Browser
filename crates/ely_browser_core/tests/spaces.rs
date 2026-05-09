@@ -354,6 +354,59 @@ fn selecting_adjacent_spaces_uses_sort_order_with_wraparound() -> Result<(), Box
     Ok(())
 }
 
+#[test]
+fn purging_expired_trashed_spaces_keeps_entries_inside_retention() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(40 * 86_400);
+    let stale_space_id = core.create_space("Stale", "S", 0x807d72)?;
+    let fresh_space_id = core.create_space("Fresh", "F", 0x9fc9a2)?;
+
+    core.trash_space(&stale_space_id, now - Duration::from_secs(31 * 86_400))?;
+    core.trash_space(&fresh_space_id, now - Duration::from_secs(10 * 86_400))?;
+
+    assert_eq!(core.purge_expired_trashed_spaces(now), 1);
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(snapshot.trashed_spaces.len(), 1);
+    assert_eq!(snapshot.trashed_spaces[0].space().id(), &fresh_space_id);
+    Ok(())
+}
+
+#[test]
+fn trashed_space_expires_at_retention_boundary() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let trashed_at = SystemTime::UNIX_EPOCH + Duration::from_secs(900);
+    let purge_at = trashed_at + Duration::from_secs(30 * 86_400);
+    let research_space_id = core.create_space("Research", "R", 0x9fc9a2)?;
+
+    core.trash_space(&research_space_id, trashed_at)?;
+    assert_eq!(core.purge_expired_trashed_spaces(purge_at - Duration::from_secs(1)), 0);
+    assert_eq!(core.snapshot()?.trashed_spaces.len(), 1);
+
+    assert_eq!(core.purge_expired_trashed_spaces(purge_at), 1);
+    assert!(core.snapshot()?.trashed_spaces.is_empty());
+    Ok(())
+}
+
+#[test]
+fn purge_expired_spaces_command_clears_expired_trash() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let stale_space_id = core.create_space("Stale", "S", 0x807d72)?;
+
+    core.trash_space(&stale_space_id, SystemTime::now() - Duration::from_secs(31 * 86_400))?;
+    core.set_command_query(">purge-expired-spaces");
+    let intent = core.submit_command()?;
+    let snapshot = core.snapshot()?;
+
+    assert_eq!(
+        intent,
+        Some(ely_domain::CommandIntent::Command("purge-expired-spaces".to_string()))
+    );
+    assert!(snapshot.trashed_spaces.is_empty());
+    assert_eq!(snapshot.command_query, "");
+    Ok(())
+}
+
 fn active_space_updated_at(
     core: &BrowserCore,
     space_id: &ely_domain::SpaceId,
