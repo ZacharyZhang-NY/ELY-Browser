@@ -207,6 +207,7 @@ describe("device routes", () => {
     assert.ok(d1.queries[0]?.includes("INSERT INTO user_devices"));
     assert.ok(d1.queries[0]?.includes("ON CONFLICT(user_id, idempotency_key) DO NOTHING"));
     assert.ok(d1.queries[1]?.includes("WHERE user_id = ? AND idempotency_key = ?"));
+    assert.ok(d1.queries[2]?.includes("better_auth_session_device_context"));
     assert.deepEqual(d1.binds[0]?.slice(0, 5), [
       "user-01",
       "device-01",
@@ -218,6 +219,7 @@ describe("device routes", () => {
     assert.equal(typeof d1.binds[0]?.[6], "number");
     assert.equal(d1.binds[0]?.[7], IDEMPOTENCY_KEY);
     assert.deepEqual(d1.binds[1], ["user-01", IDEMPOTENCY_KEY]);
+    assert.deepEqual(d1.binds[2]?.slice(0, 3), ["session-01", "user-01", "device-01"]);
   });
 
   it("rejects invalid device registration payloads before D1 writes", async () => {

@@ -213,7 +213,12 @@ describe("api controls", () => {
         rateLimitKeys,
         d1: testD1Database({
           firstRows: [
-            { id: "session-01", userId: "user-01", expiresAt: "2099-01-01T00:00:00.000Z" },
+            {
+              id: "session-01",
+              userId: "user-01",
+              expiresAt: "2099-01-01T00:00:00.000Z",
+              deviceId: "device-01",
+            },
           ],
           queries: d1Queries,
           binds: d1Binds,
@@ -223,12 +228,23 @@ describe("api controls", () => {
       ["GET"],
       (context) =>
         Promise.resolve(
-          jsonResponse({ user_id: context.userId, session_id: context.sessionId }, 200),
+          jsonResponse(
+            {
+              user_id: context.userId,
+              session_id: context.sessionId,
+              device_id: context.deviceId,
+            },
+            200,
+          ),
         ),
     );
 
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { user_id: "user-01", session_id: "session-01" });
+    assert.deepEqual(await response.json(), {
+      user_id: "user-01",
+      session_id: "session-01",
+      device_id: "device-01",
+    });
     assert.deepEqual(rateLimitKeys, [`local:devices.list:bearer:${tokenHash}`]);
     assert.deepEqual(kvReads, [authSessionCacheKvKey("local", tokenHash)]);
     assert.equal(d1Queries.length, 1);
@@ -243,6 +259,7 @@ describe("api controls", () => {
       "",
       "user-01",
     ]);
+    assert.equal(auditEvents[0]?.blobs?.[7], "device-01");
   });
 
   it("rejects expired authenticated sessions", async () => {

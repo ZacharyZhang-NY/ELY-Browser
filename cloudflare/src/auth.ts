@@ -6,9 +6,15 @@ const BEARER_TOKEN_PATTERN = /^[A-Za-z0-9._~+/=-]{32,4096}$/;
 const SUBJECT_ID_PATTERN = /^[a-zA-Z0-9._:-]{3,128}$/;
 const DEVICE_ID_PATTERN = /^[a-zA-Z0-9._:-]{3,128}$/;
 const BETTER_AUTH_SESSION_QUERY = `
-  SELECT id, userId, expiresAt
-  FROM better_auth_session
-  WHERE token = ?
+  SELECT
+    session.id,
+    session.userId,
+    session.expiresAt,
+    device_context.device_id AS deviceId
+  FROM better_auth_session AS session
+  LEFT JOIN better_auth_session_device_context AS device_context
+    ON device_context.session_id = session.id
+  WHERE session.token = ?
 `;
 
 export interface AuthContext {
@@ -23,6 +29,7 @@ interface BetterAuthSessionRow extends Record<string, unknown> {
   id: unknown;
   userId: unknown;
   expiresAt: unknown;
+  deviceId?: unknown;
 }
 
 export type AuthErrorCode =
@@ -115,6 +122,10 @@ async function readBetterAuthSessionContext(
     tokenHash,
     expiresAt: timestampField(row, "expiresAt"),
   };
+  const deviceId = optionalStringField(row, "deviceId");
+  if (deviceId !== undefined) {
+    session.deviceId = deviceIdValue(deviceId);
+  }
   if (Date.parse(session.expiresAt) <= now.getTime()) {
     throw new AuthError("session_expired");
   }

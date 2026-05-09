@@ -166,6 +166,24 @@ const DEVICE_REVOKE_QUERY = `
     revoked_at = COALESCE(revoked_at, ?)
   WHERE user_id = ? AND device_id = ? AND revoked_at IS NULL
 `;
+const SESSION_DEVICE_CONTEXT_UPSERT_QUERY = `
+  INSERT INTO better_auth_session_device_context (
+    session_id,
+    user_id,
+    device_id,
+    updated_at
+  )
+  SELECT ?, ?, ?, ?
+  WHERE EXISTS (
+    SELECT 1
+    FROM better_auth_session
+    WHERE id = ? AND userId = ?
+  )
+  ON CONFLICT(session_id) DO UPDATE SET
+    user_id = excluded.user_id,
+    device_id = excluded.device_id,
+    updated_at = excluded.updated_at
+`;
 
 export async function deviceListDocument(
   env: Env,
@@ -208,12 +226,24 @@ export async function registerDeviceDocument(
   if (row === null) {
     throw new DevicePersistenceError("device_registration_missing");
   }
+  await bindSessionDeviceContext(env, context, registration.deviceId, nowSeconds);
 
   return {
     version: 1,
     user_id: context.userId,
     device: deviceDocument(row, registration.deviceId),
   };
+}
+
+async function bindSessionDeviceContext(
+  env: Env,
+  context: AuthContext,
+  deviceId: string,
+  nowSeconds: number,
+): Promise<void> {
+  await env.ELY_DB.prepare(SESSION_DEVICE_CONTEXT_UPSERT_QUERY)
+    .bind(context.sessionId, context.userId, deviceId, nowSeconds, context.sessionId, context.userId)
+    .run();
 }
 
 export async function approveDeviceDocument(

@@ -13,6 +13,7 @@ const EXPECTED_MIGRATIONS = [
   "0004_releases.sql",
   "0005_audit.sql",
   "0006_better_auth.sql",
+  "0007_better_auth_session_device_context.sql",
 ];
 const USER_SCOPED_TABLES = [
   "user_devices",
@@ -39,6 +40,7 @@ describe("D1 migrations", () => {
         "audit_events",
         "better_auth_account",
         "better_auth_session",
+        "better_auth_session_device_context",
         "better_auth_user",
         "better_auth_verification",
         "device_approvals",
@@ -101,6 +103,15 @@ describe("D1 migrations", () => {
           "expiresAt",
           "createdAt",
           "updatedAt",
+        ]),
+        [],
+      );
+      assert.deepEqual(
+        requiredColumns(databasePath, "better_auth_session_device_context", [
+          "session_id",
+          "user_id",
+          "device_id",
+          "updated_at",
         ]),
         [],
       );
