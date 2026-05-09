@@ -99,6 +99,28 @@ impl ElyShell {
         }
     }
 
+    pub(crate) fn toggle_workspace_picker(&mut self, cx: &mut Context<Self>) {
+        self.workspace_picker_open = !self.workspace_picker_open;
+        cx.notify();
+    }
+
+    pub(crate) fn close_workspace_picker(&mut self, cx: &mut Context<Self>) {
+        if self.workspace_picker_open {
+            self.workspace_picker_open = false;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn select_space_from_picker(
+        &mut self,
+        space_id: &SpaceId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.select_space(space_id, window, cx);
+        self.close_workspace_picker(cx);
+    }
+
     pub(super) fn on_select_previous_space(
         &mut self,
         _: &SelectPreviousSpace,

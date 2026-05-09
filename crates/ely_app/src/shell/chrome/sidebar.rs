@@ -28,7 +28,7 @@ impl ElyShell {
             .bg(rgba(panel_color))
             .shadow(panel_shadow())
             .overflow_hidden()
-            .child(render_sidebar_header(snapshot, cx))
+            .child(render_sidebar_header(self, snapshot, cx))
             .child(
                 div()
                     .flex_1()

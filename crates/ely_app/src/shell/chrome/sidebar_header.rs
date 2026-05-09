@@ -3,14 +3,15 @@ use ely_design_system::colors;
 use ely_domain::Space;
 use gpui::{
     AnyElement, BoxShadow, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, div, hsla, linear_color_stop, linear_gradient, point, px,
-    rgb, rgba,
+    StatefulInteractiveElement, Styled, div, hsla, linear_color_stop, linear_gradient,
+    prelude::FluentBuilder, point, px, rgb, rgba,
 };
 use gpui_component::IconName;
 
 use crate::shell::ElyShell;
 
 pub(crate) fn render_sidebar_header(
+    shell: &ElyShell,
     snapshot: &BrowserSnapshot,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
@@ -18,6 +19,7 @@ pub(crate) fn render_sidebar_header(
         .spaces
         .iter()
         .find(|space| space.id() == &snapshot.active_space_id);
+    let picker_open = shell.workspace_picker_open;
 
     div()
         .flex()
@@ -28,7 +30,10 @@ pub(crate) fn render_sidebar_header(
         .gap(px(8.0))
         .flex_shrink_0()
         .child(render_title_row())
-        .child(render_workspace_picker(active_space, cx))
+        .child(render_workspace_picker(active_space, picker_open, cx))
+        .when(picker_open, |el| {
+            el.child(render_workspace_disclosure(snapshot, cx))
+        })
         .into_any_element()
 }
 
@@ -56,6 +61,7 @@ fn render_title_row() -> AnyElement {
 
 fn render_workspace_picker(
     active_space: Option<&Space>,
+    picker_open: bool,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     div()
@@ -65,7 +71,7 @@ fn render_workspace_picker(
         .py(px(4.0))
         .px(px(2.0))
         .child(render_workspaces_tile(cx))
-        .child(render_picker_pill(active_space, cx))
+        .child(render_picker_pill(active_space, picker_open, cx))
         .child(render_add_workspace_button(cx))
         .into_any_element()
 }
@@ -95,13 +101,23 @@ fn render_workspaces_tile(cx: &mut Context<ElyShell>) -> AnyElement {
         .into_any_element()
 }
 
-fn render_picker_pill(active_space: Option<&Space>, cx: &mut Context<ElyShell>) -> AnyElement {
+fn render_picker_pill(
+    active_space: Option<&Space>,
+    picker_open: bool,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
     let space_name = active_space
         .map(|space| space.name().to_string())
         .unwrap_or_default();
     let space_glyph = active_space
         .map(|space| space.icon().to_string())
         .unwrap_or_default();
+    let chevron = if picker_open {
+        IconName::ChevronUp
+    } else {
+        IconName::ChevronDown
+    };
+    let bg = if picker_open { PICKER_BG_HOVER } else { PICKER_BG };
 
     div()
         .id(SharedString::from("workspace-picker"))
@@ -113,13 +129,13 @@ fn render_picker_pill(active_space: Option<&Space>, cx: &mut Context<ElyShell>) 
         .px(px(8.0))
         .py(px(6.0))
         .rounded(px(9.0))
-        .bg(rgba(PICKER_BG))
+        .bg(rgba(bg))
         .shadow(soft_shadow())
         .cursor_pointer()
         .hover(|style| style.bg(rgba(PICKER_BG_HOVER)))
         .active(|style| style.opacity(0.85))
-        .on_click(cx.listener(|shell, _, window, cx| {
-            shell.cycle_to_next_space(window, cx);
+        .on_click(cx.listener(|shell, _, _, cx| {
+            shell.toggle_workspace_picker(cx);
         }))
         .child(render_workspace_glyph(space_glyph))
         .child(
@@ -135,8 +151,111 @@ fn render_picker_pill(active_space: Option<&Space>, cx: &mut Context<ElyShell>) 
         .child(
             div()
                 .text_color(rgb(colors::INK_3))
-                .child(IconName::ChevronDown),
+                .child(chevron),
         )
+        .into_any_element()
+}
+
+fn render_workspace_disclosure(
+    snapshot: &BrowserSnapshot,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let active_id = snapshot.active_space_id.clone();
+
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(2.0))
+        .p(px(4.0))
+        .rounded(px(10.0))
+        .bg(rgba(DISCLOSURE_BG))
+        .shadow(soft_shadow())
+        .children(
+            snapshot
+                .spaces
+                .iter()
+                .enumerate()
+                .map(|(index, space)| {
+                    render_disclosure_row(index, space, &active_id, cx)
+                }),
+        )
+        .child(render_disclosure_footer(cx))
+        .into_any_element()
+}
+
+fn render_disclosure_row(
+    index: usize,
+    space: &Space,
+    active_id: &ely_domain::SpaceId,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let space_id = space.id().clone();
+    let active = space.id() == active_id;
+    let bg = if active { DISCLOSURE_ROW_ACTIVE_BG } else { 0x00000000 };
+
+    div()
+        .id(SharedString::from(format!("workspace-row-{index}")))
+        .flex()
+        .items_center()
+        .gap(px(8.0))
+        .px(px(8.0))
+        .py(px(6.0))
+        .rounded(px(8.0))
+        .bg(rgba(bg))
+        .cursor_pointer()
+        .hover(|style| style.bg(rgba(DISCLOSURE_ROW_HOVER_BG)))
+        .active(|style| style.opacity(0.85))
+        .on_click(cx.listener(move |shell, _, window, cx| {
+            shell.select_space_from_picker(&space_id, window, cx);
+        }))
+        .child(render_workspace_glyph(space.icon().to_string()))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_size(px(13.0))
+                .font_weight(gpui::FontWeight(500.0))
+                .text_color(rgb(colors::INK))
+                .child(space.name().to_string()),
+        )
+        .when(active, |el| {
+            el.child(
+                div()
+                    .text_color(rgb(colors::ACCENT))
+                    .child(IconName::Check),
+            )
+        })
+        .into_any_element()
+}
+
+fn render_disclosure_footer(cx: &mut Context<ElyShell>) -> AnyElement {
+    div()
+        .id(SharedString::from("workspace-manage"))
+        .flex()
+        .items_center()
+        .gap(px(8.0))
+        .px(px(8.0))
+        .py(px(6.0))
+        .mt(px(2.0))
+        .rounded(px(8.0))
+        .border_t_1()
+        .border_color(rgba(colors::DIVIDER))
+        .text_size(px(12.0))
+        .text_color(rgb(colors::INK_3))
+        .cursor_pointer()
+        .hover(|style| style.bg(rgba(DISCLOSURE_ROW_HOVER_BG)).text_color(rgb(colors::INK)))
+        .active(|style| style.opacity(0.85))
+        .on_click(cx.listener(|shell, _, window, cx| {
+            shell.close_workspace_picker(cx);
+            shell.open_internal_tab("ely://settings/spaces", window, cx);
+        }))
+        .child(
+            div()
+                .text_color(rgb(colors::INK_4))
+                .child(IconName::Settings),
+        )
+        .child("Manage spaces")
         .into_any_element()
 }
 
@@ -182,6 +301,9 @@ fn render_add_workspace_button(cx: &mut Context<ElyShell>) -> AnyElement {
 const PICKER_BG: u32 = 0xffffff99;
 const PICKER_BG_HOVER: u32 = 0xffffffd9;
 const ADD_BUTTON_BG: u32 = 0xffffff66;
+const DISCLOSURE_BG: u32 = 0xffffffd9;
+const DISCLOSURE_ROW_ACTIVE_BG: u32 = 0xffffffeb;
+const DISCLOSURE_ROW_HOVER_BG: u32 = 0xffffffb3;
 
 fn soft_shadow() -> Vec<BoxShadow> {
     vec![
