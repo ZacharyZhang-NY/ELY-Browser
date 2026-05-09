@@ -21,3 +21,22 @@ scripts/verify_prd_site_rendering.sh
 scripts/verify_windows_app_manifest.sh
 cargo run -p ely_app
 ```
+
+## Cloudflare Auth Configuration
+
+`/api/auth/*` is served by Better Auth in the Cloudflare Worker. Local `wrangler dev`
+uses `ELY_AUTH_BASE_URL` from `cloudflare/wrangler.toml`; deployed environments should
+set the matching public Worker origin.
+
+Use Wrangler secrets or an untracked `cloudflare/.dev.vars` file for the remaining auth
+bindings:
+
+```bash
+wrangler secret put ELY_AUTH_SECRET
+wrangler secret put ELY_AUTH_GOOGLE_CLIENT_ID
+wrangler secret put ELY_AUTH_GOOGLE_CLIENT_SECRET
+wrangler secret put ELY_AUTH_GITHUB_CLIENT_ID
+wrangler secret put ELY_AUTH_GITHUB_CLIENT_SECRET
+wrangler secret put ELY_AUTH_EMAIL_OTP_ENDPOINT
+wrangler secret put ELY_AUTH_EMAIL_OTP_TOKEN
+```

@@ -244,6 +244,8 @@ function testEnv(options: TestEnvOptions = {}): Env {
 
   return {
     ELY_ENVIRONMENT: "local",
+    ELY_AUTH_BASE_URL: "https://elydora.test",
+    ELY_AUTH_SECRET: "test-auth-secret-for-api-controls",
     ELY_DB: testD1Database(),
     ELY_KV: {
       get(key: string): Promise<string | null> {

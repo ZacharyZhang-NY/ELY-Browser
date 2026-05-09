@@ -52,4 +52,12 @@ export interface Env {
   ELY_RATE_LIMITER: ElyRateLimit;
   ELY_API_AUDIT: ElyAnalyticsDataset;
   ELY_ENVIRONMENT: string;
+  ELY_AUTH_BASE_URL: string;
+  ELY_AUTH_SECRET: string;
+  ELY_AUTH_GOOGLE_CLIENT_ID?: string;
+  ELY_AUTH_GOOGLE_CLIENT_SECRET?: string;
+  ELY_AUTH_GITHUB_CLIENT_ID?: string;
+  ELY_AUTH_GITHUB_CLIENT_SECRET?: string;
+  ELY_AUTH_EMAIL_OTP_ENDPOINT?: string;
+  ELY_AUTH_EMAIL_OTP_TOKEN?: string;
 }

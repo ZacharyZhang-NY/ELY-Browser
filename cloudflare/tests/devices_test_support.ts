@@ -41,6 +41,8 @@ export function testEnv(options: TestEnvOptions): Env {
   const values = new Map(options.kvEntries ?? []);
   return {
     ELY_ENVIRONMENT: "local",
+    ELY_AUTH_BASE_URL: "https://elydora.test",
+    ELY_AUTH_SECRET: "test-auth-secret-for-worker-routes",
     ELY_DB: options.d1 ?? testD1Database([]),
     ELY_KV: {
       get(key: string): Promise<string | null> {

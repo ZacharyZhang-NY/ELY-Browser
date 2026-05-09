@@ -82,6 +82,17 @@ describe("worker routes", () => {
     assert.deepEqual(await response.json(), { error: "not_found" });
   });
 
+  it("routes Better Auth session requests under api auth", async () => {
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/auth/get-session"),
+      testEnv(null),
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "application/json");
+    assert.equal(await response.text(), "null");
+  });
+
   it("returns public plugin catalog from KV", async () => {
     const response = await handleRequest(
       new Request("https://elydora.test/api/plugins"),
@@ -341,6 +352,8 @@ function testEnv(
 
   return {
     ELY_ENVIRONMENT: "local",
+    ELY_AUTH_BASE_URL: "https://elydora.test",
+    ELY_AUTH_SECRET: "test-auth-secret-for-worker-routes",
     ELY_DB: testD1Database(),
     ELY_KV: {
       get(key: string): Promise<string | null> {

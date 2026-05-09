@@ -1,5 +1,6 @@
 import type { Env } from "./bindings.js";
 import { withAuthenticatedApiControls, withPublicApiControls } from "./api_controls.js";
+import { handleBetterAuthRoute } from "./better_auth.js";
 import {
   DevicePermissionError,
   DevicePersistenceError,
@@ -42,6 +43,9 @@ export default {
 
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
+  if (url.pathname === "/api/auth" || url.pathname.startsWith("/api/auth/")) {
+    return handleBetterAuthRoute(request, env);
+  }
   if (url.pathname === "/api/devices") {
     return withAuthenticatedApiControls(request, env, "devices.list", ["GET"], async (context) => {
       try {
