@@ -36,7 +36,7 @@ mod task_manager;
 mod updates;
 
 use ely_browser_core::BrowserSnapshot;
-use ely_design_system::{colors, spacing};
+use ely_design_system::colors;
 use ely_domain::{ArchivedTab, BrowserTab, TabState};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
@@ -251,15 +251,11 @@ fn render_canvas_surface(content: impl IntoElement) -> AnyElement {
     div()
         .flex_1()
         .h_full()
-        .p(px(spacing::LG))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .overflow_hidden()
         .child(
             div()
                 .size_full()
-                .rounded_lg()
-                .border_1()
-                .border_color(rgb(colors::HAIRLINE))
-                .bg(rgb(colors::SURFACE_CARD))
+                .overflow_y_scrollbar()
                 .child(content),
         )
         .into_any_element()

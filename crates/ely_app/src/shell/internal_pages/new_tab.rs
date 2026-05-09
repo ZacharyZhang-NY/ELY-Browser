@@ -3,28 +3,24 @@ use ely_design_system::colors;
 use ely_domain::{BrowserTab, TabId};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, div, px, rgb,
+    StatefulInteractiveElement, Styled, div, px, rgb, rgba,
 };
-use gpui_component::{
-    IconName, Sizable, StyledExt,
-    button::{Button, ButtonVariants},
-    scroll::ScrollableElement,
-};
+use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
 
-use super::{ElyShell, render_canvas_surface};
+use super::ElyShell;
 
-struct NewTabAction {
+struct QuickAction {
     label: &'static str,
     route: &'static str,
     icon: IconName,
 }
 
-const NEW_TAB_ACTIONS: &[NewTabAction] = &[
-    NewTabAction { label: "History", route: "ely://history", icon: IconName::Undo2 },
-    NewTabAction { label: "Bookmarks", route: "ely://bookmarks", icon: IconName::BookOpen },
-    NewTabAction { label: "Downloads", route: "ely://downloads", icon: IconName::Folder },
-    NewTabAction { label: "Plugins", route: "ely://plugins", icon: IconName::Asterisk },
-    NewTabAction { label: "Settings", route: "ely://settings", icon: IconName::Settings2 },
+const QUICK_ACTIONS: &[QuickAction] = &[
+    QuickAction { label: "History", route: "ely://history", icon: IconName::Undo2 },
+    QuickAction { label: "Bookmarks", route: "ely://bookmarks", icon: IconName::BookOpen },
+    QuickAction { label: "Downloads", route: "ely://downloads", icon: IconName::Folder },
+    QuickAction { label: "Plugins", route: "ely://plugins", icon: IconName::Asterisk },
+    QuickAction { label: "Settings", route: "ely://settings", icon: IconName::Settings2 },
 ];
 
 impl ElyShell {
@@ -33,155 +29,228 @@ impl ElyShell {
         snapshot: &BrowserSnapshot,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        render_canvas_surface(
-            div()
-                .size_full()
-                .p_8()
-                .flex()
-                .flex_col()
-                .gap_6()
-                .child(render_new_tab_header(snapshot))
-                .child(render_new_tab_actions(cx))
-                .child(render_new_tab_metrics(snapshot))
-                .child(render_new_tab_tab_list(snapshot, cx)),
-        )
+        div()
+            .flex_1()
+            .h_full()
+            .overflow_y_scrollbar()
+            .child(
+                div()
+                    .size_full()
+                    .p(px(48.0))
+                    .flex()
+                    .flex_col()
+                    .gap(px(24.0))
+                    .child(render_hero_section())
+                    .child(render_quick_actions(cx))
+                    .child(render_favorites_grid(snapshot, cx))
+                    .child(render_tabs_section(snapshot, cx)),
+            )
+            .into_any_element()
     }
 }
 
-fn render_new_tab_header(snapshot: &BrowserSnapshot) -> AnyElement {
+fn render_hero_section() -> AnyElement {
     div()
         .flex()
-        .items_start()
-        .justify_between()
-        .gap_5()
+        .flex_col()
+        .items_center()
+        .gap(px(20.0))
+        .pt(px(24.0))
+        .pb(px(12.0))
         .child(
             div()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(div().text_size(px(30.0)).text_color(rgb(colors::INK)).child("New Tab"))
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(rgb(colors::MUTED))
-                        .child(format!("{} space", snapshot.active_space_name)),
-                ),
+                .text_size(px(48.0))
+                .font_weight(gpui::FontWeight(400.0))
+                .text_color(rgb(colors::INK))
+                .child("Where focus finds flow."),
         )
         .child(
             div()
+                .w(px(420.0))
+                .h(px(44.0))
+                .rounded(px(999.0))
+                .bg(rgba(colors::GLASS_2))
+                .px(px(16.0))
                 .flex()
                 .items_center()
-                .gap_2()
-                .rounded_md()
-                .border_1()
-                .border_color(rgb(colors::HAIRLINE))
-                .px_3()
-                .py_2()
-                .text_xs()
-                .text_color(rgb(colors::MUTED))
-                .child(IconName::CircleUser)
-                .child(snapshot.active_profile_name.clone()),
+                .gap(px(10.0))
+                .child(div().text_color(rgb(colors::INK_4)).child(IconName::Search))
+                .child(
+                    div()
+                        .text_size(px(14.0))
+                        .text_color(rgb(colors::INK_4))
+                        .child("Search the web or ELY"),
+                ),
         )
         .into_any_element()
 }
 
-fn render_new_tab_actions(cx: &mut Context<ElyShell>) -> AnyElement {
+fn render_quick_actions(cx: &mut Context<ElyShell>) -> AnyElement {
     div()
-        .grid()
-        .grid_cols(5)
-        .gap_3()
-        .children(
-            NEW_TAB_ACTIONS
-                .iter()
-                .enumerate()
-                .map(|(index, action)| render_new_tab_action(index, action, cx)),
-        )
-        .into_any_element()
-}
-
-fn render_new_tab_action(
-    index: usize,
-    action: &'static NewTabAction,
-    cx: &mut Context<ElyShell>,
-) -> AnyElement {
-    Button::new(("new-tab-action", index))
-        .ghost()
-        .small()
-        .icon(action.icon.clone())
-        .label(action.label)
-        .tooltip(action.label)
-        .on_click(cx.listener(move |shell, _, window, cx| {
-            shell.open_internal_tab(action.route, window, cx);
+        .flex()
+        .items_center()
+        .justify_center()
+        .gap(px(8.0))
+        .children(QUICK_ACTIONS.iter().enumerate().map(|(index, action)| {
+            let route = action.route;
+            div()
+                .id(SharedString::from(format!("quick-action-{index}")))
+                .rounded(px(999.0))
+                .bg(rgba(colors::GLASS_2))
+                .px(px(12.0))
+                .py(px(6.0))
+                .flex()
+                .items_center()
+                .gap(px(6.0))
+                .cursor_pointer()
+                .hover(|style| style.bg(rgba(colors::GLASS_3)))
+                .active(|style| style.opacity(0.82))
+                .on_click(cx.listener(move |shell, _, window, cx| {
+                    shell.open_internal_tab(route, window, cx);
+                }))
+                .child(
+                    div()
+                        .text_color(rgb(colors::INK_3))
+                        .text_size(px(12.0))
+                        .child(action.icon.clone()),
+                )
+                .child(
+                    div()
+                        .text_size(px(12.0))
+                        .font_weight(gpui::FontWeight(500.0))
+                        .text_color(rgb(colors::INK_2))
+                        .child(action.label),
+                )
         }))
         .into_any_element()
 }
 
-fn render_new_tab_metrics(snapshot: &BrowserSnapshot) -> AnyElement {
-    div()
-        .border_t_1()
-        .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
-        .py_3()
-        .grid()
-        .grid_cols(4)
-        .gap_4()
-        .child(new_tab_metric("Open Tabs", snapshot.tabs.len()))
-        .child(new_tab_metric("Favorites", snapshot.favorites.len()))
-        .child(new_tab_metric("History", snapshot.active_profile_history_entry_count))
-        .child(new_tab_metric("Downloads", snapshot.download_entries.len()))
-        .into_any_element()
-}
+fn render_favorites_grid(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
+    if snapshot.favorites.is_empty() {
+        return div().into_any_element();
+    }
 
-fn new_tab_metric(label: &'static str, value: usize) -> AnyElement {
     div()
-        .min_w_0()
         .flex()
         .flex_col()
-        .gap_1()
-        .child(div().text_xs().text_color(rgb(colors::MUTED)).child(label))
+        .gap(px(12.0))
         .child(
-            div().text_sm().font_semibold().text_color(rgb(colors::INK)).child(value.to_string()),
+            div()
+                .text_size(px(10.5))
+                .font_weight(gpui::FontWeight(500.0))
+                .text_color(rgb(colors::INK_4))
+                .child("FAVORITES"),
         )
-        .into_any_element()
-}
-
-fn render_new_tab_tab_list(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
-    div()
-        .flex_1()
-        .min_h_0()
-        .flex()
-        .flex_col()
-        .gap_3()
         .child(
             div()
                 .flex()
-                .items_center()
-                .justify_between()
-                .gap_3()
-                .child(div().text_sm().font_semibold().text_color(rgb(colors::INK)).child("Tabs"))
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(colors::MUTED))
-                        .child(format!("{} visible", snapshot.tabs.len())),
-                ),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_h_0()
-                .overflow_y_scrollbar()
-                .border_t_1()
-                .border_color(rgb(colors::HAIRLINE))
-                .children(snapshot.tabs.iter().enumerate().map(|(index, tab)| {
-                    render_new_tab_tab_row(index, tab, &snapshot.active_tab_id, cx)
+                .flex_wrap()
+                .gap(px(10.0))
+                .children(snapshot.favorites.iter().enumerate().map(|(index, tab)| {
+                    render_favorite_card(index, tab, cx)
                 })),
         )
         .into_any_element()
 }
 
-fn render_new_tab_tab_row(
+fn render_favorite_card(
+    index: usize,
+    tab: &BrowserTab,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let tab_id = tab.id().clone();
+    let initial = tab
+        .title()
+        .chars()
+        .next()
+        .unwrap_or('?')
+        .to_uppercase()
+        .to_string();
+
+    div()
+        .id(SharedString::from(format!("fav-card-{index}")))
+        .w(px(96.0))
+        .h(px(96.0))
+        .rounded(px(14.0))
+        .bg(rgba(colors::GLASS_2))
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap(px(8.0))
+        .cursor_pointer()
+        .hover(|style| style.bg(rgba(colors::GLASS_3)))
+        .active(|style| style.opacity(0.82))
+        .on_click(cx.listener(move |shell, _, window, cx| {
+            shell.select_tab(&tab_id, window, cx);
+        }))
+        .child(
+            div()
+                .size(px(36.0))
+                .rounded(px(10.0))
+                .bg(rgb(colors::ACCENT))
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    div()
+                        .text_size(px(16.0))
+                        .font_semibold()
+                        .text_color(rgb(colors::SURFACE_CARD))
+                        .child(initial),
+                ),
+        )
+        .child(
+            div()
+                .text_size(px(11.0))
+                .text_color(rgb(colors::INK_2))
+                .max_w(px(80.0))
+                .truncate()
+                .child(tab.title().to_string()),
+        )
+        .into_any_element()
+}
+
+fn render_tabs_section(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
+    if snapshot.tabs.is_empty() {
+        return div().into_any_element();
+    }
+
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(12.0))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .child(
+                    div()
+                        .text_size(px(10.5))
+                        .font_weight(gpui::FontWeight(500.0))
+                        .text_color(rgb(colors::INK_4))
+                        .child("OPEN TABS"),
+                )
+                .child(
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(rgb(colors::INK_4))
+                        .child(format!("{}", snapshot.tabs.len())),
+                ),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .children(snapshot.tabs.iter().enumerate().map(|(index, tab)| {
+                    render_tab_row(index, tab, &snapshot.active_tab_id, cx)
+                })),
+        )
+        .into_any_element()
+}
+
+fn render_tab_row(
     index: usize,
     tab: &BrowserTab,
     active_tab_id: &TabId,
@@ -189,58 +258,50 @@ fn render_new_tab_tab_row(
 ) -> AnyElement {
     let tab_id = tab.id().clone();
     let active = tab.id() == active_tab_id;
-    let icon = if active { IconName::CircleCheck } else { IconName::Globe };
-    let icon_color = if active { colors::PRIMARY } else { colors::MUTED_SOFT };
+    let bg = if active { colors::GLASS_3 } else { 0x00000000 };
 
     div()
-        .id(SharedString::from(format!("new-tab-row-{index}")))
-        .py_3()
-        .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .id(SharedString::from(format!("tab-row-{index}")))
+        .rounded(px(8.0))
+        .px(px(10.0))
+        .py(px(8.0))
         .flex()
         .items_center()
-        .justify_between()
-        .gap_4()
+        .gap(px(10.0))
         .cursor_pointer()
-        .hover(|style| style.bg(rgb(colors::CANVAS_SOFT)))
+        .bg(rgba(bg))
+        .hover(|style| style.bg(rgba(colors::GLASS_3)))
         .active(|style| style.opacity(0.82))
         .on_click(cx.listener(move |shell, _, window, cx| {
             shell.select_tab(&tab_id, window, cx);
         }))
         .child(
             div()
+                .text_color(if active { rgb(colors::ACCENT) } else { rgb(colors::INK_4) })
+                .child(IconName::Globe),
+        )
+        .child(
+            div()
                 .min_w_0()
+                .flex_1()
                 .flex()
-                .items_center()
-                .gap_3()
-                .child(div().text_color(rgb(icon_color)).child(icon))
+                .flex_col()
+                .gap_1()
                 .child(
                     div()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .child(
-                            div()
-                                .text_sm()
-                                .font_semibold()
-                                .truncate()
-                                .text_color(rgb(colors::INK))
-                                .child(tab.title().to_string()),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .truncate()
-                                .text_color(rgb(colors::MUTED))
-                                .child(tab.display_url()),
-                        ),
+                        .text_size(px(13.0))
+                        .font_weight(gpui::FontWeight(500.0))
+                        .text_color(rgb(colors::INK))
+                        .truncate()
+                        .child(tab.title().to_string()),
+                )
+                .child(
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(rgb(colors::INK_4))
+                        .truncate()
+                        .child(tab.display_url()),
                 ),
         )
-        .child(div().text_xs().text_color(rgb(colors::MUTED)).child(if active {
-            "Active"
-        } else {
-            "Open"
-        }))
         .into_any_element()
 }
