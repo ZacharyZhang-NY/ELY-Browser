@@ -7,6 +7,7 @@ use gpui::{
 use gpui_component::{IconName, scroll::ScrollableElement};
 
 use crate::shell::ElyShell;
+use crate::shell::chrome::render_appearance_form;
 
 struct NavGroup {
     label: &'static str,
@@ -120,7 +121,7 @@ pub(crate) fn render_settings_landing(
         .h_full()
         .flex()
         .child(render_nav_column(snapshot, active_route, cx))
-        .child(render_content_column(snapshot, cx))
+        .child(render_appearance_form(snapshot, cx))
         .into_any_element()
 }
 
@@ -245,162 +246,5 @@ fn render_nav_item(
         .into_any_element()
 }
 
-fn render_content_column(
-    snapshot: &BrowserSnapshot,
-    cx: &mut Context<ElyShell>,
-) -> AnyElement {
-    div()
-        .flex_1()
-        .h_full()
-        .overflow_y_scrollbar()
-        .pt(px(28.0))
-        .px(px(40.0))
-        .pb(px(32.0))
-        .flex()
-        .flex_col()
-        .gap(px(24.0))
-        .child(render_content_header())
-        .child(render_summary_metrics(snapshot))
-        .child(render_quick_links(cx))
-        .into_any_element()
-}
-
-fn render_content_header() -> AnyElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(8.0))
-        .max_w(px(620.0))
-        .child(
-            div()
-                .text_size(px(11.0))
-                .text_color(rgb(colors::INK_4))
-                .child("GENERAL"),
-        )
-        .child(
-            div()
-                .text_size(px(34.0))
-                .font_weight(FontWeight(400.0))
-                .text_color(rgb(colors::INK))
-                .child("Settings"),
-        )
-        .child(
-            div()
-                .text_size(px(13.0))
-                .text_color(rgb(colors::INK_3))
-                .child(
-                    "Tune the atmosphere of ELY — choose a wallpaper, configure sync, install \
-                     plugins. Each section opens its own page.",
-                ),
-        )
-        .into_any_element()
-}
-
-fn render_summary_metrics(snapshot: &BrowserSnapshot) -> AnyElement {
-    div()
-        .flex()
-        .gap(px(10.0))
-        .child(metric_card("Profiles", snapshot.profiles.len()))
-        .child(metric_card("Spaces", snapshot.spaces.len()))
-        .child(metric_card("Plugins", snapshot.installed_plugins.len()))
-        .child(metric_card("Open tabs", snapshot.tabs.len()))
-        .into_any_element()
-}
-
-fn metric_card(label: &'static str, value: usize) -> AnyElement {
-    div()
-        .flex_1()
-        .px(px(14.0))
-        .py(px(12.0))
-        .rounded(px(12.0))
-        .bg(rgba(METRIC_BG))
-        .border_1()
-        .border_color(rgba(colors::STROKE_2))
-        .flex()
-        .flex_col()
-        .gap_1()
-        .child(
-            div()
-                .text_size(px(10.5))
-                .text_color(rgb(colors::INK_4))
-                .child(label),
-        )
-        .child(
-            div()
-                .text_size(px(18.0))
-                .font_weight(FontWeight(500.0))
-                .text_color(rgb(colors::INK))
-                .child(value.to_string()),
-        )
-        .into_any_element()
-}
-
-fn render_quick_links(cx: &mut Context<ElyShell>) -> AnyElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(8.0))
-        .child(
-            div()
-                .text_size(px(11.0))
-                .text_color(rgb(colors::INK_4))
-                .child("JUMP IN"),
-        )
-        .children(NAV_GROUPS.iter().flat_map(|group| group.items).enumerate().map(
-            |(index, item)| render_quick_link(index, item, cx),
-        ))
-        .into_any_element()
-}
-
-fn render_quick_link(
-    index: usize,
-    item: &NavItem,
-    cx: &mut Context<ElyShell>,
-) -> AnyElement {
-    let route = item.route;
-    let icon = item.icon.clone();
-
-    div()
-        .id(SharedString::from(format!("settings-jump-{index}")))
-        .flex()
-        .items_center()
-        .gap(px(12.0))
-        .py(px(10.0))
-        .border_b_1()
-        .border_color(rgba(colors::DIVIDER))
-        .cursor_pointer()
-        .hover(|style| style.opacity(0.92))
-        .active(|style| style.opacity(0.78))
-        .on_click(cx.listener(move |shell, _, window, cx| {
-            shell.open_internal_tab(route, window, cx);
-        }))
-        .child(
-            div()
-                .size(px(28.0))
-                .rounded(px(7.0))
-                .bg(rgba(METRIC_BG))
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_color(rgb(colors::INK_3))
-                .child(icon),
-        )
-        .child(
-            div()
-                .flex_1()
-                .text_size(px(13.0))
-                .font_weight(FontWeight(500.0))
-                .text_color(rgb(colors::INK))
-                .child(item.label),
-        )
-        .child(
-            div()
-                .text_color(rgb(colors::INK_4))
-                .child(IconName::ChevronRight),
-        )
-        .into_any_element()
-}
-
 const ACTIVE_BG: u32 = 0xffffffd9;
 const HOVER_BG: u32 = 0xffffff8c;
-const METRIC_BG: u32 = 0xffffffc7;
