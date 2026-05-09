@@ -4,13 +4,14 @@ use gpui::{AnyElement, Bounds, Context, Pixels, Point};
 
 use crate::services::{
     ProfileDataMode,
-    servo_sidecar::{ServoSidecarError, SidecarSnapshot},
+    servo_sidecar::{ServoSidecarError, SidecarSitePermission, SidecarSnapshot},
 };
 
 use super::{
     ElyShell,
     web_surface_frame::WebSurfaceFrame,
     web_surface_geometry::{WebSurfaceClickPoint, WebSurfaceScrollOffset, WebSurfaceSize},
+    web_surface_permissions::sidecar_site_permissions_for_tab,
     web_surface_state::{WebSurfaceRequest, WebSurfaceState},
     web_surface_view::{
         render_failed_web_surface, render_loading_web_surface, render_ready_web_surface,
@@ -37,8 +38,9 @@ impl ElyShell {
         let Some(profile_data_mode) = profile_data_mode_for(tab, snapshot) else {
             return render_failed_web_surface(tab, "Profile context is unavailable.", state_entity);
         };
+        let site_permissions = sidecar_site_permissions_for_tab(tab, snapshot);
 
-        self.ensure_external_web_frame(tab, profile_data_mode, cx);
+        self.ensure_external_web_frame(tab, profile_data_mode, site_permissions, cx);
 
         match self.web_surfaces.state(tab.id()) {
             Some(WebSurfaceState::Ready(frame)) => {
@@ -60,6 +62,7 @@ impl ElyShell {
         &mut self,
         tab: &BrowserTab,
         profile_data_mode: ProfileDataMode,
+        site_permissions: Vec<SidecarSitePermission>,
         cx: &mut Context<Self>,
     ) {
         let Some(request) = self.web_surfaces.prepare_request(tab, profile_data_mode) else {
@@ -74,8 +77,9 @@ impl ElyShell {
             click_point,
             typed_text,
             client,
-            snapshot_request,
+            mut snapshot_request,
         } = request;
+        snapshot_request = snapshot_request.with_site_permissions(site_permissions);
         let pending_frame = PendingWebSurfaceFrame {
             tab_id,
             requested_url,

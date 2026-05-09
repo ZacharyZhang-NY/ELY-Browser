@@ -1,4 +1,4 @@
-use ely_domain::{ProfileId, UrlText};
+use ely_domain::{ProfileId, SiteOrigin, SitePermissionDecision, SitePermissionFeature, UrlText};
 
 use super::ProfileDataMode;
 
@@ -13,6 +13,7 @@ pub struct SidecarSnapshotRequest {
     pub(in crate::services) scroll_y: i32,
     pub(in crate::services) click_point: Option<SidecarClickPoint>,
     pub(in crate::services) typed_text: Option<String>,
+    pub(in crate::services) site_permissions: Vec<SidecarSitePermission>,
 }
 
 impl SidecarSnapshotRequest {
@@ -28,6 +29,7 @@ impl SidecarSnapshotRequest {
             scroll_y: 0,
             click_point: None,
             typed_text: None,
+            site_permissions: Vec::new(),
         }
     }
 
@@ -56,6 +58,12 @@ impl SidecarSnapshotRequest {
         self
     }
 
+    #[must_use]
+    pub fn with_site_permissions(mut self, site_permissions: Vec<SidecarSitePermission>) -> Self {
+        self.site_permissions = site_permissions;
+        self
+    }
+
     #[cfg(test)]
     pub(crate) fn typed_text_for_test(&self) -> Option<&str> {
         self.typed_text.as_deref()
@@ -76,4 +84,46 @@ impl SidecarSnapshotRequest {
 pub(in crate::services) struct SidecarClickPoint {
     pub(in crate::services) x: u32,
     pub(in crate::services) y: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SidecarSitePermission {
+    origin: SiteOrigin,
+    feature: SitePermissionFeature,
+    decision: SitePermissionDecision,
+}
+
+impl SidecarSitePermission {
+    #[must_use]
+    pub fn new(
+        origin: SiteOrigin,
+        feature: SitePermissionFeature,
+        decision: SitePermissionDecision,
+    ) -> Self {
+        Self { origin, feature, decision }
+    }
+
+    pub(in crate::services) fn to_arg(&self) -> String {
+        serde_json::json!({
+            "origin": self.origin.as_str(),
+            "feature": self.feature.as_str(),
+            "decision": self.decision.as_str(),
+        })
+        .to_string()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn origin(&self) -> &SiteOrigin {
+        &self.origin
+    }
+
+    #[cfg(test)]
+    pub(crate) fn feature(&self) -> SitePermissionFeature {
+        self.feature
+    }
+
+    #[cfg(test)]
+    pub(crate) fn decision(&self) -> SitePermissionDecision {
+        self.decision
+    }
 }

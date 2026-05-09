@@ -10,7 +10,7 @@ use ely_domain::ProfileId;
 use serde::Deserialize;
 use thiserror::Error;
 
-pub use super::servo_sidecar_request::SidecarSnapshotRequest;
+pub use super::servo_sidecar_request::{SidecarSitePermission, SidecarSnapshotRequest};
 
 use super::{
     servo_profile_data::{
@@ -111,6 +111,9 @@ impl ServoSidecarClient {
         }
         if let Some(typed_text) = request.typed_text.as_deref() {
             command.arg("--type-text").arg(typed_text);
+        }
+        for permission in &request.site_permissions {
+            command.arg("--site-permission").arg(permission.to_arg());
         }
 
         let mut child = command

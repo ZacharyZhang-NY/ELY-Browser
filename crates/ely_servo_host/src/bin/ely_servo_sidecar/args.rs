@@ -1,6 +1,7 @@
 use std::{env, num::ParseIntError, path::PathBuf};
 
-use ely_domain::{ProfileId, UrlText};
+use ely_domain::{ProfileId, SiteOrigin, SitePermissionDecision, SitePermissionFeature, UrlText};
+use serde::Deserialize;
 use thiserror::Error;
 
 pub(super) enum SidecarCommand {
@@ -20,6 +21,7 @@ pub(super) struct SnapshotArgs {
     pub(super) drag_points: Option<DragPoints>,
     pub(super) touch_point: Option<ClickPoint>,
     pub(super) typed_text: Option<String>,
+    pub(super) site_permissions: Vec<SidecarSitePermission>,
 }
 
 #[derive(Clone, Copy)]
@@ -32,6 +34,12 @@ pub(super) struct ClickPoint {
 pub(super) struct DragPoints {
     pub(super) from: ClickPoint,
     pub(super) to: ClickPoint,
+}
+
+pub(super) struct SidecarSitePermission {
+    pub(super) origin: SiteOrigin,
+    pub(super) feature: SitePermissionFeature,
+    pub(super) decision: SitePermissionDecision,
 }
 
 #[derive(Debug, Error)]
@@ -73,6 +81,13 @@ pub(super) enum SidecarArgsError {
 
     #[error("{name} path is empty")]
     EmptyPath { name: &'static str },
+
+    #[error("invalid --site-permission JSON: {value}")]
+    InvalidSitePermissionJson {
+        value: String,
+        #[source]
+        source: serde_json::Error,
+    },
 
     #[error(transparent)]
     Domain(#[from] ely_domain::DomainError),
@@ -116,6 +131,7 @@ fn parse_snapshot_args(
     let mut touch_x = None;
     let mut touch_y = None;
     let mut typed_text = None;
+    let mut site_permissions = Vec::new();
 
     while let Some(name) = args.next() {
         match name.as_str() {
@@ -195,6 +211,8 @@ fn parse_snapshot_args(
                 )?)
             }
             "--type-text" => typed_text = Some(next_argument(&mut args, "--type-text")?),
+            "--site-permission" => site_permissions
+                .push(parse_site_permission(next_argument(&mut args, "--site-permission")?)?),
             _ => return Err(SidecarArgsError::UnknownArgument { value: name }),
         }
     }
@@ -234,6 +252,25 @@ fn parse_snapshot_args(
         drag_points,
         touch_point,
         typed_text,
+        site_permissions,
+    })
+}
+
+#[derive(Deserialize)]
+struct SitePermissionArg {
+    origin: String,
+    feature: String,
+    decision: String,
+}
+
+fn parse_site_permission(value: String) -> Result<SidecarSitePermission, SidecarArgsError> {
+    let parsed: SitePermissionArg = serde_json::from_str(&value)
+        .map_err(|source| SidecarArgsError::InvalidSitePermissionJson { value, source })?;
+
+    Ok(SidecarSitePermission {
+        origin: SiteOrigin::parse(parsed.origin)?,
+        feature: SitePermissionFeature::parse(parsed.feature.as_str())?,
+        decision: SitePermissionDecision::parse(parsed.decision.as_str())?,
     })
 }
 
@@ -278,7 +315,7 @@ mod tests {
     use std::{env, path::PathBuf};
 
     use super::{SidecarArgsError, SidecarCommand, parse_command};
-    use ely_domain::{DomainError, ProfileId};
+    use ely_domain::{DomainError, ProfileId, SitePermissionDecision, SitePermissionFeature};
 
     #[test]
     fn parses_snapshot_profile_identity() -> Result<(), SidecarArgsError> {
@@ -321,11 +358,35 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn parses_snapshot_site_permissions() -> Result<(), SidecarArgsError> {
+        let profile_id = ProfileId::new();
+        let profile_data_dir = env::temp_dir().join(profile_id.as_str());
+        let mut command = snapshot_command_args(&profile_id, profile_data_dir);
+        command.push("--site-permission".to_string());
+        command.push(
+            r#"{"origin":"https://example.com","feature":"camera","decision":"allow-once"}"#
+                .to_string(),
+        );
+
+        let SidecarCommand::Snapshot(args) = parse_command(command)?;
+        assert_eq!(args.site_permissions.len(), 1);
+        let permission = &args.site_permissions[0];
+        assert_eq!(permission.origin.as_str(), "https://example.com");
+        assert_eq!(permission.feature, SitePermissionFeature::Camera);
+        assert_eq!(permission.decision, SitePermissionDecision::AllowOnce);
+        Ok(())
+    }
+
     fn parse_snapshot_command(
         profile_id: &ProfileId,
         profile_data_dir: PathBuf,
     ) -> Result<SidecarCommand, SidecarArgsError> {
-        parse_command([
+        parse_command(snapshot_command_args(profile_id, profile_data_dir))
+    }
+
+    fn snapshot_command_args(profile_id: &ProfileId, profile_data_dir: PathBuf) -> Vec<String> {
+        [
             "ely_servo_sidecar".to_string(),
             "snapshot".to_string(),
             "--url".to_string(),
@@ -340,6 +401,8 @@ mod tests {
             "64".to_string(),
             "--height".to_string(),
             "64".to_string(),
-        ])
+        ]
+        .into_iter()
+        .collect()
     }
 }

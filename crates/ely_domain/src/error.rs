@@ -11,6 +11,12 @@ pub enum DomainError {
     #[error("invalid site origin: {value}")]
     InvalidSiteOrigin { value: String },
 
+    #[error("invalid site permission feature: {value}")]
+    InvalidSitePermissionFeature { value: String },
+
+    #[error("invalid site permission decision: {value}")]
+    InvalidSitePermissionDecision { value: String },
+
     #[error("invalid file name: {value}")]
     InvalidFileName { value: String },
 

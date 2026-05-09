@@ -23,6 +23,7 @@ mod web_surface_frame;
 mod web_surface_geometry;
 mod web_surface_image;
 mod web_surface_keyboard;
+mod web_surface_permissions;
 mod web_surface_state;
 mod web_surface_view;
 

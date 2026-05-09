@@ -6,8 +6,8 @@ use std::{
 
 use ely_domain::TabId;
 use ely_servo_host::{
-    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest, ScrollRequest,
-    ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, TouchTapRequest,
+    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest, PermissionRequest,
+    ScrollRequest, ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, TouchTapRequest,
     WebViewSnapshot, WebViewState,
 };
 use thiserror::Error;
@@ -58,6 +58,7 @@ fn run_snapshot(args: SnapshotArgs) -> Result<(), SidecarError> {
     )?;
     let tab_id = TabId::new();
     let webview_id = host.create_webview(tab_id.clone(), args.profile_id.clone())?;
+    apply_site_permissions(&mut host, &webview_id, &args)?;
 
     host.navigate(NavigationRequest {
         webview_id: webview_id.clone(),
@@ -98,6 +99,26 @@ fn run_snapshot(args: SnapshotArgs) -> Result<(), SidecarError> {
     stdout.write_all(b"\n")?;
     stdout.flush()?;
     std::process::exit(0);
+}
+
+fn apply_site_permissions(
+    host: &mut SoftwareServoHost,
+    webview_id: &ely_domain::WebViewId,
+    args: &SnapshotArgs,
+) -> Result<(), SidecarError> {
+    for permission in &args.site_permissions {
+        host.set_permission(
+            PermissionRequest {
+                webview_id: webview_id.clone(),
+                profile_id: args.profile_id.clone(),
+                origin: permission.origin.clone(),
+                feature: permission.feature,
+            },
+            permission.decision.into(),
+        )?;
+    }
+
+    Ok(())
 }
 
 fn apply_scroll_if_requested(

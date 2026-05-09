@@ -142,6 +142,28 @@ impl SitePermissionFeature {
         }
     }
 
+    pub fn parse(value: &str) -> Result<Self, DomainError> {
+        match value {
+            "camera" => Ok(Self::Camera),
+            "microphone" => Ok(Self::Microphone),
+            "screen-capture" => Ok(Self::ScreenCapture),
+            "location" => Ok(Self::Location),
+            "notifications" => Ok(Self::Notifications),
+            "clipboard-read" => Ok(Self::ClipboardRead),
+            "clipboard-write" => Ok(Self::ClipboardWrite),
+            "downloads" => Ok(Self::Downloads),
+            "popups" => Ok(Self::Popups),
+            "autoplay" => Ok(Self::Autoplay),
+            "webusb" => Ok(Self::WebUsb),
+            "webhid" => Ok(Self::WebHid),
+            "webserial" => Ok(Self::WebSerial),
+            "storage-persistence" => Ok(Self::StoragePersistence),
+            "insecure-content" => Ok(Self::InsecureContent),
+            "certificate-exception" => Ok(Self::CertificateException),
+            _ => Err(DomainError::InvalidSitePermissionFeature { value: value.to_string() }),
+        }
+    }
+
     #[must_use]
     pub fn label(&self) -> &'static str {
         match self {
@@ -166,6 +188,24 @@ impl SitePermissionFeature {
 }
 
 impl SitePermissionDecision {
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::AllowOnce => "allow-once",
+            Self::AllowAlways => "allow-always",
+            Self::DenyAlways => "deny-always",
+        }
+    }
+
+    pub fn parse(value: &str) -> Result<Self, DomainError> {
+        match value {
+            "allow-once" => Ok(Self::AllowOnce),
+            "allow-always" => Ok(Self::AllowAlways),
+            "deny-always" => Ok(Self::DenyAlways),
+            _ => Err(DomainError::InvalidSitePermissionDecision { value: value.to_string() }),
+        }
+    }
+
     #[must_use]
     pub fn label(&self) -> &'static str {
         match self {

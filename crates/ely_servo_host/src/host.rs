@@ -1,4 +1,6 @@
-use ely_domain::{ProfileId, SiteOrigin, SitePermissionFeature, TabId, UrlText, WebViewId};
+use ely_domain::{
+    ProfileId, SiteOrigin, SitePermissionDecision, SitePermissionFeature, TabId, UrlText, WebViewId,
+};
 
 use crate::ServoHostError;
 
@@ -274,6 +276,16 @@ pub enum PermissionDecision {
     AllowOnce,
     AllowAlways,
     DenyAlways,
+}
+
+impl From<SitePermissionDecision> for PermissionDecision {
+    fn from(decision: SitePermissionDecision) -> Self {
+        match decision {
+            SitePermissionDecision::AllowOnce => Self::AllowOnce,
+            SitePermissionDecision::AllowAlways => Self::AllowAlways,
+            SitePermissionDecision::DenyAlways => Self::DenyAlways,
+        }
+    }
 }
 
 pub trait ServoHost {
