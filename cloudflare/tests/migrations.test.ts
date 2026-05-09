@@ -12,6 +12,7 @@ const EXPECTED_MIGRATIONS = [
   "0003_plugins.sql",
   "0004_releases.sql",
   "0005_audit.sql",
+  "0006_better_auth.sql",
 ];
 const USER_SCOPED_TABLES = [
   "user_devices",
@@ -36,6 +37,10 @@ describe("D1 migrations", () => {
 
       for (const table of [
         "audit_events",
+        "better_auth_account",
+        "better_auth_session",
+        "better_auth_user",
+        "better_auth_verification",
         "device_approvals",
         "plugin_packages",
         "plugin_registry",
@@ -49,6 +54,56 @@ describe("D1 migrations", () => {
       ]) {
         assert.ok(tables.includes(table), table);
       }
+    });
+  });
+
+  it("creates Better Auth tables compatible with the Worker auth schema", () => {
+    withReplayedDatabase((databasePath) => {
+      assert.deepEqual(
+        requiredColumns(databasePath, "better_auth_user", [
+          "id",
+          "name",
+          "email",
+          "emailVerified",
+          "createdAt",
+          "updatedAt",
+        ]),
+        [],
+      );
+      assert.deepEqual(
+        requiredColumns(databasePath, "better_auth_session", [
+          "id",
+          "expiresAt",
+          "token",
+          "createdAt",
+          "updatedAt",
+          "userId",
+        ]),
+        [],
+      );
+      assert.deepEqual(
+        requiredColumns(databasePath, "better_auth_account", [
+          "id",
+          "accountId",
+          "providerId",
+          "userId",
+          "password",
+          "createdAt",
+          "updatedAt",
+        ]),
+        [],
+      );
+      assert.deepEqual(
+        requiredColumns(databasePath, "better_auth_verification", [
+          "id",
+          "identifier",
+          "value",
+          "expiresAt",
+          "createdAt",
+          "updatedAt",
+        ]),
+        [],
+      );
     });
   });
 

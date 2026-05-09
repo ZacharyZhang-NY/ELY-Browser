@@ -32,6 +32,10 @@ function createElyAuth(env: Env) {
     baseURL: requiredBinding(env.ELY_AUTH_BASE_URL, "ELY_AUTH_BASE_URL"),
     secret: requiredBinding(env.ELY_AUTH_SECRET, "ELY_AUTH_SECRET"),
     database: env.ELY_DB as BetterAuthDatabase,
+    user: { modelName: "better_auth_user" },
+    session: { modelName: "better_auth_session" },
+    account: { modelName: "better_auth_account" },
+    verification: { modelName: "better_auth_verification" },
     emailAndPassword: {
       enabled: true,
       minPasswordLength: 12,
