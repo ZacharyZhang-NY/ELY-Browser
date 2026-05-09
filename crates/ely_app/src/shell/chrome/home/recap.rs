@@ -55,11 +55,20 @@ fn render_continue_card(
         .bg(rgba(CARD_BG))
         .shadow(card_shadow())
         .p(px(16.0))
-        .grid()
-        .grid_cols(2)
+        .flex()
         .gap(px(16.0))
-        .child(render_continue_history(recent_history, now, cx))
-        .child(render_reading_list_cover(featured, cx))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .child(render_continue_history(recent_history, now, cx)),
+        )
+        .child(
+            div()
+                .w(px(240.0))
+                .flex_shrink_0()
+                .child(render_reading_list_cover(featured, cx)),
+        )
         .into_any_element()
 }
 
