@@ -2,6 +2,11 @@ use std::time::SystemTime;
 
 use crate::{DomainError, ProfileId, SpaceId, SplitId, TabGroupId, TabId, UrlText};
 
+pub const DEFAULT_ZOOM_PERCENT: u16 = 100;
+pub const MIN_ZOOM_PERCENT: u16 = 25;
+pub const MAX_ZOOM_PERCENT: u16 = 500;
+pub const ZOOM_PERCENT_STEP: u16 = 10;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TabState {
     Loading,
@@ -34,6 +39,7 @@ pub struct BrowserTab {
     split_id: Option<SplitId>,
     sort_key: u64,
     sync_enabled: bool,
+    zoom_percent: u16,
     created_at: SystemTime,
     last_active_at: SystemTime,
 }
@@ -62,6 +68,7 @@ impl BrowserTab {
             split_id: None,
             sort_key: 0,
             sync_enabled: true,
+            zoom_percent: DEFAULT_ZOOM_PERCENT,
             created_at,
             last_active_at: created_at,
         }
@@ -209,6 +216,35 @@ impl BrowserTab {
         self.sync_enabled
     }
 
+    #[must_use]
+    pub fn zoom_percent(&self) -> u16 {
+        self.zoom_percent
+    }
+
+    #[must_use]
+    pub fn zoom_factor(&self) -> f32 {
+        f32::from(self.zoom_percent) / f32::from(DEFAULT_ZOOM_PERCENT)
+    }
+
+    pub fn set_zoom_percent(&mut self, zoom_percent: u16) -> Result<(), DomainError> {
+        self.zoom_percent = validate_zoom_percent(zoom_percent)?;
+        Ok(())
+    }
+
+    pub fn zoom_in(&mut self) {
+        self.zoom_percent =
+            self.zoom_percent.saturating_add(ZOOM_PERCENT_STEP).min(MAX_ZOOM_PERCENT);
+    }
+
+    pub fn zoom_out(&mut self) {
+        self.zoom_percent =
+            self.zoom_percent.saturating_sub(ZOOM_PERCENT_STEP).max(MIN_ZOOM_PERCENT);
+    }
+
+    pub fn reset_zoom(&mut self) {
+        self.zoom_percent = DEFAULT_ZOOM_PERCENT;
+    }
+
     pub fn set_split_id(&mut self, split_id: SplitId) {
         self.split_id = Some(split_id);
     }
@@ -229,4 +265,12 @@ impl BrowserTab {
     pub fn set_sync_enabled(&mut self, sync_enabled: bool) {
         self.sync_enabled = sync_enabled;
     }
+}
+
+pub fn validate_zoom_percent(value: u16) -> Result<u16, DomainError> {
+    if (MIN_ZOOM_PERCENT..=MAX_ZOOM_PERCENT).contains(&value) {
+        return Ok(value);
+    }
+
+    Err(DomainError::InvalidZoomPercent { value, min: MIN_ZOOM_PERCENT, max: MAX_ZOOM_PERCENT })
 }

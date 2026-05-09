@@ -45,8 +45,8 @@ use web_surface::WebSurfaceStore;
 
 use crate::{
     CloseCurrentTab, FocusAddressBar, FocusCommandMode, OpenDownloads, OpenHistory, OpenNewTab,
-    OpenSettings, OpenTaskManager, RestoreClosedTab, SelectNextTab, SelectPreviousTab,
-    ToggleFavoriteTab, TogglePinnedTab,
+    OpenSettings, OpenTaskManager, ResetZoom, RestoreClosedTab, SelectNextTab, SelectPreviousTab,
+    ToggleFavoriteTab, TogglePinnedTab, ZoomIn, ZoomOut,
 };
 
 enum ShellState {
@@ -284,6 +284,30 @@ impl ElyShell {
         }
     }
 
+    fn zoom_active_tab_in(&mut self, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.zoom_active_tab_in().is_ok()
+        {
+            cx.notify();
+        }
+    }
+
+    fn zoom_active_tab_out(&mut self, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.zoom_active_tab_out().is_ok()
+        {
+            cx.notify();
+        }
+    }
+
+    fn reset_active_tab_zoom(&mut self, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.reset_active_tab_zoom().is_ok()
+        {
+            cx.notify();
+        }
+    }
+
     fn on_close_current_tab(
         &mut self,
         _: &CloseCurrentTab,
@@ -350,6 +374,10 @@ impl ElyShell {
         self.restore_closed_tab(window, cx);
     }
 
+    fn on_reset_zoom(&mut self, _: &ResetZoom, _: &mut Window, cx: &mut Context<Self>) {
+        self.reset_active_tab_zoom(cx);
+    }
+
     fn on_select_next_tab(
         &mut self,
         _: &SelectNextTab,
@@ -384,5 +412,13 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) {
         self.toggle_active_tab_pinned(cx);
+    }
+
+    fn on_zoom_in(&mut self, _: &ZoomIn, _: &mut Window, cx: &mut Context<Self>) {
+        self.zoom_active_tab_in(cx);
+    }
+
+    fn on_zoom_out(&mut self, _: &ZoomOut, _: &mut Window, cx: &mut Context<Self>) {
+        self.zoom_active_tab_out(cx);
     }
 }

@@ -1,4 +1,7 @@
-use ely_domain::{ProfileId, SiteOrigin, SitePermissionDecision, SitePermissionFeature, UrlText};
+use ely_domain::{
+    DEFAULT_ZOOM_PERCENT, ProfileId, SiteOrigin, SitePermissionDecision, SitePermissionFeature,
+    UrlText,
+};
 
 use super::ProfileDataMode;
 
@@ -11,6 +14,7 @@ pub struct SidecarSnapshotRequest {
     pub(in crate::services) height: u32,
     pub(in crate::services) scroll_x: i32,
     pub(in crate::services) scroll_y: i32,
+    pub(in crate::services) page_zoom_percent: u16,
     pub(in crate::services) click_point: Option<SidecarClickPoint>,
     pub(in crate::services) typed_text: Option<String>,
     pub(in crate::services) site_permissions: Vec<SidecarSitePermission>,
@@ -27,6 +31,7 @@ impl SidecarSnapshotRequest {
             height,
             scroll_x: 0,
             scroll_y: 0,
+            page_zoom_percent: DEFAULT_ZOOM_PERCENT,
             click_point: None,
             typed_text: None,
             site_permissions: Vec::new(),
@@ -43,6 +48,12 @@ impl SidecarSnapshotRequest {
     pub fn with_scroll_offset(mut self, scroll_x: i32, scroll_y: i32) -> Self {
         self.scroll_x = scroll_x;
         self.scroll_y = scroll_y;
+        self
+    }
+
+    #[must_use]
+    pub fn with_page_zoom_percent(mut self, page_zoom_percent: u16) -> Self {
+        self.page_zoom_percent = page_zoom_percent;
         self
     }
 
@@ -77,6 +88,11 @@ impl SidecarSnapshotRequest {
     #[cfg(test)]
     pub(crate) fn profile_data_mode_for_test(&self) -> ProfileDataMode {
         self.profile_data_mode
+    }
+
+    #[cfg(test)]
+    pub(crate) fn page_zoom_percent_for_test(&self) -> u16 {
+        self.page_zoom_percent
     }
 }
 

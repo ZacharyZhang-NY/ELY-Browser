@@ -229,6 +229,12 @@ pub struct ResizeRequest {
     pub height: u32,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct PageZoomRequest {
+    pub webview_id: WebViewId,
+    pub zoom_factor: f32,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MouseClickRequest {
     pub webview_id: WebViewId,
@@ -300,6 +306,8 @@ pub trait ServoHost {
     fn scroll(&mut self, request: ScrollRequest) -> Result<(), ServoHostError>;
 
     fn resize(&mut self, request: ResizeRequest) -> Result<(), ServoHostError>;
+
+    fn set_page_zoom(&mut self, request: PageZoomRequest) -> Result<(), ServoHostError>;
 
     fn click(&mut self, request: MouseClickRequest) -> Result<(), ServoHostError>;
 

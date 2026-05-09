@@ -10,9 +10,9 @@ pub(crate) use profile::{
 
 use crate::{
     CloseCurrentTab, FocusAddressBar, FocusCommandMode, OpenDownloads, OpenHistory, OpenNewTab,
-    OpenPrivateWindow, OpenSettings, OpenTaskManager, Quit, RestoreClosedTab, SelectNextSpace,
-    SelectNextTab, SelectPreviousSpace, SelectPreviousTab, SplitRight, ToggleFavoriteTab,
-    ToggleSidebar,
+    OpenPrivateWindow, OpenSettings, OpenTaskManager, Quit, ResetZoom, RestoreClosedTab,
+    SelectNextSpace, SelectNextTab, SelectPreviousSpace, SelectPreviousTab, SplitRight,
+    ToggleFavoriteTab, ToggleSidebar, ZoomIn, ZoomOut,
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -47,6 +47,9 @@ pub(crate) enum ShortcutAction {
     SplitRight,
     ToggleSidebar,
     ToggleFavoriteTab,
+    ZoomIn,
+    ZoomOut,
+    ResetZoom,
     OpenDownloads,
     OpenHistory,
     OpenSettings,
@@ -70,6 +73,9 @@ impl ShortcutAction {
             Self::SplitRight => "Split Right",
             Self::ToggleSidebar => "Toggle Sidebar",
             Self::ToggleFavoriteTab => "Toggle Favorite",
+            Self::ZoomIn => "Zoom In",
+            Self::ZoomOut => "Zoom Out",
+            Self::ResetZoom => "Reset Zoom",
             Self::OpenDownloads => "Open Downloads",
             Self::OpenHistory => "Open History",
             Self::OpenSettings => "Open Settings",
@@ -91,7 +97,10 @@ impl ShortcutAction {
             | Self::SelectPreviousTab
             | Self::SplitRight
             | Self::ToggleSidebar
-            | Self::ToggleFavoriteTab => "Tabs",
+            | Self::ToggleFavoriteTab
+            | Self::ZoomIn
+            | Self::ZoomOut
+            | Self::ResetZoom => "Tabs",
             Self::OpenDownloads | Self::OpenHistory => "Library",
             Self::OpenSettings | Self::OpenTaskManager => "System",
             Self::Quit => "Application",
@@ -113,6 +122,9 @@ impl ShortcutAction {
             Self::SplitRight => Some(">split-right"),
             Self::ToggleSidebar => None,
             Self::ToggleFavoriteTab => Some(">favorite"),
+            Self::ZoomIn => Some(">zoom-in"),
+            Self::ZoomOut => Some(">zoom-out"),
+            Self::ResetZoom => Some(">reset-zoom"),
             Self::OpenDownloads => Some(">open-downloads"),
             Self::OpenHistory => Some(">open-history"),
             Self::OpenSettings => Some(">open-settings"),
@@ -164,6 +176,9 @@ pub(crate) const SHORTCUT_ACTIONS: &[ShortcutAction] = &[
     ShortcutAction::SplitRight,
     ShortcutAction::ToggleSidebar,
     ShortcutAction::ToggleFavoriteTab,
+    ShortcutAction::ZoomIn,
+    ShortcutAction::ZoomOut,
+    ShortcutAction::ResetZoom,
     ShortcutAction::OpenDownloads,
     ShortcutAction::OpenHistory,
     ShortcutAction::OpenSettings,
@@ -196,6 +211,12 @@ pub(crate) const SHORTCUT_BINDINGS: &[ShortcutBinding] = &[
     shortcut(ShortcutAction::RestoreClosedTab, ShortcutPlatform::WindowsLinux, "ctrl-shift-t"),
     shortcut(ShortcutAction::ToggleFavoriteTab, ShortcutPlatform::Macos, "cmd-shift-f"),
     shortcut(ShortcutAction::ToggleFavoriteTab, ShortcutPlatform::WindowsLinux, "ctrl-shift-f"),
+    shortcut(ShortcutAction::ZoomIn, ShortcutPlatform::Macos, "cmd-="),
+    shortcut(ShortcutAction::ZoomIn, ShortcutPlatform::WindowsLinux, "ctrl-="),
+    shortcut(ShortcutAction::ZoomOut, ShortcutPlatform::Macos, "cmd--"),
+    shortcut(ShortcutAction::ZoomOut, ShortcutPlatform::WindowsLinux, "ctrl--"),
+    shortcut(ShortcutAction::ResetZoom, ShortcutPlatform::Macos, "cmd-0"),
+    shortcut(ShortcutAction::ResetZoom, ShortcutPlatform::WindowsLinux, "ctrl-0"),
     shortcut(ShortcutAction::FocusCommandMode, ShortcutPlatform::Macos, "cmd-shift-p"),
     shortcut(ShortcutAction::FocusCommandMode, ShortcutPlatform::WindowsLinux, "ctrl-shift-p"),
     shortcut(ShortcutAction::SelectNextSpace, ShortcutPlatform::Macos, "cmd-alt-right"),
@@ -243,6 +264,7 @@ pub(crate) fn key_binding_for_action(action: ShortcutAction, keystroke: &str) ->
         ShortcutAction::OpenSettings => KeyBinding::new(keystroke, OpenSettings, None),
         ShortcutAction::OpenTaskManager => KeyBinding::new(keystroke, OpenTaskManager, None),
         ShortcutAction::Quit => KeyBinding::new(keystroke, Quit, None),
+        ShortcutAction::ResetZoom => KeyBinding::new(keystroke, ResetZoom, None),
         ShortcutAction::RestoreClosedTab => KeyBinding::new(keystroke, RestoreClosedTab, None),
         ShortcutAction::SelectNextSpace => KeyBinding::new(keystroke, SelectNextSpace, None),
         ShortcutAction::SelectNextTab => KeyBinding::new(keystroke, SelectNextTab, None),
@@ -253,6 +275,8 @@ pub(crate) fn key_binding_for_action(action: ShortcutAction, keystroke: &str) ->
         ShortcutAction::SplitRight => KeyBinding::new(keystroke, SplitRight, None),
         ShortcutAction::ToggleFavoriteTab => KeyBinding::new(keystroke, ToggleFavoriteTab, None),
         ShortcutAction::ToggleSidebar => KeyBinding::new(keystroke, ToggleSidebar, None),
+        ShortcutAction::ZoomIn => KeyBinding::new(keystroke, ZoomIn, None),
+        ShortcutAction::ZoomOut => KeyBinding::new(keystroke, ZoomOut, None),
     }
 }
 

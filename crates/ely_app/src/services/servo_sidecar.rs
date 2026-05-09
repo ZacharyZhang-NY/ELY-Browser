@@ -165,7 +165,9 @@ fn append_snapshot_args(
         .arg("--scroll-x")
         .arg(request.scroll_x.to_string())
         .arg("--scroll-y")
-        .arg(request.scroll_y.to_string());
+        .arg(request.scroll_y.to_string())
+        .arg("--page-zoom-percent")
+        .arg(request.page_zoom_percent.to_string());
 }
 
 impl SidecarSnapshotRequest {

@@ -220,6 +220,30 @@ impl BrowserCore {
         Ok(next_pinned)
     }
 
+    pub fn set_active_tab_zoom_percent(&mut self, zoom_percent: u16) -> Result<u16, CoreError> {
+        let active_tab = self.active_tab_mut()?;
+        active_tab.set_zoom_percent(zoom_percent)?;
+        Ok(active_tab.zoom_percent())
+    }
+
+    pub fn zoom_active_tab_in(&mut self) -> Result<u16, CoreError> {
+        let active_tab = self.active_tab_mut()?;
+        active_tab.zoom_in();
+        Ok(active_tab.zoom_percent())
+    }
+
+    pub fn zoom_active_tab_out(&mut self) -> Result<u16, CoreError> {
+        let active_tab = self.active_tab_mut()?;
+        active_tab.zoom_out();
+        Ok(active_tab.zoom_percent())
+    }
+
+    pub fn reset_active_tab_zoom(&mut self) -> Result<u16, CoreError> {
+        let active_tab = self.active_tab_mut()?;
+        active_tab.reset_zoom();
+        Ok(active_tab.zoom_percent())
+    }
+
     pub fn set_tab_sync_enabled(
         &mut self,
         tab_id: &TabId,
@@ -335,6 +359,11 @@ impl BrowserCore {
             .iter()
             .position(|tab| tab.id() == &self.active_tab_id)
             .ok_or(CoreError::MissingActiveTab)
+    }
+
+    fn active_tab_mut(&mut self) -> Result<&mut BrowserTab, CoreError> {
+        let active_index = self.active_tab_index()?;
+        self.tabs.get_mut(active_index).ok_or(CoreError::MissingActiveTab)
     }
 
     pub(super) fn build_tab(&self, url: UrlText) -> BrowserTab {

@@ -41,6 +41,9 @@ pub enum DomainError {
     #[error("invalid reading progress percent: {value}")]
     InvalidReadingProgressPercent { value: String },
 
+    #[error("invalid tab zoom percent: {value} (expected {min}-{max})")]
+    InvalidZoomPercent { value: u16, min: u16, max: u16 },
+
     #[error("invalid plugin manifest: {reason}")]
     InvalidPluginManifest { reason: String },
 

@@ -1,7 +1,10 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, CoreError, InitialBrowserConfig};
-use ely_domain::{CommandIntent, CommandScope, NewTabDestination, SearchEngine, TabState, UrlText};
+use ely_domain::{
+    CommandIntent, CommandScope, DEFAULT_ZOOM_PERCENT, DomainError, MAX_ZOOM_PERCENT,
+    MIN_ZOOM_PERCENT, NewTabDestination, SearchEngine, TabState, UrlText,
+};
 
 #[test]
 fn opens_new_tab_below_active_tab() -> Result<(), Box<dyn Error>> {
@@ -353,6 +356,71 @@ fn new_tab_command_uses_selected_destination() -> Result<(), Box<dyn Error>> {
     assert_eq!(active_tab.title(), "Bookmarks");
     assert_eq!(active_tab.url().as_str(), "ely://bookmarks");
     assert_eq!(core.snapshot()?.new_tab_destination, NewTabDestination::Bookmarks);
+    assert_eq!(core.command_query(), "");
+    Ok(())
+}
+
+#[test]
+fn active_tab_zoom_updates_tab_state() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    assert_eq!(core.active_tab()?.zoom_percent(), DEFAULT_ZOOM_PERCENT);
+    assert_eq!(core.zoom_active_tab_in()?, DEFAULT_ZOOM_PERCENT + 10);
+    assert_eq!(core.zoom_active_tab_out()?, DEFAULT_ZOOM_PERCENT);
+    assert_eq!(core.set_active_tab_zoom_percent(125)?, 125);
+    assert_eq!(core.active_tab()?.zoom_factor(), 1.25);
+    assert_eq!(core.reset_active_tab_zoom()?, DEFAULT_ZOOM_PERCENT);
+    Ok(())
+}
+
+#[test]
+fn active_tab_zoom_clamps_incremental_commands() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_active_tab_zoom_percent(MAX_ZOOM_PERCENT)?;
+    assert_eq!(core.zoom_active_tab_in()?, MAX_ZOOM_PERCENT);
+
+    core.set_active_tab_zoom_percent(MIN_ZOOM_PERCENT)?;
+    assert_eq!(core.zoom_active_tab_out()?, MIN_ZOOM_PERCENT);
+    Ok(())
+}
+
+#[test]
+fn active_tab_zoom_rejects_out_of_range_percent() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    let error = match core.set_active_tab_zoom_percent(5) {
+        Err(error) => error,
+        Ok(_) => return Err("zoom should require an in-range percent".into()),
+    };
+
+    assert_eq!(
+        error,
+        CoreError::Domain(DomainError::InvalidZoomPercent {
+            value: 5,
+            min: MIN_ZOOM_PERCENT,
+            max: MAX_ZOOM_PERCENT,
+        })
+    );
+    Ok(())
+}
+
+#[test]
+fn zoom_commands_update_active_tab() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_command_query(">zoom-in");
+    let intent = core.submit_command()?;
+    assert_eq!(intent, Some(CommandIntent::Command("zoom-in".to_string())));
+    assert_eq!(core.active_tab()?.zoom_percent(), DEFAULT_ZOOM_PERCENT + 10);
+
+    core.set_command_query(">zoom 125%");
+    core.submit_command()?;
+    assert_eq!(core.active_tab()?.zoom_percent(), 125);
+
+    core.set_command_query(">actual-size");
+    core.submit_command()?;
+    assert_eq!(core.active_tab()?.zoom_percent(), DEFAULT_ZOOM_PERCENT);
     assert_eq!(core.command_query(), "");
     Ok(())
 }

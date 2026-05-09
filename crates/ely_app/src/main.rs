@@ -36,6 +36,7 @@ actions!(
         OpenTaskManager,
         Quit,
         RestoreClosedTab,
+        ResetZoom,
         SelectNextSpace,
         SelectNextTab,
         SelectPreviousSpace,
@@ -44,6 +45,8 @@ actions!(
         ToggleFavoriteTab,
         TogglePinnedTab,
         ToggleSidebar,
+        ZoomIn,
+        ZoomOut,
     ]
 );
 
@@ -77,6 +80,10 @@ fn main() {
                     MenuItem::separator(),
                     MenuItem::action("Command Mode", FocusCommandMode),
                     MenuItem::action("Toggle Sidebar", ToggleSidebar),
+                    MenuItem::separator(),
+                    MenuItem::action("Zoom In", ZoomIn),
+                    MenuItem::action("Zoom Out", ZoomOut),
+                    MenuItem::action("Reset Zoom", ResetZoom),
                     MenuItem::separator(),
                     MenuItem::action("Close Tab", CloseCurrentTab),
                     MenuItem::separator(),

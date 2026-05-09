@@ -1,6 +1,9 @@
 use std::{env, num::ParseIntError, path::PathBuf};
 
-use ely_domain::{ProfileId, SiteOrigin, SitePermissionDecision, SitePermissionFeature, UrlText};
+use ely_domain::{
+    DEFAULT_ZOOM_PERCENT, ProfileId, SiteOrigin, SitePermissionDecision, SitePermissionFeature,
+    UrlText, validate_zoom_percent,
+};
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -17,6 +20,7 @@ pub(super) struct SnapshotArgs {
     pub(super) height: u32,
     pub(super) scroll_x: i32,
     pub(super) scroll_y: i32,
+    pub(super) page_zoom_percent: u16,
     pub(super) click_point: Option<ClickPoint>,
     pub(super) drag_points: Option<DragPoints>,
     pub(super) touch_point: Option<ClickPoint>,
@@ -122,6 +126,7 @@ fn parse_snapshot_args(
     let mut height = None;
     let mut scroll_x = 0;
     let mut scroll_y = 0;
+    let mut page_zoom_percent = DEFAULT_ZOOM_PERCENT;
     let mut click_x = None;
     let mut click_y = None;
     let mut drag_from_x = None;
@@ -161,6 +166,12 @@ fn parse_snapshot_args(
             "--scroll-y" => {
                 scroll_y =
                     parse_scroll_delta("--scroll-y", next_argument(&mut args, "--scroll-y")?)?
+            }
+            "--page-zoom-percent" => {
+                page_zoom_percent = parse_zoom_percent(
+                    "--page-zoom-percent",
+                    next_argument(&mut args, "--page-zoom-percent")?,
+                )?
             }
             "--click-x" => {
                 click_x = Some(parse_click_coordinate(
@@ -248,6 +259,7 @@ fn parse_snapshot_args(
         height: height.ok_or(SidecarArgsError::MissingRequiredArgument { name: "--height" })?,
         scroll_x,
         scroll_y,
+        page_zoom_percent,
         click_point,
         drag_points,
         touch_point,
@@ -302,6 +314,15 @@ fn parse_click_coordinate(name: &'static str, value: String) -> Result<u32, Side
     value.parse::<u32>().map_err(|source| SidecarArgsError::InvalidInteger { name, value, source })
 }
 
+fn parse_zoom_percent(name: &'static str, value: String) -> Result<u16, SidecarArgsError> {
+    let percent = value.parse::<u16>().map_err(|source| SidecarArgsError::InvalidInteger {
+        name,
+        value,
+        source,
+    })?;
+    Ok(validate_zoom_percent(percent)?)
+}
+
 fn parse_path(name: &'static str, value: String) -> Result<PathBuf, SidecarArgsError> {
     if value.trim().is_empty() {
         return Err(SidecarArgsError::EmptyPath { name });
@@ -315,7 +336,9 @@ mod tests {
     use std::{env, path::PathBuf};
 
     use super::{SidecarArgsError, SidecarCommand, parse_command};
-    use ely_domain::{DomainError, ProfileId, SitePermissionDecision, SitePermissionFeature};
+    use ely_domain::{
+        DEFAULT_ZOOM_PERCENT, DomainError, ProfileId, SitePermissionDecision, SitePermissionFeature,
+    };
 
     #[test]
     fn parses_snapshot_profile_identity() -> Result<(), SidecarArgsError> {
@@ -326,6 +349,7 @@ mod tests {
         let SidecarCommand::Snapshot(args) = command;
         assert_eq!(args.profile_id, profile_id);
         assert_eq!(args.profile_data_dir, profile_data_dir);
+        assert_eq!(args.page_zoom_percent, DEFAULT_ZOOM_PERCENT);
         Ok(())
     }
 
@@ -376,6 +400,33 @@ mod tests {
         assert_eq!(permission.feature, SitePermissionFeature::Camera);
         assert_eq!(permission.decision, SitePermissionDecision::AllowOnce);
         Ok(())
+    }
+
+    #[test]
+    fn parses_snapshot_page_zoom_percent() -> Result<(), SidecarArgsError> {
+        let profile_id = ProfileId::new();
+        let profile_data_dir = env::temp_dir().join(profile_id.as_str());
+        let mut command = snapshot_command_args(&profile_id, profile_data_dir);
+        command.push("--page-zoom-percent".to_string());
+        command.push("125".to_string());
+
+        let SidecarCommand::Snapshot(args) = parse_command(command)?;
+        assert_eq!(args.page_zoom_percent, 125);
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_out_of_range_snapshot_page_zoom_percent() {
+        let profile_id = ProfileId::new();
+        let profile_data_dir = env::temp_dir().join(profile_id.as_str());
+        let mut command = snapshot_command_args(&profile_id, profile_data_dir);
+        command.push("--page-zoom-percent".to_string());
+        command.push("5".to_string());
+
+        assert!(matches!(
+            parse_command(command),
+            Err(SidecarArgsError::Domain(DomainError::InvalidZoomPercent { value: 5, .. }))
+        ));
     }
 
     fn parse_snapshot_command(

@@ -133,6 +133,10 @@ impl BrowserCore {
             self.archive_idle_tabs(SystemTime::now())?;
             return Ok(true);
         }
+        if let Some(percent) = zoom_percent(command)? {
+            self.set_active_tab_zoom_percent(percent)?;
+            return Ok(true);
+        }
         if let Some(percent) = reading_progress_percent(command)? {
             self.set_active_tab_reading_progress(percent)?;
             return Ok(true);
@@ -165,6 +169,18 @@ impl BrowserCore {
         match command.to_ascii_lowercase().as_str() {
             "new-tab" => {
                 self.open_new_tab()?;
+                Ok(true)
+            }
+            "zoom-in" | "zoom in" => {
+                self.zoom_active_tab_in()?;
+                Ok(true)
+            }
+            "zoom-out" | "zoom out" => {
+                self.zoom_active_tab_out()?;
+                Ok(true)
+            }
+            "reset-zoom" | "reset zoom" | "actual-size" | "actual size" => {
+                self.reset_active_tab_zoom()?;
                 Ok(true)
             }
             "move-tab-up" | "move tab up" | "tab-up" | "tab up" => self.move_active_tab_up(),
@@ -445,4 +461,20 @@ impl BrowserCore {
             .map(|plugin| plugin_detail_url(plugin.id()))
             .transpose()
     }
+}
+
+fn zoom_percent(command: &str) -> Result<Option<u16>, CoreError> {
+    let command = command.trim();
+    let lowercased = command.to_ascii_lowercase();
+    let value = ["zoom ", "set-zoom ", "set zoom "]
+        .into_iter()
+        .find_map(|prefix| lowercased.starts_with(prefix).then(|| &command[prefix.len()..]));
+    let Some(value) = value else { return Ok(None) };
+
+    let percent = value
+        .trim()
+        .trim_end_matches('%')
+        .parse::<u16>()
+        .map_err(|_| CoreError::Domain(ely_domain::DomainError::InvalidCommand))?;
+    Ok(Some(ely_domain::validate_zoom_percent(percent)?))
 }

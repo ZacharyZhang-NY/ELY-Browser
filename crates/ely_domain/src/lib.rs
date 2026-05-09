@@ -60,7 +60,10 @@ pub use sync::{
     SyncConnectionState, SyncObjectKind, SyncObjectPolicy, SyncObjectState, SyncObjectStatus,
     SyncStatus,
 };
-pub use tab::{BrowserTab, TabFlags, TabState};
+pub use tab::{
+    BrowserTab, DEFAULT_ZOOM_PERCENT, MAX_ZOOM_PERCENT, MIN_ZOOM_PERCENT, TabFlags, TabState,
+    ZOOM_PERCENT_STEP, validate_zoom_percent,
+};
 pub use tab_group::TabGroup;
 pub use update::UpdatePolicy;
 pub use url_text::UrlText;

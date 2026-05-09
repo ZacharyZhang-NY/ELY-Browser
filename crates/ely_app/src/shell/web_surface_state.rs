@@ -40,6 +40,16 @@ pub(super) struct WebSurfaceTextInputState {
     pub(super) text: String,
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct WebSurfaceStateKey<'a> {
+    pub(super) requested_url: &'a str,
+    pub(super) size: WebSurfaceSize,
+    pub(super) scroll_offset: WebSurfaceScrollOffset,
+    pub(super) zoom_percent: u16,
+    pub(super) click_point: Option<WebSurfaceClickPoint>,
+    pub(super) typed_text: Option<&'a str>,
+}
+
 pub(super) enum WebSurfaceClient {
     Ready(ServoSidecarClient),
     Unavailable(String),
@@ -59,6 +69,7 @@ pub(super) struct WebSurfaceRequest {
     pub(super) requested_url: String,
     pub(super) size: WebSurfaceSize,
     pub(super) scroll_offset: WebSurfaceScrollOffset,
+    pub(super) zoom_percent: u16,
     pub(super) click_point: Option<WebSurfaceClickPoint>,
     pub(super) typed_text: Option<String>,
     pub(super) client: ServoSidecarClient,
@@ -70,6 +81,7 @@ pub(super) enum WebSurfaceState {
         requested_url: String,
         size: WebSurfaceSize,
         scroll_offset: WebSurfaceScrollOffset,
+        zoom_percent: u16,
         click_point: Option<WebSurfaceClickPoint>,
         typed_text: Option<String>,
         previous_frame: Option<WebSurfaceFrame>,
@@ -79,6 +91,7 @@ pub(super) enum WebSurfaceState {
         requested_url: String,
         size: WebSurfaceSize,
         scroll_offset: WebSurfaceScrollOffset,
+        zoom_percent: u16,
         click_point: Option<WebSurfaceClickPoint>,
         typed_text: Option<String>,
         message: String,

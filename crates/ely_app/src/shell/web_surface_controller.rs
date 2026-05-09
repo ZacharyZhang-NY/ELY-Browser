@@ -12,7 +12,7 @@ use super::{
     web_surface_frame::WebSurfaceFrame,
     web_surface_geometry::{WebSurfaceClickPoint, WebSurfaceScrollOffset, WebSurfaceSize},
     web_surface_permissions::sidecar_site_permissions_for_tab,
-    web_surface_state::{WebSurfaceRequest, WebSurfaceState},
+    web_surface_state::{WebSurfaceRequest, WebSurfaceState, WebSurfaceStateKey},
     web_surface_view::{
         render_failed_web_surface, render_loading_web_surface, render_ready_web_surface,
     },
@@ -23,6 +23,7 @@ struct PendingWebSurfaceFrame {
     requested_url: String,
     size: WebSurfaceSize,
     scroll_offset: WebSurfaceScrollOffset,
+    zoom_percent: u16,
     click_point: Option<WebSurfaceClickPoint>,
     typed_text: Option<String>,
 }
@@ -74,6 +75,7 @@ impl ElyShell {
             requested_url,
             size,
             scroll_offset,
+            zoom_percent,
             click_point,
             typed_text,
             client,
@@ -85,6 +87,7 @@ impl ElyShell {
             requested_url,
             size,
             scroll_offset,
+            zoom_percent,
             click_point,
             typed_text,
         };
@@ -112,17 +115,19 @@ impl ElyShell {
             requested_url,
             size,
             scroll_offset,
+            zoom_percent,
             click_point,
             typed_text,
         } = pending_frame;
-        if !self.web_surfaces.is_loading(
-            &tab_id,
-            requested_url.as_str(),
+        let state_key = WebSurfaceStateKey {
+            requested_url: requested_url.as_str(),
             size,
             scroll_offset,
+            zoom_percent,
             click_point,
-            typed_text.as_deref(),
-        ) {
+            typed_text: typed_text.as_deref(),
+        };
+        if !self.web_surfaces.is_loading(&tab_id, state_key) {
             return;
         }
 
@@ -130,6 +135,7 @@ impl ElyShell {
             Ok(snapshot) => match WebSurfaceFrame::from_snapshot(
                 requested_url.clone(),
                 scroll_offset,
+                zoom_percent,
                 click_point,
                 typed_text.clone(),
                 snapshot,
@@ -139,6 +145,7 @@ impl ElyShell {
                     requested_url,
                     size,
                     scroll_offset,
+                    zoom_percent,
                     click_point,
                     typed_text,
                     message: error.to_string(),
@@ -148,6 +155,7 @@ impl ElyShell {
                 requested_url,
                 size,
                 scroll_offset,
+                zoom_percent,
                 click_point,
                 typed_text,
                 message: error.to_string(),

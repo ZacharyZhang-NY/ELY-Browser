@@ -20,6 +20,7 @@ pub(super) struct WebSurfaceFrame {
     width: u32,
     height: u32,
     scroll_offset: WebSurfaceScrollOffset,
+    zoom_percent: u16,
     click_point: Option<WebSurfaceClickPoint>,
     typed_text: Option<String>,
     #[cfg(all(test, feature = "live-site-smoke"))]
@@ -35,6 +36,7 @@ impl WebSurfaceFrame {
     pub(super) fn from_snapshot(
         requested_url: String,
         scroll_offset: WebSurfaceScrollOffset,
+        zoom_percent: u16,
         click_point: Option<WebSurfaceClickPoint>,
         typed_text: Option<String>,
         snapshot: SidecarSnapshot,
@@ -66,6 +68,7 @@ impl WebSurfaceFrame {
             width,
             height,
             scroll_offset,
+            zoom_percent,
             click_point,
             typed_text,
             #[cfg(all(test, feature = "live-site-smoke"))]
@@ -89,6 +92,9 @@ impl WebSurfaceFrame {
     pub(super) fn detail_label(&self) -> String {
         let mut detail =
             format!("{} {}", self.render_state(), self.scroll_offset.detail_label(self.size()));
+        if self.zoom_percent != ely_domain::DEFAULT_ZOOM_PERCENT {
+            detail = format!("{detail} zoom={}%", self.zoom_percent);
+        }
         if let Some(click_point) = self.click_point {
             detail = format!("{detail} {}", click_point.detail_label());
         }
@@ -108,6 +114,10 @@ impl WebSurfaceFrame {
 
     pub(super) fn scroll_offset(&self) -> WebSurfaceScrollOffset {
         self.scroll_offset
+    }
+
+    pub(super) fn zoom_percent(&self) -> u16 {
+        self.zoom_percent
     }
 
     pub(super) fn click_point(&self) -> Option<WebSurfaceClickPoint> {

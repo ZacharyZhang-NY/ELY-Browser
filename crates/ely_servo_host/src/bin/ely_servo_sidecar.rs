@@ -6,9 +6,9 @@ use std::{
 
 use ely_domain::TabId;
 use ely_servo_host::{
-    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest, PermissionRequest,
-    ScrollRequest, ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, TouchTapRequest,
-    WebViewSnapshot, WebViewState,
+    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest, PageZoomRequest,
+    PermissionRequest, ScrollRequest, ServoHost, ServoHostError, ServoSurfaceSize,
+    SoftwareServoHost, TouchTapRequest, WebViewSnapshot, WebViewState,
 };
 use thiserror::Error;
 
@@ -59,6 +59,10 @@ fn run_snapshot(args: SnapshotArgs) -> Result<(), SidecarError> {
     let tab_id = TabId::new();
     let webview_id = host.create_webview(tab_id.clone(), args.profile_id.clone())?;
     apply_site_permissions(&mut host, &webview_id, &args)?;
+    host.set_page_zoom(PageZoomRequest {
+        webview_id: webview_id.clone(),
+        zoom_factor: f32::from(args.page_zoom_percent) / 100.0,
+    })?;
 
     host.navigate(NavigationRequest {
         webview_id: webview_id.clone(),

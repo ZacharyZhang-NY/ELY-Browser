@@ -61,6 +61,7 @@ fn render_web_surface_frame(case: &LiveSiteCase) -> Result<WebSurfaceFrame, Box<
         let frame = WebSurfaceFrame::from_snapshot(
             request.requested_url,
             request.scroll_offset,
+            request.zoom_percent,
             request.click_point,
             request.typed_text,
             snapshot,

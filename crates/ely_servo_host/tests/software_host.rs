@@ -10,7 +10,7 @@ use std::{
 
 use ely_domain::{ProfileId, SiteOrigin, SitePermissionFeature, TabId, UrlText};
 use ely_servo_host::{
-    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest,
+    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest, PageZoomRequest,
     PermissionDecision, PermissionRequest, ResizeRequest, ScreenshotRequest, ScrollRequest,
     ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, TouchTapRequest, WebViewState,
 };
@@ -119,6 +119,18 @@ fn exercise_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
         "snapshot: {snapshot:?}"
     );
     assert_rendered_frame_has_content(&host, "data:text/html", 1)?;
+
+    let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
+    host.set_page_zoom(PageZoomRequest { webview_id: webview_id.clone(), zoom_factor: 1.25 })?;
+    let snapshot = wait_for_rendered_webview(&mut host, &webview_id, Some(previous_frame_hash))?;
+    assert_eq!(snapshot.state(), &WebViewState::Complete, "snapshot: {snapshot:?}");
+    assert_rendered_frame_has_content(&host, "data:text/html zoomed", 1)?;
+    assert_ne!(host.last_rendered_frame()?.sample_hash(), previous_frame_hash);
+
+    let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
+    host.set_page_zoom(PageZoomRequest { webview_id: webview_id.clone(), zoom_factor: 1.0 })?;
+    let snapshot = wait_for_rendered_webview(&mut host, &webview_id, Some(previous_frame_hash))?;
+    assert_eq!(snapshot.state(), &WebViewState::Complete, "snapshot: {snapshot:?}");
 
     let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
     host.click(MouseClickRequest { webview_id: webview_id.clone(), x: 160, y: 120 })?;
