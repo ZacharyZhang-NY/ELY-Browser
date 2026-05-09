@@ -8,6 +8,7 @@ use gpui::{
 use gpui_component::IconName;
 
 use crate::shell::ElyShell;
+use crate::shell::chrome::command_footer::{render_command_footer, render_kbd};
 use crate::shell::chrome::render_glyph_for;
 
 const COMMAND_PREFIX: &str = ">";
@@ -65,7 +66,7 @@ fn render_panel(
         .flex_col()
         .child(render_header(query_label.clone(), needle.is_empty()))
         .child(render_results(snapshot, needle, cx))
-        .child(render_footer())
+        .child(render_command_footer())
         .into_any_element()
 }
 
@@ -413,60 +414,6 @@ fn render_empty_state() -> AnyElement {
         .into_any_element()
 }
 
-fn render_footer() -> AnyElement {
-    div()
-        .flex()
-        .items_center()
-        .gap(px(14.0))
-        .px(px(16.0))
-        .py(px(10.0))
-        .border_t_1()
-        .border_color(rgba(colors::DIVIDER))
-        .text_size(px(10.5))
-        .text_color(rgb(colors::INK_3))
-        .bg(rgba(FOOTER_BG))
-        .child(footer_chunk("↑↓", "navigate"))
-        .child(footer_chunk("↵", "open"))
-        .child(footer_chunk("⌘↵", "open in split"))
-        .child(footer_chunk("⇥", "filter"))
-        .child(
-            div()
-                .ml_auto()
-                .flex()
-                .items_center()
-                .gap(px(6.0))
-                .child(
-                    div()
-                        .text_color(rgb(colors::ACCENT))
-                        .child(IconName::Asterisk),
-                )
-                .child("Powered by ELY"),
-        )
-        .into_any_element()
-}
-
-fn footer_chunk(keys: &'static str, label: &'static str) -> AnyElement {
-    div()
-        .flex()
-        .items_center()
-        .gap(px(4.0))
-        .child(render_kbd(keys))
-        .child(label)
-        .into_any_element()
-}
-
-fn render_kbd(label: &'static str) -> AnyElement {
-    div()
-        .px(px(5.0))
-        .py(px(1.0))
-        .rounded(px(4.0))
-        .bg(rgba(KBD_BG))
-        .text_size(px(10.0))
-        .text_color(rgb(colors::INK_3))
-        .child(label)
-        .into_any_element()
-}
-
 fn matching_tabs<'a>(
     snapshot: &'a BrowserSnapshot,
     needle: &str,
@@ -514,8 +461,6 @@ const BACKDROP_BG: u32 = 0x140f0a3d;
 const ROW_HOVER_BG: u32 = 0xc9644214;
 const ROW_ICON_BG: u32 = 0xffffffd9;
 const BADGE_BG: u32 = 0x281e140f;
-const KBD_BG: u32 = 0xffffffd9;
-const FOOTER_BG: u32 = 0xffffff8c;
 
 fn panel_shadow() -> Vec<BoxShadow> {
     vec![BoxShadow {

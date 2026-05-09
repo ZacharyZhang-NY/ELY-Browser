@@ -1,4 +1,5 @@
 pub(crate) mod brand_glyph;
+pub(crate) mod command_footer;
 pub(crate) mod command_overlay;
 pub(crate) mod home;
 pub(crate) mod settings_layout;
