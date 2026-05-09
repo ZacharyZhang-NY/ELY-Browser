@@ -1,10 +1,10 @@
 use servo::{
-    DevicePoint, InputEvent, Key, KeyState, KeyboardEvent, Location, Modifiers, MouseButton,
+    DevicePoint, InputEvent, KeyState, KeyboardEvent, Location, Modifiers, MouseButton,
     MouseButtonAction, MouseButtonEvent, MouseMoveEvent, TouchEvent, TouchEventType, TouchId,
     WebView, WebViewPoint,
 };
 
-use crate::keyboard::keyboard_code_for_character;
+use crate::keyboard::key_and_code_for_character;
 
 pub(super) fn send_mouse_click(webview: &WebView, x: u32, y: u32) {
     let point = point(x, y);
@@ -32,8 +32,7 @@ pub(super) fn send_touch_tap(webview: &WebView, x: u32, y: u32) {
 
 pub(super) fn send_keyboard_text(webview: &WebView, text: &str) {
     for character in text.chars() {
-        let key = Key::Character(character.to_string());
-        let code = keyboard_code_for_character(character);
+        let (key, code) = key_and_code_for_character(character);
         webview.notify_input_event(InputEvent::Keyboard(KeyboardEvent::new_without_event(
             KeyState::Down,
             key.clone(),

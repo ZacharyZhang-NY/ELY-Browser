@@ -1,6 +1,25 @@
-use servo::Code;
+use servo::{Code, Key};
 
-pub(crate) fn keyboard_code_for_character(character: char) -> Code {
+pub(crate) fn key_and_code_for_character(character: char) -> (Key, Code) {
+    match character {
+        '\n' | '\r' => (Key::Enter, Code::Enter),
+        '\x08' => (Key::Backspace, Code::Backspace),
+        '\t' => (Key::Tab, Code::Tab),
+        '\x1b' => (Key::Escape, Code::Escape),
+        '\x7f' => (Key::Delete, Code::Delete),
+        '\u{F700}' => (Key::ArrowUp, Code::ArrowUp),
+        '\u{F701}' => (Key::ArrowDown, Code::ArrowDown),
+        '\u{F702}' => (Key::ArrowLeft, Code::ArrowLeft),
+        '\u{F703}' => (Key::ArrowRight, Code::ArrowRight),
+        '\u{F729}' => (Key::Home, Code::Home),
+        '\u{F72B}' => (Key::End, Code::End),
+        '\u{F72C}' => (Key::PageUp, Code::PageUp),
+        '\u{F72D}' => (Key::PageDown, Code::PageDown),
+        _ => (Key::Character(character.to_string()), printable_code(character)),
+    }
+}
+
+fn printable_code(character: char) -> Code {
     match character {
         'a' | 'A' => Code::KeyA,
         'b' | 'B' => Code::KeyB,
