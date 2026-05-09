@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime};
 
-use ely_domain::{ArchivedTab, BrowserTab, Space, SpaceId};
+use ely_domain::{ArchivedTab, BrowserTab, ProfileKind, Space, SpaceId, TabId};
 
 use super::BrowserCore;
 use crate::CoreError;
@@ -54,6 +54,93 @@ impl TrashedSpace {
 }
 
 impl BrowserCore {
+    pub fn create_space(
+        &mut self,
+        name: impl Into<String>,
+        icon: impl Into<String>,
+        accent_hex: u32,
+    ) -> Result<SpaceId, CoreError> {
+        let sort_key = self.next_space_sort_key();
+        let default_profile_id = if self.active_profile()?.kind() == &ProfileKind::Private {
+            self.active_space()?.default_profile_id().clone()
+        } else {
+            self.active_profile_id.clone()
+        };
+        let space = Space::new(name, icon, accent_hex, default_profile_id, sort_key);
+        let space_id = space.id().clone();
+        let default_profile_id = space.default_profile_id().clone();
+        let tab = self.build_tab_for(space_id.clone(), default_profile_id, self.new_tab_url()?);
+        let tab_id = tab.id().clone();
+
+        self.spaces.push(space);
+        self.tabs.push(tab);
+        self.active_tabs_by_space.insert(space_id.clone(), tab_id.clone());
+        self.select_tab(&tab_id)?;
+        Ok(space_id)
+    }
+
+    pub fn select_space(&mut self, space_id: &SpaceId) -> Result<TabId, CoreError> {
+        if !self.spaces.iter().any(|space| space.id() == space_id) {
+            return Err(CoreError::SpaceNotFound { id: space_id.clone() });
+        }
+
+        if let Some(tab_id) = self
+            .active_tabs_by_space
+            .get(space_id)
+            .filter(|tab_id| self.tab_belongs_to_space(tab_id, space_id))
+            .cloned()
+        {
+            self.select_tab(&tab_id)?;
+            return Ok(tab_id);
+        }
+
+        if let Some(tab_id) =
+            self.tabs.iter().find(|tab| tab.space_id() == space_id).map(|tab| tab.id().clone())
+        {
+            self.select_tab(&tab_id)?;
+            return Ok(tab_id);
+        }
+
+        let default_profile_id = self
+            .spaces
+            .iter()
+            .find(|space| space.id() == space_id)
+            .ok_or_else(|| CoreError::SpaceNotFound { id: space_id.clone() })?
+            .default_profile_id()
+            .clone();
+        let tab = self.build_tab_for(space_id.clone(), default_profile_id, self.new_tab_url()?);
+        let tab_id = tab.id().clone();
+        self.tabs.push(tab);
+        self.select_tab(&tab_id)?;
+        Ok(tab_id)
+    }
+
+    pub fn select_next_space(&mut self) -> Result<TabId, CoreError> {
+        let spaces = self.sorted_spaces();
+        let Some(active_index) =
+            spaces.iter().position(|space| space.id() == &self.active_space_id)
+        else {
+            return Err(CoreError::SpaceNotFound { id: self.active_space_id.clone() });
+        };
+
+        let next_index = (active_index + 1) % spaces.len();
+        let space_id = spaces[next_index].id().clone();
+        self.select_space(&space_id)
+    }
+
+    pub fn select_previous_space(&mut self) -> Result<TabId, CoreError> {
+        let spaces = self.sorted_spaces();
+        let Some(active_index) =
+            spaces.iter().position(|space| space.id() == &self.active_space_id)
+        else {
+            return Err(CoreError::SpaceNotFound { id: self.active_space_id.clone() });
+        };
+
+        let previous_index = if active_index == 0 { spaces.len() - 1 } else { active_index - 1 };
+        let space_id = spaces[previous_index].id().clone();
+        self.select_space(&space_id)
+    }
+
     pub fn trash_space(
         &mut self,
         space_id: &SpaceId,
@@ -135,6 +222,22 @@ impl BrowserCore {
 
     fn sorted_space_ids(&self) -> Vec<SpaceId> {
         self.sorted_spaces().iter().map(|space| space.id().clone()).collect()
+    }
+
+    pub(super) fn next_space_sort_key(&self) -> u64 {
+        self.spaces
+            .iter()
+            .map(Space::sort_key)
+            .max()
+            .map_or(0, |sort_key| sort_key.saturating_add(1))
+    }
+
+    pub(super) fn sorted_spaces(&self) -> Vec<Space> {
+        let mut spaces = self.spaces.clone();
+        spaces.sort_by(|left, right| {
+            left.sort_key().cmp(&right.sort_key()).then_with(|| left.id().cmp(right.id()))
+        });
+        spaces
     }
 
     fn apply_space_order(&mut self, ordered_ids: &[SpaceId]) -> Result<(), CoreError> {
