@@ -270,6 +270,16 @@ impl BrowserTab {
     pub fn set_sync_enabled(&mut self, sync_enabled: bool) {
         self.sync_enabled = sync_enabled;
     }
+
+    /// Replace this tab's URL in place. Used for in-tab navigation
+    /// (clicking a link, picking a settings sub-page, etc.) where the
+    /// active tab should follow the user instead of spawning a new
+    /// one for every URL change. Title stays as set; the caller can
+    /// re-derive it from the new URL if it wants to.
+    pub fn set_url(&mut self, url: UrlText) {
+        self.url = url;
+        self.last_active_at = SystemTime::now();
+    }
 }
 
 pub fn validate_zoom_percent(value: u16) -> Result<u16, DomainError> {

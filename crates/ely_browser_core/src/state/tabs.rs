@@ -16,6 +16,28 @@ impl BrowserCore {
         Ok(self.open_tab(url))
     }
 
+    /// Navigate the active tab to `url` in place. Used for clicks on
+    /// settings sub-pages, the home anchor, the bottom Settings row —
+    /// places where the user expects the current tab to follow the
+    /// link instead of accumulating a new tab for every step.
+    ///
+    /// Records a fresh history entry and resets activity timestamp;
+    /// no new tab is created and the active tab id is unchanged.
+    pub fn navigate_active_tab(&mut self, url: UrlText) -> Result<(), CoreError> {
+        let active_id = self.active_tab_id.clone();
+        let tab_index = self
+            .tabs
+            .iter()
+            .position(|tab| tab.id() == &active_id)
+            .ok_or_else(|| CoreError::TabNotFound { id: active_id.clone() })?;
+        self.tabs[tab_index].set_url(url);
+        self.tabs[tab_index].mark_ready();
+        let snapshot_tab = self.tabs[tab_index].clone();
+        self.record_history_entry(&snapshot_tab);
+        self.record_tab_activity(&active_id, SystemTime::now());
+        Ok(())
+    }
+
     pub fn open_tab(&mut self, url: UrlText) -> TabId {
         let tab = self.build_tab(url);
         let tab_id = tab.id().clone();

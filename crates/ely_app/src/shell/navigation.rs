@@ -38,6 +38,12 @@ impl ElyShell {
         self.open_internal_tab("ely://task-manager", window, cx);
     }
 
+    /// In-tab navigation. Used by every settings sidebar item, every
+    /// home pill, and every "go to internal page" affordance — the
+    /// active tab follows the link instead of spawning a fresh tab
+    /// for every URL change. Use `open_url` only when the explicit
+    /// intent is "spawn a new tab" (see `open_new_tab` for the
+    /// keyboard shortcut path).
     pub(super) fn open_internal_tab(
         &mut self,
         url_text: &str,
@@ -45,10 +51,32 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) {
         if let Ok(url) = UrlText::parse(url_text) {
-            self.open_url(url, window, cx);
+            self.navigate_active_tab(url, window, cx);
         }
     }
 
+    /// Navigate the active tab to `url` without creating a new tab.
+    /// Falls back to opening a new tab only if there's no active tab
+    /// to navigate (the BrowserCore returns `TabNotFound`).
+    pub(crate) fn navigate_active_tab(
+        &mut self,
+        url: UrlText,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let ShellState::Ready(core) = &mut self.state {
+            if core.navigate_active_tab(url.clone()).is_err() {
+                core.open_tab(url);
+            }
+            self.sync_address_input(window, cx);
+            self.focus_address_bar(window, cx);
+            cx.notify();
+        }
+    }
+
+    /// Spawn a fresh tab for `url`. Reserved for "+ New Tab" buttons
+    /// and the deep-link router — anything that explicitly wants a
+    /// new sibling tab rather than navigating in place.
     pub(crate) fn open_url(&mut self, url: UrlText, window: &mut Window, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state {
             core.open_tab(url);
