@@ -30,5 +30,5 @@ pub(crate) use split_pane::{
     render_split_pane_header,
 };
 pub(crate) use topbar::render_topbar;
-pub(crate) use typography::{SERIF_FAMILY, register_serif_fonts};
+pub(crate) use typography::{SANS_FAMILY, SERIF_FAMILY, register_serif_fonts};
 pub(crate) use wallpaper::render_wallpaper;

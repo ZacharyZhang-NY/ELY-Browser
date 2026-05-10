@@ -9,7 +9,7 @@ use gpui::{
 
 use super::chrome::command_match::visible_command_rows;
 use super::chrome::{
-    panel_bg, panel_shadow, render_command_overlay,
+    SANS_FAMILY, panel_bg, panel_shadow, render_command_overlay,
     render_topbar as render_topbar_chrome, render_wallpaper,
 };
 use super::sidebar::collapsed_sidebar_active;
@@ -69,6 +69,7 @@ impl ElyShell {
             .on_action(cx.listener(Self::on_zoom_out))
             .on_mouse_move(cx.listener(Self::on_window_mouse_move))
             .capture_key_down(cx.listener(Self::on_command_overlay_key_down))
+            .font_family(SANS_FAMILY)
             .text_color(rgb(colors::INK))
             .child(render_wallpaper(snapshot.appearance.wallpaper()))
             .child(
