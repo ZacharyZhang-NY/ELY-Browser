@@ -148,12 +148,12 @@ impl ServoHost for SoftwareServoHost {
                 .delegate(webview.delegate.clone())
                 .url(url)
                 .build();
-            // Fresh WebView is hidden+unfocused by default; without this
-            // pair Servo's hit-test silently drops every input event.
-            // Existing WebViews keep their visibility/focus across loads
-            // — calling focus() here every navigation would let a
-            // background tab finishing a load steal focus from the
-            // foreground tab.
+            // Cosmetic: makes the freshly built WebView paint its
+            // first frame. The input-accepting invariant lives in
+            // `webview_for_input`; we deliberately do not re-show or
+            // re-focus on the `load()` branch so a background tab
+            // finishing a load cannot steal focus from the foreground
+            // tab between the user's mouse-down and the next render.
             webview.webview.show();
             webview.webview.focus();
         } else {
@@ -164,15 +164,11 @@ impl ServoHost for SoftwareServoHost {
     }
 
     fn scroll(&mut self, request: ScrollRequest) -> Result<(), ServoHostError> {
-        let webview = self
-            .webviews
-            .get(&request.webview_id)
-            .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
-
         if request.delta_x == 0 && request.delta_y == 0 {
             return Ok(());
         }
 
+        let webview = self.webview_for_input(&request.webview_id)?;
         webview.webview.notify_scroll_event(
             Scroll::Delta(WebViewVector::Device(DeviceVector2D::new(
                 request.delta_x as f32,
@@ -206,31 +202,19 @@ impl ServoHost for SoftwareServoHost {
     }
 
     fn hover(&mut self, request: MouseHoverRequest) -> Result<(), ServoHostError> {
-        let webview = self
-            .webviews
-            .get(&request.webview_id)
-            .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
-
+        let webview = self.webview_for_input(&request.webview_id)?;
         send_mouse_hover(&webview.webview, request.x, request.y);
         Ok(())
     }
 
     fn click(&mut self, request: MouseClickRequest) -> Result<(), ServoHostError> {
-        let webview = self
-            .webviews
-            .get(&request.webview_id)
-            .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
-
+        let webview = self.webview_for_input(&request.webview_id)?;
         send_mouse_click(&webview.webview, request.x, request.y);
         Ok(())
     }
 
     fn drag(&mut self, request: MouseDragRequest) -> Result<(), ServoHostError> {
-        let webview = self
-            .webviews
-            .get(&request.webview_id)
-            .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
-
+        let webview = self.webview_for_input(&request.webview_id)?;
         send_mouse_drag(
             &webview.webview,
             request.from_x,
@@ -242,21 +226,13 @@ impl ServoHost for SoftwareServoHost {
     }
 
     fn touch_tap(&mut self, request: TouchTapRequest) -> Result<(), ServoHostError> {
-        let webview = self
-            .webviews
-            .get(&request.webview_id)
-            .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
-
+        let webview = self.webview_for_input(&request.webview_id)?;
         send_touch_tap(&webview.webview, request.x, request.y);
         Ok(())
     }
 
     fn type_text(&mut self, request: KeyboardTextRequest) -> Result<(), ServoHostError> {
-        let webview = self
-            .webviews
-            .get(&request.webview_id)
-            .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
-
+        let webview = self.webview_for_input(&request.webview_id)?;
         send_keyboard_text(&webview.webview, &request.text);
         Ok(())
     }
@@ -365,6 +341,11 @@ impl SoftwareServoHost {
         let webview = WebViewBuilder::new(&self.servo, rendering_context.clone())
             .delegate(delegate.clone())
             .build();
+        // Cosmetic: makes the first frame paint into the rendering
+        // context. The input-accepting invariant is owned by
+        // `webview_for_input`, which re-asserts show/focus on every
+        // dispatch — so a sibling tab's later creation (which would
+        // steal focus here) cannot break input on this WebView.
         webview.show();
         webview.focus();
 
@@ -398,6 +379,29 @@ impl SoftwareServoHost {
         self.webviews
             .get(webview_id)
             .ok_or_else(|| ServoHostError::WebViewNotFound { id: webview_id.clone() })
+    }
+
+    /// Returns a WebView guaranteed to accept input.
+    ///
+    /// Servo's hit-test silently absorbs `notify_input_event` on a
+    /// hidden or unfocused WebView. The create + first-navigate paths
+    /// call `show()`/`focus()` for first-frame visibility, but every
+    /// later operation that creates a sibling WebView (multi-tab)
+    /// calls `focus()` on the new one, silently stealing focus from
+    /// the foreground tab. `load()` (later navigates), `resize`,
+    /// `set_page_zoom`, and `paint` do not re-focus, so by the time a
+    /// click arrives the visible tab's WebView is unreachable.
+    /// Re-asserting per dispatch keeps the invariant on the dispatch
+    /// path instead of spread across creation, navigation, and
+    /// tab-switching.
+    fn webview_for_input(
+        &self,
+        webview_id: &WebViewId,
+    ) -> Result<&HostWebView, ServoHostError> {
+        let webview = self.webview(webview_id)?;
+        webview.webview.show();
+        webview.webview.focus();
+        Ok(webview)
     }
 
     fn read_rendered_frame(
