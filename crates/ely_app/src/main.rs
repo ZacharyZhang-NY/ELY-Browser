@@ -63,6 +63,17 @@ fn main() {
         if let Err(error) = shell::chrome::register_serif_fonts(cx) {
             eprintln!("ELY: failed to register serif fonts: {error}");
         }
+        // gpui-component's Input, tooltip, context menu, search popover,
+        // notification surface, etc. all read their font from
+        // `cx.theme().font_family` directly instead of inheriting from
+        // the parent. Default theme value is `.SystemUIFont` (SF Pro on
+        // macOS), so without this override the user types into the
+        // omnibar in SF Pro while every other surface renders Geist —
+        // exactly the "fonts still wrong" the screenshot showed.
+        // Override the theme so every gpui-component sub-element uses
+        // Geist too.
+        gpui_component::Theme::global_mut(cx).font_family =
+            shell::chrome::SANS_FAMILY.into();
         cx.on_action(quit);
         bind_shortcuts(cx);
         cx.on_action(open_private_window);
