@@ -273,8 +273,12 @@ impl ElyShell {
                     .hover(|style| style.bg(rgba(0x281e1414)).text_color(rgb(colors::INK)))
                     .cursor_pointer()
                     .on_click(cx.listener(move |shell, _, window, cx| {
+                        // Close the tab without bubbling to the launcher row's
+                        // own on_click — otherwise the row tries to re-select
+                        // the tab right after we've closed it.
                         shell.select_tab(&close_tab_id, window, cx);
                         shell.close_active_tab(window, cx);
+                        cx.stop_propagation();
                     }))
                     .child(IconName::Close),
             )
