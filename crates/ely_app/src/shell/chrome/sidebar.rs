@@ -19,48 +19,55 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let panel_color = panel_bg(snapshot);
+        // Outer wrapper holds the resize handle outside the rounded
+        // panel's overflow_hidden clip; inner panel keeps the rounded
+        // glass treatment without swallowing the column-resize column.
         div()
             .w(px(sidebar_width))
             .h_full()
             .relative()
-            .flex()
-            .flex_col()
-            .rounded(px(spacing::RADIUS_CARD))
-            .bg(rgba(panel_color))
-            .border_1()
-            .border_color(rgba(HIGHLIGHT_BORDER))
-            .shadow(panel_shadow())
-            .overflow_hidden()
-            .child(render_sidebar_header(self, snapshot, cx))
             .child(
                 div()
-                    .flex_1()
-                    .overflow_y_scrollbar()
-                    .p(px(10.0))
+                    .size_full()
                     .flex()
                     .flex_col()
-                    .gap(px(2.0))
-                    .child(self.render_home_anchor_row(snapshot, cx))
-                    .children(snapshot.favorites.iter().map(|tab| {
-                        self.render_launcher_row(
-                            tab,
-                            tab.id() == &snapshot.active_tab_id,
-                            cx,
-                        )
-                    }))
-                    .child(section_label("PINNED"))
-                    .children(snapshot.pinned_tabs.iter().map(|tab| {
-                        self.render_launcher_row(
-                            tab,
-                            tab.id() == &snapshot.active_tab_id,
-                            cx,
-                        )
-                    }))
-                    .child(section_tabs_label(snapshot.tabs.len()))
-                    .children(self.render_sidebar_tab_rows(snapshot, cx))
-                    .child(self.render_new_tab_row(cx)),
+                    .rounded(px(spacing::RADIUS_CARD))
+                    .bg(rgba(panel_color))
+                    .border_1()
+                    .border_color(rgba(HIGHLIGHT_BORDER))
+                    .shadow(panel_shadow())
+                    .overflow_hidden()
+                    .child(render_sidebar_header(self, snapshot, cx))
+                    .child(
+                        div()
+                            .flex_1()
+                            .overflow_y_scrollbar()
+                            .p(px(10.0))
+                            .flex()
+                            .flex_col()
+                            .gap(px(2.0))
+                            .child(self.render_home_anchor_row(snapshot, cx))
+                            .children(snapshot.favorites.iter().map(|tab| {
+                                self.render_launcher_row(
+                                    tab,
+                                    tab.id() == &snapshot.active_tab_id,
+                                    cx,
+                                )
+                            }))
+                            .child(section_label("PINNED"))
+                            .children(snapshot.pinned_tabs.iter().map(|tab| {
+                                self.render_launcher_row(
+                                    tab,
+                                    tab.id() == &snapshot.active_tab_id,
+                                    cx,
+                                )
+                            }))
+                            .child(section_tabs_label(snapshot.tabs.len()))
+                            .children(self.render_sidebar_tab_rows(snapshot, cx))
+                            .child(self.render_new_tab_row(cx)),
+                    )
+                    .child(self.render_sidebar_footer(snapshot, cx)),
             )
-            .child(self.render_sidebar_footer(snapshot, cx))
             .child(render_sidebar_resize_handle(cx))
             .into_any_element()
     }
@@ -457,18 +464,20 @@ const UNREAD_BADGE_BG: u32 = 0x281e140f;
 /// never participates in hit testing.
 const HIGHLIGHT_BORDER: u32 = 0xffffff80;
 
-/// Sidebar resize affordance pinned to the panel's right edge. The
-/// strip itself is invisible until hovered; on mouse-down it tells the
-/// shell to capture the drag origin so window-level mouse-move can
-/// compute the live width.
+/// Sidebar resize affordance straddling the panel's right edge. The
+/// strip lives in the outer wrapper (not the rounded inner panel) so
+/// it isn't swallowed by `overflow_hidden`; it spans 4 px outside the
+/// panel and 4 px inside, giving the cursor a comfortably wide hit
+/// surface that still reads as "edge of the panel" rather than
+/// "stripe across the layout".
 fn render_sidebar_resize_handle(cx: &mut Context<ElyShell>) -> AnyElement {
     div()
         .id(SharedString::from("sidebar-resize-handle"))
         .absolute()
         .top_0()
         .bottom_0()
-        .right(px(-2.0))
-        .w(px(6.0))
+        .right(px(-4.0))
+        .w(px(8.0))
         .cursor_col_resize()
         .hover(|style| style.bg(rgba(RESIZE_HANDLE_HOVER_BG)))
         .on_mouse_down(
@@ -480,7 +489,7 @@ fn render_sidebar_resize_handle(cx: &mut Context<ElyShell>) -> AnyElement {
         .into_any_element()
 }
 
-const RESIZE_HANDLE_HOVER_BG: u32 = 0xffffff66;
+const RESIZE_HANDLE_HOVER_BG: u32 = 0xffaa7733;
 
 /// Maps appearance translucency_pct to a panel rgba u32 tinted by the
 /// active wallpaper theme.
