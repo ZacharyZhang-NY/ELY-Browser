@@ -93,10 +93,17 @@ impl ElyShell {
             .when(hover_expanded, |el| {
                 el.child(self.render_hidden_sidebar_overlay(&snapshot, cx))
             })
-            .when(self.workspace_picker_open, |el| {
-                el.child(render_workspace_disclosure_backdrop(cx))
-                    .child(render_workspace_disclosure(&snapshot, cx))
-            })
+            // Workspace popover only makes sense when the picker pill is
+            // visible — i.e. the sidebar is expanded. Compact/hidden
+            // modes don't render the trigger, so showing the disclosure
+            // would float a stranded card with no anchor.
+            .when(
+                self.workspace_picker_open && !sidebar_collapsed && !sidebar_hidden,
+                |el| {
+                    el.child(render_workspace_disclosure_backdrop(cx))
+                        .child(render_workspace_disclosure(&snapshot, cx))
+                },
+            )
             .children(render_command_overlay(self, &snapshot, cx))
             .into_any_element()
     }
