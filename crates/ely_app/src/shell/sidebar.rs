@@ -130,6 +130,14 @@ impl ElyShell {
             if width_px > HIDDEN_SIDEBAR_WIDTH_PX {
                 self.sidebar_hover_expanded = false;
             }
+            // Picker pill only shows in the expanded sidebar. If the
+            // sidebar drops below the expanded threshold while the
+            // picker is open, dismiss the popover so its state never
+            // gets stranded waiting for a trigger that's no longer
+            // visible.
+            if width_px <= COLLAPSED_SIDEBAR_WIDTH_PX && self.workspace_picker_open {
+                self.workspace_picker_open = false;
+            }
             cx.notify();
         }
     }
