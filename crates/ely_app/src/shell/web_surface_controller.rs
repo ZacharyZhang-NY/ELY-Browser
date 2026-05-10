@@ -96,6 +96,14 @@ impl ElyShell {
         }
     }
 
+    /// Hand focus to the shell's root focus handle so subsequent
+    /// keystrokes route to the web surface. Called on the very first
+    /// mouse-down inside an external page so the user can start
+    /// typing without waiting for the click to fully resolve.
+    pub(super) fn focus_web_surface(&self, window: &mut gpui::Window) {
+        self.focus_handle.focus(window);
+    }
+
     pub(super) fn type_text_in_external_web_viewport(
         &mut self,
         tab_id: TabId,

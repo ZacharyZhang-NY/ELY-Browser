@@ -137,9 +137,13 @@ impl WebSurfaceStore {
             .entry(tab_id.clone())
             .and_modify(|current| *current = current.combined_with(delta))
             .or_insert(delta);
+        // Drop any buffered click — its viewport coordinates were
+        // captured against the pre-scroll page, so applying it after
+        // the scroll would land on the wrong DOM element. Keep
+        // `keyboard_focus` and `typed_texts` though: Servo maintains
+        // its own DOM focus across scrolls, so a focused input keeps
+        // accepting the user's keystrokes after they wheel-scroll.
         self.click_points.remove(tab_id);
-        self.typed_texts.remove(tab_id);
-        self.keyboard_focus = None;
         true
     }
 

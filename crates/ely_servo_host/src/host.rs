@@ -243,6 +243,13 @@ pub struct MouseClickRequest {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MouseHoverRequest {
+    pub webview_id: WebViewId,
+    pub x: u32,
+    pub y: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MouseDragRequest {
     pub webview_id: WebViewId,
     pub from_x: u32,

@@ -90,6 +90,7 @@ fn render_input_overlay(
     url: String,
     state_entity: Entity<ElyShell>,
 ) -> impl IntoElement {
+    let down_entity = state_entity.clone();
     let click_tab_id = tab_id.clone();
     let click_url = url.clone();
     let click_entity = state_entity.clone();
@@ -103,6 +104,16 @@ fn render_input_overlay(
         .absolute()
         .size_full()
         .occlude()
+        // Mouse-down hands focus to the shell's root focus handle so
+        // subsequent keystrokes route to the web surface instead of
+        // the omnibar Input. Doing this on mouse-down (not mouse-up)
+        // lets the user start typing as soon as they press, matching
+        // native browser focus semantics.
+        .on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+            down_entity.update(cx, |shell, _cx| {
+                shell.focus_web_surface(window);
+            });
+        })
         .capture_any_mouse_up(move |event, window, cx| {
             if event.button != MouseButton::Left {
                 return;

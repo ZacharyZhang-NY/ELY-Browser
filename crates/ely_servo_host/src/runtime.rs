@@ -20,9 +20,10 @@ use servo::{
 use url::Url;
 
 use crate::{
-    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest, PageZoomRequest,
-    PermissionDecision, PermissionRequest, RenderedFrame, ResizeRequest, ScreenshotRequest,
-    ScrollRequest, ServoHost, ServoHostError, TouchTapRequest, WebViewSnapshot, WebViewState,
+    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, MouseHoverRequest,
+    NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest, RenderedFrame,
+    ResizeRequest, ScreenshotRequest, ScrollRequest, ServoHost, ServoHostError, TouchTapRequest,
+    WebViewSnapshot, WebViewState,
     runtime_input::{
         send_keyboard_text, send_mouse_click, send_mouse_drag, send_mouse_hover, send_touch_tap,
     },
@@ -196,10 +197,13 @@ impl ServoHost for SoftwareServoHost {
         Ok(())
     }
 
-    fn hover(&mut self, x: u32, y: u32) -> Result<(), ServoHostError> {
-        if let Some(webview) = self.webviews.values().next() {
-            send_mouse_hover(&webview.webview, x, y);
-        }
+    fn hover(&mut self, request: MouseHoverRequest) -> Result<(), ServoHostError> {
+        let webview = self
+            .webviews
+            .get(&request.webview_id)
+            .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
+
+        send_mouse_hover(&webview.webview, request.x, request.y);
         Ok(())
     }
 

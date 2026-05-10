@@ -15,9 +15,10 @@ mod runtime_webview;
 
 pub use error::ServoHostError;
 pub use host::{
-    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest, PageZoomRequest,
-    PermissionDecision, PermissionRequest, RenderedFrame, RenderedFrameSummary, ResizeRequest,
-    ScreenshotRequest, ScrollRequest, ServoHost, TouchTapRequest, WebViewSnapshot, WebViewState,
+    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, MouseHoverRequest,
+    NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest, RenderedFrame,
+    RenderedFrameSummary, ResizeRequest, ScreenshotRequest, ScrollRequest, ServoHost,
+    TouchTapRequest, WebViewSnapshot, WebViewState,
 };
 #[cfg(feature = "servo-engine")]
 pub use runtime::{ServoSurfaceSize, SoftwareServoHost};

@@ -9,9 +9,9 @@ use std::{
 
 use ely_domain::{DEFAULT_ZOOM_PERCENT, ProfileId, TabId, UrlText};
 use ely_servo_host::{
-    KeyboardTextRequest, MouseClickRequest, NavigationRequest, PageZoomRequest, PermissionDecision,
-    PermissionRequest, RenderedFrame, ResizeRequest, ScrollRequest, ServoHost, ServoHostError,
-    ServoSurfaceSize, SoftwareServoHost, WebViewSnapshot, WebViewState,
+    KeyboardTextRequest, MouseClickRequest, MouseHoverRequest, NavigationRequest, PageZoomRequest,
+    PermissionDecision, PermissionRequest, RenderedFrame, ResizeRequest, ScrollRequest, ServoHost,
+    ServoHostError, ServoSurfaceSize, SoftwareServoHost, WebViewSnapshot, WebViewState,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -230,7 +230,7 @@ fn apply_input(
     }
 
     if let (Some(x), Some(y)) = (hover_x, hover_y) {
-        host.hover(x, y)?;
+        host.hover(MouseHoverRequest { webview_id: session.webview_id.clone(), x, y })?;
         changed = true;
     }
 
