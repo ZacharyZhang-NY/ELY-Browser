@@ -12,21 +12,28 @@ use crate::shell::chrome::SERIF_FAMILY;
 use super::style::{
     ARROW_CHIP_BG, PILL_BG, PILL_BG_HOVER, SEARCH_BG, card_shadow, soft_shadow,
 };
+use super::time::DayPhase;
 
-pub(crate) fn render_hero(greeting: String, cx: &mut Context<ElyShell>) -> AnyElement {
+pub(crate) fn render_hero(
+    greeting: String,
+    phase: DayPhase,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
     div()
         .flex()
         .flex_col()
         .items_center()
         .gap(px(14.0))
-        .child(render_greeting_row(greeting))
+        .child(render_greeting_row(greeting, phase))
         .child(render_serif_headline())
         .child(render_search_bar(cx))
         .child(render_suggestion_pills(cx))
         .into_any_element()
 }
 
-fn render_greeting_row(text: String) -> AnyElement {
+fn render_greeting_row(text: String, phase: DayPhase) -> AnyElement {
+    let (icon, color) = phase_glyph(phase);
+
     div()
         .flex()
         .items_center()
@@ -35,11 +42,23 @@ fn render_greeting_row(text: String) -> AnyElement {
         .text_color(rgb(colors::INK_3))
         .child(
             div()
-                .text_color(rgb(colors::ACCENT_LIGHT))
-                .child(IconName::Sun),
+                .text_color(rgb(color))
+                .child(icon),
         )
         .child(text)
         .into_any_element()
+}
+
+/// Pair the greeting glyph to the time of day. Morning gets the warm
+/// horizon orange the design uses for the Sunrise icon (#e89a6e); afternoon
+/// keeps the same Sun glyph in a higher-key amber; evening swaps to the
+/// Moon in the cool slate-violet that bookends the wallpaper themes.
+fn phase_glyph(phase: DayPhase) -> (IconName, u32) {
+    match phase {
+        DayPhase::Morning => (IconName::Sun, 0xe89a6e),
+        DayPhase::Afternoon => (IconName::Sun, 0xf5b563),
+        DayPhase::Evening => (IconName::Moon, 0x7c6cf7),
+    }
 }
 
 fn render_serif_headline() -> AnyElement {
@@ -117,11 +136,11 @@ fn render_suggestion_pills(cx: &mut Context<ElyShell>) -> AnyElement {
             |shell, window, cx| shell.cycle_to_next_space(window, cx),
         ))
         .child(render_pill(
-            "pill-open-history",
-            IconName::Undo2,
-            "Open History",
+            "pill-open-notion",
+            IconName::BookOpen,
+            "Open Notion",
             cx,
-            |shell, window, cx| shell.open_internal_tab("ely://history", window, cx),
+            |shell, window, cx| shell.open_internal_tab("https://www.notion.so", window, cx),
         ))
         .into_any_element()
 }

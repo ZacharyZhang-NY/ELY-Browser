@@ -1,15 +1,43 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub(crate) fn greeting_for_now(now: SystemTime, name: &str) -> String {
-    let phase = match now.duration_since(UNIX_EPOCH) {
-        Ok(duration) => {
-            let local_seconds = duration.as_secs() as i64;
-            let day_seconds = local_seconds.rem_euclid(86_400);
-            let hour = (day_seconds / 3_600) as u32;
-            day_phase(hour)
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DayPhase {
+    Morning,
+    Afternoon,
+    Evening,
+}
+
+impl DayPhase {
+    fn as_str(self) -> &'static str {
+        match self {
+            DayPhase::Morning => "morning",
+            DayPhase::Afternoon => "afternoon",
+            DayPhase::Evening => "evening",
         }
-        Err(_) => "today",
+    }
+}
+
+pub(crate) fn day_phase_for(now: SystemTime) -> DayPhase {
+    let hour = match now.duration_since(UNIX_EPOCH) {
+        Ok(duration) => {
+            let day_seconds = (duration.as_secs() as i64).rem_euclid(86_400);
+            (day_seconds / 3_600) as u32
+        }
+        Err(_) => 12,
     };
+    day_phase_from_hour(hour)
+}
+
+pub(crate) fn day_phase_from_hour(hour_utc: u32) -> DayPhase {
+    match hour_utc {
+        5..=11 => DayPhase::Morning,
+        12..=17 => DayPhase::Afternoon,
+        _ => DayPhase::Evening,
+    }
+}
+
+pub(crate) fn greeting_for_now(now: SystemTime, name: &str) -> String {
+    let phase = day_phase_for(now).as_str();
 
     if name.is_empty() {
         format!("Good {phase}")
@@ -18,13 +46,6 @@ pub(crate) fn greeting_for_now(now: SystemTime, name: &str) -> String {
     }
 }
 
-pub(crate) fn day_phase(hour_utc: u32) -> &'static str {
-    match hour_utc {
-        5..=11 => "morning",
-        12..=17 => "afternoon",
-        _ => "evening",
-    }
-}
 
 pub(crate) fn relative_time_label(now: SystemTime, then: SystemTime) -> String {
     let elapsed = match now.duration_since(then) {
@@ -53,22 +74,22 @@ pub(crate) fn relative_time_label(now: SystemTime, then: SystemTime) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{day_phase, greeting_for_now, relative_time_label};
+    use super::{DayPhase, day_phase_from_hour, greeting_for_now, relative_time_label};
     use std::time::{Duration, UNIX_EPOCH};
 
     #[test]
     fn day_phase_assigns_morning_to_seven_am() {
-        assert_eq!(day_phase(7), "morning");
+        assert_eq!(day_phase_from_hour(7), DayPhase::Morning);
     }
 
     #[test]
     fn day_phase_assigns_afternoon_to_one_pm() {
-        assert_eq!(day_phase(13), "afternoon");
+        assert_eq!(day_phase_from_hour(13), DayPhase::Afternoon);
     }
 
     #[test]
     fn day_phase_assigns_evening_to_eleven_pm() {
-        assert_eq!(day_phase(23), "evening");
+        assert_eq!(day_phase_from_hour(23), DayPhase::Evening);
     }
 
     #[test]
