@@ -109,8 +109,9 @@ impl ElyShell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let command_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Search or enter address"));
+        let command_input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder("Search ELY or type a command…")
+        });
         let plugin_search_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Search plugins…"));
         let translucency_slider = cx.new(|_cx| {
