@@ -315,6 +315,11 @@ impl WebSurfaceStore {
     fn surface_mut(&mut self, tab_id: &TabId) -> &mut PerTabSurface {
         self.surfaces.entry(tab_id.clone()).or_insert_with(PerTabSurface::new)
     }
+
+    #[cfg(test)]
+    pub(super) fn surface_for_test(&self, tab_id: &TabId) -> Option<&PerTabSurface> {
+        self.surfaces.get(tab_id)
+    }
 }
 
 pub(super) fn is_external_web_url(url: &str) -> bool {

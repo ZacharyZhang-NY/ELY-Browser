@@ -33,6 +33,9 @@ mod web_surface_runtime;
 mod web_surface_state;
 mod web_surface_view;
 
+#[cfg(test)]
+mod gpui_harness_tests;
+
 use std::time::Duration;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};

@@ -25,6 +25,9 @@ thiserror.workspace = true
 ureq.workspace = true
 url.workspace = true
 
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
+
 [build-dependencies]
 toml.workspace = true
 

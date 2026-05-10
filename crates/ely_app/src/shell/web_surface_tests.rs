@@ -213,6 +213,120 @@ fn zero_wheel_delta_reports_zero_delta() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Pinning the per-tab isolation invariant. A click recorded against
+/// tab A must not be drained by, dropped by, or overwritten by any
+/// state mutation routed to tab B. The store keys every click on its
+/// owning `TabId` via `PerTabSurface`, but the singleton
+/// `keyboard_focus` cross-cuts tabs — so a regression that
+/// accidentally entangled them (e.g. dropping A's `click_point` when
+/// B took focus) would surface here.
+#[test]
+fn click_on_tab_a_survives_click_on_tab_b() -> Result<(), Box<dyn Error>> {
+    let mut store = WebSurfaceStore::new();
+    let tab_a = web_tab("https://example.com/a")?;
+    let tab_b = web_tab("https://example.com/b")?;
+
+    assert_applied(store.record_viewport_size(tab_a.id(), web_bounds(), 1.0));
+    assert_applied(store.record_viewport_size(tab_b.id(), web_bounds(), 1.0));
+
+    assert_applied(store.record_click_point(
+        tab_a.id(),
+        tab_a.url().as_str(),
+        point(px(40.0), px(40.0)),
+        1.0,
+    ));
+    assert_applied(store.record_click_point(
+        tab_b.id(),
+        tab_b.url().as_str(),
+        point(px(200.0), px(200.0)),
+        1.0,
+    ));
+
+    let input_a = store.take_pending_input(tab_a.id(), tab_a.url().as_str());
+    assert_eq!(
+        input_a.click_point.map(|p| (p.x(), p.y())),
+        Some((40, 40)),
+        "tab A's click must survive a subsequent click on tab B — \
+         per-tab surfaces are independent owners of `click_point`",
+    );
+
+    let input_b = store.take_pending_input(tab_b.id(), tab_b.url().as_str());
+    assert_eq!(
+        input_b.click_point.map(|p| (p.x(), p.y())),
+        Some((200, 200)),
+        "tab B's click must drain into B's pending input, not A's",
+    );
+    Ok(())
+}
+
+/// Pinning the zero-delta short-circuit's non-effect on a buffered
+/// click. `record_scroll_delta` wipes `click_point` (post-scroll
+/// coords would target the wrong DOM node), but the early `None`
+/// return for `DroppedZeroDelta` must short-circuit *before* the wipe.
+/// A future refactor that moved the wipe above the delta check would
+/// silently eat clicks whenever a precision-mouse wheel reported a
+/// sub-device-pixel delta.
+#[test]
+fn zero_wheel_delta_must_not_erase_buffered_click() -> Result<(), Box<dyn Error>> {
+    let mut store = WebSurfaceStore::new();
+    let tab = web_tab("https://example.com/form")?;
+    let url = tab.url().as_str();
+
+    assert_applied(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
+    assert_applied(store.record_click_point(tab.id(), url, point(px(160.0), px(120.0)), 1.0));
+
+    assert_eq!(
+        store.record_scroll_delta(tab.id(), url, point(px(0.0), px(0.0)), 1.0),
+        WebSurfaceInputOutcome::DroppedZeroDelta,
+    );
+
+    let input = store.take_pending_input(tab.id(), url);
+    assert_eq!(
+        input.click_point.map(|p| (p.x(), p.y())),
+        Some((160, 120)),
+        "a zero-delta wheel event reports DroppedZeroDelta and must not \
+         take the `click_point` wipe path — the early return guards it",
+    );
+    Ok(())
+}
+
+/// Pinning the bounds-vs-drain decoupling. A viewport resize between
+/// click and drain leaves `viewport_bounds` mutated but does not
+/// touch `click_point`, `scroll_offset`, or `requested_url` — the
+/// three keys the drain filter checks. The click's stored device-px
+/// coordinates remain valid against the new bounds because GPUI
+/// re-renders before any new click can arrive.
+///
+/// If a future refactor stored raw window-relative coords on
+/// `click_point` and converted them at drain time, a resize between
+/// record and drain would shift the result; this test would still
+/// drain "something" but the coordinates would change, surfacing the
+/// drift.
+#[test]
+fn click_survives_viewport_bounds_change_before_drain() -> Result<(), Box<dyn Error>> {
+    let mut store = WebSurfaceStore::new();
+    let tab = web_tab("https://example.com/resize")?;
+    let url = tab.url().as_str();
+
+    assert_applied(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
+    assert_applied(store.record_click_point(tab.id(), url, point(px(160.0), px(120.0)), 1.0));
+
+    // Resize: first measurement is buffered (requires confirmation).
+    assert_eq!(
+        store.record_viewport_size(tab.id(), resized_once_bounds(), 1.0),
+        WebSurfaceInputOutcome::Buffered,
+    );
+
+    let input = store.take_pending_input(tab.id(), url);
+    assert_eq!(
+        input.click_point.map(|p| (p.x(), p.y())),
+        Some((160, 120)),
+        "a resize-in-progress must not steal the buffered click — \
+         the drain filter checks url+scroll_offset, not bounds",
+    );
+    Ok(())
+}
+
 fn web_bounds() -> Bounds<gpui::Pixels> {
     Bounds::new(point(px(0.0), px(0.0)), size(px(640.0), px(480.0)))
 }

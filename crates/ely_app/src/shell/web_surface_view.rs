@@ -69,19 +69,18 @@ fn render_web_surface(
     let tracker_entity = state_entity;
 
     div()
-        .flex_1()
-        .h_full()
+        .relative()
+        .size_full()
         .min_w_0()
         .overflow_hidden()
         .child(
             div()
-                .relative()
-                .size_full()
-                .overflow_hidden()
-                .child(content)
-                .child(render_viewport_tracker(tab.id().clone(), tracker_entity))
-                .child(render_input_overlay(input_tab_id, input_url, input_entity)),
+                .absolute()
+                .inset_0()
+                .child(content),
         )
+        .child(render_viewport_tracker(tab.id().clone(), tracker_entity))
+        .child(render_input_overlay(input_tab_id, input_url, input_entity))
         .into_any_element()
 }
 
