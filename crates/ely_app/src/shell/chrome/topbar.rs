@@ -30,8 +30,8 @@ pub(crate) fn render_topbar(
         .when(sidebar_collapsed, |el| {
             el.child(render_command_bar_identity(snapshot, 56.0, true))
         })
-        .child(render_nav_arrow("nav-back", IconName::ChevronLeft))
-        .child(render_nav_arrow("nav-forward", IconName::ChevronRight))
+        .child(render_nav_arrow("nav-back", IconName::ArrowLeft))
+        .child(render_nav_arrow("nav-forward", IconName::ArrowRight))
         .child(render_omnibar(shell, active_tab, cx))
         .child(render_topbar_action(
             "share-url",
@@ -84,8 +84,7 @@ fn render_omnibar(
         .rounded(px(spacing::RADIUS_PILL))
         .bg(rgba(OMNIBAR_BG))
         .shadow(soft_shadow())
-        .pl(px(14.0))
-        .pr(px(8.0))
+        .px(px(14.0))
         .flex()
         .items_center()
         .gap(px(10.0))
