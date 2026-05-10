@@ -25,7 +25,8 @@ pub(crate) use plugin_detail_view::render_plugin_detail_view;
 pub(crate) use settings_layout::render_settings_shell;
 pub(crate) use sidebar::{panel_bg, panel_shadow};
 pub(crate) use sidebar_header::{
-    render_sidebar_header, render_workspace_disclosure, render_workspace_disclosure_backdrop,
+    WorkspaceDisclosureAnchor, render_sidebar_header, render_workspace_disclosure,
+    render_workspace_disclosure_backdrop,
 };
 pub(crate) use split_pane::{
     pane_host_label, pane_url_is_secure, render_compact_split_canvas,

@@ -9,7 +9,7 @@ use gpui::{
 
 use super::chrome::command_match::visible_command_rows;
 use super::chrome::{
-    SANS_FAMILY, panel_bg, panel_shadow, render_command_overlay,
+    SANS_FAMILY, WorkspaceDisclosureAnchor, panel_bg, panel_shadow, render_command_overlay,
     render_topbar as render_topbar_chrome, render_wallpaper, render_workspace_disclosure,
     render_workspace_disclosure_backdrop,
 };
@@ -100,8 +100,9 @@ impl ElyShell {
             .when(
                 self.workspace_picker_open && !sidebar_collapsed && !sidebar_hidden,
                 |el| {
+                    let anchor = WorkspaceDisclosureAnchor::solve(sidebar_width);
                     el.child(render_workspace_disclosure_backdrop(cx))
-                        .child(render_workspace_disclosure(&snapshot, cx))
+                        .child(render_workspace_disclosure(&snapshot, anchor, cx))
                 },
             )
             .children(render_command_overlay(self, &snapshot, cx))

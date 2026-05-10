@@ -1,5 +1,5 @@
 use ely_browser_core::BrowserSnapshot;
-use ely_design_system::colors;
+use ely_design_system::{colors, spacing};
 use ely_domain::Space;
 use gpui::{
     AnyElement, BoxShadow, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
@@ -10,6 +10,32 @@ use gpui_component::IconName;
 
 use crate::shell::ElyShell;
 use crate::shell::chrome::animations::fade_in;
+
+// ----- Sidebar header layout constants -----
+// Single source of truth for the spacing that render_sidebar_header
+// applies to its outer column and inner picker row. The disclosure
+// anchor solver reads from these so when the layout changes, the
+// popover follows automatically.
+
+/// Top padding of the sidebar header column.
+const HEADER_PT: f32 = 8.0;
+/// Horizontal padding of the sidebar header column.
+const HEADER_PX: f32 = 10.0;
+/// Vertical gap between the title row and the picker row.
+const HEADER_ROW_GAP: f32 = 8.0;
+/// Height of the title row (`ELY Browser ⌄`).
+const TITLE_ROW_HEIGHT: f32 = 20.0;
+/// Vertical padding inside the picker row (top/bottom).
+const PICKER_ROW_PY: f32 = 4.0;
+/// Horizontal padding inside the picker row (left/right).
+const PICKER_ROW_PX: f32 = 2.0;
+/// Gap between the tile, the pill, and the add button.
+const PICKER_ROW_GAP: f32 = 6.0;
+/// Square size of the workspaces tile and the add button.
+const PICKER_BUTTON_SIZE: f32 = 32.0;
+/// Visual lift applied to the popover so it nestles just below the
+/// picker pill instead of sitting flush on its bottom edge.
+const DISCLOSURE_LIFT: f32 = 6.0;
 
 pub(crate) fn render_sidebar_header(
     shell: &ElyShell,
@@ -25,10 +51,10 @@ pub(crate) fn render_sidebar_header(
     div()
         .flex()
         .flex_col()
-        .pt(px(8.0))
-        .px(px(10.0))
-        .pb(px(10.0))
-        .gap(px(8.0))
+        .pt(px(HEADER_PT))
+        .px(px(HEADER_PX))
+        .pb(px(HEADER_PX))
+        .gap(px(HEADER_ROW_GAP))
         .flex_shrink_0()
         .child(render_title_row())
         .child(render_workspace_picker(snapshot, active_space, picker_open, cx))
@@ -37,7 +63,7 @@ pub(crate) fn render_sidebar_header(
 
 fn render_title_row() -> AnyElement {
     div()
-        .h(px(20.0))
+        .h(px(TITLE_ROW_HEIGHT))
         .flex()
         .items_center()
         .gap(px(4.0))
@@ -81,9 +107,9 @@ fn render_workspace_picker(
     div()
         .flex()
         .items_center()
-        .gap(px(6.0))
-        .py(px(4.0))
-        .px(px(2.0))
+        .gap(px(PICKER_ROW_GAP))
+        .py(px(PICKER_ROW_PY))
+        .px(px(PICKER_ROW_PX))
         .child(render_workspaces_tile(cx))
         .child(render_picker_pill(active_space, picker_open, cx))
         .child(render_add_workspace_button(cx))
@@ -93,7 +119,7 @@ fn render_workspace_picker(
 fn render_workspaces_tile(cx: &mut Context<ElyShell>) -> AnyElement {
     div()
         .id(SharedString::from("workspace-tile"))
-        .size(px(32.0))
+        .size(px(PICKER_BUTTON_SIZE))
         .rounded(px(9.0))
         .bg(linear_gradient(
             135.0,
@@ -170,22 +196,71 @@ fn render_picker_pill(
         .into_any_element()
 }
 
+/// Window-relative position and width for the disclosure popover.
+/// Computed at paint time from the sidebar's live layout so the
+/// popover always tracks the picker pill — sidebar resizes, design-
+/// system inset tweaks, and header-row adjustments flow through
+/// without touching this module.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct WorkspaceDisclosureAnchor {
+    pub top_px: f32,
+    pub left_px: f32,
+    pub width_px: f32,
+}
+
+impl WorkspaceDisclosureAnchor {
+    /// Derive the popover anchor from the live sidebar width. This is
+    /// the geometric inverse of `render_sidebar_header` — every term
+    /// here corresponds to a real CSS-equivalent property applied
+    /// upstream, so changing one of those constants moves the popover
+    /// with it.
+    pub(crate) fn solve(sidebar_width_px: f32) -> Self {
+        let left_px = spacing::SHELL_INSET
+            + HEADER_PX
+            + PICKER_ROW_PX
+            + PICKER_BUTTON_SIZE
+            + PICKER_ROW_GAP;
+
+        let top_px = spacing::SHELL_INSET
+            + HEADER_PT
+            + TITLE_ROW_HEIGHT
+            + HEADER_ROW_GAP
+            + PICKER_ROW_PY
+            + PICKER_BUTTON_SIZE
+            + PICKER_ROW_PY
+            + DISCLOSURE_LIFT;
+
+        // Pill spans flex_1 between tile and add button inside the
+        // padded picker row. So:
+        //   pill_w = sidebar_w
+        //          - 2 * (HEADER_PX + PICKER_ROW_PX)   (row insets)
+        //          - 2 * PICKER_BUTTON_SIZE            (tile + add)
+        //          - 2 * PICKER_ROW_GAP                (two gaps)
+        let chrome = 2.0 * (HEADER_PX + PICKER_ROW_PX)
+            + 2.0 * PICKER_BUTTON_SIZE
+            + 2.0 * PICKER_ROW_GAP;
+        let width_px = (sidebar_width_px - chrome).max(0.0);
+
+        Self { top_px, left_px, width_px }
+    }
+}
+
 /// Window-root popover surface for the workspace picker. Rendered by
-/// render_browser when `workspace_picker_open` is true. Pinned to a
-/// fixed window-relative origin matched to the picker pill's row in
-/// the sidebar header, so the surface lines up with the trigger
-/// without needing to capture bounds at paint time.
+/// render_browser when `workspace_picker_open` is true. Pinned to the
+/// solved anchor for the live sidebar width so the surface lines up
+/// with the trigger without needing to capture bounds at paint time.
 pub(crate) fn render_workspace_disclosure(
     snapshot: &BrowserSnapshot,
+    anchor: WorkspaceDisclosureAnchor,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let active_id = snapshot.active_space_id.clone();
 
     let body = div()
         .absolute()
-        .top(px(DISCLOSURE_TOP_PX))
-        .left(px(DISCLOSURE_LEFT_PX))
-        .w(px(DISCLOSURE_WIDTH_PX))
+        .top(px(anchor.top_px))
+        .left(px(anchor.left_px))
+        .w(px(anchor.width_px))
         .flex()
         .flex_col()
         .gap(px(2.0))
@@ -229,24 +304,6 @@ pub(crate) fn render_workspace_disclosure_backdrop(
         )
         .into_any_element()
 }
-
-/// Anchor of the disclosure popover relative to the window's top-left.
-/// Walks the sidebar layout — SHELL_INSET 16 plus sidebar header pt 8
-/// plus title row h 20 plus header gap 8 plus picker row py-top 4 plus
-/// tile height 32 plus picker row py-bot 4 plus popover lift 6 = 98.
-const DISCLOSURE_TOP_PX: f32 = 98.0;
-
-/// Left edge of the disclosure — SHELL_INSET 16 plus header px-left 10
-/// plus picker row px-left 2 plus tile width 32 plus picker gap 6 = 66.
-/// That lines the disclosure up with the picker pill, not the tile.
-const DISCLOSURE_LEFT_PX: f32 = 66.0;
-
-/// Default sidebar (280 px) → pill width 180 px. The disclosure inherits
-/// that width so the popover and trigger frame to the same column. If
-/// the sidebar is resized the disclosure stays a fixed width — picker
-/// is closed before the user can drag, so the misalignment is
-/// transient at worst.
-const DISCLOSURE_WIDTH_PX: f32 = 180.0;
 
 fn render_disclosure_row(
     index: usize,
@@ -345,7 +402,7 @@ fn render_workspace_glyph(emoji: String) -> AnyElement {
 fn render_add_workspace_button(cx: &mut Context<ElyShell>) -> AnyElement {
     div()
         .id(SharedString::from("workspace-add"))
-        .size(px(32.0))
+        .size(px(PICKER_BUTTON_SIZE))
         .rounded(px(9.0))
         .bg(rgba(ADD_BUTTON_BG))
         .shadow(soft_shadow())
@@ -386,4 +443,39 @@ fn soft_shadow() -> Vec<BoxShadow> {
             spread_radius: px(1.0),
         },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn anchor_lines_up_with_default_sidebar_picker_pill() {
+        // Default sidebar (280 px) should land the popover at the
+        // window-relative position the visual design was tuned for.
+        let anchor = WorkspaceDisclosureAnchor::solve(280.0);
+        assert_eq!(anchor.left_px, 66.0);
+        assert_eq!(anchor.top_px, 98.0);
+        assert_eq!(anchor.width_px, 180.0);
+    }
+
+    #[test]
+    fn anchor_width_tracks_resized_sidebar() {
+        // Wider sidebar -> wider pill -> wider popover. Top/left
+        // stay locked to the trigger row.
+        let narrow = WorkspaceDisclosureAnchor::solve(240.0);
+        let wide = WorkspaceDisclosureAnchor::solve(360.0);
+        assert_eq!(narrow.left_px, wide.left_px);
+        assert_eq!(narrow.top_px, wide.top_px);
+        assert_eq!(narrow.width_px, 140.0);
+        assert_eq!(wide.width_px, 260.0);
+    }
+
+    #[test]
+    fn anchor_width_clamps_at_zero_for_pathologically_small_sidebar() {
+        // Solver must never report negative geometry, even if the
+        // sidebar is somehow narrower than the chrome it contains.
+        let anchor = WorkspaceDisclosureAnchor::solve(0.0);
+        assert_eq!(anchor.width_px, 0.0);
+    }
 }
