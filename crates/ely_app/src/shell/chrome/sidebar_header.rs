@@ -31,10 +31,7 @@ pub(crate) fn render_sidebar_header(
         .gap(px(8.0))
         .flex_shrink_0()
         .child(render_title_row())
-        .child(render_workspace_picker(active_space, picker_open, cx))
-        .when(picker_open, |el| {
-            el.child(render_workspace_disclosure(snapshot, cx))
-        })
+        .child(render_workspace_picker(snapshot, active_space, picker_open, cx))
         .into_any_element()
 }
 
@@ -72,11 +69,13 @@ fn render_title_row() -> AnyElement {
 const TRAFFIC_LIGHT_RESERVE: f32 = 68.0;
 
 fn render_workspace_picker(
+    snapshot: &BrowserSnapshot,
     active_space: Option<&Space>,
     picker_open: bool,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     div()
+        .relative()
         .flex()
         .items_center()
         .gap(px(6.0))
@@ -85,6 +84,12 @@ fn render_workspace_picker(
         .child(render_workspaces_tile(cx))
         .child(render_picker_pill(active_space, picker_open, cx))
         .child(render_add_workspace_button(cx))
+        // Disclosure floats below the picker row instead of taking inline
+        // space so the tab list never gets pushed when a workspace is being
+        // picked. Anchor: picker row's bottom-left, full row width.
+        .when(picker_open, |el| {
+            el.child(render_workspace_disclosure(snapshot, cx))
+        })
         .into_any_element()
 }
 
@@ -175,12 +180,19 @@ fn render_workspace_disclosure(
     let active_id = snapshot.active_space_id.clone();
 
     let body = div()
+        .absolute()
+        .top_full()
+        .left_0()
+        .right_0()
+        .mt(px(6.0))
         .flex()
         .flex_col()
         .gap(px(2.0))
         .p(px(4.0))
         .rounded(px(10.0))
         .bg(rgba(DISCLOSURE_BG))
+        .border_1()
+        .border_color(rgba(DISCLOSURE_BORDER))
         .shadow(soft_shadow())
         .children(
             snapshot
@@ -315,6 +327,7 @@ const PICKER_BG: u32 = 0xffffff99;
 const PICKER_BG_HOVER: u32 = 0xffffffd9;
 const ADD_BUTTON_BG: u32 = 0xffffff66;
 const DISCLOSURE_BG: u32 = 0xffffffd9;
+const DISCLOSURE_BORDER: u32 = 0xffffff80;
 const DISCLOSURE_ROW_ACTIVE_BG: u32 = 0xffffffeb;
 const DISCLOSURE_ROW_HOVER_BG: u32 = 0xffffffb3;
 
