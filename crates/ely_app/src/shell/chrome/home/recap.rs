@@ -49,6 +49,7 @@ fn render_continue_card(
 ) -> AnyElement {
     let recent_history: Vec<&HistoryEntry> = snapshot.history_entries.iter().rev().take(3).collect();
     let featured = snapshot.reading_list.first();
+    let reading_total = snapshot.reading_list.len();
 
     div()
         .rounded(px(16.0))
@@ -67,7 +68,7 @@ fn render_continue_card(
             div()
                 .w(px(240.0))
                 .flex_shrink_0()
-                .child(render_reading_list_cover(featured, cx)),
+                .child(render_reading_list_cover(featured, reading_total, cx)),
         )
         .into_any_element()
 }
@@ -167,6 +168,7 @@ fn render_history_row(
 
 fn render_reading_list_cover(
     featured: Option<&ReadingListEntry>,
+    reading_total: usize,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let title = featured
@@ -234,7 +236,7 @@ fn render_reading_list_cover(
                 .bg(rgba(BADGE_BG))
                 .text_size(px(10.5))
                 .text_color(rgb(0xffffff))
-                .child(format!("Reading List · {}", featured.map(|_| 1).unwrap_or(0))),
+                .child(format!("Reading List · {}", reading_total)),
         )
         .child(
             div()
