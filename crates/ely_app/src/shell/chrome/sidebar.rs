@@ -318,17 +318,21 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let tab_id = tab.id().clone();
+        let close_tab_id = tab.id().clone();
         let bg_color = if active { ACTIVE_NAV_BG } else { 0x00000000 };
         let text_color = if active { colors::INK } else { colors::INK_2 };
+        let group_name = SharedString::from(format!("tab-{}", tab.id().as_str()));
+        let close_id = SharedString::from(format!("tab-close-{}", tab.id().as_str()));
 
         div()
             .id(SharedString::from(tab.id().as_str().to_string()))
+            .group(group_name.clone())
             .rounded(px(spacing::RADIUS_NAV))
             .px(px(10.0))
             .py(px(7.0))
-            .gap(px(6.0))
+            .gap(px(8.0))
             .flex()
-            .flex_col()
+            .items_center()
             .cursor_pointer()
             .hover(|style| style.bg(rgba(ACTIVE_NAV_BG)))
             .active(|style| style.opacity(0.82))
@@ -339,22 +343,50 @@ impl ElyShell {
             }))
             .child(
                 div()
-                    .text_size(px(13.0))
-                    .font_weight(gpui::FontWeight(500.0))
-                    .text_color(rgb(text_color))
-                    .overflow_hidden()
-                    .child(tab.title().to_string()),
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.0))
+                    .child(
+                        div()
+                            .text_size(px(13.0))
+                            .font_weight(gpui::FontWeight(500.0))
+                            .text_color(rgb(text_color))
+                            .truncate()
+                            .child(tab.title().to_string()),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.0))
+                            .text_color(rgb(colors::INK_4))
+                            .truncate()
+                            .child(tab.display_url()),
+                    ),
             )
             .child(
                 div()
-                    .text_size(px(11.0))
+                    .id(close_id)
+                    .size(px(16.0))
+                    .rounded(px(4.0))
+                    .flex_shrink_0()
+                    .flex()
+                    .items_center()
+                    .justify_center()
                     .text_color(rgb(colors::INK_4))
-                    .overflow_hidden()
-                    .child(tab.display_url()),
+                    .opacity(0.0)
+                    .group_hover(group_name, |style| style.opacity(1.0))
+                    .hover(|style| style.bg(rgba(0x281e1414)).text_color(rgb(colors::INK)))
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |shell, _, window, cx| {
+                        shell.select_tab(&close_tab_id, window, cx);
+                        shell.close_active_tab(window, cx);
+                        cx.stop_propagation();
+                    }))
+                    .child(IconName::Close),
             )
             .into_any_element()
     }
-
 }
 
 fn profile_initial(name: &str) -> String {
