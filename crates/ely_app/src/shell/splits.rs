@@ -2,8 +2,8 @@ use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
 use ely_domain::{BrowserTab, SplitAxis, SplitLayout};
 use gpui::{
-    AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, px, rgb, rgba,
+    AnyElement, BoxShadow, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, Window, div, hsla, point, px, rgb, rgba,
 };
 use gpui_component::{
     IconName, Selectable, Sizable, StyledExt,
@@ -139,7 +139,7 @@ impl ElyShell {
             .flex()
             .flex_col()
             .overflow_hidden();
-        let pane_area = div().flex_1().min_h_0().gap_3().overflow_hidden();
+        let pane_area = div().flex_1().min_h_0().gap(px(10.0)).overflow_hidden();
 
         let compact_canvas = layout.axis() == &SplitAxis::Vertical && layout.pane_count() >= 4;
         let panes = match layout.axis() {
@@ -167,14 +167,16 @@ impl ElyShell {
         snapshot: &BrowserSnapshot,
         cx: &mut Context<Self>,
     ) -> gpui::Div {
-        body.flex().flex_col().children(panes.chunks(2).enumerate().map(|(row_index, row)| {
-            div().flex().flex_1().min_h(px(180.0)).gap_3().children(row.iter().enumerate().map(
-                |(column_index, tab)| {
-                    let pane_index = row_index * 2 + column_index;
-                    self.render_split_pane(pane_index, tab, snapshot, false, cx)
-                },
-            ))
-        }))
+        body.flex().flex_col().gap(px(10.0)).children(
+            panes.chunks(2).enumerate().map(|(row_index, row)| {
+                div().flex().flex_1().min_h(px(180.0)).gap(px(10.0)).children(
+                    row.iter().enumerate().map(|(column_index, tab)| {
+                        let pane_index = row_index * 2 + column_index;
+                        self.render_split_pane(pane_index, tab, snapshot, false, cx)
+                    }),
+                )
+            }),
+        )
     }
 
     fn render_split_pane(
@@ -205,6 +207,7 @@ impl ElyShell {
             .border_1()
             .border_color(rgb(border))
             .bg(rgb(0xffffff))
+            .shadow(split_pane_shadow())
             .cursor_pointer()
             .hover(|style| style.opacity(0.98))
             .active(|style| style.opacity(0.92))
@@ -417,5 +420,27 @@ fn active_split_layout<'a>(
 ) -> Option<&'a SplitLayout> {
     let split_id = active_tab.split_id()?;
     snapshot.split_layouts.iter().find(|layout| layout.id() == split_id)
+}
+
+/// Two-layer drop shadow under each split pane card, matching the design's
+/// `boxShadow:'0 1px 0 rgba(0,0,0,0.05), 0 12px 30px -16px rgba(0,0,0,0.18)'`.
+/// The first layer is the hairline that lifts the card off the wallpaper,
+/// the second is the soft ambient lift the design uses to keep stacked
+/// panes legible against any wallpaper theme.
+fn split_pane_shadow() -> Vec<BoxShadow> {
+    vec![
+        BoxShadow {
+            color: hsla(0.0, 0.0, 0.0, 0.05),
+            offset: point(px(0.0), px(1.0)),
+            blur_radius: px(0.0),
+            spread_radius: px(0.0),
+        },
+        BoxShadow {
+            color: hsla(0.0, 0.0, 0.0, 0.18),
+            offset: point(px(0.0), px(12.0)),
+            blur_radius: px(30.0),
+            spread_radius: px(-16.0),
+        },
+    ]
 }
 
