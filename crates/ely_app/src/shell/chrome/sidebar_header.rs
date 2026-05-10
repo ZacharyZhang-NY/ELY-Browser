@@ -231,13 +231,13 @@ pub(crate) fn render_workspace_disclosure_backdrop(
 }
 
 /// Anchor of the disclosure popover relative to the window's top-left.
-/// Walks the sidebar layout: SHELL_INSET (16) + sidebar header pt (8)
-/// + title row h (20) + header gap (8) + picker row py-top (4) + tile
-/// height (32) + picker row py-bot (4) + popover lift (6) = 98.
+/// Walks the sidebar layout — SHELL_INSET 16 plus sidebar header pt 8
+/// plus title row h 20 plus header gap 8 plus picker row py-top 4 plus
+/// tile height 32 plus picker row py-bot 4 plus popover lift 6 = 98.
 const DISCLOSURE_TOP_PX: f32 = 98.0;
 
-/// Left edge of the disclosure: SHELL_INSET (16) + header px-left (10)
-/// + picker row px-left (2) + tile width (32) + picker gap (6) = 66.
+/// Left edge of the disclosure — SHELL_INSET 16 plus header px-left 10
+/// plus picker row px-left 2 plus tile width 32 plus picker gap 6 = 66.
 /// That lines the disclosure up with the picker pill, not the tile.
 const DISCLOSURE_LEFT_PX: f32 = 66.0;
 

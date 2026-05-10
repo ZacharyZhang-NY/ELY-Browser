@@ -236,7 +236,7 @@ impl ElyShell {
             return;
         }
 
-        if cursor_x >= REVEAL_THRESHOLD_PX && cursor_x <= COLLAPSE_THRESHOLD_PX {
+        if (REVEAL_THRESHOLD_PX..=COLLAPSE_THRESHOLD_PX).contains(&cursor_x) {
             return;
         }
 

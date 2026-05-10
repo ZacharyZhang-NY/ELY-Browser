@@ -21,10 +21,10 @@ impl ElyShell {
             return;
         }
 
-        if let Some(text) = special_key_text(event) {
-            if self.type_text_in_external_web_viewport(tab_id, requested_url, text, cx) {
-                cx.stop_propagation();
-            }
+        if let Some(text) = special_key_text(event)
+            && self.type_text_in_external_web_viewport(tab_id, requested_url, text, cx)
+        {
+            cx.stop_propagation();
         }
     }
 
