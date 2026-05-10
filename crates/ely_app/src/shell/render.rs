@@ -8,7 +8,6 @@ use gpui::{
 };
 
 use super::chrome::command_match::visible_command_rows;
-use super::chrome::glass::render_inner_highlight;
 use super::chrome::{
     panel_bg, panel_shadow, render_command_overlay,
     render_topbar as render_topbar_chrome, render_wallpaper,
@@ -137,11 +136,12 @@ impl ElyShell {
             .flex_1()
             .h_full()
             .min_w_0()
-            .relative()
             .flex()
             .flex_col()
             .rounded(px(spacing::RADIUS_CARD))
             .bg(rgba(panel_color))
+            .border_1()
+            .border_color(rgba(MAIN_PANE_HIGHLIGHT_BORDER))
             .shadow(panel_shadow())
             .overflow_hidden()
             .child(render_topbar_chrome(self, snapshot, active_tab, sidebar_collapsed, cx))
@@ -151,7 +151,6 @@ impl ElyShell {
                     .overflow_hidden()
                     .child(self.render_content_area(snapshot, active_tab, cx)),
             )
-            .child(render_inner_highlight(spacing::RADIUS_CARD))
             .into_any_element()
     }
 
@@ -249,6 +248,12 @@ impl ElyShell {
             .into_any_element()
     }
 }
+
+/// 50% white inner border that traces every glass panel — the GPUI
+/// substitute for the design's `box-shadow: inset 0 0 0 1px rgba(255,255,255,0.5)`.
+/// Painted as the panel's own border so it stays part of the frame and
+/// never participates in hit testing.
+const MAIN_PANE_HIGHLIGHT_BORDER: u32 = 0xffffff80;
 
 /// Cursor x within this px from the left edge auto-reveals the hidden sidebar.
 /// Sized so the user only triggers the reveal when they actually approach the

@@ -13,7 +13,6 @@ use gpui_component::{
     button::{Button, ButtonVariants},
 };
 
-use super::chrome::glass::render_inner_highlight;
 use super::chrome::panel_bg;
 use super::{ElyShell, ShellState, render::tab_profile_label};
 use crate::ToggleSidebar;
@@ -38,7 +37,6 @@ impl ElyShell {
         div()
             .w(px(sidebar_width))
             .h_full()
-            .relative()
             .flex()
             .flex_col()
             .items_center()
@@ -46,6 +44,8 @@ impl ElyShell {
             .p_2()
             .rounded(px(spacing::RADIUS_CARD))
             .bg(rgba(panel_color))
+            .border_1()
+            .border_color(rgba(HIGHLIGHT_BORDER))
             .shadow(panel_shadow())
             .children(snapshot.favorites.iter().enumerate().map(|(index, tab)| {
                 self.render_compact_tab_button(
@@ -90,7 +90,6 @@ impl ElyShell {
                     self.render_compact_archived_button(index, archived_tab, cx)
                 },
             ))
-            .child(render_inner_highlight(spacing::RADIUS_CARD))
             .into_any_element()
     }
 
@@ -260,6 +259,13 @@ pub(super) fn render_command_bar_identity(
 pub(super) fn collapsed_sidebar_active(sidebar_width: f32) -> bool {
     sidebar_width <= f32::from(COLLAPSED_SIDEBAR_WIDTH_PX)
 }
+
+/// 50% white inner border that traces every glass panel — the GPUI
+/// substitute for the design's `box-shadow: inset 0 0 0 1px rgba(255,255,255,0.5)`.
+/// Painting it as the panel's own border keeps it part of the frame
+/// (no separate absolute overlay) so it never participates in hit
+/// testing and never blocks clicks on inner content.
+const HIGHLIGHT_BORDER: u32 = 0xffffff80;
 
 fn panel_shadow() -> Vec<BoxShadow> {
     vec![

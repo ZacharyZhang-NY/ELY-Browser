@@ -15,7 +15,6 @@ use crate::shell::chrome::command_match::{
 use crate::shell::chrome::command_rows::{
     render_action_rows, render_bookmark_rows, render_history_rows, render_tab_rows,
 };
-use crate::shell::chrome::glass::render_inner_highlight;
 
 const COMMAND_PREFIX: &str = ">";
 
@@ -72,15 +71,15 @@ fn render_panel(
         .w(px(640.0))
         .rounded(px(16.0))
         .bg(rgba(PANEL_BG))
+        .border_1()
+        .border_color(rgba(PANEL_BORDER))
         .shadow(panel_shadow())
         .overflow_hidden()
-        .relative()
         .flex()
         .flex_col()
         .child(render_header(query_label.clone(), needle.is_empty()))
         .child(render_results(snapshot, needle, selected_index, cx))
         .child(render_command_footer())
-        .child(render_inner_highlight(16.0))
         .into_any_element()
 }
 
@@ -219,6 +218,7 @@ fn render_empty_state() -> AnyElement {
 }
 
 const PANEL_BG: u32 = 0xfffffff5;
+const PANEL_BORDER: u32 = 0xffffff80;
 const BACKDROP_BG: u32 = 0x140f0a3d;
 const BADGE_BG: u32 = 0x281e140f;
 

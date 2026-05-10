@@ -9,7 +9,6 @@ use gpui::{
 use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
 
 use crate::shell::ElyShell;
-use crate::shell::chrome::glass::render_inner_highlight;
 use crate::shell::chrome::{render_glyph_for, render_sidebar_header};
 
 impl ElyShell {
@@ -27,9 +26,10 @@ impl ElyShell {
             .flex_col()
             .rounded(px(spacing::RADIUS_CARD))
             .bg(rgba(panel_color))
+            .border_1()
+            .border_color(rgba(HIGHLIGHT_BORDER))
             .shadow(panel_shadow())
             .overflow_hidden()
-            .relative()
             .child(render_sidebar_header(self, snapshot, cx))
             .child(
                 div()
@@ -60,7 +60,6 @@ impl ElyShell {
                     .child(self.render_new_tab_row(cx)),
             )
             .child(self.render_sidebar_footer(snapshot, cx))
-            .child(render_inner_highlight(spacing::RADIUS_CARD))
             .into_any_element()
     }
 
@@ -413,6 +412,12 @@ fn section_label(label: &'static str) -> impl IntoElement {
 
 pub(crate) const ACTIVE_NAV_BG: u32 = 0xffffffd9;
 const UNREAD_BADGE_BG: u32 = 0x281e140f;
+
+/// 50% white inner border that traces every glass panel — the GPUI
+/// substitute for the design's `box-shadow: inset 0 0 0 1px rgba(255,255,255,0.5)`.
+/// Painted as the panel's own border so it stays part of the frame and
+/// never participates in hit testing.
+const HIGHLIGHT_BORDER: u32 = 0xffffff80;
 
 /// Maps appearance translucency_pct to a panel rgba u32 tinted by the
 /// active wallpaper theme.
