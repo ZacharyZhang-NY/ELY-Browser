@@ -64,7 +64,6 @@ fn render_panel(
 
     div()
         .w(px(640.0))
-        .max_h(px(540.0))
         .rounded(px(16.0))
         .bg(rgba(PANEL_BG))
         .shadow(panel_shadow())
@@ -163,8 +162,7 @@ fn render_results(
     }
 
     div()
-        .flex_1()
-        .min_h_0()
+        .max_h(px(440.0))
         .py(px(8.0))
         .flex()
         .flex_col()
