@@ -169,9 +169,13 @@ impl ElyShell {
                     .child(profile_name),
             )
             .child(
+                // The profile chip navigates to settings/profiles —
+                // it's not a popover. Use a right-chevron so the icon
+                // promises "this opens a page" instead of the down
+                // chevron that promises "this opens a menu inline".
                 div()
                     .text_color(rgb(colors::INK_4))
-                    .child(IconName::ChevronDown),
+                    .child(IconName::ChevronRight),
             )
             .into_any_element()
     }
@@ -278,7 +282,7 @@ impl ElyShell {
                     .text_color(rgb(colors::INK_4))
                     .opacity(0.0)
                     .group_hover(group_name, |style| style.opacity(1.0))
-                    .hover(|style| style.bg(rgba(0x281e1414)).text_color(rgb(colors::INK)))
+                    .hover(|style| style.bg(rgba(CLOSE_HOVER_BG)).text_color(rgb(colors::INK)))
                     .cursor_pointer()
                     .on_click(cx.listener(move |shell, _, window, cx| {
                         shell.close_tab_by_id(&close_tab_id, window, cx);
@@ -380,7 +384,7 @@ impl ElyShell {
                     .text_color(rgb(colors::INK_4))
                     .opacity(0.0)
                     .group_hover(group_name, |style| style.opacity(1.0))
-                    .hover(|style| style.bg(rgba(0x281e1414)).text_color(rgb(colors::INK)))
+                    .hover(|style| style.bg(rgba(CLOSE_HOVER_BG)).text_color(rgb(colors::INK)))
                     .cursor_pointer()
                     .on_click(cx.listener(move |shell, _, window, cx| {
                         shell.close_tab_by_id(&close_tab_id, window, cx);
@@ -452,6 +456,13 @@ fn section_label(label: &'static str) -> impl IntoElement {
 }
 
 pub(crate) const ACTIVE_NAV_BG: u32 = 0xffffffd9;
+
+/// Hover tint behind the per-row close (×) button. Was 8% alpha, which
+/// was visually indistinguishable from the panel background and made
+/// the click target read as inert. Brought to ~30% alpha so the
+/// hover registers as a real "press here" surface, matching the
+/// confidence of close buttons in Arc/Dia/Zen.
+const CLOSE_HOVER_BG: u32 = 0x281e144d;
 const UNREAD_BADGE_BG: u32 = 0x281e140f;
 
 /// 50% white inner border that traces every glass panel — the GPUI
