@@ -7,7 +7,6 @@ use gpui::{
 use gpui_component::{IconName, scroll::ScrollableElement};
 
 use crate::shell::ElyShell;
-use crate::shell::chrome::render_appearance_form;
 
 struct NavGroup {
     label: &'static str,
@@ -111,10 +110,15 @@ const NAV_GROUPS: &[NavGroup] = &[
     },
 ];
 
-pub(crate) fn render_settings_landing(
-    shell: &mut ElyShell,
+/// Wrap a settings sub-page so the persistent left nav column sits next
+/// to the page-specific content. Every `ely://settings/*` route renders
+/// through here, so navigating sub-pages reads as "the panel on the
+/// right swapped" instead of "the layout disappeared and a new tab
+/// opened" — the prior behavior that misread to users as a tab spawn.
+pub(crate) fn render_settings_shell(
     snapshot: &BrowserSnapshot,
     active_route: &str,
+    content: AnyElement,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     div()
@@ -122,7 +126,7 @@ pub(crate) fn render_settings_landing(
         .h_full()
         .flex()
         .child(render_nav_column(snapshot, active_route, cx))
-        .child(render_appearance_form(shell, snapshot, cx))
+        .child(content)
         .into_any_element()
 }
 

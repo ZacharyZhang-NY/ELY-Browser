@@ -47,6 +47,7 @@ use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
 
 use super::ElyShell;
 use super::archive_labels::archive_detail_label;
+use super::chrome::render_settings_shell;
 
 impl ElyShell {
     pub(super) fn render_web_canvas(
@@ -83,23 +84,66 @@ impl ElyShell {
             }
             "ely://about" => self.render_about_page(snapshot),
             "ely://settings" => self.render_settings_page(snapshot, cx),
-            "ely://settings/advanced" => self.render_advanced_page(snapshot),
-            "ely://settings/appearance" => self.render_appearance_page(snapshot, cx),
-            "ely://settings/general" => self.render_general_page(snapshot, cx),
-            "ely://settings/sidebar-tabs" => self.render_sidebar_tabs_page(snapshot, cx),
-            "ely://settings/search" => self.render_search_page(snapshot, cx),
-            "ely://settings/privacy-security" => self.render_privacy_security_page(snapshot, cx),
-            "ely://settings/downloads" => self.render_download_settings_page(snapshot, cx),
-            "ely://settings/spaces" => self.render_spaces_page(snapshot, cx),
-            "ely://settings/site-permissions" => {
-                self.render_site_permissions_settings_page(snapshot, cx)
+            url @ "ely://settings/advanced" => {
+                let content = self.render_advanced_page(snapshot);
+                render_settings_shell(snapshot, url, content, cx)
             }
-            "ely://settings/shortcuts" => self.render_shortcuts_page(snapshot, cx),
-            "ely://settings/plugins" => self.render_plugins_page(snapshot, cx),
-            "ely://settings/profiles" => self.render_profiles_page(snapshot, cx),
-            "ely://settings/sync" => self.render_sync_page(snapshot, cx),
-            "ely://settings/updates" => self.render_updates_page(snapshot, cx),
-            "ely://sync/status" => self.render_sync_page(snapshot, cx),
+            url @ "ely://settings/appearance" => {
+                let content = self.render_appearance_page(snapshot, cx);
+                render_settings_shell(snapshot, url, content, cx)
+            }
+            url @ "ely://settings/general" => {
+                let content = self.render_general_page(snapshot, cx);
+                render_settings_shell(snapshot, url, content, cx)
+            }
+            url @ "ely://settings/sidebar-tabs" => {
+                let content = self.render_sidebar_tabs_page(snapshot, cx);
+                render_settings_shell(snapshot, url, content, cx)
+            }
+            url @ "ely://settings/search" => {
+                let content = self.render_search_page(snapshot, cx);
+                render_settings_shell(snapshot, url, content, cx)
+            }
+            url @ "ely://settings/privacy-security" => {
+                let content = self.render_privacy_security_page(snapshot, cx);
+                render_settings_shell(snapshot, url, content, cx)
+            }
+            url @ "ely://settings/downloads" => {
+                let content = self.render_download_settings_page(snapshot, cx);
+                render_settings_shell(snapshot, url, content, cx)
+            }
+            url @ "ely://settings/spaces" => {
+                let content = self.render_spaces_page(snapshot, cx);
+                render_settings_shell(snapshot, url, content, cx)
+            }
+            url @ "ely://settings/site-permissions" => {
+                let content = self.render_site_permissions_settings_page(snapshot, cx);
+                render_settings_shell(snapshot, url, content, cx)
+            }
+            url @ "ely://settings/shortcuts" => {
+                let content = self.render_shortcuts_page(snapshot, cx);
+                render_settings_shell(snapshot, url, content, cx)
+            }
+            url @ "ely://settings/plugins" => {
+                let content = self.render_plugins_page(snapshot, cx);
+                render_settings_shell(snapshot, url, content, cx)
+            }
+            url @ "ely://settings/profiles" => {
+                let content = self.render_profiles_page(snapshot, cx);
+                render_settings_shell(snapshot, url, content, cx)
+            }
+            url @ "ely://settings/sync" => {
+                let content = self.render_sync_page(snapshot, cx);
+                render_settings_shell(snapshot, url, content, cx)
+            }
+            url @ "ely://settings/updates" => {
+                let content = self.render_updates_page(snapshot, cx);
+                render_settings_shell(snapshot, url, content, cx)
+            }
+            "ely://sync/status" => {
+                let content = self.render_sync_page(snapshot, cx);
+                render_settings_shell(snapshot, "ely://settings/sync", content, cx)
+            }
             url if super::web_surface::is_external_web_url(url) => {
                 self.render_external_web_canvas(tab, snapshot, cx)
             }

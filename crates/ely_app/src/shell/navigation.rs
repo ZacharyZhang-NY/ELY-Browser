@@ -58,6 +58,11 @@ impl ElyShell {
     /// Navigate the active tab to `url` without creating a new tab.
     /// Falls back to opening a new tab only if there's no active tab
     /// to navigate (the BrowserCore returns `TabNotFound`).
+    ///
+    /// Note: in-place navigation does NOT steal focus to the omnibar.
+    /// Settings nav clicks, home pills, and disclosure rows expect
+    /// focus to stay on the page so the user can immediately scroll
+    /// or interact with the destination.
     pub(crate) fn navigate_active_tab(
         &mut self,
         url: UrlText,
@@ -69,7 +74,6 @@ impl ElyShell {
                 core.open_tab(url);
             }
             self.sync_address_input(window, cx);
-            self.focus_address_bar(window, cx);
             cx.notify();
         }
     }
