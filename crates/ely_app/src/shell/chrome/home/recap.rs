@@ -8,6 +8,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, div, hsla, linear_color_stop, linear_gradient, px, rgb,
     rgba,
 };
+use gpui_component::IconName;
 
 use crate::shell::ElyShell;
 use crate::shell::chrome::{SERIF_FAMILY, render_glyph_for};
@@ -380,6 +381,9 @@ fn render_view_all_link(cx: &mut Context<ElyShell>) -> AnyElement {
         .pt(px(10.0))
         .border_t_1()
         .border_color(rgba(colors::DIVIDER))
+        .flex()
+        .items_center()
+        .gap(px(4.0))
         .text_size(px(11.5))
         .text_color(rgb(colors::INK_3))
         .cursor_pointer()
@@ -387,7 +391,8 @@ fn render_view_all_link(cx: &mut Context<ElyShell>) -> AnyElement {
         .on_click(cx.listener(|shell, _, window, cx| {
             shell.open_internal_tab("ely://history", window, cx);
         }))
-        .child("View all history →")
+        .child("View all history")
+        .child(IconName::ArrowRight)
         .into_any_element()
 }
 
