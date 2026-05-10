@@ -303,6 +303,7 @@ fn render_plugin_card(
     let high_risk = plugin.manifest().high_risk_permissions().count();
     let glyph = plugin.manifest().name().chars().next().unwrap_or('◇').to_string();
     let initial = glyph.to_uppercase().to_string();
+    let (cover_a, cover_b) = plugin_cover_gradient(plugin.manifest().name());
 
     div()
         .id(SharedString::from(format!("plugin-card-{index}")))
@@ -324,8 +325,8 @@ fn render_plugin_card(
                 .rounded(px(10.0))
                 .bg(linear_gradient(
                     135.0,
-                    linear_color_stop(hsla(341.0 / 360.0, 0.78, 0.85, 1.0), 0.0),
-                    linear_color_stop(hsla(228.0 / 360.0, 1.0, 0.86, 1.0), 1.0),
+                    linear_color_stop(cover_a, 0.0),
+                    linear_color_stop(cover_b, 1.0),
                 ))
                 .flex()
                 .items_center()
@@ -436,3 +437,29 @@ const INSTALL_BG: u32 = 0x1d1c1aff;
 const CARD_BG: u32 = 0xffffffc7;
 const CARD_BG_HOVER: u32 = 0xffffffeb;
 const STATUS_BG: u32 = 0xffffffd9;
+
+/// Pick a deterministic gradient pair for a plugin cover. Mirrors the
+/// design's palette of 8 pastel-to-bold ramps used across `plugins.jsx`,
+/// hashed by plugin name so the same plugin always lands on the same
+/// ramp without needing any new manifest fields.
+fn plugin_cover_gradient(name: &str) -> (gpui::Hsla, gpui::Hsla) {
+    const PALETTE: &[(f32, f32, f32, f32, f32, f32)] = &[
+        (341.0, 0.78, 0.85, 228.0, 1.00, 0.86),
+        (148.0, 0.65, 0.85, 252.0, 0.85, 0.71),
+        (251.0, 0.85, 0.71, 341.0, 0.78, 0.85),
+        (20.0, 1.00, 0.95, 17.0, 0.71, 0.84),
+        (263.0, 1.00, 0.88, 341.0, 0.78, 0.85),
+        (33.0, 1.00, 0.86, 343.0, 0.78, 0.67),
+        (162.0, 0.43, 0.51, 30.0, 0.04, 0.04),
+        (343.0, 0.78, 0.67, 251.0, 0.85, 0.71),
+    ];
+
+    let bucket = name.bytes().fold(0u32, |acc, b| acc.wrapping_add(b as u32))
+        as usize
+        % PALETTE.len();
+    let (h1, s1, l1, h2, s2, l2) = PALETTE[bucket];
+    (
+        hsla(h1 / 360.0, s1, l1, 1.0),
+        hsla(h2 / 360.0, s2, l2, 1.0),
+    )
+}
