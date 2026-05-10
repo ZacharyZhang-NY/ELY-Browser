@@ -25,7 +25,7 @@ pub(crate) fn render_sidebar_header(
     div()
         .flex()
         .flex_col()
-        .pt(px(36.0))
+        .pt(px(8.0))
         .px(px(10.0))
         .pb(px(10.0))
         .gap(px(8.0))
@@ -40,10 +40,15 @@ pub(crate) fn render_sidebar_header(
 
 fn render_title_row() -> AnyElement {
     div()
+        .h(px(20.0))
         .flex()
         .items_center()
         .gap(px(4.0))
-        .pl(px(6.0))
+        // macOS draws the traffic lights at window (12, 14) — roughly the
+        // first 70 px of any sidebar that touches the window's left edge.
+        // Pad the title past that span so "ELY Browser ⌄" sits inline with
+        // the dots instead of stranded on a row of its own.
+        .pl(px(TRAFFIC_LIGHT_RESERVE))
         .child(
             div()
                 .text_size(px(12.5))
@@ -59,6 +64,12 @@ fn render_title_row() -> AnyElement {
         )
         .into_any_element()
 }
+
+/// Width reserved at the start of the sidebar's top row for the macOS
+/// traffic lights. Three 12 px dots with 8 px gaps, plus 12 px from the
+/// window left edge minus our 16 px shell inset, lands at ~62; we add
+/// breathing room and call it 68.
+const TRAFFIC_LIGHT_RESERVE: f32 = 68.0;
 
 fn render_workspace_picker(
     active_space: Option<&Space>,
