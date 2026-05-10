@@ -465,6 +465,11 @@ impl BrowserCore {
             .ok_or_else(|| CoreError::SpaceNotFound { id: self.active_space_id.clone() })
     }
 
+    #[must_use]
+    pub fn active_space_sidebar_width(&self) -> Option<u16> {
+        self.active_space().ok().map(|space| space.sidebar_width_px())
+    }
+
     fn favorites(&self) -> Vec<BrowserTab> {
         self.tabs.iter().filter(|tab| tab.flags().favorite).cloned().collect()
     }

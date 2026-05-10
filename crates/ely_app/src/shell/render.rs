@@ -2,8 +2,9 @@ use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
 use ely_domain::{BrowserTab, DEFAULT_SIDEBAR_WIDTH_PX, HIDDEN_SIDEBAR_WIDTH_PX};
 use gpui::{
-    AnyElement, Context, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px, rgb, rgba,
+    AnyElement, Context, InteractiveElement, IntoElement, MouseMoveEvent, ParentElement, Render,
+    SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px,
+    rgb, rgba,
 };
 
 use super::chrome::{
@@ -65,6 +66,7 @@ impl ElyShell {
             .on_action(cx.listener(Self::on_toggle_sidebar))
             .on_action(cx.listener(Self::on_zoom_in))
             .on_action(cx.listener(Self::on_zoom_out))
+            .on_mouse_move(cx.listener(Self::on_window_mouse_move))
             .text_color(rgb(colors::INK))
             .child(render_wallpaper(snapshot.appearance.wallpaper()))
             .child(
@@ -165,6 +167,35 @@ impl ElyShell {
         self.render_expanded_sidebar(snapshot, sidebar_width, cx)
     }
 
+    fn on_window_mouse_move(
+        &mut self,
+        event: &MouseMoveEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let cursor_x = f32::from(event.position.x);
+
+        if cursor_x >= REVEAL_THRESHOLD_PX && cursor_x <= COLLAPSE_THRESHOLD_PX {
+            return;
+        }
+
+        let ShellState::Ready(core) = &self.state else {
+            return;
+        };
+        let Some(width) = core.active_space_sidebar_width() else {
+            return;
+        };
+        if width > HIDDEN_SIDEBAR_WIDTH_PX {
+            return;
+        }
+
+        if !self.sidebar_hover_expanded && cursor_x < REVEAL_THRESHOLD_PX {
+            self.expand_hidden_sidebar(cx);
+        } else if self.sidebar_hover_expanded && cursor_x > COLLAPSE_THRESHOLD_PX {
+            self.collapse_hidden_sidebar(cx);
+        }
+    }
+
     fn render_hidden_sidebar_rail(&mut self, cx: &mut Context<Self>) -> AnyElement {
         div()
             .id(SharedString::from("hidden-sidebar-rail"))
@@ -179,6 +210,17 @@ impl ElyShell {
             .into_any_element()
     }
 }
+
+/// Cursor x within this px from the left edge auto-reveals the hidden sidebar.
+/// Sized so the user only triggers the reveal when they actually approach the
+/// rail, not when they hover the page content.
+const REVEAL_THRESHOLD_PX: f32 = 24.0;
+
+/// Once revealed, cursor x past this px collapses the hidden sidebar back to
+/// the rail. Sits past the right edge of the expanded sidebar plus a small
+/// buffer so brief overshoots don't ping-pong the state.
+const COLLAPSE_THRESHOLD_PX: f32 =
+    spacing::SHELL_INSET + DEFAULT_SIDEBAR_WIDTH_PX as f32 + 24.0;
 
 fn render_error(message: String) -> AnyElement {
     div()
