@@ -72,6 +72,23 @@ impl ElyShell {
         }
     }
 
+    /// Cycle the theme mode for the topbar's quick-toggle button:
+    /// System → Light → Dark → System. Mirrors the segmented control
+    /// in the appearance settings page so the topbar toggle reaches
+    /// every state without spawning a settings page.
+    pub(super) fn cycle_theme_mode(&mut self, cx: &mut Context<Self>) {
+        let ShellState::Ready(core) = &mut self.state else {
+            return;
+        };
+        let next = match core.appearance().theme_mode() {
+            ThemeMode::System => ThemeMode::Light,
+            ThemeMode::Light => ThemeMode::Dark,
+            ThemeMode::Dark => ThemeMode::System,
+        };
+        core.set_theme_mode(next);
+        cx.notify();
+    }
+
     pub(super) fn toggle_reduce_motion(&mut self, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state {
             let next = !core.appearance().reduce_motion();

@@ -1,6 +1,6 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
-use ely_domain::BrowserTab;
+use ely_domain::{BrowserTab, ThemeMode};
 use gpui::{
     AnyElement, BoxShadow, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
     SharedString, StatefulInteractiveElement, Styled, div, hsla, point,
@@ -47,9 +47,9 @@ pub(crate) fn render_topbar(
         ))
         .child(render_topbar_action(
             "toggle-theme",
-            IconName::Moon,
+            theme_mode_icon(snapshot.appearance.theme_mode()),
             cx,
-            |shell, window, cx| shell.open_internal_tab("ely://settings/appearance", window, cx),
+            |shell, _window, cx| shell.cycle_theme_mode(cx),
         ))
         .child(render_topbar_action(
             "open-menu",
@@ -248,6 +248,18 @@ where
 
 const OMNIBAR_BG: u32 = 0xffffff8c;
 const CHIP_HOVER_BG: u32 = 0xffffffd9;
+
+/// Topbar quick-toggle icon for the current theme mode. The button
+/// cycles System → Light → Dark → System, and the icon previews the
+/// state the user is in: sun for light, moon for dark. System falls
+/// back to moon since the bundled icon set has no combined sun-moon
+/// glyph and the OS-driven mode visually leans neutral.
+fn theme_mode_icon(mode: ThemeMode) -> IconName {
+    match mode {
+        ThemeMode::Light => IconName::Sun,
+        ThemeMode::System | ThemeMode::Dark => IconName::Moon,
+    }
+}
 
 fn soft_shadow() -> Vec<BoxShadow> {
     vec![
