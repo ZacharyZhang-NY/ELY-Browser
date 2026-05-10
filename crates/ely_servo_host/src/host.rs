@@ -318,6 +318,8 @@ pub trait ServoHost {
 
     fn click(&mut self, request: MouseClickRequest) -> Result<(), ServoHostError>;
 
+    fn hover(&mut self, request: MouseHoverRequest) -> Result<(), ServoHostError>;
+
     fn drag(&mut self, request: MouseDragRequest) -> Result<(), ServoHostError>;
 
     fn touch_tap(&mut self, request: TouchTapRequest) -> Result<(), ServoHostError>;

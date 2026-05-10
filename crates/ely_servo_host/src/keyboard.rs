@@ -1,20 +1,20 @@
-use servo::{Code, Key};
+use servo::{Code, Key, NamedKey};
 
 pub(crate) fn key_and_code_for_character(character: char) -> (Key, Code) {
     match character {
-        '\n' | '\r' => (Key::Enter, Code::Enter),
-        '\x08' => (Key::Backspace, Code::Backspace),
-        '\t' => (Key::Tab, Code::Tab),
-        '\x1b' => (Key::Escape, Code::Escape),
-        '\x7f' => (Key::Delete, Code::Delete),
-        '\u{F700}' => (Key::ArrowUp, Code::ArrowUp),
-        '\u{F701}' => (Key::ArrowDown, Code::ArrowDown),
-        '\u{F702}' => (Key::ArrowLeft, Code::ArrowLeft),
-        '\u{F703}' => (Key::ArrowRight, Code::ArrowRight),
-        '\u{F729}' => (Key::Home, Code::Home),
-        '\u{F72B}' => (Key::End, Code::End),
-        '\u{F72C}' => (Key::PageUp, Code::PageUp),
-        '\u{F72D}' => (Key::PageDown, Code::PageDown),
+        '\n' | '\r' => (Key::Named(NamedKey::Enter), Code::Enter),
+        '\x08' => (Key::Named(NamedKey::Backspace), Code::Backspace),
+        '\t' => (Key::Named(NamedKey::Tab), Code::Tab),
+        '\x1b' => (Key::Named(NamedKey::Escape), Code::Escape),
+        '\x7f' => (Key::Named(NamedKey::Delete), Code::Delete),
+        '\u{F700}' => (Key::Named(NamedKey::ArrowUp), Code::ArrowUp),
+        '\u{F701}' => (Key::Named(NamedKey::ArrowDown), Code::ArrowDown),
+        '\u{F702}' => (Key::Named(NamedKey::ArrowLeft), Code::ArrowLeft),
+        '\u{F703}' => (Key::Named(NamedKey::ArrowRight), Code::ArrowRight),
+        '\u{F729}' => (Key::Named(NamedKey::Home), Code::Home),
+        '\u{F72B}' => (Key::Named(NamedKey::End), Code::End),
+        '\u{F72C}' => (Key::Named(NamedKey::PageUp), Code::PageUp),
+        '\u{F72D}' => (Key::Named(NamedKey::PageDown), Code::PageDown),
         _ => (Key::Character(character.to_string()), printable_code(character)),
     }
 }

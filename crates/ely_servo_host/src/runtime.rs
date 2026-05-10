@@ -148,6 +148,14 @@ impl ServoHost for SoftwareServoHost {
                 .delegate(webview.delegate.clone())
                 .url(url)
                 .build();
+            // Fresh WebView is hidden+unfocused by default; without this
+            // pair Servo's hit-test silently drops every input event.
+            // Existing WebViews keep their visibility/focus across loads
+            // — calling focus() here every navigation would let a
+            // background tab finishing a load steal focus from the
+            // foreground tab.
+            webview.webview.show();
+            webview.webview.focus();
         } else {
             webview.webview.load(url);
         }
@@ -357,6 +365,8 @@ impl SoftwareServoHost {
         let webview = WebViewBuilder::new(&self.servo, rendering_context.clone())
             .delegate(delegate.clone())
             .build();
+        webview.show();
+        webview.focus();
 
         self.webviews.insert(
             webview_id.clone(),
