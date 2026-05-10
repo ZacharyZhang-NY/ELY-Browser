@@ -81,6 +81,73 @@ impl ElyShell {
         self.command_input.update(cx, |input, cx| {
             input.set_value("", window, cx);
         });
+        self.command_selected_index = 0;
         cx.notify();
+    }
+
+    pub(crate) fn command_select_next(&mut self, total_rows: usize, cx: &mut Context<Self>) {
+        if total_rows == 0 {
+            self.command_selected_index = 0;
+            return;
+        }
+        let next = (self.command_selected_index + 1) % total_rows;
+        if next != self.command_selected_index {
+            self.command_selected_index = next;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn command_select_prev(&mut self, total_rows: usize, cx: &mut Context<Self>) {
+        if total_rows == 0 {
+            self.command_selected_index = 0;
+            return;
+        }
+        let prev = if self.command_selected_index == 0 {
+            total_rows - 1
+        } else {
+            self.command_selected_index - 1
+        };
+        if prev != self.command_selected_index {
+            self.command_selected_index = prev;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn activate_selected_command(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let snapshot = match &self.state {
+            ShellState::Ready(core) => match core.snapshot() {
+                Ok(snapshot) => snapshot,
+                Err(_) => return,
+            },
+            ShellState::StartupError(_) => return,
+        };
+        let needle_owned = snapshot.command_query.as_str();
+        let Some(stripped) = needle_owned.strip_prefix('>') else {
+            return;
+        };
+        let needle = stripped.trim().to_lowercase();
+        let rows = crate::shell::chrome::command_match::visible_command_rows(
+            &snapshot, &needle,
+        );
+        if rows.is_empty() {
+            return;
+        }
+        let index = self.command_selected_index.min(rows.len() - 1);
+        match rows[index].clone() {
+            crate::shell::chrome::command_match::CommandSelection::SelectTab(tab_id) => {
+                self.select_tab(&tab_id, window, cx);
+            }
+            crate::shell::chrome::command_match::CommandSelection::OpenUrl(url) => {
+                self.open_internal_tab(url.as_str(), window, cx);
+            }
+            crate::shell::chrome::command_match::CommandSelection::OpenRoute(route) => {
+                self.open_internal_tab(route, window, cx);
+            }
+        }
+        self.dismiss_command_mode(window, cx);
     }
 }

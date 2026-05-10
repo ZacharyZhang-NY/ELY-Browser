@@ -2,11 +2,12 @@ use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
 use ely_domain::{BrowserTab, DEFAULT_SIDEBAR_WIDTH_PX, HIDDEN_SIDEBAR_WIDTH_PX};
 use gpui::{
-    AnyElement, Context, InteractiveElement, IntoElement, MouseMoveEvent, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px,
-    rgb, rgba,
+    AnyElement, Context, InteractiveElement, IntoElement, KeyDownEvent, MouseMoveEvent,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    prelude::FluentBuilder, px, rgb, rgba,
 };
 
+use super::chrome::command_match::visible_command_rows;
 use super::chrome::{
     panel_bg, panel_shadow, render_command_overlay,
     render_topbar as render_topbar_chrome, render_wallpaper,
@@ -67,6 +68,7 @@ impl ElyShell {
             .on_action(cx.listener(Self::on_zoom_in))
             .on_action(cx.listener(Self::on_zoom_out))
             .on_mouse_move(cx.listener(Self::on_window_mouse_move))
+            .capture_key_down(cx.listener(Self::on_command_overlay_key_down))
             .text_color(rgb(colors::INK))
             .child(render_wallpaper(snapshot.appearance.wallpaper()))
             .child(
@@ -88,7 +90,7 @@ impl ElyShell {
             .when(hover_expanded, |el| {
                 el.child(self.render_hidden_sidebar_overlay(&snapshot, cx))
             })
-            .children(render_command_overlay(&snapshot, cx))
+            .children(render_command_overlay(self, &snapshot, cx))
             .into_any_element()
     }
 
@@ -165,6 +167,40 @@ impl ElyShell {
             return self.render_compact_sidebar(snapshot, sidebar_width, cx);
         }
         self.render_expanded_sidebar(snapshot, sidebar_width, cx)
+    }
+
+    fn on_command_overlay_key_down(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let key = event.keystroke.key.as_str();
+        if !matches!(key, "up" | "down" | "enter") {
+            return;
+        }
+
+        let total_rows = match &self.state {
+            ShellState::Ready(core) => match core.snapshot() {
+                Ok(snapshot) => {
+                    let Some(stripped) = snapshot.command_query.strip_prefix('>') else {
+                        return;
+                    };
+                    let needle = stripped.trim().to_lowercase();
+                    visible_command_rows(&snapshot, &needle).len()
+                }
+                Err(_) => return,
+            },
+            ShellState::StartupError(_) => return,
+        };
+
+        match key {
+            "up" => self.command_select_prev(total_rows, cx),
+            "down" => self.command_select_next(total_rows, cx),
+            "enter" => self.activate_selected_command(window, cx),
+            _ => {}
+        }
+        cx.stop_propagation();
     }
 
     fn on_window_mouse_move(

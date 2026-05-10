@@ -3,20 +3,22 @@ use ely_design_system::colors;
 use ely_domain::{BookmarkEntry, BrowserTab, HistoryEntry};
 use gpui::{
     AnyElement, BoxShadow, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, div, hsla, point, px, rgb, rgba,
+    SharedString, StatefulInteractiveElement, Styled, div, hsla, point,
+    prelude::FluentBuilder, px, rgb, rgba,
 };
 use gpui_component::IconName;
 
 use crate::shell::ElyShell;
 use crate::shell::chrome::command_footer::{render_command_footer, render_kbd};
 use crate::shell::chrome::command_match::{
-    matching_bookmarks, matching_history, matching_tabs,
+    CommandActionEntry, matching_actions, matching_bookmarks, matching_history, matching_tabs,
 };
 use crate::shell::chrome::render_glyph_for;
 
 const COMMAND_PREFIX: &str = ">";
 
 pub(crate) fn render_command_overlay(
+    shell: &ElyShell,
     snapshot: &BrowserSnapshot,
     cx: &mut Context<ElyShell>,
 ) -> Option<AnyElement> {
@@ -25,13 +27,15 @@ pub(crate) fn render_command_overlay(
         return None;
     }
     let needle = query[COMMAND_PREFIX.len()..].trim().to_lowercase();
+    let selected_index = shell.command_selected_index;
 
-    Some(render_overlay(snapshot, &needle, cx))
+    Some(render_overlay(snapshot, &needle, selected_index, cx))
 }
 
 fn render_overlay(
     snapshot: &BrowserSnapshot,
     needle: &str,
+    selected_index: usize,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     div()
@@ -42,13 +46,14 @@ fn render_overlay(
         .flex_col()
         .items_center()
         .pt(px(80.0))
-        .child(render_panel(snapshot, needle, cx))
+        .child(render_panel(snapshot, needle, selected_index, cx))
         .into_any_element()
 }
 
 fn render_panel(
     snapshot: &BrowserSnapshot,
     needle: &str,
+    selected_index: usize,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let query_label = if needle.is_empty() {
@@ -67,7 +72,7 @@ fn render_panel(
         .flex()
         .flex_col()
         .child(render_header(query_label.clone(), needle.is_empty()))
-        .child(render_results(snapshot, needle, cx))
+        .child(render_results(snapshot, needle, selected_index, cx))
         .child(render_command_footer())
         .into_any_element()
 }
@@ -112,6 +117,7 @@ fn render_header(query_label: String, is_empty: bool) -> AnyElement {
 fn render_results(
     snapshot: &BrowserSnapshot,
     needle: &str,
+    selected_index: usize,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let tabs = matching_tabs(snapshot, needle);
@@ -119,21 +125,37 @@ fn render_results(
     let bookmarks = matching_bookmarks(snapshot, needle);
     let actions = matching_actions(needle);
 
+    let mut offset = 0usize;
     let mut sections: Vec<AnyElement> = Vec::new();
     if !tabs.is_empty() {
-        sections.push(render_section("Open tabs", render_tab_rows(tabs, cx)));
+        let count = tabs.len();
+        sections.push(render_section(
+            "Open tabs",
+            render_tab_rows(tabs, offset, selected_index, cx),
+        ));
+        offset += count;
     }
     if !history.is_empty() {
-        sections.push(render_section("History", render_history_rows(history, cx)));
+        let count = history.len();
+        sections.push(render_section(
+            "History",
+            render_history_rows(history, offset, selected_index, cx),
+        ));
+        offset += count;
     }
     if !bookmarks.is_empty() {
+        let count = bookmarks.len();
         sections.push(render_section(
             "Bookmarks",
-            render_bookmark_rows(bookmarks, cx),
+            render_bookmark_rows(bookmarks, offset, selected_index, cx),
         ));
+        offset += count;
     }
     if !actions.is_empty() {
-        sections.push(render_section("Actions", render_action_rows(actions, cx)));
+        sections.push(render_section(
+            "Actions",
+            render_action_rows(actions, offset, selected_index, cx),
+        ));
     }
 
     if sections.is_empty() {
@@ -170,7 +192,12 @@ fn render_section(label: &'static str, body: AnyElement) -> AnyElement {
         .into_any_element()
 }
 
-fn render_tab_rows(tabs: Vec<&BrowserTab>, cx: &mut Context<ElyShell>) -> AnyElement {
+fn render_tab_rows(
+    tabs: Vec<&BrowserTab>,
+    offset: usize,
+    selected_index: usize,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
     div()
         .flex()
         .flex_col()
@@ -182,6 +209,7 @@ fn render_tab_rows(tabs: Vec<&BrowserTab>, cx: &mut Context<ElyShell>) -> AnyEle
                 .clone()
                 .unwrap_or_else(|| tab.display_url());
             let initial = title.chars().next().unwrap_or('?').to_string();
+            let is_selected = offset + index == selected_index;
 
             render_row_with_glyph(
                 CommandRowContent {
@@ -189,6 +217,7 @@ fn render_tab_rows(tabs: Vec<&BrowserTab>, cx: &mut Context<ElyShell>) -> AnyEle
                     title,
                     hint: Some(host_label),
                     keys: None,
+                    selected: is_selected,
                 },
                 host.as_deref(),
                 &initial,
@@ -204,6 +233,8 @@ fn render_tab_rows(tabs: Vec<&BrowserTab>, cx: &mut Context<ElyShell>) -> AnyEle
 
 fn render_history_rows(
     entries: Vec<&HistoryEntry>,
+    offset: usize,
+    selected_index: usize,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     div()
@@ -217,6 +248,7 @@ fn render_history_rows(
                 .clone()
                 .unwrap_or_else(|| entry.url().as_str().to_string());
             let initial = title.chars().next().unwrap_or('?').to_string();
+            let is_selected = offset + index == selected_index;
 
             render_row_with_glyph(
                 CommandRowContent {
@@ -224,6 +256,7 @@ fn render_history_rows(
                     title,
                     hint: Some(display),
                     keys: None,
+                    selected: is_selected,
                 },
                 host.as_deref(),
                 &initial,
@@ -237,58 +270,10 @@ fn render_history_rows(
         .into_any_element()
 }
 
-struct CommandAction {
-    title: &'static str,
-    hint: &'static str,
-    icon: IconName,
-    route: &'static str,
-    keys: &'static str,
-}
-
-const COMMAND_ACTIONS: &[CommandAction] = &[
-    CommandAction {
-        title: "Switch workspace",
-        hint: "Cycle to the next space",
-        icon: IconName::LayoutDashboard,
-        route: "ely://settings/spaces",
-        keys: "⌘⇧W",
-    },
-    CommandAction {
-        title: "Open Settings",
-        hint: "Appearance, sync, plugins…",
-        icon: IconName::Settings,
-        route: "ely://settings",
-        keys: "⌘,",
-    },
-    CommandAction {
-        title: "Open Plugins",
-        hint: "Marketplace and installed plugins",
-        icon: IconName::Asterisk,
-        route: "ely://plugins",
-        keys: "",
-    },
-    CommandAction {
-        title: "Open Bookmarks",
-        hint: "Manage your saved pages",
-        icon: IconName::BookOpen,
-        route: "ely://bookmarks",
-        keys: "",
-    },
-];
-
-fn matching_actions(needle: &str) -> Vec<&'static CommandAction> {
-    COMMAND_ACTIONS
-        .iter()
-        .filter(|action| {
-            needle.is_empty()
-                || action.title.to_lowercase().contains(needle)
-                || action.hint.to_lowercase().contains(needle)
-        })
-        .collect()
-}
-
 fn render_action_rows(
-    actions: Vec<&'static CommandAction>,
+    actions: Vec<&'static CommandActionEntry>,
+    offset: usize,
+    selected_index: usize,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     div()
@@ -302,6 +287,7 @@ fn render_action_rows(
                 Some(action.keys.to_string())
             };
             let icon = action.icon.clone();
+            let is_selected = offset + index == selected_index;
 
             render_row(
                 CommandRowContent {
@@ -309,6 +295,7 @@ fn render_action_rows(
                     title: action.title.to_string(),
                     hint: Some(action.hint.to_string()),
                     keys,
+                    selected: is_selected,
                 },
                 icon,
                 cx,
@@ -326,6 +313,7 @@ struct CommandRowContent {
     title: String,
     hint: Option<String>,
     keys: Option<String>,
+    selected: bool,
 }
 
 fn render_row<F>(
@@ -373,19 +361,34 @@ fn render_row_inner<F>(
 where
     F: Fn(&mut ElyShell, &mut gpui::Window, &mut Context<ElyShell>) + 'static,
 {
-    let CommandRowContent { id, title, hint, keys } = content;
+    let CommandRowContent { id, title, hint, keys, selected } = content;
+    let bg = if selected { ROW_SELECTED_BG } else { 0x00000000 };
 
     div()
         .id(SharedString::from(id))
+        .relative()
         .flex()
         .items_center()
         .gap(px(12.0))
         .px(px(16.0))
         .py(px(8.0))
+        .bg(rgba(bg))
         .cursor_pointer()
         .hover(|style| style.bg(rgba(ROW_HOVER_BG)))
         .active(|style| style.opacity(0.85))
         .on_click(cx.listener(move |shell, _, window, cx| handler(shell, window, cx)))
+        .when(selected, |el| {
+            el.child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .top(px(6.0))
+                    .bottom(px(6.0))
+                    .w(px(2.0))
+                    .rounded(px(2.0))
+                    .bg(rgb(colors::ACCENT)),
+            )
+        })
         .child(leading)
         .child(
             div()
@@ -431,6 +434,8 @@ fn render_empty_state() -> AnyElement {
 
 fn render_bookmark_rows(
     entries: Vec<&BookmarkEntry>,
+    offset: usize,
+    selected_index: usize,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     div()
@@ -444,6 +449,7 @@ fn render_bookmark_rows(
                 .clone()
                 .unwrap_or_else(|| bookmark.url().as_str().to_string());
             let initial = title.chars().next().unwrap_or('?').to_string();
+            let is_selected = offset + index == selected_index;
 
             render_row_with_glyph(
                 CommandRowContent {
@@ -451,6 +457,7 @@ fn render_bookmark_rows(
                     title,
                     hint: Some(display),
                     keys: None,
+                    selected: is_selected,
                 },
                 host.as_deref(),
                 &initial,
@@ -467,6 +474,7 @@ fn render_bookmark_rows(
 const PANEL_BG: u32 = 0xfffffff5;
 const BACKDROP_BG: u32 = 0x140f0a3d;
 const ROW_HOVER_BG: u32 = 0xc9644214;
+const ROW_SELECTED_BG: u32 = 0xc964421f;
 const ROW_ICON_BG: u32 = 0xffffffd9;
 const BADGE_BG: u32 = 0x281e140f;
 
