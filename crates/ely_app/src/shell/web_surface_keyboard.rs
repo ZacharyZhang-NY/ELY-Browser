@@ -7,9 +7,22 @@ impl ElyShell {
     pub(super) fn on_external_web_key_down(
         &mut self,
         event: &KeyDownEvent,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Only forward keys to the web viewport when the shell's root
+        // focus handle is the one that's actually focused. If the user
+        // has clicked the omnibar Input (or any other Input — plugin
+        // search, bookmark editor, etc.), focus has moved to that
+        // Input's handle and the user expects keystrokes to reach it.
+        // Without this guard, capture_key_down on the root would
+        // intercept every keystroke and forward it to Servo, leaving
+        // the omnibar permanently dead while any external tab is
+        // active.
+        if !self.focus_handle.is_focused(window) {
+            return;
+        }
+
         let Some((tab_id, requested_url)) = self.active_external_tab_target() else {
             return;
         };
