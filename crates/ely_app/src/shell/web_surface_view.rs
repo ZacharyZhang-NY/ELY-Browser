@@ -129,22 +129,26 @@ fn render_input_overlay(
             });
             cx.stop_propagation();
         })
-        .on_mouse_move(move |event, _window, cx| {
+        .on_mouse_move(move |event, window, cx| {
+            let scale_factor = window.scale_factor();
             hover_entity.update(cx, |shell, cx| {
                 shell.hover_external_web_viewport(
                     hover_tab_id.clone(),
                     event.position,
+                    scale_factor,
                     cx,
                 );
             });
         })
         .on_scroll_wheel(move |event, window, cx| {
             let delta = event.delta.pixel_delta(window.line_height());
+            let scale_factor = window.scale_factor();
             scroll_entity.update(cx, |shell, cx| {
                 shell.scroll_external_web_viewport(
                     scroll_tab_id.clone(),
                     scroll_url.clone(),
                     delta,
+                    scale_factor,
                     cx,
                 );
             });
@@ -154,9 +158,10 @@ fn render_input_overlay(
 
 fn render_viewport_tracker(tab_id: TabId, state_entity: Entity<ElyShell>) -> impl IntoElement {
     canvas(
-        move |bounds, _window: &mut Window, cx: &mut App| {
+        move |bounds, window: &mut Window, cx: &mut App| {
+            let scale_factor = window.scale_factor();
             state_entity.update(cx, |shell, cx| {
-                shell.record_external_web_viewport(tab_id, bounds, cx);
+                shell.record_external_web_viewport(tab_id, bounds, scale_factor, cx);
             });
         },
         |_, _, _, _| {},

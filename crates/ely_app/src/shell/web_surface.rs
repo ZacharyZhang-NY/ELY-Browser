@@ -102,8 +102,9 @@ impl WebSurfaceStore {
         tab_id: &TabId,
         requested_url: &str,
         delta: Point<Pixels>,
+        scale_factor: f32,
     ) -> bool {
-        let Some(delta) = WebSurfaceScrollDelta::from_point(delta) else {
+        let Some(delta) = WebSurfaceScrollDelta::from_point(delta, scale_factor) else {
             return false;
         };
 
@@ -130,8 +131,13 @@ impl WebSurfaceStore {
         true
     }
 
-    pub(super) fn record_viewport_size(&mut self, tab_id: &TabId, bounds: Bounds<Pixels>) -> bool {
-        let Some(size) = WebSurfaceSize::from_bounds(bounds) else {
+    pub(super) fn record_viewport_size(
+        &mut self,
+        tab_id: &TabId,
+        bounds: Bounds<Pixels>,
+        scale_factor: f32,
+    ) -> bool {
+        let Some(size) = WebSurfaceSize::from_bounds(bounds, scale_factor) else {
             return false;
         };
         let surface = self.surface_mut(tab_id);
@@ -162,13 +168,15 @@ impl WebSurfaceStore {
         &mut self,
         tab_id: &TabId,
         position: Point<Pixels>,
+        scale_factor: f32,
     ) -> bool {
         let surface = self.surfaces.get_mut(tab_id).filter(|surface| surface.viewport_bounds.is_some());
         let Some(surface) = surface else {
             return false;
         };
         let bounds = surface.viewport_bounds.expect("viewport_bounds checked above");
-        let Some(point) = WebSurfaceClickPoint::from_window_position(bounds, position) else {
+        let Some(point) = WebSurfaceClickPoint::from_window_position(bounds, position, scale_factor)
+        else {
             return false;
         };
         surface.hover_point = Some(point);
@@ -180,13 +188,15 @@ impl WebSurfaceStore {
         tab_id: &TabId,
         requested_url: &str,
         position: Point<Pixels>,
+        scale_factor: f32,
     ) -> bool {
         let Some(bounds) =
             self.surfaces.get(tab_id).and_then(|surface| surface.viewport_bounds)
         else {
             return false;
         };
-        let Some(point) = WebSurfaceClickPoint::from_window_position(bounds, position) else {
+        let Some(point) = WebSurfaceClickPoint::from_window_position(bounds, position, scale_factor)
+        else {
             return false;
         };
 

@@ -52,9 +52,10 @@ impl ElyShell {
         &mut self,
         tab_id: TabId,
         bounds: Bounds<Pixels>,
+        scale_factor: f32,
         cx: &mut Context<Self>,
     ) {
-        if self.web_surfaces.record_viewport_size(&tab_id, bounds) {
+        if self.web_surfaces.record_viewport_size(&tab_id, bounds, scale_factor) {
             cx.notify();
         }
     }
@@ -64,9 +65,15 @@ impl ElyShell {
         tab_id: TabId,
         requested_url: String,
         delta: Point<Pixels>,
+        scale_factor: f32,
         cx: &mut Context<Self>,
     ) {
-        if self.web_surfaces.record_scroll_delta(&tab_id, requested_url.as_str(), delta) {
+        if self.web_surfaces.record_scroll_delta(
+            &tab_id,
+            requested_url.as_str(),
+            delta,
+            scale_factor,
+        ) {
             cx.notify();
         }
     }
@@ -75,9 +82,10 @@ impl ElyShell {
         &mut self,
         tab_id: TabId,
         position: Point<Pixels>,
+        scale_factor: f32,
         cx: &mut Context<Self>,
     ) {
-        if self.web_surfaces.record_hover_point(&tab_id, position) {
+        if self.web_surfaces.record_hover_point(&tab_id, position, scale_factor) {
             cx.notify();
         }
     }
@@ -91,7 +99,13 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) {
         self.focus_handle.focus(window);
-        if self.web_surfaces.record_click_point(&tab_id, requested_url.as_str(), position) {
+        let scale_factor = window.scale_factor();
+        if self.web_surfaces.record_click_point(
+            &tab_id,
+            requested_url.as_str(),
+            position,
+            scale_factor,
+        ) {
             cx.notify();
         }
     }

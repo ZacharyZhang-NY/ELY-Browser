@@ -10,8 +10,13 @@ fn typed_text_enters_pending_input_after_clicked_viewport() -> Result<(), Box<dy
     let mut store = WebSurfaceStore::new();
     let tab = web_tab("https://example.com/form")?;
 
-    assert!(store.record_viewport_size(tab.id(), web_bounds()));
-    assert!(store.record_click_point(tab.id(), tab.url().as_str(), point(px(160.0), px(120.0))));
+    assert!(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
+    assert!(store.record_click_point(
+        tab.id(),
+        tab.url().as_str(),
+        point(px(160.0), px(120.0)),
+        1.0,
+    ));
     assert!(store.record_typed_text(tab.id(), tab.url().as_str(), "e"));
     assert!(store.record_typed_text(tab.id(), tab.url().as_str(), "l"));
 
@@ -27,9 +32,19 @@ fn scroll_delta_enters_pending_input_after_wheel() -> Result<(), Box<dyn Error>>
     let mut store = WebSurfaceStore::new();
     let tab = web_tab("https://example.com/list")?;
 
-    assert!(store.record_viewport_size(tab.id(), web_bounds()));
-    assert!(store.record_scroll_delta(tab.id(), tab.url().as_str(), point(px(0.0), px(140.0))));
-    assert!(store.record_scroll_delta(tab.id(), tab.url().as_str(), point(px(0.0), px(60.0))));
+    assert!(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
+    assert!(store.record_scroll_delta(
+        tab.id(),
+        tab.url().as_str(),
+        point(px(0.0), px(140.0)),
+        1.0,
+    ));
+    assert!(store.record_scroll_delta(
+        tab.id(),
+        tab.url().as_str(),
+        point(px(0.0), px(60.0)),
+        1.0,
+    ));
 
     let input = store.take_pending_input(tab.id(), tab.url().as_str());
 
@@ -43,9 +58,9 @@ fn viewport_size_changes_after_stable_second_measurement() -> Result<(), Box<dyn
     let mut store = WebSurfaceStore::new();
     let tab = web_tab("https://example.com/resize")?;
 
-    assert!(store.record_viewport_size(tab.id(), web_bounds()));
-    assert!(!store.record_viewport_size(tab.id(), resized_once_bounds()));
-    assert!(store.record_viewport_size(tab.id(), resized_once_bounds()));
+    assert!(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
+    assert!(!store.record_viewport_size(tab.id(), resized_once_bounds(), 1.0));
+    assert!(store.record_viewport_size(tab.id(), resized_once_bounds(), 1.0));
     Ok(())
 }
 
@@ -63,11 +78,11 @@ fn scroll_after_click_keeps_keyboard_focus_and_typed_text() -> Result<(), Box<dy
     let tab = web_tab("https://example.com/form")?;
     let url = tab.url().as_str();
 
-    assert!(store.record_viewport_size(tab.id(), web_bounds()));
-    assert!(store.record_click_point(tab.id(), url, point(px(160.0), px(120.0))));
+    assert!(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
+    assert!(store.record_click_point(tab.id(), url, point(px(160.0), px(120.0)), 1.0));
     assert!(store.record_typed_text(tab.id(), url, "h"));
 
-    assert!(store.record_scroll_delta(tab.id(), url, point(px(0.0), px(140.0))));
+    assert!(store.record_scroll_delta(tab.id(), url, point(px(0.0), px(140.0)), 1.0));
 
     assert!(
         store.record_typed_text(tab.id(), url, "i"),
@@ -94,6 +109,39 @@ fn scroll_after_click_keeps_keyboard_focus_and_typed_text() -> Result<(), Box<dy
     Ok(())
 }
 
+/// Locks the Retina (2x) scale path: GPUI delivers logical pixels but
+/// Servo expects device pixels, so every coordinate that crosses the
+/// boundary must be multiplied by `window.scale_factor()`. Without
+/// this regression a future refactor could silently revert to the
+/// 1.0-only behavior that left every Retina click landing in the
+/// upper-left quadrant of the page.
+#[test]
+fn retina_scale_factor_doubles_every_input_coordinate() -> Result<(), Box<dyn Error>> {
+    let mut store = WebSurfaceStore::new();
+    let tab = web_tab("https://example.com/form")?;
+    let url = tab.url().as_str();
+
+    assert!(store.record_viewport_size(tab.id(), web_bounds(), 2.0));
+    assert!(store.record_click_point(tab.id(), url, point(px(160.0), px(120.0)), 2.0));
+    assert!(store.record_typed_text(tab.id(), url, "h"));
+    assert!(store.record_scroll_delta(tab.id(), url, point(px(0.0), px(140.0)), 2.0));
+
+    let input = store.take_pending_input(tab.id(), url);
+
+    assert_eq!(
+        input.scroll_delta.map(|delta| (delta.x(), delta.y())),
+        Some((0, 280)),
+        "wheel delta of 140 logical px must be 280 device px on Retina",
+    );
+    assert_eq!(input.scroll_offset.y(), 280, "scroll offset accumulates in device px");
+    assert_eq!(
+        input.click_point,
+        None,
+        "scroll drops the buffered click — its viewport coords are stale",
+    );
+    Ok(())
+}
+
 /// Locks the precondition that `record_typed_text` requires a prior
 /// click to have established keyboard focus. Without this guard, a
 /// future refactor could silently start buffering stray keystrokes
@@ -105,7 +153,7 @@ fn typing_without_a_prior_click_is_rejected() -> Result<(), Box<dyn Error>> {
     let tab = web_tab("https://example.com/form")?;
     let url = tab.url().as_str();
 
-    assert!(store.record_viewport_size(tab.id(), web_bounds()));
+    assert!(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
     assert!(
         !store.record_typed_text(tab.id(), url, "x"),
         "typing must fail until a click establishes keyboard focus on this tab and url",

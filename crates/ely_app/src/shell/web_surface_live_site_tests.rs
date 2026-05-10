@@ -101,7 +101,7 @@ fn render_web_surface_frame(
 
     for attempt in 0..LIVE_SITE_RENDER_ATTEMPTS {
         let tab = web_tab(profile_id.clone(), case.url)?;
-        assert!(store.record_viewport_size(tab.id(), live_surface_bounds()), "{}", case.url);
+        assert!(store.record_viewport_size(tab.id(), live_surface_bounds(), 1.0), "{}", case.url);
         store.ensure_surface(&tab, ProfileDataMode::Transient, &[]);
 
         match wait_for_ready_frame(store, tab.id(), case) {
