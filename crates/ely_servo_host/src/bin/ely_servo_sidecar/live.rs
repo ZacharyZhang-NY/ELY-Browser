@@ -18,7 +18,14 @@ use thiserror::Error;
 
 use super::args::LiveArgs;
 
-const LIVE_FRAME_WAIT_TIMEOUT: Duration = Duration::from_millis(60);
+/// Per-`Ensure` budget the sidecar waits for Servo to paint a frame
+/// after input dispatch. The original 60 ms was tuned for navigation
+/// alone — too tight for click + paint round trips on the software
+/// renderer. With 250 ms, a click dispatched into an already-loaded
+/// page (the common case for input dispatch) paints within the same
+/// `Ensure` so the user sees the page react instead of waiting for
+/// the next 16 ms `Poll` from the GPUI shell.
+const LIVE_FRAME_WAIT_TIMEOUT: Duration = Duration::from_millis(250);
 const LIVE_FRAME_WAIT_INTERVAL: Duration = Duration::from_millis(2);
 
 pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
