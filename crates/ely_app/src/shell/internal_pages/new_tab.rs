@@ -10,6 +10,6 @@ impl ElyShell {
         snapshot: &BrowserSnapshot,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        render_home_page(snapshot, cx)
+        render_home_page(self, snapshot, cx)
     }
 }

@@ -15,6 +15,7 @@ use super::style::{
 use super::time::DayPhase;
 
 pub(crate) fn render_hero(
+    shell: &ElyShell,
     greeting: String,
     phase: DayPhase,
     cx: &mut Context<ElyShell>,
@@ -26,7 +27,7 @@ pub(crate) fn render_hero(
         .gap(px(14.0))
         .child(render_greeting_row(greeting, phase))
         .child(render_serif_headline())
-        .child(render_search_bar(cx))
+        .child(render_search_bar(shell, cx))
         .child(render_suggestion_pills(cx))
         .into_any_element()
 }
@@ -71,7 +72,19 @@ fn render_serif_headline() -> AnyElement {
         .into_any_element()
 }
 
-fn render_search_bar(cx: &mut Context<ElyShell>) -> AnyElement {
+fn render_search_bar(shell: &ElyShell, cx: &mut Context<ElyShell>) -> AnyElement {
+    // Reflect the omnibar's live value so typing into it from the
+    // home search shortcut isn't a black hole — the user sees the
+    // text they typed mirrored here. The home search itself stays a
+    // click-to-focus shortcut (single Input owns the actual state),
+    // so this is a read-only echo, not a parallel input.
+    let omnibar_value = shell.command_input.read(cx).value().to_string();
+    let (display_text, display_color) = if omnibar_value.is_empty() {
+        ("Search the web or ELY".to_string(), colors::INK_4)
+    } else {
+        (omnibar_value, colors::INK)
+    };
+
     div()
         .id(SharedString::from("home-search"))
         .w(px(640.0))
@@ -97,9 +110,11 @@ fn render_search_bar(cx: &mut Context<ElyShell>) -> AnyElement {
         .child(
             div()
                 .flex_1()
+                .min_w_0()
+                .truncate()
                 .text_size(px(14.0))
-                .text_color(rgb(colors::INK_4))
-                .child("Search the web or ELY"),
+                .text_color(rgb(display_color))
+                .child(display_text),
         )
         .child(
             div()
