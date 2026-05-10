@@ -9,7 +9,13 @@ const NEWSREADER_ITALIC: &[u8] =
 const GEIST_REGULAR: &[u8] =
     include_bytes!("../../../assets/fonts/Geist-Regular.ttf");
 
-pub(crate) const SERIF_FAMILY: &str = "Newsreader";
+/// The bundled Newsreader.ttf is the 16pt optical-size cut. GPUI's text
+/// system matches by the font's TrueType name-id 1, which is
+/// "Newsreader 16pt" for this file (the unqualified "Newsreader" only
+/// appears in name-id 16). Using the wrong string silently falls back
+/// to the default sans, so headings would render in Geist instead of
+/// the design's display serif.
+pub(crate) const SERIF_FAMILY: &str = "Newsreader 16pt";
 pub(crate) const SANS_FAMILY: &str = "Geist";
 
 /// Register every bundled UI font with GPUI's text system.
