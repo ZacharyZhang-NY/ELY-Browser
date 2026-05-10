@@ -2,14 +2,23 @@ use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
 use ely_domain::BrowserTab;
 use gpui::{
-    AnyElement, BoxShadow, Context, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled, div, hsla,
-    linear_color_stop, linear_gradient, point, prelude::FluentBuilder, px, rgb, rgba,
+    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    SharedString, StatefulInteractiveElement, Styled, div, hsla, linear_color_stop,
+    linear_gradient, prelude::FluentBuilder, px, rgb, rgba,
 };
 use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
 
 use crate::shell::ElyShell;
+use crate::shell::chrome::sidebar_chrome::{
+    ACTIVE_NAV_BG, ACTIVE_NAV_BG_HOVER, CLOSE_HOVER_BG, HIGHLIGHT_BORDER, HOVER_NAV_BG,
+    ROW_CLOSE_SIZE, panel_bg, panel_shadow, profile_initial, render_sidebar_resize_handle,
+    render_unread_badge, section_label, section_tabs_label, soft_shadow,
+};
 use crate::shell::chrome::{render_glyph_for, render_sidebar_header};
+
+// `panel_bg` and `panel_shadow` are re-exported from `chrome::mod` via
+// `sidebar_chrome` so external callers (`shell::render`, command overlay)
+// keep their existing import paths.
 
 impl ElyShell {
     pub(crate) fn render_expanded_sidebar(
@@ -92,6 +101,10 @@ impl ElyShell {
     }
 
     fn render_settings_row(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        // Settings is never an "active" row — only ever rest or hover —
+        // so it uses HOVER_NAV_BG directly. Keeping it lighter than the
+        // active nav card means the eye still finds the active selection
+        // first when both are visible.
         div()
             .id(SharedString::from("nav-settings"))
             .rounded(px(spacing::RADIUS_NAV))
@@ -103,7 +116,7 @@ impl ElyShell {
             .text_size(px(13.0))
             .text_color(rgb(colors::INK_2))
             .cursor_pointer()
-            .hover(|style| style.bg(rgba(ACTIVE_NAV_BG)).text_color(rgb(colors::INK)))
+            .hover(|style| style.bg(rgba(HOVER_NAV_BG)).text_color(rgb(colors::INK)))
             .active(|style| style.opacity(0.82))
             .on_click(cx.listener(|shell, _, window, cx| {
                 shell.open_internal_tab("ely://settings", window, cx);
@@ -133,7 +146,7 @@ impl ElyShell {
             .flex()
             .items_center()
             .cursor_pointer()
-            .hover(|style| style.bg(rgba(ACTIVE_NAV_BG)))
+            .hover(|style| style.bg(rgba(HOVER_NAV_BG)))
             .active(|style| style.opacity(0.82))
             .on_click(cx.listener(|shell, _, window, cx| {
                 shell.open_internal_tab("ely://settings/profiles", window, cx);
@@ -164,7 +177,7 @@ impl ElyShell {
                     .min_w_0()
                     .truncate()
                     .text_size(px(13.0))
-                    .font_weight(gpui::FontWeight(500.0))
+                    .font_weight(FontWeight(500.0))
                     .text_color(rgb(colors::INK_2))
                     .child(profile_name),
             )
@@ -192,8 +205,7 @@ impl ElyShell {
         let active = active_tab
             .map(|tab| tab.url().as_str() == "ely://new-tab")
             .unwrap_or(false);
-        let bg_color = if active { ACTIVE_NAV_BG } else { 0x00000000 };
-        let text_color = if active { colors::INK } else { colors::INK_2 };
+        let palette = nav_row_palette(active);
 
         div()
             .id(SharedString::from("nav-home"))
@@ -204,9 +216,9 @@ impl ElyShell {
             .flex()
             .items_center()
             .cursor_pointer()
-            .hover(|style| style.bg(rgba(ACTIVE_NAV_BG)))
+            .hover(move |style| style.bg(rgba(palette.hover_bg)))
             .active(|style| style.opacity(0.82))
-            .bg(rgba(bg_color))
+            .bg(rgba(palette.bg))
             .when(active, |el| el.shadow(soft_shadow()))
             .on_click(cx.listener(|shell, _, window, cx| {
                 shell.open_internal_tab("ely://new-tab", window, cx);
@@ -216,8 +228,8 @@ impl ElyShell {
                 div()
                     .flex_1()
                     .text_size(px(13.0))
-                    .font_weight(gpui::FontWeight(500.0))
-                    .text_color(rgb(text_color))
+                    .font_weight(FontWeight(500.0))
+                    .text_color(rgb(palette.text))
                     .child("Home"),
             )
             .into_any_element()
@@ -231,8 +243,7 @@ impl ElyShell {
     ) -> AnyElement {
         let tab_id = tab.id().clone();
         let close_tab_id = tab.id().clone();
-        let bg_color = if active { ACTIVE_NAV_BG } else { 0x00000000 };
-        let text_color = if active { colors::INK } else { colors::INK_2 };
+        let palette = nav_row_palette(active);
         let host = tab.url().host().map(|host| host.to_string());
         let title = tab.title().to_string();
         let initial = title.chars().next().unwrap_or('?').to_string();
@@ -250,9 +261,9 @@ impl ElyShell {
             .flex()
             .items_center()
             .cursor_pointer()
-            .hover(|style| style.bg(rgba(ACTIVE_NAV_BG)))
+            .hover(move |style| style.bg(rgba(palette.hover_bg)))
             .active(|style| style.opacity(0.82))
-            .bg(rgba(bg_color))
+            .bg(rgba(palette.bg))
             .when(active, |el| el.shadow(soft_shadow()))
             .on_click(cx.listener(move |shell, _, window, cx| {
                 shell.select_tab(&tab_id, window, cx);
@@ -265,31 +276,19 @@ impl ElyShell {
                     .overflow_hidden()
                     .truncate()
                     .text_size(px(13.0))
-                    .font_weight(gpui::FontWeight(500.0))
-                    .text_color(rgb(text_color))
+                    .font_weight(FontWeight(500.0))
+                    .text_color(rgb(palette.text))
                     .child(title),
             )
             .when(unread > 0, |el| el.child(render_unread_badge(unread)))
-            .child(
-                div()
-                    .id(close_id)
-                    .size(px(16.0))
-                    .rounded(px(4.0))
-                    .flex_shrink_0()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_color(rgb(colors::INK_4))
-                    .opacity(0.0)
-                    .group_hover(group_name, |style| style.opacity(1.0))
-                    .hover(|style| style.bg(rgba(CLOSE_HOVER_BG)).text_color(rgb(colors::INK)))
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |shell, _, window, cx| {
-                        shell.close_tab_by_id(&close_tab_id, window, cx);
-                        cx.stop_propagation();
-                    }))
-                    .child(IconName::Close),
-            )
+            .child(render_row_close_button(
+                close_id,
+                group_name,
+                cx.listener(move |shell, _, window, cx| {
+                    shell.close_tab_by_id(&close_tab_id, window, cx);
+                    cx.stop_propagation();
+                }),
+            ))
             .into_any_element()
     }
 
@@ -305,7 +304,7 @@ impl ElyShell {
             .text_color(rgb(colors::INK_3))
             .text_size(px(13.0))
             .cursor_pointer()
-            .hover(|style| style.bg(rgba(ACTIVE_NAV_BG)).text_color(rgb(colors::INK)))
+            .hover(|style| style.bg(rgba(HOVER_NAV_BG)).text_color(rgb(colors::INK)))
             .active(|style| style.opacity(0.82))
             .on_click(cx.listener(|shell, _, window, cx| {
                 shell.open_new_tab(window, cx);
@@ -327,8 +326,7 @@ impl ElyShell {
     ) -> AnyElement {
         let tab_id = tab.id().clone();
         let close_tab_id = tab.id().clone();
-        let bg_color = if active { ACTIVE_NAV_BG } else { 0x00000000 };
-        let text_color = if active { colors::INK } else { colors::INK_2 };
+        let palette = nav_row_palette(active);
         let group_name = SharedString::from(format!("tab-{}", tab.id().as_str()));
         let close_id = SharedString::from(format!("tab-close-{}", tab.id().as_str()));
 
@@ -342,9 +340,9 @@ impl ElyShell {
             .flex()
             .items_center()
             .cursor_pointer()
-            .hover(|style| style.bg(rgba(ACTIVE_NAV_BG)))
+            .hover(move |style| style.bg(rgba(palette.hover_bg)))
             .active(|style| style.opacity(0.82))
-            .bg(rgba(bg_color))
+            .bg(rgba(palette.bg))
             .when(active, |el| el.shadow(soft_shadow()))
             .on_click(cx.listener(move |shell, _, window, cx| {
                 shell.select_tab(&tab_id, window, cx);
@@ -359,8 +357,8 @@ impl ElyShell {
                     .child(
                         div()
                             .text_size(px(13.0))
-                            .font_weight(gpui::FontWeight(500.0))
-                            .text_color(rgb(text_color))
+                            .font_weight(FontWeight(500.0))
+                            .text_color(rgb(palette.text))
                             .truncate()
                             .child(tab.title().to_string()),
                     )
@@ -372,190 +370,75 @@ impl ElyShell {
                             .child(tab.display_url()),
                     ),
             )
-            .child(
-                div()
-                    .id(close_id)
-                    .size(px(16.0))
-                    .rounded(px(4.0))
-                    .flex_shrink_0()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_color(rgb(colors::INK_4))
-                    .opacity(0.0)
-                    .group_hover(group_name, |style| style.opacity(1.0))
-                    .hover(|style| style.bg(rgba(CLOSE_HOVER_BG)).text_color(rgb(colors::INK)))
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |shell, _, window, cx| {
-                        shell.close_tab_by_id(&close_tab_id, window, cx);
-                        cx.stop_propagation();
-                    }))
-                    .child(IconName::Close),
-            )
+            .child(render_row_close_button(
+                close_id,
+                group_name,
+                cx.listener(move |shell, _, window, cx| {
+                    shell.close_tab_by_id(&close_tab_id, window, cx);
+                    cx.stop_propagation();
+                }),
+            ))
             .into_any_element()
     }
 }
 
-fn profile_initial(name: &str) -> String {
-    name.chars()
-        .next()
-        .unwrap_or('P')
-        .to_uppercase()
-        .to_string()
-}
-
-fn render_unread_badge(count: u32) -> impl IntoElement {
-    let label = if count > 99 {
-        "99+".to_string()
+/// Resolve the three colors a selectable nav row paints in based on
+/// its active state. Centralising the choice means launcher row, tab
+/// row, and home anchor row can never disagree on what "active" looks
+/// like — and a future tweak to the contrast ladder lands in one
+/// place rather than three transparent-sentinel triples.
+fn nav_row_palette(active: bool) -> NavRowPalette {
+    if active {
+        NavRowPalette {
+            bg: ACTIVE_NAV_BG,
+            hover_bg: ACTIVE_NAV_BG_HOVER,
+            text: colors::INK,
+        }
     } else {
-        count.to_string()
-    };
-
-    div()
-        .px(px(6.0))
-        .py(px(1.0))
-        .rounded(px(999.0))
-        .bg(rgba(UNREAD_BADGE_BG))
-        .text_size(px(10.0))
-        .font_weight(gpui::FontWeight(500.0))
-        .text_color(rgb(colors::INK_3))
-        .child(label)
-}
-
-fn section_tabs_label(count: usize) -> impl IntoElement {
-    div()
-        .pt(px(12.0))
-        .pb(px(4.0))
-        .px(px(10.0))
-        .flex()
-        .items_center()
-        .gap(px(6.0))
-        .child(
-            div()
-                .text_color(rgb(colors::INK_4))
-                .child(IconName::Frame),
-        )
-        .child(
-            div()
-                .text_size(px(10.5))
-                .font_weight(gpui::FontWeight(500.0))
-                .text_color(rgb(colors::INK_4))
-                .child(format!("TABS · {count}")),
-        )
-}
-
-fn section_label(label: &'static str) -> impl IntoElement {
-    div()
-        .pt(px(8.0))
-        .pb(px(4.0))
-        .px(px(10.0))
-        .text_size(px(10.5))
-        .font_weight(gpui::FontWeight(500.0))
-        .text_color(rgb(colors::INK_4))
-        .child(label)
-}
-
-pub(crate) const ACTIVE_NAV_BG: u32 = 0xffffffd9;
-
-/// Hover tint behind the per-row close (×) button. Was 8% alpha, which
-/// was visually indistinguishable from the panel background and made
-/// the click target read as inert. Brought to ~30% alpha so the
-/// hover registers as a real "press here" surface, matching the
-/// confidence of close buttons in Arc/Dia/Zen.
-const CLOSE_HOVER_BG: u32 = 0x281e144d;
-const UNREAD_BADGE_BG: u32 = 0x281e140f;
-
-/// 50% white inner border that traces every glass panel — the GPUI
-/// substitute for the design's `box-shadow: inset 0 0 0 1px rgba(255,255,255,0.5)`.
-/// Painted as the panel's own border so it stays part of the frame and
-/// never participates in hit testing.
-const HIGHLIGHT_BORDER: u32 = 0xffffff80;
-
-/// Sidebar resize affordance straddling the panel's right edge. The
-/// strip lives in the outer wrapper (not the rounded inner panel) so
-/// it isn't swallowed by `overflow_hidden`; it spans 4 px outside the
-/// panel and 4 px inside, giving the cursor a comfortably wide hit
-/// surface that still reads as "edge of the panel" rather than
-/// "stripe across the layout".
-fn render_sidebar_resize_handle(cx: &mut Context<ElyShell>) -> AnyElement {
-    div()
-        .id(SharedString::from("sidebar-resize-handle"))
-        .absolute()
-        .top_0()
-        .bottom_0()
-        .right(px(-4.0))
-        .w(px(8.0))
-        .cursor_col_resize()
-        .hover(|style| style.bg(rgba(RESIZE_HANDLE_HOVER_BG)))
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(|shell, event: &gpui::MouseDownEvent, _, cx| {
-                shell.begin_sidebar_resize(f32::from(event.position.x), cx);
-            }),
-        )
-        .into_any_element()
-}
-
-const RESIZE_HANDLE_HOVER_BG: u32 = 0xffaa7733;
-
-/// Maps appearance translucency_pct to a panel rgba u32 tinted by the
-/// active wallpaper theme.
-///
-/// GPUI 0.2.2 has no backdrop-filter, so a true sample-and-blur is
-/// impossible. Instead the panel base RGB is pre-tinted with the
-/// wallpaper's character (warm cream for Dawn, lavender for Violet, etc.)
-/// so the wallpaper's mood reads through every translucent panel without
-/// any extra layer or shader. Combined with the user-controlled
-/// translucency_pct it gives the design's "frosted glass tied to the
-/// wallpaper" effect entirely from real GPUI primitives.
-pub(crate) fn panel_bg(snapshot: &BrowserSnapshot) -> u32 {
-    let pct = snapshot.appearance.translucency_pct().min(100) as u32;
-    let max_alpha: u32 = 0xff;
-    let min_alpha: u32 = 0xb3;
-    let alpha = max_alpha - (pct * (max_alpha - min_alpha)) / 100;
-    let rgb = wallpaper_panel_rgb(snapshot.appearance.wallpaper());
-    (rgb << 8) | alpha
-}
-
-fn wallpaper_panel_rgb(theme: ely_domain::WallpaperTheme) -> u32 {
-    match theme {
-        ely_domain::WallpaperTheme::Dawn => 0xfaf6f0,
-        ely_domain::WallpaperTheme::Violet => 0xf6f3f8,
-        ely_domain::WallpaperTheme::Mint => 0xf3f6f1,
-        ely_domain::WallpaperTheme::Slate => 0xeff1f4,
+        NavRowPalette {
+            bg: 0x00000000,
+            hover_bg: HOVER_NAV_BG,
+            text: colors::INK_2,
+        }
     }
 }
 
-pub(crate) fn panel_shadow() -> Vec<BoxShadow> {
-    vec![
-        BoxShadow {
-            color: hsla(25.0 / 360.0, 0.33, 0.12, 0.30),
-            offset: point(px(0.), px(20.)),
-            blur_radius: px(50.),
-            spread_radius: px(-15.),
-        },
-        BoxShadow {
-            color: hsla(0., 0., 1., 0.5),
-            offset: point(px(0.), px(0.)),
-            blur_radius: px(0.),
-            spread_radius: px(1.),
-        },
-    ]
+#[derive(Clone, Copy)]
+struct NavRowPalette {
+    bg: u32,
+    hover_bg: u32,
+    text: u32,
 }
 
-pub(crate) fn soft_shadow() -> Vec<BoxShadow> {
-    vec![
-        BoxShadow {
-            color: hsla(0., 0., 1., 0.7),
-            offset: point(px(0.), px(1.)),
-            blur_radius: px(0.),
-            spread_radius: px(0.),
-        },
-        BoxShadow {
-            color: hsla(25.0 / 360.0, 0.33, 0.12, 0.08),
-            offset: point(px(0.), px(0.)),
-            blur_radius: px(0.),
-            spread_radius: px(1.),
-        },
-    ]
+/// Per-row close (×) button shared by the launcher and tab rows.
+///
+/// Centralising the recipe keeps both rows obeying the same physical
+/// rules: an 18 px circle (a coin, not a glyph), invisible until the
+/// row is hovered, with a warm-dark wash on direct hover so the
+/// button itself acknowledges the cursor before the click. The close
+/// hit target stays `flex_shrink_0` so a long title can never push
+/// the button into a sub-pixel sliver.
+fn render_row_close_button<F>(
+    close_id: SharedString,
+    group_name: SharedString,
+    on_click: F,
+) -> impl IntoElement
+where
+    F: Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
+{
+    div()
+        .id(close_id)
+        .size(px(ROW_CLOSE_SIZE))
+        .rounded_full()
+        .flex_shrink_0()
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_color(rgb(colors::INK_4))
+        .opacity(0.0)
+        .group_hover(group_name, |style| style.opacity(1.0))
+        .hover(|style| style.bg(rgba(CLOSE_HOVER_BG)).text_color(rgb(colors::INK)))
+        .cursor_pointer()
+        .on_click(on_click)
+        .child(IconName::Close)
 }

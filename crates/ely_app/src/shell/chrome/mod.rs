@@ -11,6 +11,7 @@ pub(crate) mod plugin_detail_view;
 pub(crate) mod plugin_labels;
 pub(crate) mod settings_layout;
 pub(crate) mod sidebar;
+pub(crate) mod sidebar_chrome;
 pub(crate) mod sidebar_header;
 pub(crate) mod split_pane;
 pub(crate) mod topbar;
@@ -23,7 +24,7 @@ pub(crate) use command_overlay::render_command_overlay;
 pub(crate) use home::render_home_page;
 pub(crate) use plugin_detail_view::render_plugin_detail_view;
 pub(crate) use settings_layout::render_settings_shell;
-pub(crate) use sidebar::{panel_bg, panel_shadow};
+pub(crate) use sidebar_chrome::{panel_bg, panel_shadow};
 pub(crate) use sidebar_header::{
     WorkspaceDisclosureAnchor, render_sidebar_header, render_workspace_disclosure,
     render_workspace_disclosure_backdrop,
