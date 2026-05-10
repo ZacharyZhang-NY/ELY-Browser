@@ -7,50 +7,35 @@ use crate::services::ProfileDataMode;
 
 use super::{
     web_surface_frame::WebSurfaceFrame,
-    web_surface_geometry::{
-        WebSurfaceClickPoint, WebSurfaceScrollDelta, WebSurfaceScrollOffset, WebSurfaceSize,
-    },
+    web_surface_geometry::{WebSurfaceClickPoint, WebSurfaceScrollDelta, WebSurfaceSize},
     web_surface_permissions::WebSurfaceSitePermission,
     web_surface_runtime::{WebSurfaceRuntime, WebSurfaceRuntimeFrame},
     web_surface_state::{
-        WebSurfaceClickState, WebSurfaceKeyboardFocusState, WebSurfacePendingInput,
+        PerTabSurface, WebSurfaceClickState, WebSurfaceKeyboardFocusState, WebSurfacePendingInput,
         WebSurfaceScrollState, WebSurfaceState, WebSurfaceTextInputState,
     },
 };
 
 pub(super) struct WebSurfaceStore {
     runtime: WebSurfaceRuntime,
-    pending_viewport_sizes: BTreeMap<TabId, WebSurfaceSize>,
-    click_points: BTreeMap<TabId, WebSurfaceClickState>,
-    hover_points: BTreeMap<TabId, WebSurfaceClickPoint>,
+    /// Single owner of every per-tab invariant. See [`PerTabSurface`].
+    surfaces: BTreeMap<TabId, PerTabSurface>,
+    /// Singleton because only one tab at a time holds keyboard focus
+    /// across the whole window. Lives on the store, not per-tab.
     keyboard_focus: Option<WebSurfaceKeyboardFocusState>,
-    pending_scroll_deltas: BTreeMap<TabId, WebSurfaceScrollDelta>,
-    scroll_offsets: BTreeMap<TabId, WebSurfaceScrollState>,
-    typed_texts: BTreeMap<TabId, WebSurfaceTextInputState>,
-    viewport_bounds: BTreeMap<TabId, Bounds<Pixels>>,
-    viewport_sizes: BTreeMap<TabId, WebSurfaceSize>,
-    states: BTreeMap<TabId, WebSurfaceState>,
 }
 
 impl WebSurfaceStore {
     pub(super) fn new() -> Self {
         Self {
             runtime: WebSurfaceRuntime::new(),
-            pending_viewport_sizes: BTreeMap::new(),
-            click_points: BTreeMap::new(),
-            hover_points: BTreeMap::new(),
+            surfaces: BTreeMap::new(),
             keyboard_focus: None,
-            pending_scroll_deltas: BTreeMap::new(),
-            scroll_offsets: BTreeMap::new(),
-            typed_texts: BTreeMap::new(),
-            viewport_bounds: BTreeMap::new(),
-            viewport_sizes: BTreeMap::new(),
-            states: BTreeMap::new(),
         }
     }
 
     pub(super) fn state(&self, tab_id: &TabId) -> Option<&WebSurfaceState> {
-        self.states.get(tab_id)
+        self.surfaces.get(tab_id).and_then(|surface| surface.state.as_ref())
     }
 
     pub(super) fn ensure_surface(
@@ -64,7 +49,8 @@ impl WebSurfaceStore {
         }
 
         let requested_url = tab.url().as_str().to_string();
-        let Some(size) = self.viewport_sizes.get(tab.id()).copied() else {
+        let Some(size) = self.surfaces.get(tab.id()).and_then(|surface| surface.viewport_size)
+        else {
             return;
         };
         let input = self.take_pending_input(tab.id(), requested_url.as_str());
@@ -76,20 +62,17 @@ impl WebSurfaceStore {
                 let Some(frame) = result.frame else {
                     return;
                 };
-                self.states.insert(tab.id().clone(), WebSurfaceState::Ready(frame));
+                self.surface_mut(tab.id()).state = Some(WebSurfaceState::Ready(frame));
             }
             Ok(result) if result.started_loading => {
-                self.states.insert(
-                    tab.id().clone(),
-                    WebSurfaceState::Loading {
-                        requested_url: result.requested_url,
-                        previous_frame,
-                    },
-                );
+                self.surface_mut(tab.id()).state = Some(WebSurfaceState::Loading {
+                    requested_url: result.requested_url,
+                    previous_frame,
+                });
             }
             Ok(_) => {}
             Err(message) => {
-                self.states.insert(tab.id().clone(), WebSurfaceState::Failed { message });
+                self.surface_mut(tab.id()).state = Some(WebSurfaceState::Failed { message });
             }
         }
     }
@@ -101,11 +84,11 @@ impl WebSurfaceStore {
         for frame in frames {
             match frame {
                 WebSurfaceRuntimeFrame::Ready { tab_id, frame } => {
-                    self.states.insert(tab_id, WebSurfaceState::Ready(frame));
+                    self.surface_mut(&tab_id).state = Some(WebSurfaceState::Ready(frame));
                     changed = true;
                 }
                 WebSurfaceRuntimeFrame::Failed { tab_id, message } => {
-                    self.states.insert(tab_id, WebSurfaceState::Failed { message });
+                    self.surface_mut(&tab_id).state = Some(WebSurfaceState::Failed { message });
                     changed = true;
                 }
             }
@@ -124,26 +107,26 @@ impl WebSurfaceStore {
             return false;
         };
 
-        let state = self
-            .scroll_offsets
-            .entry(tab_id.clone())
-            .or_insert_with(|| WebSurfaceScrollState::new(requested_url.to_string()));
-        if state.requested_url != requested_url {
-            *state = WebSurfaceScrollState::new(requested_url.to_string());
+        let surface = self.surface_mut(tab_id);
+        let scroll = surface
+            .scroll_offset
+            .get_or_insert_with(|| WebSurfaceScrollState::new(requested_url.to_string()));
+        if scroll.requested_url != requested_url {
+            *scroll = WebSurfaceScrollState::new(requested_url.to_string());
         }
 
-        state.offset = state.offset.scrolled_by(delta);
-        self.pending_scroll_deltas
-            .entry(tab_id.clone())
-            .and_modify(|current| *current = current.combined_with(delta))
-            .or_insert(delta);
+        scroll.offset = scroll.offset.scrolled_by(delta);
+        surface.pending_scroll_delta = Some(match surface.pending_scroll_delta {
+            Some(current) => current.combined_with(delta),
+            None => delta,
+        });
         // Drop any buffered click — its viewport coordinates were
         // captured against the pre-scroll page, so applying it after
         // the scroll would land on the wrong DOM element. Keep
-        // `keyboard_focus` and `typed_texts` though: Servo maintains
+        // `keyboard_focus` and `typed_text` though: Servo maintains
         // its own DOM focus across scrolls, so a focused input keeps
         // accepting the user's keystrokes after they wheel-scroll.
-        self.click_points.remove(tab_id);
+        surface.click_point = None;
         true
     }
 
@@ -151,26 +134,27 @@ impl WebSurfaceStore {
         let Some(size) = WebSurfaceSize::from_bounds(bounds) else {
             return false;
         };
-        self.viewport_bounds.insert(tab_id.clone(), bounds);
+        let surface = self.surface_mut(tab_id);
+        surface.viewport_bounds = Some(bounds);
 
-        let Some(current_size) = self.viewport_sizes.get(tab_id).copied() else {
-            self.viewport_sizes.insert(tab_id.clone(), size);
-            self.pending_viewport_sizes.remove(tab_id);
+        let Some(current_size) = surface.viewport_size else {
+            surface.viewport_size = Some(size);
+            surface.pending_viewport_size = None;
             return true;
         };
 
         if current_size == size {
-            self.pending_viewport_sizes.remove(tab_id);
+            surface.pending_viewport_size = None;
             return false;
         }
 
-        if self.pending_viewport_sizes.get(tab_id) != Some(&size) {
-            self.pending_viewport_sizes.insert(tab_id.clone(), size);
+        if surface.pending_viewport_size != Some(size) {
+            surface.pending_viewport_size = Some(size);
             return false;
         }
 
-        self.pending_viewport_sizes.remove(tab_id);
-        self.viewport_sizes.insert(tab_id.clone(), size);
+        surface.pending_viewport_size = None;
+        surface.viewport_size = Some(size);
         true
     }
 
@@ -179,13 +163,15 @@ impl WebSurfaceStore {
         tab_id: &TabId,
         position: Point<Pixels>,
     ) -> bool {
-        let Some(bounds) = self.viewport_bounds.get(tab_id).copied() else {
+        let surface = self.surfaces.get_mut(tab_id).filter(|surface| surface.viewport_bounds.is_some());
+        let Some(surface) = surface else {
             return false;
         };
+        let bounds = surface.viewport_bounds.expect("viewport_bounds checked above");
         let Some(point) = WebSurfaceClickPoint::from_window_position(bounds, position) else {
             return false;
         };
-        self.hover_points.insert(tab_id.clone(), point);
+        surface.hover_point = Some(point);
         true
     }
 
@@ -195,16 +181,24 @@ impl WebSurfaceStore {
         requested_url: &str,
         position: Point<Pixels>,
     ) -> bool {
-        let Some(bounds) = self.viewport_bounds.get(tab_id).copied() else {
+        let Some(bounds) =
+            self.surfaces.get(tab_id).and_then(|surface| surface.viewport_bounds)
+        else {
             return false;
         };
         let Some(point) = WebSurfaceClickPoint::from_window_position(bounds, position) else {
             return false;
         };
 
+        let scroll_offset = self
+            .surfaces
+            .get(tab_id)
+            .map(|surface| surface.scroll_offset_for(requested_url))
+            .unwrap_or_default();
+
         let state = WebSurfaceClickState {
             requested_url: requested_url.to_string(),
-            scroll_offset: self.scroll_offset_for(tab_id, requested_url),
+            scroll_offset,
             point,
         };
         self.keyboard_focus = Some(WebSurfaceKeyboardFocusState {
@@ -213,8 +207,9 @@ impl WebSurfaceStore {
             scroll_offset: state.scroll_offset,
             click_point: state.point,
         });
-        self.typed_texts.remove(tab_id);
-        self.click_points.insert(tab_id.clone(), state);
+        let surface = self.surface_mut(tab_id);
+        surface.typed_text = None;
+        surface.click_point = Some(state);
         true
     }
 
@@ -234,21 +229,24 @@ impl WebSurfaceStore {
             return false;
         }
 
-        let entry =
-            self.typed_texts.entry(tab_id.clone()).or_insert_with(|| WebSurfaceTextInputState {
-                requested_url: requested_url.to_string(),
-                scroll_offset: focus.scroll_offset,
-                click_point: focus.click_point,
-                text: String::new(),
-            });
+        let scroll_offset = focus.scroll_offset;
+        let click_point = focus.click_point;
+        let surface = self.surface_mut(tab_id);
+
+        let entry = surface.typed_text.get_or_insert_with(|| WebSurfaceTextInputState {
+            requested_url: requested_url.to_string(),
+            scroll_offset,
+            click_point,
+            text: String::new(),
+        });
         if entry.requested_url != requested_url
-            || entry.scroll_offset != focus.scroll_offset
-            || entry.click_point != focus.click_point
+            || entry.scroll_offset != scroll_offset
+            || entry.click_point != click_point
         {
             *entry = WebSurfaceTextInputState {
                 requested_url: requested_url.to_string(),
-                scroll_offset: focus.scroll_offset,
-                click_point: focus.click_point,
+                scroll_offset,
+                click_point,
                 text: String::new(),
             };
         }
@@ -262,22 +260,22 @@ impl WebSurfaceStore {
         tab_id: &TabId,
         requested_url: &str,
     ) -> WebSurfacePendingInput {
-        let scroll_offset = self.scroll_offset_for(tab_id, requested_url);
-        let scroll_delta = self.pending_scroll_deltas.remove(tab_id);
-        let click_point = self
-            .click_points
-            .remove(tab_id)
+        let surface = self.surface_mut(tab_id);
+        let scroll_offset = surface.scroll_offset_for(requested_url);
+        let scroll_delta = surface.pending_scroll_delta.take();
+        let click_point = surface
+            .click_point
+            .take()
             .filter(|state| {
                 state.requested_url == requested_url && state.scroll_offset == scroll_offset
             })
             .map(|state| state.point);
-        let typed_text = self
-            .typed_texts
-            .remove(tab_id)
+        let typed_text = surface
+            .typed_text
+            .take()
             .filter(|state| state.requested_url == requested_url)
             .map(|state| state.text);
-
-        let hover_point = self.hover_points.remove(tab_id);
+        let hover_point = surface.hover_point.take();
 
         WebSurfacePendingInput { scroll_offset, scroll_delta, click_point, hover_point, typed_text }
     }
@@ -288,7 +286,7 @@ impl WebSurfaceStore {
         requested_url: &str,
         zoom_percent: u16,
     ) -> Option<WebSurfaceFrame> {
-        match self.states.get(tab_id) {
+        match self.surfaces.get(tab_id).and_then(|surface| surface.state.as_ref()) {
             Some(WebSurfaceState::Ready(frame))
                 if frame.requested_url == requested_url && frame.zoom_percent() == zoom_percent =>
             {
@@ -304,12 +302,8 @@ impl WebSurfaceStore {
         }
     }
 
-    fn scroll_offset_for(&self, tab_id: &TabId, requested_url: &str) -> WebSurfaceScrollOffset {
-        self.scroll_offsets
-            .get(tab_id)
-            .filter(|state| state.requested_url == requested_url)
-            .map(|state| state.offset)
-            .unwrap_or_default()
+    fn surface_mut(&mut self, tab_id: &TabId) -> &mut PerTabSurface {
+        self.surfaces.entry(tab_id.clone()).or_insert_with(PerTabSurface::new)
     }
 }
 
