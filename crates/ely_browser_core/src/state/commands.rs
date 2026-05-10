@@ -29,12 +29,20 @@ impl BrowserCore {
         let intent = CommandIntent::parse(query)?;
         match &intent {
             CommandIntent::Navigate(url) => {
-                self.open_tab(url.clone());
+                // Submitting a URL navigates the current tab in place,
+                // matching every real browser. If there's no active tab
+                // to navigate (no shell yet, no tabs at all), fall
+                // back to spawning a new one.
+                if self.navigate_active_tab(url.clone()).is_err() {
+                    self.open_tab(url.clone());
+                }
                 self.command_query.clear();
             }
             CommandIntent::Search(query) => {
                 let url = search_url(query, self.search_engine)?;
-                self.open_tab(url);
+                if self.navigate_active_tab(url.clone()).is_err() {
+                    self.open_tab(url);
+                }
                 self.command_query.clear();
             }
             CommandIntent::Command(command) if self.submit_named_command(command)? => {
