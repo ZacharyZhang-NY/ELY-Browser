@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hasher;
 use std::sync::Arc;
 
 use gpui::RenderImage;
@@ -5,6 +8,21 @@ use image::{ImageBuffer, Rgba};
 use thiserror::Error;
 
 use crate::services::servo_live::ServoLiveFrame;
+
+thread_local! {
+    /// Single-slot cache of the most-recently-uploaded RGBA payload.
+    /// At 60 fps on a 1080p canvas the previous `from_parts` was
+    /// unconditionally building a fresh `Arc<RenderImage>` for every
+    /// tick — even when the bytes were bit-identical to the last
+    /// frame. The cache keys on a 64-bit hash of the raw bytes and
+    /// reuses the existing `Arc<RenderImage>` whenever the hash
+    /// matches, so steady-state idle pages no longer churn the GPUI
+    /// texture pool. Hash collisions are 1 in 2^64; if they ever
+    /// matter we'll trade in length + first/last 32 bytes as a
+    /// disambiguator before paying the full memcmp.
+    static LAST_FRAME_IMAGE: RefCell<Option<(u64, Arc<RenderImage>)>> =
+        const { RefCell::new(None) };
+}
 
 #[cfg(all(test, feature = "live-site-smoke"))]
 use super::web_surface_geometry::WebSurfaceSize;
@@ -61,14 +79,8 @@ impl WebSurfaceFrame {
     }
 
     fn from_parts(parts: WebSurfaceFrameParts) -> Result<Self, WebSurfaceError> {
-        let Some(image_buffer) =
-            ImageBuffer::<Rgba<u8>, _>::from_raw(parts.width, parts.height, parts.rgba_bytes)
-        else {
-            return Err(WebSurfaceError::InvalidFrameBuffer {
-                width: parts.width,
-                height: parts.height,
-            });
-        };
+        let bytes_hash = rgba_hash(&parts.rgba_bytes);
+        let image = resolve_render_image(parts.width, parts.height, parts.rgba_bytes, bytes_hash)?;
 
         Ok(Self {
             requested_url: parts.requested_url,
@@ -87,7 +99,7 @@ impl WebSurfaceFrame {
             content_pixel_count: parts.content_pixel_count,
             #[cfg(all(test, feature = "live-site-smoke"))]
             sample_hash: parts.sample_hash,
-            image: Arc::new(RenderImage::new([image::Frame::new(image_buffer)])),
+            image,
         })
     }
 
@@ -186,4 +198,34 @@ struct WebSurfaceFrameParts {
 pub(super) enum WebSurfaceError {
     #[error("invalid servo frame buffer for {width}x{height}")]
     InvalidFrameBuffer { width: u32, height: u32 },
+}
+
+fn rgba_hash(bytes: &[u8]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    hasher.write(bytes);
+    hasher.finish()
+}
+
+fn resolve_render_image(
+    width: u32,
+    height: u32,
+    rgba_bytes: Vec<u8>,
+    bytes_hash: u64,
+) -> Result<Arc<RenderImage>, WebSurfaceError> {
+    LAST_FRAME_IMAGE.with(
+        |cache| -> Result<Arc<RenderImage>, WebSurfaceError> {
+            let mut cache = cache.borrow_mut();
+            if let Some((cached_hash, cached_image)) = cache.as_ref() {
+                if *cached_hash == bytes_hash {
+                    return Ok(cached_image.clone());
+                }
+            }
+
+            let image_buffer = ImageBuffer::<Rgba<u8>, _>::from_raw(width, height, rgba_bytes)
+                .ok_or(WebSurfaceError::InvalidFrameBuffer { width, height })?;
+            let new_image = Arc::new(RenderImage::new([image::Frame::new(image_buffer)]));
+            *cache = Some((bytes_hash, new_image.clone()));
+            Ok(new_image)
+        },
+    )
 }

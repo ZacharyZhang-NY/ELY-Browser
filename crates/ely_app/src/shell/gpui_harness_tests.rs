@@ -271,20 +271,13 @@ async fn baseline_overlay_div_receives_simulated_click(cx: &mut TestAppContext) 
 /// against the last bytes or switch to `OffscreenRenderingContext` +
 /// IOSurface so the GPU texture is the source of truth.
 ///
-/// `#[ignore]` so default `cargo test` stays green; remove the
-/// attribute the moment T10 lands so the regression is permanent.
+/// Regression guard: with the single-slot `LAST_FRAME_IMAGE` cache in
+/// `web_surface_frame.rs`, two `ServoLiveFrame` inputs carrying
+/// byte-identical RGBA payloads now share the same `Arc<RenderImage>`.
+/// Without this guard a regression that drops the cache silently
+/// returns to ~960 MB/s of host-side RGBA cloning + per-frame GPUI
+/// texture allocations.
 #[test]
-#[ignore = "T10 red guard. Failure mode confirmed via `cargo test -- --ignored`: \
-            two ServoLiveFrames carrying byte-identical RGBA payloads still \
-            produce distinct Arc<RenderImage> instances, because \
-            WebSurfaceFrame::from_parts unconditionally calls \
-            Arc::new(RenderImage::new(...)). At 60 fps 1080p that is \
-            ~960 MB/s of host-side RGBA cloning + GPUI texture allocations \
-            and is the next bottleneck after the file-system pipe. The \
-            fix lives in WebSurfaceFrame (interim: dedup upload against \
-            last frame bytes) or in the rendering pipeline (final: \
-            OffscreenRenderingContext + IOSurface zero-copy). The fix \
-            commit must remove this attribute outright — not toggle it."]
 fn identical_live_frames_share_render_image_arc() {
     let width = 16u32;
     let height = 8u32;
