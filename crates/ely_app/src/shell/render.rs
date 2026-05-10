@@ -10,7 +10,8 @@ use gpui::{
 use super::chrome::command_match::visible_command_rows;
 use super::chrome::{
     SANS_FAMILY, panel_bg, panel_shadow, render_command_overlay,
-    render_topbar as render_topbar_chrome, render_wallpaper,
+    render_topbar as render_topbar_chrome, render_wallpaper, render_workspace_disclosure,
+    render_workspace_disclosure_backdrop,
 };
 use super::sidebar::collapsed_sidebar_active;
 use super::{ElyShell, ShellState};
@@ -91,6 +92,10 @@ impl ElyShell {
             )
             .when(hover_expanded, |el| {
                 el.child(self.render_hidden_sidebar_overlay(&snapshot, cx))
+            })
+            .when(self.workspace_picker_open, |el| {
+                el.child(render_workspace_disclosure_backdrop(cx))
+                    .child(render_workspace_disclosure(&snapshot, cx))
             })
             .children(render_command_overlay(self, &snapshot, cx))
             .into_any_element()

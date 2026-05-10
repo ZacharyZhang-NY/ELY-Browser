@@ -69,13 +69,16 @@ fn render_title_row() -> AnyElement {
 const TRAFFIC_LIGHT_RESERVE: f32 = 68.0;
 
 fn render_workspace_picker(
-    snapshot: &BrowserSnapshot,
+    _snapshot: &BrowserSnapshot,
     active_space: Option<&Space>,
     picker_open: bool,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
+    // The disclosure renders at the window root (see render.rs) so it can
+    // sit above a fullscreen click-out backdrop and extend past the
+    // sidebar's overflow_hidden clip. Picker row keeps just the tile, the
+    // pill, and the add button.
     div()
-        .relative()
         .flex()
         .items_center()
         .gap(px(6.0))
@@ -84,12 +87,6 @@ fn render_workspace_picker(
         .child(render_workspaces_tile(cx))
         .child(render_picker_pill(active_space, picker_open, cx))
         .child(render_add_workspace_button(cx))
-        // Disclosure floats below the picker row instead of taking inline
-        // space so the tab list never gets pushed when a workspace is being
-        // picked. Anchor: picker row's bottom-left, full row width.
-        .when(picker_open, |el| {
-            el.child(render_workspace_disclosure(snapshot, cx))
-        })
         .into_any_element()
 }
 
@@ -173,7 +170,12 @@ fn render_picker_pill(
         .into_any_element()
 }
 
-fn render_workspace_disclosure(
+/// Window-root popover surface for the workspace picker. Rendered by
+/// render_browser when `workspace_picker_open` is true. Pinned to a
+/// fixed window-relative origin matched to the picker pill's row in
+/// the sidebar header, so the surface lines up with the trigger
+/// without needing to capture bounds at paint time.
+pub(crate) fn render_workspace_disclosure(
     snapshot: &BrowserSnapshot,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
@@ -181,10 +183,9 @@ fn render_workspace_disclosure(
 
     let body = div()
         .absolute()
-        .top_full()
-        .left_0()
-        .right_0()
-        .mt(px(6.0))
+        .top(px(DISCLOSURE_TOP_PX))
+        .left(px(DISCLOSURE_LEFT_PX))
+        .w(px(DISCLOSURE_WIDTH_PX))
         .flex()
         .flex_col()
         .gap(px(2.0))
@@ -207,6 +208,43 @@ fn render_workspace_disclosure(
 
     fade_in("workspace-disclosure", 140, body).into_any_element()
 }
+
+/// Transparent fullscreen backdrop layered between the layout grid
+/// and the disclosure. Any click on it closes the picker; the
+/// disclosure paints after this backdrop so it remains interactive.
+pub(crate) fn render_workspace_disclosure_backdrop(
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    div()
+        .id(SharedString::from("workspace-picker-backdrop"))
+        .absolute()
+        .inset_0()
+        .on_mouse_down(
+            gpui::MouseButton::Left,
+            cx.listener(|shell, _: &gpui::MouseDownEvent, _, cx| {
+                shell.close_workspace_picker(cx);
+            }),
+        )
+        .into_any_element()
+}
+
+/// Anchor of the disclosure popover relative to the window's top-left.
+/// Walks the sidebar layout: SHELL_INSET (16) + sidebar header pt (8)
+/// + title row h (20) + header gap (8) + picker row py-top (4) + tile
+/// height (32) + picker row py-bot (4) + popover lift (6) = 98.
+const DISCLOSURE_TOP_PX: f32 = 98.0;
+
+/// Left edge of the disclosure: SHELL_INSET (16) + header px-left (10)
+/// + picker row px-left (2) + tile width (32) + picker gap (6) = 66.
+/// That lines the disclosure up with the picker pill, not the tile.
+const DISCLOSURE_LEFT_PX: f32 = 66.0;
+
+/// Default sidebar (280 px) → pill width 180 px. The disclosure inherits
+/// that width so the popover and trigger frame to the same column. If
+/// the sidebar is resized the disclosure stays a fixed width — picker
+/// is closed before the user can drag, so the misalignment is
+/// transient at worst.
+const DISCLOSURE_WIDTH_PX: f32 = 180.0;
 
 fn render_disclosure_row(
     index: usize,
