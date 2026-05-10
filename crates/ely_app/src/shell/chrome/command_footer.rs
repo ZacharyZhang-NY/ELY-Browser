@@ -16,10 +16,12 @@ pub(crate) fn render_command_footer() -> AnyElement {
         .text_size(px(10.5))
         .text_color(rgb(colors::INK_3))
         .bg(rgba(FOOTER_BG))
+        // Only the shortcuts that actually do something today.
+        // `⌘↵` (split-on-open) and `⇥` (filter) are real product
+        // features but not yet wired through the command overlay's
+        // key dispatch — listing them here would be a fake hint.
         .child(footer_chunk("↑↓", "navigate"))
         .child(footer_chunk("↵", "open"))
-        .child(footer_chunk("⌘↵", "open in split"))
-        .child(footer_chunk("⇥", "filter"))
         .child(
             div()
                 .ml_auto()
