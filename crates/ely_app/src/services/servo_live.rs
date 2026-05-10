@@ -236,6 +236,24 @@ impl ServoLiveFrame {
     pub fn into_rgba_bytes(self) -> Vec<u8> {
         self.rgba_bytes
     }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(width: u32, height: u32, rgba_bytes: Vec<u8>) -> Self {
+        Self {
+            loaded_url: Some("https://example.com/".to_string()),
+            title: Some("Example".to_string()),
+            render_state: "complete".to_string(),
+            width,
+            height,
+            #[cfg(all(test, feature = "live-site-smoke"))]
+            non_white_pixel_count: 0,
+            #[cfg(all(test, feature = "live-site-smoke"))]
+            content_pixel_count: 0,
+            #[cfg(all(test, feature = "live-site-smoke"))]
+            sample_hash: 0,
+            rgba_bytes,
+        }
+    }
 }
 
 #[derive(Debug, Error)]

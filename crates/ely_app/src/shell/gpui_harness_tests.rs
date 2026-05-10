@@ -25,6 +25,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use ely_domain::{TabId, UrlText};
 use gpui::{
@@ -35,6 +36,9 @@ use gpui::InteractiveElement;
 
 use super::ShellState;
 use super::web_surface::WebSurfaceStore;
+use super::web_surface_frame::WebSurfaceFrame;
+use super::web_surface_geometry::WebSurfaceScrollOffset;
+use crate::services::servo_live::ServoLiveFrame;
 
 #[cfg(test)]
 impl super::ElyShell {
@@ -249,6 +253,68 @@ async fn baseline_overlay_div_receives_simulated_click(cx: &mut TestAppContext) 
          capture_any_mouse_up never received the simulated click. The test \
          harness or GPUI primitive is broken — ElyShell test results are \
          meaningless until this passes."
+    );
+}
+
+/// TDD red guard for T10: today every `WebSurfaceFrame::from_live_frame`
+/// call allocates a fresh `Arc::new(RenderImage::new(...))` regardless
+/// of whether the underlying pixels changed. At 60 fps on a 1080p
+/// canvas that is `~8 MB / frame` of host-side RGBA cloning + a new
+/// GPUI texture upload, the cost Linus + Karpathy + Jony all flagged
+/// as the next material bottleneck after the file-system pipe.
+///
+/// The contract this test pins is the cheapest invariant we can hold
+/// against today's `SoftwareRenderingContext`: two frames carrying
+/// **byte-identical RGBA payloads must produce the same underlying
+/// `Arc<RenderImage>`**. Today they do not — every `from_live_frame`
+/// blindly reallocates. The fix path is either dedup the upload
+/// against the last bytes or switch to `OffscreenRenderingContext` +
+/// IOSurface so the GPU texture is the source of truth.
+///
+/// `#[ignore]` so default `cargo test` stays green; remove the
+/// attribute the moment T10 lands so the regression is permanent.
+#[test]
+#[ignore = "T10 red guard. Failure mode confirmed via `cargo test -- --ignored`: \
+            two ServoLiveFrames carrying byte-identical RGBA payloads still \
+            produce distinct Arc<RenderImage> instances, because \
+            WebSurfaceFrame::from_parts unconditionally calls \
+            Arc::new(RenderImage::new(...)). At 60 fps 1080p that is \
+            ~960 MB/s of host-side RGBA cloning + GPUI texture allocations \
+            and is the next bottleneck after the file-system pipe. The \
+            fix lives in WebSurfaceFrame (interim: dedup upload against \
+            last frame bytes) or in the rendering pipeline (final: \
+            OffscreenRenderingContext + IOSurface zero-copy). The fix \
+            commit must remove this attribute outright — not toggle it."]
+fn identical_live_frames_share_render_image_arc() {
+    let width = 16u32;
+    let height = 8u32;
+    let rgba_bytes = vec![0xAAu8; (width as usize) * (height as usize) * 4];
+
+    let first = WebSurfaceFrame::from_live_frame(
+        "https://example.com/".to_string(),
+        WebSurfaceScrollOffset::default(),
+        100,
+        ServoLiveFrame::for_test(width, height, rgba_bytes.clone()),
+    )
+    .expect("first frame builds from identical bytes");
+    let second = WebSurfaceFrame::from_live_frame(
+        "https://example.com/".to_string(),
+        WebSurfaceScrollOffset::default(),
+        100,
+        ServoLiveFrame::for_test(width, height, rgba_bytes),
+    )
+    .expect("second frame builds from identical bytes");
+
+    assert!(
+        Arc::ptr_eq(&first.image, &second.image),
+        "TDD red: two ServoLiveFrames with byte-identical RGBA produced \
+         distinct Arc<RenderImage> instances (first={:p}, second={:p}). \
+         WebSurfaceFrame::from_parts must dedup the upload against the \
+         previous frame's bytes, or the rendering pipeline must switch \
+         to a GPU-side source of truth (IOSurface) so per-frame host \
+         allocations stop entirely.",
+        Arc::as_ptr(&first.image),
+        Arc::as_ptr(&second.image),
     );
 }
 
