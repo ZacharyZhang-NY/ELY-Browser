@@ -7,7 +7,7 @@ use crate::services::ProfileDataMode;
 use super::{
     ElyShell,
     web_surface_permissions::web_surface_site_permissions_for_tab,
-    web_surface_state::WebSurfaceState,
+    web_surface_state::{WebSurfaceInputOutcome, WebSurfaceState},
     web_surface_view::{
         render_failed_web_surface, render_loading_web_surface, render_ready_web_surface,
     },
@@ -55,7 +55,9 @@ impl ElyShell {
         scale_factor: f32,
         cx: &mut Context<Self>,
     ) {
-        if self.web_surfaces.record_viewport_size(&tab_id, bounds, scale_factor) {
+        if self.web_surfaces.record_viewport_size(&tab_id, bounds, scale_factor)
+            == WebSurfaceInputOutcome::Applied
+        {
             cx.notify();
         }
     }
@@ -73,7 +75,8 @@ impl ElyShell {
             requested_url.as_str(),
             delta,
             scale_factor,
-        ) {
+        ) == WebSurfaceInputOutcome::Applied
+        {
             cx.notify();
         }
     }
@@ -85,7 +88,9 @@ impl ElyShell {
         scale_factor: f32,
         cx: &mut Context<Self>,
     ) {
-        if self.web_surfaces.record_hover_point(&tab_id, position, scale_factor) {
+        if self.web_surfaces.record_hover_point(&tab_id, position, scale_factor)
+            == WebSurfaceInputOutcome::Applied
+        {
             cx.notify();
         }
     }
@@ -105,7 +110,8 @@ impl ElyShell {
             requested_url.as_str(),
             position,
             scale_factor,
-        ) {
+        ) == WebSurfaceInputOutcome::Applied
+        {
             cx.notify();
         }
     }
@@ -125,7 +131,9 @@ impl ElyShell {
         text: &str,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.web_surfaces.record_typed_text(&tab_id, requested_url.as_str(), text) {
+        if self.web_surfaces.record_typed_text(&tab_id, requested_url.as_str(), text)
+            == WebSurfaceInputOutcome::Applied
+        {
             cx.notify();
             return true;
         }

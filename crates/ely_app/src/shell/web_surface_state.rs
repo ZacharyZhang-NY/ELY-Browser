@@ -50,6 +50,46 @@ pub(super) struct WebSurfacePendingInput {
     pub(super) typed_text: Option<String>,
 }
 
+/// Outcome of a `WebSurfaceStore::record_*` call.
+///
+/// Replaces the previous `-> bool` return so silent rejections name
+/// themselves at the call site. Callers only branch on `Applied`
+/// (every other variant means "do nothing, don't notify"), but each
+/// `Dropped*` / non-`Applied` variant pins down *why* a coordinate
+/// or keystroke never reached the runtime — so the next regression
+/// shows up as a specific variant in tests instead of a missing
+/// repaint. `#[must_use]` keeps a future caller from dropping the
+/// outcome on the floor and reintroducing the silent-fail pattern.
+#[must_use]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum WebSurfaceInputOutcome {
+    /// State changed and the renderer should re-notify.
+    Applied,
+    /// Same value as currently recorded — nothing to flush downstream.
+    NoChange,
+    /// First sighting of a new value; held back until a second
+    /// matching measurement confirms it (viewport-resize debounce).
+    Buffered,
+    /// Geometry constructor rejected the input (zero/NaN/negative
+    /// bounds). The viewport never measured cleanly.
+    DroppedInvalidBounds,
+    /// Viewport bounds have not been recorded yet, so window-relative
+    /// coordinates can't be translated into the page coordinate space.
+    DroppedNoViewportBounds,
+    /// Window position falls outside the viewport rect after scaling.
+    DroppedOutOfBounds,
+    /// Wheel delta rounded to zero device pixels in both axes.
+    DroppedZeroDelta,
+    /// Empty string passed to `record_typed_text` — nothing to buffer.
+    DroppedEmptyText,
+    /// `record_typed_text` ran before any click established
+    /// keyboard focus on this surface.
+    DroppedNoKeyboardFocus,
+    /// Keyboard focus belongs to a different tab or the URL drifted
+    /// (redirect / trailing-slash mismatch) since the focusing click.
+    DroppedFocusMismatch,
+}
+
 pub(super) enum WebSurfaceState {
     Loading { requested_url: String, previous_frame: Option<WebSurfaceFrame> },
     Ready(WebSurfaceFrame),

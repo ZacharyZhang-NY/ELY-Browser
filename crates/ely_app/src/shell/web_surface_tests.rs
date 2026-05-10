@@ -4,21 +4,26 @@ use ely_domain::{BrowserTab, ProfileId, SpaceId, TabId, UrlText};
 use gpui::{Bounds, point, px, size};
 
 use super::WebSurfaceStore;
+use crate::shell::web_surface_state::WebSurfaceInputOutcome;
+
+fn assert_applied(outcome: WebSurfaceInputOutcome) {
+    assert_eq!(outcome, WebSurfaceInputOutcome::Applied);
+}
 
 #[test]
 fn typed_text_enters_pending_input_after_clicked_viewport() -> Result<(), Box<dyn Error>> {
     let mut store = WebSurfaceStore::new();
     let tab = web_tab("https://example.com/form")?;
 
-    assert!(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
-    assert!(store.record_click_point(
+    assert_applied(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
+    assert_applied(store.record_click_point(
         tab.id(),
         tab.url().as_str(),
         point(px(160.0), px(120.0)),
         1.0,
     ));
-    assert!(store.record_typed_text(tab.id(), tab.url().as_str(), "e"));
-    assert!(store.record_typed_text(tab.id(), tab.url().as_str(), "l"));
+    assert_applied(store.record_typed_text(tab.id(), tab.url().as_str(), "e"));
+    assert_applied(store.record_typed_text(tab.id(), tab.url().as_str(), "l"));
 
     let input = store.take_pending_input(tab.id(), tab.url().as_str());
 
@@ -32,14 +37,14 @@ fn scroll_delta_enters_pending_input_after_wheel() -> Result<(), Box<dyn Error>>
     let mut store = WebSurfaceStore::new();
     let tab = web_tab("https://example.com/list")?;
 
-    assert!(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
-    assert!(store.record_scroll_delta(
+    assert_applied(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
+    assert_applied(store.record_scroll_delta(
         tab.id(),
         tab.url().as_str(),
         point(px(0.0), px(140.0)),
         1.0,
     ));
-    assert!(store.record_scroll_delta(
+    assert_applied(store.record_scroll_delta(
         tab.id(),
         tab.url().as_str(),
         point(px(0.0), px(60.0)),
@@ -58,9 +63,13 @@ fn viewport_size_changes_after_stable_second_measurement() -> Result<(), Box<dyn
     let mut store = WebSurfaceStore::new();
     let tab = web_tab("https://example.com/resize")?;
 
-    assert!(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
-    assert!(!store.record_viewport_size(tab.id(), resized_once_bounds(), 1.0));
-    assert!(store.record_viewport_size(tab.id(), resized_once_bounds(), 1.0));
+    assert_applied(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
+    assert_eq!(
+        store.record_viewport_size(tab.id(), resized_once_bounds(), 1.0),
+        WebSurfaceInputOutcome::Buffered,
+        "first sighting of a new size must wait for a confirming second measurement",
+    );
+    assert_applied(store.record_viewport_size(tab.id(), resized_once_bounds(), 1.0));
     Ok(())
 }
 
@@ -78,14 +87,15 @@ fn scroll_after_click_keeps_keyboard_focus_and_typed_text() -> Result<(), Box<dy
     let tab = web_tab("https://example.com/form")?;
     let url = tab.url().as_str();
 
-    assert!(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
-    assert!(store.record_click_point(tab.id(), url, point(px(160.0), px(120.0)), 1.0));
-    assert!(store.record_typed_text(tab.id(), url, "h"));
+    assert_applied(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
+    assert_applied(store.record_click_point(tab.id(), url, point(px(160.0), px(120.0)), 1.0));
+    assert_applied(store.record_typed_text(tab.id(), url, "h"));
 
-    assert!(store.record_scroll_delta(tab.id(), url, point(px(0.0), px(140.0)), 1.0));
+    assert_applied(store.record_scroll_delta(tab.id(), url, point(px(0.0), px(140.0)), 1.0));
 
-    assert!(
+    assert_eq!(
         store.record_typed_text(tab.id(), url, "i"),
+        WebSurfaceInputOutcome::Applied,
         "scroll must not erase keyboard focus — typing after a scroll should still buffer",
     );
 
@@ -121,10 +131,10 @@ fn retina_scale_factor_doubles_every_input_coordinate() -> Result<(), Box<dyn Er
     let tab = web_tab("https://example.com/form")?;
     let url = tab.url().as_str();
 
-    assert!(store.record_viewport_size(tab.id(), web_bounds(), 2.0));
-    assert!(store.record_click_point(tab.id(), url, point(px(160.0), px(120.0)), 2.0));
-    assert!(store.record_typed_text(tab.id(), url, "h"));
-    assert!(store.record_scroll_delta(tab.id(), url, point(px(0.0), px(140.0)), 2.0));
+    assert_applied(store.record_viewport_size(tab.id(), web_bounds(), 2.0));
+    assert_applied(store.record_click_point(tab.id(), url, point(px(160.0), px(120.0)), 2.0));
+    assert_applied(store.record_typed_text(tab.id(), url, "h"));
+    assert_applied(store.record_scroll_delta(tab.id(), url, point(px(0.0), px(140.0)), 2.0));
 
     let input = store.take_pending_input(tab.id(), url);
 
@@ -153,10 +163,52 @@ fn typing_without_a_prior_click_is_rejected() -> Result<(), Box<dyn Error>> {
     let tab = web_tab("https://example.com/form")?;
     let url = tab.url().as_str();
 
-    assert!(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
-    assert!(
-        !store.record_typed_text(tab.id(), url, "x"),
+    assert_applied(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
+    assert_eq!(
+        store.record_typed_text(tab.id(), url, "x"),
+        WebSurfaceInputOutcome::DroppedNoKeyboardFocus,
         "typing must fail until a click establishes keyboard focus on this tab and url",
+    );
+    Ok(())
+}
+
+/// Negative-path coverage for `DroppedNoViewportBounds`: a click that
+/// arrives before the viewport has reported its bounds (race during
+/// first paint) must surface as a typed outcome, not a silent `false`.
+#[test]
+fn click_before_viewport_measured_reports_no_viewport_bounds() -> Result<(), Box<dyn Error>> {
+    let mut store = WebSurfaceStore::new();
+    let tab = web_tab("https://example.com/form")?;
+
+    assert_eq!(
+        store.record_click_point(
+            tab.id(),
+            tab.url().as_str(),
+            point(px(160.0), px(120.0)),
+            1.0,
+        ),
+        WebSurfaceInputOutcome::DroppedNoViewportBounds,
+    );
+    Ok(())
+}
+
+/// Negative-path coverage for `DroppedZeroDelta`: a wheel event whose
+/// device-pixel delta rounds to zero must surface as the explicit
+/// outcome so the renderer skips an unnecessary repaint.
+#[test]
+fn zero_wheel_delta_reports_zero_delta() -> Result<(), Box<dyn Error>> {
+    let mut store = WebSurfaceStore::new();
+    let tab = web_tab("https://example.com/list")?;
+
+    assert_applied(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
+    assert_eq!(
+        store.record_scroll_delta(
+            tab.id(),
+            tab.url().as_str(),
+            point(px(0.0), px(0.0)),
+            1.0,
+        ),
+        WebSurfaceInputOutcome::DroppedZeroDelta,
     );
     Ok(())
 }

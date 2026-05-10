@@ -11,8 +11,8 @@ use super::{
     web_surface_permissions::WebSurfaceSitePermission,
     web_surface_runtime::{WebSurfaceRuntime, WebSurfaceRuntimeFrame},
     web_surface_state::{
-        PerTabSurface, WebSurfaceClickState, WebSurfaceKeyboardFocusState, WebSurfacePendingInput,
-        WebSurfaceScrollState, WebSurfaceState, WebSurfaceTextInputState,
+        PerTabSurface, WebSurfaceClickState, WebSurfaceInputOutcome, WebSurfaceKeyboardFocusState,
+        WebSurfacePendingInput, WebSurfaceScrollState, WebSurfaceState, WebSurfaceTextInputState,
     },
 };
 
@@ -103,9 +103,9 @@ impl WebSurfaceStore {
         requested_url: &str,
         delta: Point<Pixels>,
         scale_factor: f32,
-    ) -> bool {
+    ) -> WebSurfaceInputOutcome {
         let Some(delta) = WebSurfaceScrollDelta::from_point(delta, scale_factor) else {
-            return false;
+            return WebSurfaceInputOutcome::DroppedZeroDelta;
         };
 
         let surface = self.surface_mut(tab_id);
@@ -128,7 +128,7 @@ impl WebSurfaceStore {
         // its own DOM focus across scrolls, so a focused input keeps
         // accepting the user's keystrokes after they wheel-scroll.
         surface.click_point = None;
-        true
+        WebSurfaceInputOutcome::Applied
     }
 
     pub(super) fn record_viewport_size(
@@ -136,9 +136,9 @@ impl WebSurfaceStore {
         tab_id: &TabId,
         bounds: Bounds<Pixels>,
         scale_factor: f32,
-    ) -> bool {
+    ) -> WebSurfaceInputOutcome {
         let Some(size) = WebSurfaceSize::from_bounds(bounds, scale_factor) else {
-            return false;
+            return WebSurfaceInputOutcome::DroppedInvalidBounds;
         };
         let surface = self.surface_mut(tab_id);
         surface.viewport_bounds = Some(bounds);
@@ -146,22 +146,22 @@ impl WebSurfaceStore {
         let Some(current_size) = surface.viewport_size else {
             surface.viewport_size = Some(size);
             surface.pending_viewport_size = None;
-            return true;
+            return WebSurfaceInputOutcome::Applied;
         };
 
         if current_size == size {
             surface.pending_viewport_size = None;
-            return false;
+            return WebSurfaceInputOutcome::NoChange;
         }
 
         if surface.pending_viewport_size != Some(size) {
             surface.pending_viewport_size = Some(size);
-            return false;
+            return WebSurfaceInputOutcome::Buffered;
         }
 
         surface.pending_viewport_size = None;
         surface.viewport_size = Some(size);
-        true
+        WebSurfaceInputOutcome::Applied
     }
 
     pub(super) fn record_hover_point(
@@ -169,18 +169,18 @@ impl WebSurfaceStore {
         tab_id: &TabId,
         position: Point<Pixels>,
         scale_factor: f32,
-    ) -> bool {
+    ) -> WebSurfaceInputOutcome {
         let surface = self.surfaces.get_mut(tab_id).filter(|surface| surface.viewport_bounds.is_some());
         let Some(surface) = surface else {
-            return false;
+            return WebSurfaceInputOutcome::DroppedNoViewportBounds;
         };
         let bounds = surface.viewport_bounds.expect("viewport_bounds checked above");
         let Some(point) = WebSurfaceClickPoint::from_window_position(bounds, position, scale_factor)
         else {
-            return false;
+            return WebSurfaceInputOutcome::DroppedOutOfBounds;
         };
         surface.hover_point = Some(point);
-        true
+        WebSurfaceInputOutcome::Applied
     }
 
     pub(super) fn record_click_point(
@@ -189,15 +189,15 @@ impl WebSurfaceStore {
         requested_url: &str,
         position: Point<Pixels>,
         scale_factor: f32,
-    ) -> bool {
+    ) -> WebSurfaceInputOutcome {
         let Some(bounds) =
             self.surfaces.get(tab_id).and_then(|surface| surface.viewport_bounds)
         else {
-            return false;
+            return WebSurfaceInputOutcome::DroppedNoViewportBounds;
         };
         let Some(point) = WebSurfaceClickPoint::from_window_position(bounds, position, scale_factor)
         else {
-            return false;
+            return WebSurfaceInputOutcome::DroppedOutOfBounds;
         };
 
         let scroll_offset = self
@@ -220,7 +220,7 @@ impl WebSurfaceStore {
         let surface = self.surface_mut(tab_id);
         surface.typed_text = None;
         surface.click_point = Some(state);
-        true
+        WebSurfaceInputOutcome::Applied
     }
 
     pub(super) fn record_typed_text(
@@ -228,15 +228,15 @@ impl WebSurfaceStore {
         tab_id: &TabId,
         requested_url: &str,
         text: &str,
-    ) -> bool {
+    ) -> WebSurfaceInputOutcome {
         if text.is_empty() {
-            return false;
+            return WebSurfaceInputOutcome::DroppedEmptyText;
         }
         let Some(focus) = self.keyboard_focus.as_ref() else {
-            return false;
+            return WebSurfaceInputOutcome::DroppedNoKeyboardFocus;
         };
         if focus.tab_id != *tab_id || focus.requested_url != requested_url {
-            return false;
+            return WebSurfaceInputOutcome::DroppedFocusMismatch;
         }
 
         let scroll_offset = focus.scroll_offset;
@@ -262,7 +262,7 @@ impl WebSurfaceStore {
         }
 
         entry.text.push_str(text);
-        true
+        WebSurfaceInputOutcome::Applied
     }
 
     fn take_pending_input(
