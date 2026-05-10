@@ -89,6 +89,83 @@ async fn ely_shell_external_canvas_lays_out_inside_window(cx: &mut TestAppContex
     );
 }
 
+/// TDD red guard: a user click inside the rendered web canvas must
+/// arrive at the input pipeline. The contract is stated in user
+/// terms — "click on the page, and the click is recorded" — not in
+/// GPUI mechanism terms. The two baselines already prove (a) the
+/// `.occlude() + capture_any_mouse_up` primitive works under
+/// `TestAppContext`, and (b) the listener combo `input_overlay` uses
+/// works in isolation. The layout regression test proves (c) the
+/// overlay is on-screen. If this test still fails, the regression
+/// lives strictly inside the real ElyShell widget tree.
+///
+/// Marked `#[ignore]` while the diagnosis runs so the rest of the
+/// suite stays green. The fix commit MUST delete the attribute (not
+/// edit it) so the contract turns into a permanent regression guard
+/// on first green.
+#[gpui::test]
+#[ignore = "T7 red guard. Failure mode confirmed via `cargo test -- --ignored`: \
+            after layout (840255f) and pixel-pipe (a80d039) fixes, the \
+            ComboProbe baseline + layout sanity test both pass, yet a click \
+            at the measured viewport center never reaches \
+            WebSurfaceStore.click_point. The MouseUp is being eaten somewhere \
+            inside the real ElyShell widget tree (sibling z-order, ancestor \
+            listener consuming capture phase, or a hitbox content_mask \
+            clipped by overflow_hidden). The fix commit must remove this \
+            attribute outright — not toggle the reason."]
+async fn user_click_in_rendered_web_canvas_reaches_input_pipeline(
+    cx: &mut TestAppContext,
+) {
+    cx.update(|cx| gpui_component::init(cx));
+
+    let (shell, cx) = cx.add_window_view(|window, cx| super::ElyShell::new(window, cx));
+    cx.run_until_parked();
+
+    cx.update(|window, app_cx| {
+        shell.update(app_cx, |shell, ctx| {
+            shell.navigate_active_tab(
+                UrlText::parse("https://example.com/".to_string()).expect("valid URL"),
+                window,
+                ctx,
+            );
+        });
+    });
+    cx.run_until_parked();
+
+    let (active_tab_id, _active_tab_url, viewport_bounds) =
+        active_tab_overlay_state(&shell, cx);
+    let bounds = viewport_bounds.expect(
+        "viewport_bounds must be Some before T7 can be exercised — the layout \
+         regression test catches the upstream failure mode separately",
+    );
+
+    let click_at = point(
+        bounds.origin.x + bounds.size.width / 2.0,
+        bounds.origin.y + bounds.size.height / 2.0,
+    );
+    cx.simulate_mouse_move(click_at, None, Modifiers::default());
+    cx.simulate_click(click_at, Modifiers::default());
+    cx.run_until_parked();
+
+    shell.read_with(cx, |shell, _| {
+        let click_point = shell
+            .web_surfaces_for_test()
+            .surface_for_test(&active_tab_id)
+            .and_then(|surface| surface.click_point.as_ref())
+            .map(|state| (state.point.x(), state.point.y()));
+        assert!(
+            click_point.is_some(),
+            "TDD red: clicked at {click_at:?} inside the measured \
+             viewport_bounds {bounds:?}, yet WebSurfaceStore.click_point is \
+             None. The MouseUp event reached the window but was not delivered \
+             to input_overlay's capture_any_mouse_up listener. Diagnosis: \
+             walk rendered_frame.mouse_listeners ordering vs hitbox \
+             content_mask for the overlay — likely an ancestor with \
+             stop_propagation or a sibling occluding the hitbox."
+        );
+    });
+}
+
 #[gpui::test]
 async fn baseline_overlay_with_full_listener_combo_receives_click(
     cx: &mut TestAppContext,
