@@ -2,9 +2,9 @@ use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
 use ely_domain::{BrowserTab, DEFAULT_SIDEBAR_WIDTH_PX, HIDDEN_SIDEBAR_WIDTH_PX};
 use gpui::{
-    AnyElement, Context, InteractiveElement, IntoElement, KeyDownEvent, MouseMoveEvent,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window, div,
-    prelude::FluentBuilder, px, rgb, rgba,
+    AnyElement, Context, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px, rgb, rgba,
 };
 
 use super::chrome::command_match::visible_command_rows;
@@ -68,6 +68,7 @@ impl ElyShell {
             .on_action(cx.listener(Self::on_zoom_in))
             .on_action(cx.listener(Self::on_zoom_out))
             .on_mouse_move(cx.listener(Self::on_window_mouse_move))
+            .on_mouse_up(MouseButton::Left, cx.listener(Self::on_window_mouse_up))
             .capture_key_down(cx.listener(Self::on_command_overlay_key_down))
             .font_family(SANS_FAMILY)
             .text_color(rgb(colors::INK))
@@ -214,6 +215,15 @@ impl ElyShell {
     ) {
         let cursor_x = f32::from(event.position.x);
 
+        if let Some((origin_x, origin_width)) = self.sidebar_resize_origin {
+            let delta = cursor_x - origin_x;
+            let candidate = (f32::from(origin_width) + delta)
+                .clamp(MIN_RESIZE_WIDTH_PX, MAX_RESIZE_WIDTH_PX)
+                .round() as u16;
+            self.set_active_sidebar_width(candidate, cx);
+            return;
+        }
+
         if cursor_x >= REVEAL_THRESHOLD_PX && cursor_x <= COLLAPSE_THRESHOLD_PX {
             return;
         }
@@ -233,6 +243,36 @@ impl ElyShell {
         } else if self.sidebar_hover_expanded && cursor_x > COLLAPSE_THRESHOLD_PX {
             self.collapse_hidden_sidebar(cx);
         }
+    }
+
+    pub(super) fn begin_sidebar_resize(
+        &mut self,
+        cursor_x: f32,
+        cx: &mut Context<Self>,
+    ) {
+        let ShellState::Ready(core) = &self.state else {
+            return;
+        };
+        let Some(width) = core.active_space_sidebar_width() else {
+            return;
+        };
+        self.sidebar_resize_origin = Some((cursor_x, width));
+        cx.notify();
+    }
+
+    pub(super) fn end_sidebar_resize(&mut self, cx: &mut Context<Self>) {
+        if self.sidebar_resize_origin.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    fn on_window_mouse_up(
+        &mut self,
+        _event: &MouseUpEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.end_sidebar_resize(cx);
     }
 
     fn render_hidden_sidebar_rail(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -255,6 +295,16 @@ impl ElyShell {
 /// Painted as the panel's own border so it stays part of the frame and
 /// never participates in hit testing.
 const MAIN_PANE_HIGHLIGHT_BORDER: u32 = 0xffffff80;
+
+/// Lower clamp for the live sidebar-resize drag. Stays a touch above
+/// the per-space DEFAULT so a casual flick doesn't snap the user to a
+/// nearly-collapsed pane that's awkward to recover from. The toggle
+/// button still owns the discrete collapse-to-rail behavior.
+pub(super) const MIN_RESIZE_WIDTH_PX: f32 = 220.0;
+
+/// Upper clamp — wider than this and the main pane disappears on
+/// smaller windows. Tuned to fit comfortably on a 1280-wide window.
+pub(super) const MAX_RESIZE_WIDTH_PX: f32 = 480.0;
 
 /// Cursor x within this px from the left edge auto-reveals the hidden sidebar.
 /// Sized so the user only triggers the reveal when they actually approach the

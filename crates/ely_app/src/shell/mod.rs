@@ -68,6 +68,10 @@ pub struct ElyShell {
     pub(crate) workspace_picker_open: bool,
     pub(crate) sidebar_hover_expanded: bool,
     pub(crate) command_selected_index: usize,
+    /// Live state for sidebar-resize drag. While the user holds the
+    /// resize handle: `(mouse_x_at_drag_start, sidebar_width_px_at_drag_start)`.
+    /// `None` whenever no drag is in flight.
+    pub(crate) sidebar_resize_origin: Option<(f32, u16)>,
     download_action_error: Option<String>,
     download_clear_confirmation: bool,
     download_security_confirmation: Option<PendingDownloadFileAction>,
@@ -182,6 +186,7 @@ impl ElyShell {
             workspace_picker_open: false,
             sidebar_hover_expanded: false,
             command_selected_index: 0,
+            sidebar_resize_origin: None,
             download_action_error: None,
             download_clear_confirmation: false,
             download_security_confirmation: None,

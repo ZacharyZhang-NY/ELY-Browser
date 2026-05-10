@@ -2,9 +2,9 @@ use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
 use ely_domain::BrowserTab;
 use gpui::{
-    AnyElement, BoxShadow, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, div, hsla, linear_color_stop, linear_gradient, point,
-    prelude::FluentBuilder, px, rgb, rgba,
+    AnyElement, BoxShadow, Context, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, SharedString, StatefulInteractiveElement, Styled, div, hsla,
+    linear_color_stop, linear_gradient, point, prelude::FluentBuilder, px, rgb, rgba,
 };
 use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
 
@@ -22,6 +22,7 @@ impl ElyShell {
         div()
             .w(px(sidebar_width))
             .h_full()
+            .relative()
             .flex()
             .flex_col()
             .rounded(px(spacing::RADIUS_CARD))
@@ -60,6 +61,7 @@ impl ElyShell {
                     .child(self.render_new_tab_row(cx)),
             )
             .child(self.render_sidebar_footer(snapshot, cx))
+            .child(render_sidebar_resize_handle(cx))
             .into_any_element()
     }
 
@@ -418,6 +420,31 @@ const UNREAD_BADGE_BG: u32 = 0x281e140f;
 /// Painted as the panel's own border so it stays part of the frame and
 /// never participates in hit testing.
 const HIGHLIGHT_BORDER: u32 = 0xffffff80;
+
+/// Sidebar resize affordance pinned to the panel's right edge. The
+/// strip itself is invisible until hovered; on mouse-down it tells the
+/// shell to capture the drag origin so window-level mouse-move can
+/// compute the live width.
+fn render_sidebar_resize_handle(cx: &mut Context<ElyShell>) -> AnyElement {
+    div()
+        .id(SharedString::from("sidebar-resize-handle"))
+        .absolute()
+        .top_0()
+        .bottom_0()
+        .right(px(-2.0))
+        .w(px(6.0))
+        .cursor_col_resize()
+        .hover(|style| style.bg(rgba(RESIZE_HANDLE_HOVER_BG)))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|shell, event: &gpui::MouseDownEvent, _, cx| {
+                shell.begin_sidebar_resize(f32::from(event.position.x), cx);
+            }),
+        )
+        .into_any_element()
+}
+
+const RESIZE_HANDLE_HOVER_BG: u32 = 0xffffff66;
 
 /// Maps appearance translucency_pct to a panel rgba u32 tinted by the
 /// active wallpaper theme.
