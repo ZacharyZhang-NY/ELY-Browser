@@ -203,6 +203,11 @@ where
         .into_any_element()
 }
 
+/// Topbar nav arrow placeholder. Per-tab back/forward history is not yet
+/// wired through `BrowserCore`, so the buttons render in the design's
+/// `disabled` state — visible at INK_5, no hover, no cursor pointer —
+/// to honor the "no fake handlers, no mockup" rule. When real history
+/// navigation lands the caller can flip these to a clickable variant.
 fn render_nav_arrow(id: &'static str, icon: IconName) -> AnyElement {
     div()
         .id(SharedString::from(id))
@@ -211,10 +216,7 @@ fn render_nav_arrow(id: &'static str, icon: IconName) -> AnyElement {
         .flex()
         .items_center()
         .justify_center()
-        .cursor_pointer()
-        .text_color(rgb(colors::INK_3))
-        .hover(|style| style.bg(rgba(OMNIBAR_BG)).text_color(rgb(colors::INK)))
-        .active(|style| style.opacity(0.82))
+        .text_color(rgb(colors::INK_5))
         .child(icon)
         .into_any_element()
 }
