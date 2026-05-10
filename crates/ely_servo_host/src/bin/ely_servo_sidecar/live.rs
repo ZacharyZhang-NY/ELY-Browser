@@ -136,8 +136,8 @@ fn write_outcome(
     let outcome = outcome.unwrap_or_else(|error| LiveOutcome::error(error.to_string()));
     serde_json::to_writer(&mut *stdout, &outcome.response)?;
     stdout.write_all(b"\n")?;
-    if let Some(frame_bytes) = outcome.frame_bytes {
-        stdout.write_all(&frame_bytes)?;
+    if let Some(frame) = outcome.frame.as_ref() {
+        stdout.write_all(frame.rgba_bytes())?;
     }
     stdout.flush()?;
     Ok(())
@@ -271,7 +271,8 @@ fn poll_frame(
             let frame = host.last_rendered_frame()?;
             let has_visible_content =
                 frame.non_white_pixel_count() > 0 && frame.content_pixel_count() > 0;
-            let outcome = LiveOutcome::frame(LiveFrameReport::new(&snapshot, &frame), &frame);
+            let report = LiveFrameReport::new(&snapshot, &frame);
+            let outcome = LiveOutcome::from_frame(report, frame);
             if has_visible_content {
                 session.awaiting_visible_frame = false;
                 return Ok(outcome);
@@ -353,28 +354,29 @@ struct LiveSitePermission {
     decision: String,
 }
 
-/// A handle plus an optional raw-bytes payload, kept together until
-/// the moment of writing to stdout. The JSON header advertises
-/// `rgba_byte_count`; the binary follows on the same pipe.
+/// A handle plus an optional rendered frame, kept together until the
+/// moment of writing to stdout. The JSON header advertises
+/// `rgba_byte_count`; the binary follows on the same pipe. We carry
+/// the `RenderedFrame` (one host-side clone, already paid for inside
+/// `host.last_rendered_frame`) instead of doing another `to_vec()`
+/// over `rgba_bytes()` — `write_all(&self.rgba_bytes()[..])` writes
+/// the existing slice straight to the pipe.
 struct LiveOutcome {
     response: LiveResponse,
-    frame_bytes: Option<Vec<u8>>,
+    frame: Option<RenderedFrame>,
 }
 
 impl LiveOutcome {
     fn empty() -> Self {
-        Self { response: LiveResponse::empty(), frame_bytes: None }
+        Self { response: LiveResponse::empty(), frame: None }
     }
 
     fn error(message: String) -> Self {
-        Self { response: LiveResponse::error(message), frame_bytes: None }
+        Self { response: LiveResponse::error(message), frame: None }
     }
 
-    fn frame(report: LiveFrameReport, frame: &RenderedFrame) -> Self {
-        Self {
-            response: LiveResponse::frame(report),
-            frame_bytes: Some(frame.rgba_bytes().to_vec()),
-        }
+    fn from_frame(report: LiveFrameReport, frame: RenderedFrame) -> Self {
+        Self { response: LiveResponse::frame(report), frame: Some(frame) }
     }
 }
 
