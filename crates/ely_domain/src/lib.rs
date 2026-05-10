@@ -58,7 +58,10 @@ pub use site_permission::{
     SiteOrigin, SitePermissionAuditAction, SitePermissionAuditEvent, SitePermissionDecision,
     SitePermissionEntry, SitePermissionFeature,
 };
-pub use space::{ArchivePolicy, COLLAPSED_SIDEBAR_WIDTH_PX, DEFAULT_SIDEBAR_WIDTH_PX, Space};
+pub use space::{
+    ArchivePolicy, COLLAPSED_SIDEBAR_WIDTH_PX, DEFAULT_SIDEBAR_WIDTH_PX, HIDDEN_SIDEBAR_WIDTH_PX,
+    Space,
+};
 pub use split::{MAX_SPLIT_PANES, SplitAxis, SplitLayout, SplitPane};
 pub use sync::{
     SyncConnectionState, SyncObjectKind, SyncObjectPolicy, SyncObjectState, SyncObjectStatus,

@@ -4,6 +4,7 @@ use crate::{ProfileId, SpaceId};
 
 pub const DEFAULT_SIDEBAR_WIDTH_PX: u16 = 280;
 pub const COLLAPSED_SIDEBAR_WIDTH_PX: u16 = 56;
+pub const HIDDEN_SIDEBAR_WIDTH_PX: u16 = 8;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ArchivePolicy {

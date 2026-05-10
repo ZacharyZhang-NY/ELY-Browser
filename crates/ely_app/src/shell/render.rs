@@ -1,9 +1,9 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
-use ely_domain::BrowserTab;
+use ely_domain::{BrowserTab, DEFAULT_SIDEBAR_WIDTH_PX, HIDDEN_SIDEBAR_WIDTH_PX};
 use gpui::{
-    AnyElement, Context, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window,
-    div, px, rgb, rgba,
+    AnyElement, Context, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px, rgb, rgba,
 };
 
 use super::chrome::{
@@ -36,7 +36,9 @@ impl ElyShell {
             Ok(sidebar_width) => sidebar_width,
             Err(message) => return render_error(message),
         };
-        let sidebar_collapsed = collapsed_sidebar_active(sidebar_width);
+        let sidebar_hidden = sidebar_width <= f32::from(HIDDEN_SIDEBAR_WIDTH_PX);
+        let sidebar_collapsed = collapsed_sidebar_active(sidebar_width) && !sidebar_hidden;
+        let hover_expanded = sidebar_hidden && self.sidebar_hover_expanded;
 
         div()
             .size_full()
@@ -72,10 +74,49 @@ impl ElyShell {
                     .p(px(spacing::SHELL_INSET))
                     .gap(px(spacing::SIDEBAR_MAIN_GAP))
                     .flex()
-                    .child(self.render_sidebar(&snapshot, sidebar_width, sidebar_collapsed, cx))
+                    .child(self.render_sidebar(
+                        &snapshot,
+                        sidebar_width,
+                        sidebar_collapsed,
+                        sidebar_hidden,
+                        cx,
+                    ))
                     .child(self.render_main_pane(&snapshot, &active_tab, sidebar_collapsed, cx)),
             )
+            .when(hover_expanded, |el| {
+                el.child(self.render_hidden_sidebar_overlay(&snapshot, cx))
+            })
             .children(render_command_overlay(&snapshot, cx))
+            .into_any_element()
+    }
+
+    fn render_hidden_sidebar_overlay(
+        &mut self,
+        snapshot: &BrowserSnapshot,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .absolute()
+            .inset_0()
+            .child(
+                div()
+                    .id(SharedString::from("hidden-sidebar-backdrop"))
+                    .absolute()
+                    .inset_0()
+                    .on_click(cx.listener(|shell, _, _, cx| shell.collapse_hidden_sidebar(cx))),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top(px(spacing::SHELL_INSET))
+                    .left(px(spacing::SHELL_INSET))
+                    .bottom(px(spacing::SHELL_INSET))
+                    .child(self.render_expanded_sidebar(
+                        snapshot,
+                        f32::from(DEFAULT_SIDEBAR_WIDTH_PX),
+                        cx,
+                    )),
+            )
             .into_any_element()
     }
 
@@ -112,12 +153,30 @@ impl ElyShell {
         snapshot: &BrowserSnapshot,
         sidebar_width: f32,
         sidebar_collapsed: bool,
+        sidebar_hidden: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        if sidebar_hidden {
+            return self.render_hidden_sidebar_rail(cx);
+        }
         if sidebar_collapsed {
             return self.render_compact_sidebar(snapshot, sidebar_width, cx);
         }
         self.render_expanded_sidebar(snapshot, sidebar_width, cx)
+    }
+
+    fn render_hidden_sidebar_rail(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .id(SharedString::from("hidden-sidebar-rail"))
+            .w(px(f32::from(HIDDEN_SIDEBAR_WIDTH_PX)))
+            .h_full()
+            .rounded(px(spacing::RADIUS_PANE))
+            .bg(rgba(0xffffff8c))
+            .cursor_pointer()
+            .hover(|style| style.bg(rgba(0xffffffd9)))
+            .active(|style| style.opacity(0.78))
+            .on_click(cx.listener(|shell, _, _, cx| shell.expand_hidden_sidebar(cx)))
+            .into_any_element()
     }
 }
 

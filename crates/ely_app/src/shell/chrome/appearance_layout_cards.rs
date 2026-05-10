@@ -1,6 +1,8 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::{COLLAPSED_SIDEBAR_WIDTH_PX, DEFAULT_SIDEBAR_WIDTH_PX};
+use ely_domain::{
+    COLLAPSED_SIDEBAR_WIDTH_PX, DEFAULT_SIDEBAR_WIDTH_PX, HIDDEN_SIDEBAR_WIDTH_PX,
+};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, div, prelude::FluentBuilder, px, rgb, rgba,
@@ -19,7 +21,7 @@ pub(crate) fn render_sidebar_layout_section(
         .find(|space| space.id() == &snapshot.active_space_id)
         .map(|space| space.sidebar_width_px())
         .unwrap_or(DEFAULT_SIDEBAR_WIDTH_PX);
-    let compact = active_width <= COLLAPSED_SIDEBAR_WIDTH_PX;
+    let mode = LayoutMode::from_width(active_width);
 
     div()
         .flex()
@@ -43,30 +45,74 @@ pub(crate) fn render_sidebar_layout_section(
         .child(
             div()
                 .grid()
-                .grid_cols(2)
+                .grid_cols(3)
                 .gap(px(10.0))
                 .child(render_layout_card(
                     "Single column",
                     "Default · workspace + tabs.",
-                    !compact,
+                    mode == LayoutMode::Single,
                     LayoutMode::Single,
                     cx,
                 ))
                 .child(render_layout_card(
                     "Compact",
                     "Icons-only with launcher rail.",
-                    compact,
+                    mode == LayoutMode::Compact,
                     LayoutMode::Compact,
+                    cx,
+                ))
+                .child(render_layout_card(
+                    "Hidden on hover",
+                    "Slide in on cursor reach.",
+                    mode == LayoutMode::Hidden,
+                    LayoutMode::Hidden,
                     cx,
                 )),
         )
         .into_any_element()
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 enum LayoutMode {
     Single,
     Compact,
+    Hidden,
+}
+
+impl LayoutMode {
+    fn from_width(width: u16) -> Self {
+        if width <= HIDDEN_SIDEBAR_WIDTH_PX {
+            Self::Hidden
+        } else if width <= COLLAPSED_SIDEBAR_WIDTH_PX {
+            Self::Compact
+        } else {
+            Self::Single
+        }
+    }
+
+    fn width(self) -> u16 {
+        match self {
+            Self::Single => DEFAULT_SIDEBAR_WIDTH_PX,
+            Self::Compact => COLLAPSED_SIDEBAR_WIDTH_PX,
+            Self::Hidden => HIDDEN_SIDEBAR_WIDTH_PX,
+        }
+    }
+
+    fn id(self) -> &'static str {
+        match self {
+            Self::Single => "layout-single",
+            Self::Compact => "layout-compact",
+            Self::Hidden => "layout-hidden",
+        }
+    }
+
+    fn preview_sidebar(self) -> f32 {
+        match self {
+            Self::Single => 56.0,
+            Self::Compact => 18.0,
+            Self::Hidden => 6.0,
+        }
+    }
 }
 
 fn render_layout_card(
@@ -76,13 +122,8 @@ fn render_layout_card(
     mode: LayoutMode,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
-    let id = SharedString::from(match mode {
-        LayoutMode::Single => "layout-single",
-        LayoutMode::Compact => "layout-compact",
-    });
-
     div()
-        .id(id)
+        .id(SharedString::from(mode.id()))
         .p(px(14.0))
         .rounded(px(14.0))
         .bg(rgba(LAYOUT_CARD_BG))
@@ -95,11 +136,7 @@ fn render_layout_card(
         .hover(|style| style.opacity(0.94))
         .active(|style| style.opacity(0.85))
         .on_click(cx.listener(move |shell, _, _, cx| {
-            let width = match mode {
-                LayoutMode::Single => DEFAULT_SIDEBAR_WIDTH_PX,
-                LayoutMode::Compact => COLLAPSED_SIDEBAR_WIDTH_PX,
-            };
-            shell.set_active_sidebar_width(width, cx);
+            shell.set_active_sidebar_width(mode.width(), cx);
         }))
         .child(render_layout_preview(mode))
         .child(
@@ -125,10 +162,7 @@ fn render_layout_card(
 }
 
 fn render_layout_preview(mode: LayoutMode) -> AnyElement {
-    let sidebar_width = match mode {
-        LayoutMode::Single => 56.0,
-        LayoutMode::Compact => 18.0,
-    };
+    let sidebar_width = mode.preview_sidebar();
 
     div()
         .h(px(96.0))

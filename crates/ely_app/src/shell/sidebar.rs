@@ -1,7 +1,8 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
 use ely_domain::{
-    ArchivedTab, BrowserTab, COLLAPSED_SIDEBAR_WIDTH_PX, DEFAULT_SIDEBAR_WIDTH_PX, Space,
+    ArchivedTab, BrowserTab, COLLAPSED_SIDEBAR_WIDTH_PX, DEFAULT_SIDEBAR_WIDTH_PX,
+    HIDDEN_SIDEBAR_WIDTH_PX, Space,
 };
 use gpui::{
     AnyElement, BoxShadow, Context, IntoElement, ParentElement, Styled, Window, div, hsla, point,
@@ -124,6 +125,23 @@ impl ElyShell {
         };
 
         if core.set_space_sidebar_width(&active_space_id, width_px).is_ok() {
+            if width_px > HIDDEN_SIDEBAR_WIDTH_PX {
+                self.sidebar_hover_expanded = false;
+            }
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn expand_hidden_sidebar(&mut self, cx: &mut Context<Self>) {
+        if !self.sidebar_hover_expanded {
+            self.sidebar_hover_expanded = true;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn collapse_hidden_sidebar(&mut self, cx: &mut Context<Self>) {
+        if self.sidebar_hover_expanded {
+            self.sidebar_hover_expanded = false;
             cx.notify();
         }
     }
