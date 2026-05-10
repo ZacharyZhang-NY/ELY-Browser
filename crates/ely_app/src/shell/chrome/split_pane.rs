@@ -7,20 +7,25 @@ use gpui::{
 use gpui_component::IconName;
 
 use crate::shell::ElyShell;
-use crate::shell::chrome::render_glyph_for;
+use crate::shell::chrome::accent_color_for_host;
 
+/// Pane header chrome for a split tab.
+///
+/// Matches the design's split.jsx Pane header: 30 px tall, warm card bg,
+/// hairline divider, an 8 px brand-accent dot, the secure indicator, host
+/// name in INK, the tab title in INK_4, then reload + close glyphs.
 pub(crate) fn render_split_pane_header(
     host: String,
-    path: String,
+    title: String,
     secure: bool,
-    glyph_initial: String,
     close_tab_id: TabId,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let lock_or_globe = if secure { IconName::Search } else { IconName::Globe };
+    let accent = accent_color_for_host(Some(host.as_str()));
 
     div()
-        .h(px(32.0))
+        .h(px(30.0))
         .px(px(10.0))
         .gap(px(8.0))
         .flex()
@@ -29,7 +34,12 @@ pub(crate) fn render_split_pane_header(
         .border_b_1()
         .border_color(rgb(colors::HAIRLINE))
         .bg(rgb(0xf6f4ef))
-        .child(render_glyph_for(Some(host.as_str()), &glyph_initial, 16.0))
+        .child(
+            div()
+                .size(px(8.0))
+                .rounded_full()
+                .bg(rgb(accent)),
+        )
         .child(
             div()
                 .text_color(rgb(colors::INK_3))
@@ -38,7 +48,7 @@ pub(crate) fn render_split_pane_header(
         )
         .child(
             div()
-                .text_size(px(11.5))
+                .text_size(px(11.0))
                 .font_weight(FontWeight(500.0))
                 .text_color(rgb(colors::INK))
                 .child(host),
@@ -50,7 +60,7 @@ pub(crate) fn render_split_pane_header(
                 .truncate()
                 .text_size(px(11.0))
                 .text_color(rgb(colors::INK_4))
-                .child(path),
+                .child(title),
         )
         .child(render_reload_glyph(close_tab_id.clone(), cx))
         .child(render_close_glyph(close_tab_id, cx))
@@ -93,16 +103,6 @@ pub(crate) fn pane_host_label(tab: &BrowserTab) -> String {
         .host()
         .map(|host| host.to_string())
         .unwrap_or_else(|| tab.title().to_string())
-}
-
-pub(crate) fn pane_path_label(tab: &BrowserTab) -> String {
-    let url = tab.url().as_str();
-    let path_start = url.find("://").map(|prefix| prefix + 3).unwrap_or(0);
-    let from_path = &url[path_start..];
-    match from_path.find('/') {
-        Some(slash) => from_path[slash..].to_string(),
-        None => String::new(),
-    }
 }
 
 pub(crate) fn pane_url_is_secure(tab: &BrowserTab) -> bool {

@@ -11,7 +11,7 @@ use gpui_component::{
 };
 
 use super::chrome::{
-    pane_host_label, pane_path_label, pane_url_is_secure, render_compact_split_canvas,
+    pane_host_label, pane_url_is_secure, render_compact_split_canvas,
     render_split_pane_header,
 };
 use super::{ElyShell, ShellState};
@@ -190,14 +190,8 @@ impl ElyShell {
         let close_tab_id = tab.id().clone();
         let border = if active { colors::ACCENT } else { colors::HAIRLINE_STRONG };
         let host = pane_host_label(tab);
-        let path = pane_path_label(tab);
+        let title = tab.title().to_string();
         let secure = pane_url_is_secure(tab);
-        let glyph_initial = tab
-            .title()
-            .chars()
-            .next()
-            .unwrap_or('?')
-            .to_string();
 
         div()
             .id(SharedString::from(format!("split-pane-{}", tab.id().as_str())))
@@ -217,7 +211,7 @@ impl ElyShell {
             .on_click(cx.listener(move |shell, _, window, cx| {
                 shell.select_tab(&tab_id, window, cx);
             }))
-            .child(render_split_pane_header(host, path, secure, glyph_initial, close_tab_id, cx))
+            .child(render_split_pane_header(host, title, secure, close_tab_id, cx))
             .child(div().flex_1().min_h_0().overflow_hidden().child(if compact_canvas {
                 render_compact_split_canvas(tab)
             } else {

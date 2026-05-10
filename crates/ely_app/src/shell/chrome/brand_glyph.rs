@@ -102,6 +102,35 @@ pub(crate) fn render_glyph_for(
     render_fallback(fallback_initial, size)
 }
 
+/// Single-color accent for a brand — used by surfaces (split-pane headers,
+/// tab indicators) that need a readable dot rather than the full brand mark.
+/// Matches the design's `accent` prop on each pane.
+pub(crate) fn brand_accent_color(brand: Brand) -> u32 {
+    match brand {
+        Brand::Notion => 0x111111,
+        Brand::YouTube => 0xff3b2d,
+        Brand::Dribbble => 0xea4c89,
+        Brand::X => 0x1d1c1a,
+        Brand::Vercel => 0x1d1c1a,
+        Brand::Behance => 0x1769ff,
+        Brand::Figma => 0x7c6cf7,
+        Brand::Slack => 0xe01e5a,
+        Brand::GitHub => 0x1d1c1a,
+        Brand::Linear => 0x5e6ad2,
+        Brand::Reading => 0xc96442,
+        Brand::News => 0x3a3733,
+    }
+}
+
+/// Best-effort accent for any host. Falls back to the warm system accent so
+/// unknown sites still render the design's colored dot instead of looking
+/// stranded.
+pub(crate) fn accent_color_for_host(host: Option<&str>) -> u32 {
+    host.and_then(Brand::from_host)
+        .map(brand_accent_color)
+        .unwrap_or(colors::ACCENT)
+}
+
 fn render_notion(size: f32) -> AnyElement {
     flat_square(size, 0xffffff, fontable(size, 0.65, 700.0, 0x111111, "N"))
 }
