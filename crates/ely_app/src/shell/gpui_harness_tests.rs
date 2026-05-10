@@ -30,7 +30,7 @@ use std::sync::Arc;
 use ely_domain::{TabId, UrlText};
 use gpui::{
     Bounds, Context, IntoElement, Modifiers, MouseButton, ParentElement, Pixels, Render,
-    Styled, TestAppContext, Window, div, point, px,
+    Styled, TestAppContext, Window, canvas, div, point, px,
 };
 use gpui::InteractiveElement;
 
@@ -143,11 +143,34 @@ async fn user_click_in_rendered_web_canvas_reaches_input_pipeline(
          regression test catches the upstream failure mode separately",
     );
 
+    let surface_state_label = shell.read_with(cx, |shell, _| {
+        match shell
+            .web_surfaces_for_test()
+            .surface_for_test(&active_tab_id)
+            .and_then(|s| s.state.as_ref())
+        {
+            Some(super::web_surface_state::WebSurfaceState::Ready(_)) => "Ready",
+            Some(super::web_surface_state::WebSurfaceState::Loading { .. }) => "Loading",
+            Some(super::web_surface_state::WebSurfaceState::Failed { .. }) => "Failed",
+            None => "None",
+        }
+    });
+
     let click_at = point(
         bounds.origin.x + bounds.size.width / 2.0,
         bounds.origin.y + bounds.size.height / 2.0,
     );
     cx.simulate_mouse_move(click_at, None, Modifiers::default());
+    cx.run_until_parked();
+
+    let hover_point_after_move = shell.read_with(cx, |shell, _| {
+        shell
+            .web_surfaces_for_test()
+            .surface_for_test(&active_tab_id)
+            .and_then(|surface| surface.hover_point)
+            .map(|point| (point.x(), point.y()))
+    });
+
     cx.simulate_click(click_at, Modifiers::default());
     cx.run_until_parked();
 
@@ -160,14 +183,470 @@ async fn user_click_in_rendered_web_canvas_reaches_input_pipeline(
         assert!(
             click_point.is_some(),
             "TDD red: clicked at {click_at:?} inside the measured \
-             viewport_bounds {bounds:?}, yet WebSurfaceStore.click_point is \
-             None. The MouseUp event reached the window but was not delivered \
-             to input_overlay's capture_any_mouse_up listener. Diagnosis: \
-             walk rendered_frame.mouse_listeners ordering vs hitbox \
-             content_mask for the overlay — likely an ancestor with \
-             stop_propagation or a sibling occluding the hitbox."
+             viewport_bounds {bounds:?} (state = {surface_state_label}, \
+             hover_point after move = {hover_point_after_move:?}), yet \
+             WebSurfaceStore.click_point is None. If hover_point is \
+             Some, input_overlay's on_mouse_move listener fires but \
+             capture_any_mouse_up does not — capture phase specifically \
+             is being eaten."
         );
     });
+}
+
+/// Bisect probe for T7: same listener combo as `input_overlay`, but
+/// wrap it in the exact `.relative().size_full().min_w_0().overflow_hidden()`
+/// shell that `render_web_surface` puts around it after the layout
+/// fix in 840255f. If this passes, the bug is upstream of the
+/// relative wrapper itself.
+#[gpui::test]
+async fn baseline_overlay_under_overflow_hidden_relative_receives_click(
+    cx: &mut TestAppContext,
+) {
+    let click_count = Rc::new(RefCell::new(0u32));
+    let counter_for_render = click_count.clone();
+
+    struct WrappedProbe {
+        on_up_counter: Rc<RefCell<u32>>,
+    }
+    impl Render for WrappedProbe {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let counter = self.on_up_counter.clone();
+            div()
+                .relative()
+                .size_full()
+                .min_w_0()
+                .overflow_hidden()
+                .child(
+                    div()
+                        .absolute()
+                        .size_full()
+                        .occlude()
+                        .on_mouse_down(MouseButton::Left, |_event, _window, _cx| {})
+                        .capture_any_mouse_up(move |_event, _window, _cx| {
+                            *counter.borrow_mut() += 1;
+                        })
+                        .on_mouse_move(|_event, _window, _cx| {})
+                        .on_scroll_wheel(|_event, _window, _cx| {}),
+                )
+        }
+    }
+
+    let (_probe, cx) = cx.add_window_view(|_window, _cx| WrappedProbe {
+        on_up_counter: counter_for_render,
+    });
+    cx.run_until_parked();
+
+    cx.simulate_mouse_move(point(px(100.0), px(100.0)), None, Modifiers::default());
+    cx.simulate_click(point(px(100.0), px(100.0)), Modifiers::default());
+    cx.run_until_parked();
+
+    assert_eq!(
+        *click_count.borrow(),
+        1,
+        "Bisect: wrapping the input_overlay's listener combo in a \
+         .relative().size_full().min_w_0().overflow_hidden() parent (the \
+         exact shell render_web_surface uses) should still deliver the \
+         click. If this fails, the overflow_hidden parent itself clips the \
+         overlay's hitbox content_mask and the fix is to remove \
+         overflow_hidden from the relative wrapper or move it elsewhere."
+    );
+}
+
+/// Bisect probe layer 2: stack the full ElyShell wrapper chain that
+/// sits between the window root and the overlay — root size_full,
+/// absolute inset_0 flex container, flex_1 + flex_col main pane with
+/// rounded/border/shadow/overflow_hidden, flex_1 content wrapper,
+/// then the relative+overflow_hidden surface wrapper from
+/// `render_web_surface`. If this passes, the bug is in something
+/// `render_external_web_canvas` adds (not in the plain layout chain).
+#[gpui::test]
+async fn baseline_overlay_under_full_elyshell_wrapper_chain_receives_click(
+    cx: &mut TestAppContext,
+) {
+    let click_count = Rc::new(RefCell::new(0u32));
+    let counter_for_render = click_count.clone();
+
+    struct DeepProbe {
+        on_up_counter: Rc<RefCell<u32>>,
+    }
+    impl Render for DeepProbe {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let counter = self.on_up_counter.clone();
+            // Root: matches render_browser's outer div.
+            div()
+                .size_full()
+                .child(
+                    // Absolute flex container matches render_browser's child layout.
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .p(px(16.0))
+                        .gap(px(12.0))
+                        .flex()
+                        .child(
+                            // Main pane: matches render_main_pane.
+                            div()
+                                .flex_1()
+                                .h_full()
+                                .min_w_0()
+                                .flex()
+                                .flex_col()
+                                .rounded(px(18.0))
+                                .border_1()
+                                .overflow_hidden()
+                                .child(
+                                    // Content wrapper: matches the flex_1 child of main_pane.
+                                    div()
+                                        .flex_1()
+                                        .overflow_hidden()
+                                        .child(
+                                            // Surface wrapper: matches render_web_surface root.
+                                            div()
+                                                .relative()
+                                                .size_full()
+                                                .min_w_0()
+                                                .overflow_hidden()
+                                                .child(
+                                                    div()
+                                                        .absolute()
+                                                        .size_full()
+                                                        .occlude()
+                                                        .on_mouse_down(
+                                                            MouseButton::Left,
+                                                            |_event, _window, _cx| {},
+                                                        )
+                                                        .capture_any_mouse_up(
+                                                            move |_event, _window, _cx| {
+                                                                *counter.borrow_mut() += 1;
+                                                            },
+                                                        )
+                                                        .on_mouse_move(
+                                                            |_event, _window, _cx| {},
+                                                        )
+                                                        .on_scroll_wheel(
+                                                            |_event, _window, _cx| {},
+                                                        ),
+                                                ),
+                                        ),
+                                ),
+                        ),
+                )
+        }
+    }
+
+    let (_probe, cx) = cx.add_window_view(|_window, _cx| DeepProbe {
+        on_up_counter: counter_for_render,
+    });
+    cx.run_until_parked();
+
+    cx.simulate_mouse_move(point(px(400.0), px(400.0)), None, Modifiers::default());
+    cx.simulate_click(point(px(400.0), px(400.0)), Modifiers::default());
+    cx.run_until_parked();
+
+    assert_eq!(
+        *click_count.borrow(),
+        1,
+        "Bisect layer 2: the full root → absolute-flex → main-pane → \
+         content-wrapper → surface-wrapper chain (sans listeners) \
+         should still deliver the click. If this fails, the bug is in \
+         this wrapper chain itself; if it passes, the bug is in \
+         something render_external_web_canvas adds (canvas tracker, \
+         absolute content wrapper sibling, or a gpui-component widget)."
+    );
+}
+
+/// Diagnostic probes (T13 bisect): each layer of the ElyShell render
+/// tree was reproduced in isolation and **all passed**, confirming the
+/// listener combo, layout wrapper chain, canvas sibling, entity
+/// update side effects, and track_focus root listeners are NOT the
+/// cause. The bug is elsewhere — likely in ElyShell::new's setup
+/// (subscriptions, timer, InputState side effects) or in the
+/// sync_address_input call inside navigate_active_tab that mutates
+/// Input widget state which may invalidate the rendered_frame
+/// between MouseMove and MouseUp. Kept for regression coverage.
+/// Bisect probe layer 5: the full chain WITH the root-level
+/// `track_focus + on_mouse_up(Left, bubble)` listeners ElyShell
+/// puts on its outermost div. If track_focus's auto-focus MouseDown
+/// handler, or the root's bubble-phase MouseUp listener, somehow
+/// invalidates the rendered_frame between MouseDown and MouseUp,
+/// input_overlay's hitbox will no longer match the listener
+/// snapshot's id and `is_hovered` will return false. That's the
+/// exact symptom we see: hover_point is None too, so it's not
+/// capture-specific — every listener on input_overlay is missing
+/// its hit.
+#[gpui::test]
+async fn baseline_overlay_under_root_with_track_focus_receives_click(
+    cx: &mut TestAppContext,
+) {
+    use gpui::FocusHandle;
+
+    let click_count = Rc::new(RefCell::new(0u32));
+    let move_count = Rc::new(RefCell::new(0u32));
+    let counter_for_up = click_count.clone();
+    let counter_for_move = move_count.clone();
+
+    struct TrackFocusProbe {
+        focus: FocusHandle,
+        on_up_counter: Rc<RefCell<u32>>,
+        on_move_counter: Rc<RefCell<u32>>,
+    }
+    impl Render for TrackFocusProbe {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let counter_up = self.on_up_counter.clone();
+            let counter_move = self.on_move_counter.clone();
+            div()
+                .size_full()
+                .track_focus(&self.focus)
+                .on_mouse_up(MouseButton::Left, |_event, _window, _cx| {})
+                .child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .p(px(16.0))
+                        .gap(px(12.0))
+                        .flex()
+                        .child(
+                            div()
+                                .flex_1()
+                                .h_full()
+                                .min_w_0()
+                                .flex()
+                                .flex_col()
+                                .rounded(px(18.0))
+                                .border_1()
+                                .overflow_hidden()
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .overflow_hidden()
+                                        .child(
+                                            div()
+                                                .relative()
+                                                .size_full()
+                                                .min_w_0()
+                                                .overflow_hidden()
+                                                .child(
+                                                    div()
+                                                        .absolute()
+                                                        .inset_0()
+                                                        .child(div().size_full()),
+                                                )
+                                                .child(
+                                                    canvas(
+                                                        move |_b, _w, _c| {},
+                                                        |_, _, _, _| {},
+                                                    )
+                                                    .absolute()
+                                                    .size_full(),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .absolute()
+                                                        .size_full()
+                                                        .occlude()
+                                                        .on_mouse_down(
+                                                            MouseButton::Left,
+                                                            |_e, _w, _c| {},
+                                                        )
+                                                        .capture_any_mouse_up(
+                                                            move |_e, _w, _c| {
+                                                                *counter_up
+                                                                    .borrow_mut() += 1;
+                                                            },
+                                                        )
+                                                        .on_mouse_move(
+                                                            move |_e, _w, _c| {
+                                                                *counter_move
+                                                                    .borrow_mut() += 1;
+                                                            },
+                                                        )
+                                                        .on_scroll_wheel(
+                                                            |_e, _w, _c| {},
+                                                        ),
+                                                ),
+                                        ),
+                                ),
+                        ),
+                )
+        }
+    }
+
+    let (_probe, cx) = cx.add_window_view(|_window, cx| TrackFocusProbe {
+        focus: cx.focus_handle(),
+        on_up_counter: counter_for_up,
+        on_move_counter: counter_for_move,
+    });
+    cx.run_until_parked();
+
+    cx.simulate_mouse_move(point(px(400.0), px(400.0)), None, Modifiers::default());
+    cx.run_until_parked();
+    cx.simulate_click(point(px(400.0), px(400.0)), Modifiers::default());
+    cx.run_until_parked();
+
+    assert!(
+        *move_count.borrow() > 0,
+        "Bisect layer 5: input_overlay's on_mouse_move never fired even \
+         though the cursor was simulated over it. The same `is_hovered` \
+         check fails for every listener, exactly mirroring the T7 red \
+         test's observation that hover_point is None."
+    );
+    assert_eq!(
+        *click_count.borrow(),
+        1,
+        "Bisect layer 5: capture_any_mouse_up did not fire under the \
+         full track_focus + bubble-mouse_up root chain. This isolates \
+         the culprit to the root-level listeners that ElyShell adds \
+         around its widget tree."
+    );
+}
+
+/// Bisect probe layer 4: same shape as the canvas-sibling probe but
+/// the on_mouse_down listener calls `cx.update` on a self-entity
+/// (mirroring `down_entity.update(cx, |shell, _| shell.focus_web_surface(window))`).
+/// `entity.update` notifies subscribers; if that side effect during
+/// mouse_down's bubble phase disturbs mouse dispatch — invalidates
+/// the rendered_frame, regenerates hitboxes, or otherwise corrupts
+/// the in-flight dispatch — the subsequent MouseUp will land on a
+/// frame whose hitboxes no longer match the listeners' captured
+/// snapshots, and this test will go red.
+#[gpui::test]
+async fn baseline_overlay_with_entity_update_in_mouse_down_receives_click(
+    cx: &mut TestAppContext,
+) {
+    let click_count = Rc::new(RefCell::new(0u32));
+    let counter_for_render = click_count.clone();
+
+    struct EntityUpdateProbe {
+        on_up_counter: Rc<RefCell<u32>>,
+        tick: u32,
+    }
+    impl Render for EntityUpdateProbe {
+        fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let counter = self.on_up_counter.clone();
+            let self_entity = cx.entity().clone();
+            div()
+                .relative()
+                .size_full()
+                .min_w_0()
+                .overflow_hidden()
+                .child(div().absolute().inset_0().child(div().size_full()))
+                .child(
+                    canvas(
+                        move |_bounds, _window, _cx| {},
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .size_full(),
+                )
+                .child(
+                    div()
+                        .absolute()
+                        .size_full()
+                        .occlude()
+                        .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                            self_entity.update(cx, |probe, _cx| {
+                                probe.tick += 1;
+                            });
+                        })
+                        .capture_any_mouse_up(move |_event, _window, _cx| {
+                            *counter.borrow_mut() += 1;
+                        })
+                        .on_mouse_move(|_event, _window, _cx| {})
+                        .on_scroll_wheel(|_event, _window, _cx| {}),
+                )
+        }
+    }
+
+    let (_probe, cx) = cx.add_window_view(|_window, _cx| EntityUpdateProbe {
+        on_up_counter: counter_for_render,
+        tick: 0,
+    });
+    cx.run_until_parked();
+
+    cx.simulate_mouse_move(point(px(400.0), px(400.0)), None, Modifiers::default());
+    cx.simulate_click(point(px(400.0), px(400.0)), Modifiers::default());
+    cx.run_until_parked();
+
+    assert_eq!(
+        *click_count.borrow(),
+        1,
+        "Bisect layer 4: on_mouse_down's bubble fires entity.update \
+         which automatically notifies subscribers. If this test fails, \
+         the cx.notify side effect during in-flight dispatch corrupts \
+         the rendered_frame for the immediately-following MouseUp."
+    );
+}
+
+/// Bisect probe layer 3: add a canvas sibling BEFORE the overlay,
+/// matching render_web_surface's viewport_tracker sibling exactly.
+/// The canvas's prepaint callback fires during paint phase; if it
+/// somehow disturbs hitbox registration or mouse_listeners ordering,
+/// this test will go red and pinpoint the suspect.
+#[gpui::test]
+async fn baseline_overlay_with_canvas_sibling_receives_click(
+    cx: &mut TestAppContext,
+) {
+    let click_count = Rc::new(RefCell::new(0u32));
+    let counter_for_render = click_count.clone();
+
+    struct CanvasSiblingProbe {
+        on_up_counter: Rc<RefCell<u32>>,
+    }
+    impl Render for CanvasSiblingProbe {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let counter = self.on_up_counter.clone();
+            div()
+                .relative()
+                .size_full()
+                .min_w_0()
+                .overflow_hidden()
+                .child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .child(div().size_full()),
+                )
+                .child(
+                    canvas(
+                        move |_bounds, _window, _cx| {},
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .size_full(),
+                )
+                .child(
+                    div()
+                        .absolute()
+                        .size_full()
+                        .occlude()
+                        .on_mouse_down(MouseButton::Left, |_event, _window, _cx| {})
+                        .capture_any_mouse_up(move |_event, _window, _cx| {
+                            *counter.borrow_mut() += 1;
+                        })
+                        .on_mouse_move(|_event, _window, _cx| {})
+                        .on_scroll_wheel(|_event, _window, _cx| {}),
+                )
+        }
+    }
+
+    let (_probe, cx) = cx.add_window_view(|_window, _cx| CanvasSiblingProbe {
+        on_up_counter: counter_for_render,
+    });
+    cx.run_until_parked();
+
+    cx.simulate_mouse_move(point(px(400.0), px(400.0)), None, Modifiers::default());
+    cx.simulate_click(point(px(400.0), px(400.0)), Modifiers::default());
+    cx.run_until_parked();
+
+    assert_eq!(
+        *click_count.borrow(),
+        1,
+        "Bisect layer 3: adding a canvas sibling (the shape \
+         render_viewport_tracker uses) between the content wrapper and \
+         the overlay should not break click delivery. If this fails, \
+         the canvas element itself disturbs mouse dispatch — likely \
+         via its prepaint callback's interaction with hit_test."
+    );
 }
 
 #[gpui::test]
