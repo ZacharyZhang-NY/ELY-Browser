@@ -1,9 +1,12 @@
+pub(crate) mod animations;
 pub(crate) mod appearance_form;
 pub(crate) mod appearance_layout_cards;
 pub(crate) mod brand_glyph;
 pub(crate) mod command_footer;
 pub(crate) mod command_match;
 pub(crate) mod command_overlay;
+pub(crate) mod command_rows;
+pub(crate) mod glass;
 pub(crate) mod home;
 pub(crate) mod plugin_detail_view;
 pub(crate) mod plugin_labels;

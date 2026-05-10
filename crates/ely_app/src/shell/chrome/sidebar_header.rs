@@ -9,6 +9,7 @@ use gpui::{
 use gpui_component::IconName;
 
 use crate::shell::ElyShell;
+use crate::shell::chrome::animations::fade_in;
 
 pub(crate) fn render_sidebar_header(
     shell: &ElyShell,
@@ -162,7 +163,7 @@ fn render_workspace_disclosure(
 ) -> AnyElement {
     let active_id = snapshot.active_space_id.clone();
 
-    div()
+    let body = div()
         .flex()
         .flex_col()
         .gap(px(2.0))
@@ -179,8 +180,9 @@ fn render_workspace_disclosure(
                     render_disclosure_row(index, space, &active_id, cx)
                 }),
         )
-        .child(render_disclosure_footer(cx))
-        .into_any_element()
+        .child(render_disclosure_footer(cx));
+
+    fade_in("workspace-disclosure", 140, body).into_any_element()
 }
 
 fn render_disclosure_row(

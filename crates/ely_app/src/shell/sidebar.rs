@@ -13,6 +13,7 @@ use gpui_component::{
     button::{Button, ButtonVariants},
 };
 
+use super::chrome::glass::render_inner_highlight;
 use super::chrome::panel_bg;
 use super::{ElyShell, ShellState, render::tab_profile_label};
 use crate::ToggleSidebar;
@@ -37,6 +38,7 @@ impl ElyShell {
         div()
             .w(px(sidebar_width))
             .h_full()
+            .relative()
             .flex()
             .flex_col()
             .items_center()
@@ -88,6 +90,7 @@ impl ElyShell {
                     self.render_compact_archived_button(index, archived_tab, cx)
                 },
             ))
+            .child(render_inner_highlight(spacing::RADIUS_CARD))
             .into_any_element()
     }
 

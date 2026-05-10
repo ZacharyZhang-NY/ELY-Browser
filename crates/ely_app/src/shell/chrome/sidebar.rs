@@ -9,6 +9,7 @@ use gpui::{
 use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
 
 use crate::shell::ElyShell;
+use crate::shell::chrome::glass::render_inner_highlight;
 use crate::shell::chrome::{render_glyph_for, render_sidebar_header};
 
 impl ElyShell {
@@ -28,6 +29,7 @@ impl ElyShell {
             .bg(rgba(panel_color))
             .shadow(panel_shadow())
             .overflow_hidden()
+            .relative()
             .child(render_sidebar_header(self, snapshot, cx))
             .child(
                 div()
@@ -58,6 +60,7 @@ impl ElyShell {
                     .child(self.render_new_tab_row(cx)),
             )
             .child(self.render_sidebar_footer(snapshot, cx))
+            .child(render_inner_highlight(spacing::RADIUS_CARD))
             .into_any_element()
     }
 
@@ -411,17 +414,32 @@ fn section_label(label: &'static str) -> impl IntoElement {
 pub(crate) const ACTIVE_NAV_BG: u32 = 0xffffffd9;
 const UNREAD_BADGE_BG: u32 = 0x281e140f;
 
-/// Maps appearance translucency_pct to a panel rgba u32.
+/// Maps appearance translucency_pct to a panel rgba u32 tinted by the
+/// active wallpaper theme.
 ///
-/// translucency_pct 0   → alpha 0xff (fully opaque)
-/// translucency_pct 100 → alpha 0xb3 (mostly opaque, ~70%) so panels stay
-/// readable without backdrop blur.
+/// GPUI 0.2.2 has no backdrop-filter, so a true sample-and-blur is
+/// impossible. Instead the panel base RGB is pre-tinted with the
+/// wallpaper's character (warm cream for Dawn, lavender for Violet, etc.)
+/// so the wallpaper's mood reads through every translucent panel without
+/// any extra layer or shader. Combined with the user-controlled
+/// translucency_pct it gives the design's "frosted glass tied to the
+/// wallpaper" effect entirely from real GPUI primitives.
 pub(crate) fn panel_bg(snapshot: &BrowserSnapshot) -> u32 {
     let pct = snapshot.appearance.translucency_pct().min(100) as u32;
     let max_alpha: u32 = 0xff;
     let min_alpha: u32 = 0xb3;
     let alpha = max_alpha - (pct * (max_alpha - min_alpha)) / 100;
-    0xffffff00 | alpha
+    let rgb = wallpaper_panel_rgb(snapshot.appearance.wallpaper());
+    (rgb << 8) | alpha
+}
+
+fn wallpaper_panel_rgb(theme: ely_domain::WallpaperTheme) -> u32 {
+    match theme {
+        ely_domain::WallpaperTheme::Dawn => 0xfaf6f0,
+        ely_domain::WallpaperTheme::Violet => 0xf6f3f8,
+        ely_domain::WallpaperTheme::Mint => 0xf3f6f1,
+        ely_domain::WallpaperTheme::Slate => 0xeff1f4,
+    }
 }
 
 pub(crate) fn panel_shadow() -> Vec<BoxShadow> {

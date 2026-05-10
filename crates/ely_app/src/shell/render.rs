@@ -8,6 +8,7 @@ use gpui::{
 };
 
 use super::chrome::command_match::visible_command_rows;
+use super::chrome::glass::render_inner_highlight;
 use super::chrome::{
     panel_bg, panel_shadow, render_command_overlay,
     render_topbar as render_topbar_chrome, render_wallpaper,
@@ -136,6 +137,7 @@ impl ElyShell {
             .flex_1()
             .h_full()
             .min_w_0()
+            .relative()
             .flex()
             .flex_col()
             .rounded(px(spacing::RADIUS_CARD))
@@ -149,6 +151,7 @@ impl ElyShell {
                     .overflow_hidden()
                     .child(self.render_content_area(snapshot, active_tab, cx)),
             )
+            .child(render_inner_highlight(spacing::RADIUS_CARD))
             .into_any_element()
     }
 
