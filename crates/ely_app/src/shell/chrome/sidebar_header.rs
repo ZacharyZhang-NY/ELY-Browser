@@ -210,8 +210,9 @@ pub(crate) fn render_workspace_disclosure(
 }
 
 /// Transparent fullscreen backdrop layered between the layout grid
-/// and the disclosure. Any click on it closes the picker; the
-/// disclosure paints after this backdrop so it remains interactive.
+/// and the disclosure. Press on it closes the picker AND consumes
+/// the event so the dismiss-click doesn't ricochet into a button
+/// underneath the cursor.
 pub(crate) fn render_workspace_disclosure_backdrop(
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
@@ -223,6 +224,7 @@ pub(crate) fn render_workspace_disclosure_backdrop(
             gpui::MouseButton::Left,
             cx.listener(|shell, _: &gpui::MouseDownEvent, _, cx| {
                 shell.close_workspace_picker(cx);
+                cx.stop_propagation();
             }),
         )
         .into_any_element()
