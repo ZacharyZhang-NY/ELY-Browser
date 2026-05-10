@@ -90,8 +90,12 @@ fn render_close_glyph(close_tab_id: TabId, cx: &mut Context<ElyShell>) -> AnyEle
         .cursor_pointer()
         .hover(|style| style.text_color(rgb(colors::INK)))
         .on_click(cx.listener(move |shell, _, window, cx| {
+            // The split pane itself has an on_click that selects the
+            // tab. Stop propagation here so closing the pane doesn't
+            // also re-select the just-removed tab.
             shell.select_tab(&close_tab_id, window, cx);
             shell.close_active_tab(window, cx);
+            cx.stop_propagation();
         }))
         .child(IconName::Close)
         .into_any_element()
