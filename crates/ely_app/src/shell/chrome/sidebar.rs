@@ -271,6 +271,7 @@ impl ElyShell {
                     .id(close_id)
                     .size(px(16.0))
                     .rounded(px(4.0))
+                    .flex_shrink_0()
                     .flex()
                     .items_center()
                     .justify_center()
@@ -280,11 +281,7 @@ impl ElyShell {
                     .hover(|style| style.bg(rgba(0x281e1414)).text_color(rgb(colors::INK)))
                     .cursor_pointer()
                     .on_click(cx.listener(move |shell, _, window, cx| {
-                        // Close the tab without bubbling to the launcher row's
-                        // own on_click — otherwise the row tries to re-select
-                        // the tab right after we've closed it.
-                        shell.select_tab(&close_tab_id, window, cx);
-                        shell.close_active_tab(window, cx);
+                        shell.close_tab_by_id(&close_tab_id, window, cx);
                         cx.stop_propagation();
                     }))
                     .child(IconName::Close),
@@ -386,8 +383,7 @@ impl ElyShell {
                     .hover(|style| style.bg(rgba(0x281e1414)).text_color(rgb(colors::INK)))
                     .cursor_pointer()
                     .on_click(cx.listener(move |shell, _, window, cx| {
-                        shell.select_tab(&close_tab_id, window, cx);
-                        shell.close_active_tab(window, cx);
+                        shell.close_tab_by_id(&close_tab_id, window, cx);
                         cx.stop_propagation();
                     }))
                     .child(IconName::Close),
