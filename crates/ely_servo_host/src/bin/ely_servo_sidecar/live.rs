@@ -2,7 +2,6 @@ use std::{
     collections::HashMap,
     fs,
     io::{self, BufRead, Write},
-    path::PathBuf,
     thread,
     time::{Duration, Instant},
 };
@@ -44,11 +43,11 @@ pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
             continue;
         }
 
-        let response = match serde_json::from_str::<LiveRequest>(&line) {
+        let outcome = match serde_json::from_str::<LiveRequest>(&line) {
             Ok(request) => handle_request(&mut host, &mut sessions, request),
             Err(error) => Err(LiveSidecarError::Json(error)),
         };
-        write_response(&mut stdout, response)?;
+        write_outcome(&mut stdout, outcome)?;
     }
 
     Ok(())
@@ -58,7 +57,7 @@ fn handle_request(
     host: &mut SoftwareServoHost,
     sessions: &mut HashMap<String, LiveSession>,
     request: LiveRequest,
-) -> Result<LiveResponse, LiveSidecarError> {
+) -> Result<LiveOutcome, LiveSidecarError> {
     match request {
         LiveRequest::Ensure {
             tab_id,
@@ -75,7 +74,6 @@ fn handle_request(
             hover_y,
             typed_text,
             site_permissions,
-            rgba_out,
         } => {
             let tab = TabId::parse(tab_id.clone())?;
             let profile = ProfileId::parse(profile_id)?;
@@ -110,27 +108,37 @@ fn handle_request(
             )? {
                 session.awaiting_visible_frame = true;
             }
-            poll_frame(host, session, rgba_out.into())
+            poll_frame(host, session)
         }
-        LiveRequest::Poll { tab_id, rgba_out } => {
+        LiveRequest::Poll { tab_id } => {
             let Some(session) = sessions.get_mut(&tab_id) else {
-                return Ok(LiveResponse::empty());
+                return Ok(LiveOutcome::empty());
             };
-            poll_frame(host, session, rgba_out.into())
+            poll_frame(host, session)
         }
     }
 }
 
-fn write_response(
+/// Stream a JSON response line followed by the optional raw RGBA frame.
+///
+/// The frame bytes ride on the same stdout pipe as the JSON header
+/// rather than being staged through a temp file. The client reads the
+/// JSON line, takes `rgba_byte_count` from the report, then reads that
+/// many bytes from the same stream. A 1080p frame is 8 MB — at 60 fps
+/// the previous `fs::write` + main-process `fs::read` round-trip cost
+/// ~960 MB/s of syscall + memcpy traffic that the scroll/zoom path
+/// could never amortise. Same pipe, raw bytes: no kernel `open`, no
+/// page cache churn, no transient file lifecycle to clean up.
+fn write_outcome(
     stdout: &mut impl Write,
-    response: Result<LiveResponse, LiveSidecarError>,
+    outcome: Result<LiveOutcome, LiveSidecarError>,
 ) -> Result<(), LiveSidecarError> {
-    let response = match response {
-        Ok(response) => response,
-        Err(error) => LiveResponse::error(error.to_string()),
-    };
-    serde_json::to_writer(&mut *stdout, &response)?;
+    let outcome = outcome.unwrap_or_else(|error| LiveOutcome::error(error.to_string()));
+    serde_json::to_writer(&mut *stdout, &outcome.response)?;
     stdout.write_all(b"\n")?;
+    if let Some(frame_bytes) = outcome.frame_bytes {
+        stdout.write_all(&frame_bytes)?;
+    }
     stdout.flush()?;
     Ok(())
 }
@@ -250,10 +258,9 @@ fn apply_input(
 fn poll_frame(
     host: &mut SoftwareServoHost,
     session: &mut LiveSession,
-    rgba_out: PathBuf,
-) -> Result<LiveResponse, LiveSidecarError> {
+) -> Result<LiveOutcome, LiveSidecarError> {
     let started_at = Instant::now();
-    let mut latest_frame = None;
+    let mut latest = None;
 
     loop {
         host.tick();
@@ -264,24 +271,22 @@ fn poll_frame(
             let frame = host.last_rendered_frame()?;
             let has_visible_content =
                 frame.non_white_pixel_count() > 0 && frame.content_pixel_count() > 0;
-            fs::write(&rgba_out, frame.rgba_bytes())?;
-            let response =
-                LiveResponse::frame(LiveFrameReport::new(&snapshot, &frame, rgba_out.clone()));
+            let outcome = LiveOutcome::frame(LiveFrameReport::new(&snapshot, &frame), &frame);
             if has_visible_content {
                 session.awaiting_visible_frame = false;
-                return Ok(response);
+                return Ok(outcome);
             }
             if !session.awaiting_visible_frame {
-                return Ok(response);
+                return Ok(outcome);
             }
-            latest_frame = Some(response);
+            latest = Some(outcome);
         }
 
         if !session.awaiting_visible_frame {
-            return Ok(LiveResponse::empty());
+            return Ok(LiveOutcome::empty());
         }
         if started_at.elapsed() >= LIVE_FRAME_WAIT_TIMEOUT {
-            return Ok(latest_frame.unwrap_or_else(LiveResponse::empty));
+            return Ok(latest.unwrap_or_else(LiveOutcome::empty));
         }
 
         thread::sleep(LIVE_FRAME_WAIT_INTERVAL);
@@ -335,11 +340,9 @@ enum LiveRequest {
         hover_y: Option<u32>,
         typed_text: Option<String>,
         site_permissions: Vec<LiveSitePermission>,
-        rgba_out: String,
     },
     Poll {
         tab_id: String,
-        rgba_out: String,
     },
 }
 
@@ -348,6 +351,31 @@ struct LiveSitePermission {
     origin: String,
     feature: String,
     decision: String,
+}
+
+/// A handle plus an optional raw-bytes payload, kept together until
+/// the moment of writing to stdout. The JSON header advertises
+/// `rgba_byte_count`; the binary follows on the same pipe.
+struct LiveOutcome {
+    response: LiveResponse,
+    frame_bytes: Option<Vec<u8>>,
+}
+
+impl LiveOutcome {
+    fn empty() -> Self {
+        Self { response: LiveResponse::empty(), frame_bytes: None }
+    }
+
+    fn error(message: String) -> Self {
+        Self { response: LiveResponse::error(message), frame_bytes: None }
+    }
+
+    fn frame(report: LiveFrameReport, frame: &RenderedFrame) -> Self {
+        Self {
+            response: LiveResponse::frame(report),
+            frame_bytes: Some(frame.rgba_bytes().to_vec()),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -377,7 +405,6 @@ struct LiveFrameReport {
     state: &'static str,
     width: u32,
     height: u32,
-    rgba_path: PathBuf,
     rgba_byte_count: usize,
     non_white_pixel_count: u64,
     content_pixel_count: u64,
@@ -385,14 +412,13 @@ struct LiveFrameReport {
 }
 
 impl LiveFrameReport {
-    fn new(snapshot: &WebViewSnapshot, frame: &RenderedFrame, rgba_path: PathBuf) -> Self {
+    fn new(snapshot: &WebViewSnapshot, frame: &RenderedFrame) -> Self {
         Self {
             loaded_url: snapshot.url().map(str::to_string),
             title: snapshot.title().map(str::to_string),
             state: state_label(snapshot.state()),
             width: frame.width(),
             height: frame.height(),
-            rgba_path,
             rgba_byte_count: frame.rgba_bytes().len(),
             non_white_pixel_count: frame.non_white_pixel_count(),
             content_pixel_count: frame.content_pixel_count(),

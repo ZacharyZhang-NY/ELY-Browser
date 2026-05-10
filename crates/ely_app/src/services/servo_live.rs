@@ -1,9 +1,7 @@
 use std::{
-    env, fs,
-    io::{self, BufRead, BufReader, Write},
+    io::{self, BufRead, BufReader, Read, Write},
     path::PathBuf,
     process::{Child, ChildStdin, ChildStdout, Stdio},
-    time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
 use ely_domain::SitePermissionDecision;
@@ -16,8 +14,6 @@ pub(crate) struct ServoLiveClient {
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
-    frame_dir: PathBuf,
-    frame_path: PathBuf,
 }
 
 impl ServoLiveClient {
@@ -27,8 +23,6 @@ impl ServoLiveClient {
             return Err(ServoLiveError::SidecarBinaryUnavailable { path: path.to_path_buf() });
         }
 
-        let frame_dir = temporary_frame_dir()?;
-        let frame_path = frame_dir.join("frame.rgba");
         let mut command = command_target.command();
         command.arg("live").arg("--profile-data-dir").arg(profile_data_dir);
         let mut child = command
@@ -41,7 +35,7 @@ impl ServoLiveClient {
         let stdout =
             child.stdout.take().ok_or(ServoLiveError::PipeUnavailable { name: "stdout" })?;
 
-        Ok(Self { child, stdin, stdout: BufReader::new(stdout), frame_dir, frame_path })
+        Ok(Self { child, stdin, stdout: BufReader::new(stdout) })
     }
 
     pub fn ensure(
@@ -63,12 +57,11 @@ impl ServoLiveClient {
             hover_y: request.hover_y,
             typed_text: request.typed_text,
             site_permissions: request.site_permissions,
-            rgba_out: self.frame_path.display().to_string(),
         })
     }
 
     pub fn poll(&mut self, tab_id: String) -> Result<Option<ServoLiveFrame>, ServoLiveError> {
-        self.request(LiveRequest::Poll { tab_id, rgba_out: self.frame_path.display().to_string() })
+        self.request(LiveRequest::Poll { tab_id })
     }
 
     fn request(&mut self, request: LiveRequest) -> Result<Option<ServoLiveFrame>, ServoLiveError> {
@@ -87,7 +80,38 @@ impl ServoLiveClient {
             return Err(ServoLiveError::SidecarFailed { message: error });
         }
 
-        response.frame.map(ServoLiveFrame::from_report).transpose()
+        let Some(report) = response.frame else {
+            return Ok(None);
+        };
+
+        // Sanity bound the byte count advertised by the sidecar
+        // header so a buggy or hostile sidecar can't park us on
+        // `read_exact` for an arbitrarily-sized buffer. The honest
+        // upper limit is `width * height * 4` (RGBA8); anything
+        // larger is a protocol violation and we fail the request
+        // instead of allocating against it.
+        let pixel_byte_count = (report.width as u64)
+            .saturating_mul(report.height as u64)
+            .saturating_mul(4);
+        if (report.rgba_byte_count as u64) != pixel_byte_count {
+            return Err(ServoLiveError::FrameBudgetExceeded {
+                advertised: report.rgba_byte_count,
+                pixel_budget: pixel_byte_count,
+                width: report.width,
+                height: report.height,
+            });
+        }
+
+        // Raw frame bytes follow the JSON header on the same pipe.
+        // `read_exact` drains BufReader's buffer first (the line read
+        // never crosses the `\n` boundary) and then pulls the rest
+        // straight from the child's stdout — no fs::read, no temp file.
+        let mut rgba_bytes = vec![0u8; report.rgba_byte_count];
+        self.stdout
+            .read_exact(&mut rgba_bytes)
+            .map_err(ServoLiveError::FrameRead)?;
+
+        Ok(Some(ServoLiveFrame::from_parts(report, rgba_bytes)))
     }
 }
 
@@ -95,7 +119,6 @@ impl Drop for ServoLiveClient {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
-        let _ = fs::remove_dir_all(&self.frame_dir);
     }
 }
 
@@ -149,16 +172,8 @@ pub(crate) struct ServoLiveFrame {
 }
 
 impl ServoLiveFrame {
-    fn from_report(report: LiveFrameReport) -> Result<Self, ServoLiveError> {
-        let rgba_bytes = fs::read(&report.rgba_path).map_err(ServoLiveError::FrameRead)?;
-        if rgba_bytes.len() != report.rgba_byte_count {
-            return Err(ServoLiveError::RgbaByteCountMismatch {
-                expected: report.rgba_byte_count,
-                actual: rgba_bytes.len(),
-            });
-        }
-
-        Ok(Self {
+    fn from_parts(report: LiveFrameReport, rgba_bytes: Vec<u8>) -> Self {
+        Self {
             loaded_url: report.loaded_url,
             title: report.title,
             render_state: report.state,
@@ -171,7 +186,7 @@ impl ServoLiveFrame {
             #[cfg(all(test, feature = "live-site-smoke"))]
             sample_hash: report.sample_hash,
             rgba_bytes,
-        })
+        }
     }
 
     #[must_use]
@@ -240,17 +255,14 @@ pub(crate) enum ServoLiveError {
     #[error("servo live sidecar failed: {message}")]
     SidecarFailed { message: String },
 
-    #[error("failed to read servo live frame file: {0}")]
+    #[error("failed to read servo live frame bytes: {0}")]
     FrameRead(#[source] io::Error),
 
-    #[error("servo live frame byte count mismatch: expected {expected}, actual {actual}")]
-    RgbaByteCountMismatch { expected: usize, actual: usize },
-
-    #[error("temporary live frame directory is unavailable: {0}")]
-    TempDirectory(#[source] io::Error),
-
-    #[error("temporary live frame timestamp is unavailable: {0}")]
-    SystemClock(#[source] SystemTimeError),
+    #[error(
+        "servo live sidecar advertised {advertised} frame bytes which exceeds \
+         the {width}x{height} pixel budget ({pixel_budget} bytes)"
+    )]
+    FrameBudgetExceeded { advertised: usize, pixel_budget: u64, width: u32, height: u32 },
 
     #[error(transparent)]
     Json(#[from] serde_json::Error),
@@ -277,11 +289,9 @@ enum LiveRequest {
         hover_y: Option<u32>,
         typed_text: Option<String>,
         site_permissions: Vec<ServoLiveSitePermission>,
-        rgba_out: String,
     },
     Poll {
         tab_id: String,
-        rgba_out: String,
     },
 }
 
@@ -298,7 +308,6 @@ struct LiveFrameReport {
     state: String,
     width: u32,
     height: u32,
-    rgba_path: PathBuf,
     rgba_byte_count: usize,
     #[cfg(all(test, feature = "live-site-smoke"))]
     non_white_pixel_count: u64,
@@ -306,16 +315,4 @@ struct LiveFrameReport {
     content_pixel_count: u64,
     #[cfg(all(test, feature = "live-site-smoke"))]
     sample_hash: u64,
-}
-
-fn temporary_frame_dir() -> Result<PathBuf, ServoLiveError> {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(ServoLiveError::SystemClock)?
-        .as_nanos();
-    let directory = env::temp_dir()
-        .join("ely-browser-servo-live")
-        .join(format!("{}-{timestamp}", std::process::id()));
-    fs::create_dir_all(&directory).map_err(ServoLiveError::TempDirectory)?;
-    Ok(directory)
 }
