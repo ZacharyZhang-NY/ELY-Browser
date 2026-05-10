@@ -7,7 +7,7 @@ use gpui_component::IconName;
 
 use crate::shell::ElyShell;
 
-use crate::shell::chrome::SERIF_FAMILY;
+use crate::shell::chrome::{SERIF_FAMILY, render_glyph_for};
 
 use super::style::{
     ARROW_CHIP_BG, PILL_BG, PILL_BG_HOVER, SEARCH_BG, card_shadow, soft_shadow,
@@ -121,14 +121,14 @@ fn render_suggestion_pills(cx: &mut Context<ElyShell>) -> AnyElement {
         .items_center()
         .justify_center()
         .gap(px(8.0))
-        .child(render_pill(
+        .child(render_pill_icon(
             "pill-search-tabs",
             IconName::Search,
             "Search Tabs",
             cx,
             |shell, window, cx| shell.focus_address_bar(window, cx),
         ))
-        .child(render_pill(
+        .child(render_pill_icon(
             "pill-switch-workspace",
             IconName::LayoutDashboard,
             "Switch Workspace",
@@ -137,7 +137,7 @@ fn render_suggestion_pills(cx: &mut Context<ElyShell>) -> AnyElement {
         ))
         .child(render_pill(
             "pill-open-notion",
-            IconName::BookOpen,
+            render_glyph_for(Some("notion.so"), "N", 14.0),
             "Open Notion",
             cx,
             |shell, window, cx| shell.open_internal_tab("https://www.notion.so", window, cx),
@@ -145,9 +145,27 @@ fn render_suggestion_pills(cx: &mut Context<ElyShell>) -> AnyElement {
         .into_any_element()
 }
 
-fn render_pill<F>(
+fn render_pill_icon<F>(
     id: &'static str,
     icon: IconName,
+    label: &'static str,
+    cx: &mut Context<ElyShell>,
+    handler: F,
+) -> AnyElement
+where
+    F: Fn(&mut ElyShell, &mut gpui::Window, &mut Context<ElyShell>) + 'static,
+{
+    let leading = div()
+        .text_color(rgb(colors::INK_3))
+        .text_size(px(12.0))
+        .child(icon)
+        .into_any_element();
+    render_pill(id, leading, label, cx, handler)
+}
+
+fn render_pill<F>(
+    id: &'static str,
+    leading: AnyElement,
     label: &'static str,
     cx: &mut Context<ElyShell>,
     handler: F,
@@ -169,12 +187,7 @@ where
         .hover(|style| style.bg(rgba(PILL_BG_HOVER)))
         .active(|style| style.opacity(0.82))
         .on_click(cx.listener(move |shell, _, window, cx| handler(shell, window, cx)))
-        .child(
-            div()
-                .text_color(rgb(colors::INK_3))
-                .text_size(px(12.0))
-                .child(icon),
-        )
+        .child(leading)
         .child(
             div()
                 .text_size(px(12.0))
