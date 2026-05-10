@@ -112,9 +112,12 @@ impl ElyShell {
             COLLAPSED_SIDEBAR_WIDTH_PX
         };
 
-        if core.set_space_sidebar_width(&snapshot.active_space_id, next_width).is_ok() {
-            cx.notify();
-        }
+        // Route through `set_active_sidebar_width` instead of poking
+        // `core.set_space_sidebar_width` directly so the same
+        // popover-dismiss + hover-expand reset logic applies whether
+        // the user toggles via the keyboard / button or the resize
+        // drag.
+        self.set_active_sidebar_width(next_width, cx);
     }
 
     pub(crate) fn set_active_sidebar_width(&mut self, width_px: u16, cx: &mut Context<Self>) {
