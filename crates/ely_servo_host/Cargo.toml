@@ -16,6 +16,7 @@ hardware-render = [
     "dep:image",
     "dep:log",
     "dep:surfman",
+    "dep:objc2-io-surface",
 ]
 
 [[bin]]
@@ -37,6 +38,9 @@ servo = { workspace = true, optional = true }
 surfman = { version = "0.11", optional = true }
 thiserror.workspace = true
 url = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-io-surface = { version = "0.3.2", optional = true }
 
 [lints]
 workspace = true

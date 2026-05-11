@@ -2302,6 +2302,7 @@ dependencies = [
  "glow",
  "image",
  "log",
+ "objc2-io-surface",
  "serde",
  "serde_json",
  "servo",
@@ -6131,6 +6132,7 @@ dependencies = [
  "libc",
  "objc2",
  "objc2-core-foundation",
+ "objc2-foundation",
 ]
 
 [[package]]

@@ -147,6 +147,56 @@ impl RenderingContext for HardwareOffscreenContext {
     }
 }
 
+/// Cross-process handle to a hardware surface: the receiving process
+/// can rebuild an `IOSurfaceRef` from `mach_port_name` and import it as
+/// a Metal texture without ever copying the pixels.
+///
+/// `width`/`height` are reported in surface pixels (post-DPR), matching
+/// what surfman handed out at construction time. The receiver should
+/// scale layout coordinates by its own backing scale factor.
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IOSurfaceHandle {
+    pub mach_port_name: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[cfg(target_os = "macos")]
+impl HardwareOffscreenContext {
+    /// Snapshot the IOSurface currently bound to the context and
+    /// return its mach port name plus dimensions. Increments the
+    /// IOSurface's mach-port use count; the receiving process holds it
+    /// via `IOSurfaceLookupFromMachPort` and is responsible for
+    /// `mach_port_deallocate` once the import is finished.
+    ///
+    /// Implementation note: surfman's CGL backend keeps the bound
+    /// surface inside the GL context. To inspect it we temporarily
+    /// `unbind_surface_from_context`, call `device.native_surface()`
+    /// (which retains the `IOSurfaceRef`), then `bind_surface_to_context`
+    /// again. The unbind path calls `glFlush` so the IOSurface contents
+    /// are consistent for any reader importing it after this returns.
+    pub fn current_iosurface_mach_port(&self) -> Result<IOSurfaceHandle, SurfmanError> {
+        let device = &mut self.inner.device.borrow_mut();
+        let context = &mut self.inner.context.borrow_mut();
+        // `new` always binds a surface and `current_iosurface_mach_port`
+        // is the only method that unbinds; the `None` branch only fires
+        // if the invariant has been broken from outside.
+        let surface =
+            device.unbind_surface_from_context(context)?.ok_or(SurfmanError::Failed)?;
+        let native = device.native_surface(&surface);
+        let mach_port = native.0.create_mach_port();
+        let info = device.surface_info(&surface);
+        let handle = IOSurfaceHandle {
+            mach_port_name: mach_port,
+            width: u32::try_from(info.size.width).unwrap_or(0),
+            height: u32::try_from(info.size.height).unwrap_or(0),
+        };
+        device.bind_surface_to_context(context, surface).map_err(|(error, _)| error)?;
+        Ok(handle)
+    }
+}
+
 /// Trimmed mirror of `paint_api::rendering_context::SurfmanRenderingContext`.
 ///
 /// Only the methods the public type above actually uses are kept; the
