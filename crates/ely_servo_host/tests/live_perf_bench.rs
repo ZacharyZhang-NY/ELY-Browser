@@ -49,6 +49,18 @@ struct LiveResponse {
     frame: Option<LiveFrameReport>,
     #[serde(default)]
     perf: Option<FramePerfSummary>,
+    #[serde(default)]
+    surface_handle: Option<BenchSurfaceHandle>,
+    #[serde(default)]
+    current_surface_id: Option<u64>,
+}
+
+#[derive(Deserialize, Debug, Clone, Copy)]
+struct BenchSurfaceHandle {
+    mach_port_name: u32,
+    surface_id: u64,
+    width: u32,
+    height: u32,
 }
 
 #[derive(Deserialize, Debug)]
@@ -99,9 +111,9 @@ fn run_live_bench() -> Result<(), Box<dyn Error>> {
     let stdout = child.stdout.take().ok_or("sidecar stdout missing")?;
     let mut reader = BufReader::new(stdout);
 
-    let summaries =
+    let outcome =
         match drive_bench(&mut stdin, &mut reader, &kind, &tab, &profile_id, &url, frames) {
-            Ok(summaries) => summaries,
+            Ok(outcome) => outcome,
             Err(error) => {
                 drop(stdin);
                 let _ = child.kill();
@@ -114,12 +126,51 @@ fn run_live_bench() -> Result<(), Box<dyn Error>> {
     let _ = child.wait();
     cleanup(&profile_data_dir)?;
 
-    print_summaries(&kind, frames, &summaries);
+    print_summaries(&kind, frames, &outcome.summaries);
+    print_surface_handles(&kind, &outcome.surface_handles);
+    print_current_surface_summary(&kind, &outcome.current_surface_ids);
     assert!(
-        !summaries.is_empty(),
+        !outcome.summaries.is_empty(),
         "expected at least one FramePerfSummary across {frames} frames"
     );
+    if kind == "hardware" {
+        assert!(
+            !outcome.surface_handles.is_empty(),
+            "hardware path must publish at least one IOSurface handle"
+        );
+        // Mach port dedup: the surfman attached swap chain on macOS
+        // rotates between front+back surfaces, so we expect a SMALL
+        // number of distinct mach port publishes — definitely not one
+        // per frame. Anything close to `frames` is a regression to the
+        // T10.3 starting state where dedup tracked only the last id.
+        let max_expected = 8;
+        assert!(
+            outcome.surface_handles.len() <= max_expected,
+            "expected at most {max_expected} IOSurface publishes (one per unique surface), \
+             got {} — dedup regressed",
+            outcome.surface_handles.len()
+        );
+        assert!(
+            !outcome.current_surface_ids.is_empty(),
+            "hardware path must report current_surface_id on every frame"
+        );
+    } else {
+        assert!(
+            outcome.surface_handles.is_empty(),
+            "software path must never publish an IOSurface handle"
+        );
+        assert!(
+            outcome.current_surface_ids.is_empty(),
+            "software path must never report current_surface_id"
+        );
+    }
     Ok(())
+}
+
+struct BenchOutcome {
+    summaries: Vec<FramePerfSummary>,
+    surface_handles: Vec<BenchSurfaceHandle>,
+    current_surface_ids: Vec<u64>,
 }
 
 fn spawn_sidecar(kind: &str, profile_data_dir: &PathBuf) -> Result<Child, Box<dyn Error>> {
@@ -144,13 +195,17 @@ fn drive_bench(
     profile_id: &ProfileId,
     url: &str,
     frames: u32,
-) -> Result<Vec<FramePerfSummary>, Box<dyn Error>> {
+) -> Result<BenchOutcome, Box<dyn Error>> {
     let mut summaries = Vec::new();
+    let mut surface_handles = Vec::new();
+    let mut current_surface_ids = Vec::new();
 
     let navigate = build_ensure(tab, profile_id, url, 0, 0, false);
     write_request(stdin, &navigate)?;
     let response = read_response(reader, RESPONSE_TIMEOUT)?;
     record_summary(&response, kind, &mut summaries);
+    record_surface_handle(&response, kind, &mut surface_handles);
+    record_current_surface_id(&response, &mut current_surface_ids);
 
     let mut accumulated_scroll = 0;
     for frame_index in 0..frames {
@@ -167,10 +222,59 @@ fn drive_bench(
             return Err(format!("sidecar error at frame {frame_index}: {error}").into());
         }
         record_summary(&response, kind, &mut summaries);
+        record_surface_handle(&response, kind, &mut surface_handles);
+        record_current_surface_id(&response, &mut current_surface_ids);
     }
     let _ = accumulated_scroll;
 
-    Ok(summaries)
+    Ok(BenchOutcome { summaries, surface_handles, current_surface_ids })
+}
+
+fn record_surface_handle(
+    response: &LiveResponse,
+    kind: &str,
+    surface_handles: &mut Vec<BenchSurfaceHandle>,
+) {
+    if let Some(handle) = response.surface_handle {
+        eprintln!(
+            "[iosurface {kind}] new surface_id=0x{:x} mach_port=0x{:x} {}x{}",
+            handle.surface_id, handle.mach_port_name, handle.width, handle.height,
+        );
+        surface_handles.push(handle);
+    }
+}
+
+fn record_current_surface_id(response: &LiveResponse, current_surface_ids: &mut Vec<u64>) {
+    if let Some(surface_id) = response.current_surface_id {
+        current_surface_ids.push(surface_id);
+    }
+}
+
+fn print_surface_handles(kind: &str, surface_handles: &[BenchSurfaceHandle]) {
+    eprintln!(
+        "\n=== ELY_PERF_KIND={kind} iosurface_imports={} (one per unique surface) ===",
+        surface_handles.len()
+    );
+    for (index, handle) in surface_handles.iter().enumerate() {
+        eprintln!(
+            "{:<4} surface_id=0x{:x} mach_port=0x{:x} {}x{}",
+            index, handle.surface_id, handle.mach_port_name, handle.width, handle.height,
+        );
+    }
+}
+
+fn print_current_surface_summary(kind: &str, current_surface_ids: &[u64]) {
+    use std::collections::BTreeMap;
+    let mut counts: BTreeMap<u64, u32> = BTreeMap::new();
+    for id in current_surface_ids {
+        *counts.entry(*id).or_default() += 1;
+    }
+    eprintln!(
+        "\n=== ELY_PERF_KIND={kind} current_surface_id histogram (per-frame selector) ===",
+    );
+    for (surface_id, count) in counts.iter() {
+        eprintln!("surface_id=0x{:x} frames={}", surface_id, count);
+    }
 }
 
 fn build_ensure(

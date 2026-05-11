@@ -2,6 +2,7 @@ mod error;
 #[cfg(feature = "hardware-render")]
 mod hardware_rendering_context;
 mod host;
+mod iosurface_handle;
 #[cfg(feature = "servo-engine")]
 mod keyboard;
 #[cfg(feature = "servo-engine")]
@@ -18,8 +19,7 @@ mod runtime_webview;
 pub use error::ServoHostError;
 #[cfg(feature = "hardware-render")]
 pub use hardware_rendering_context::HardwareOffscreenContext;
-#[cfg(all(feature = "hardware-render", target_os = "macos"))]
-pub use hardware_rendering_context::IOSurfaceHandle;
+pub use iosurface_handle::{IOSurfaceHandle, IOSurfaceIdentity};
 pub use host::{
     KeyboardTextRequest, MouseClickRequest, MouseDragRequest, MouseHoverRequest,
     NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest, RenderedFrame,

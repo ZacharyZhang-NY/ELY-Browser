@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     io::{self, BufRead, Write},
     thread,
@@ -38,6 +38,7 @@ pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
     let mut perf =
         FramePerfAggregator::new(context_label, FramePerfAggregator::DEFAULT_WINDOW_SIZE);
     let mut pending_summary: Option<FramePerfSummary> = None;
+    let mut published_surface_ids: HashMap<String, HashSet<u64>> = HashMap::new();
     let stdin = io::stdin();
     let mut stdout = io::stdout().lock();
 
@@ -54,7 +55,9 @@ pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
         // `write_outcome`.
         let frame_started_at = Instant::now();
         let outcome = match serde_json::from_str::<LiveRequest>(&line) {
-            Ok(request) => handle_request(&mut host, &mut sessions, request),
+            Ok(request) => {
+                handle_request(&mut host, &mut sessions, &mut published_surface_ids, request)
+            }
             Err(error) => Err(LiveSidecarError::Json(error)),
         };
         write_outcome(
@@ -79,6 +82,7 @@ const fn rendering_context_label(kind: RenderingContextKind) -> &'static str {
 fn handle_request(
     host: &mut SoftwareServoHost,
     sessions: &mut HashMap<String, LiveSession>,
+    published_surface_ids: &mut HashMap<String, HashSet<u64>>,
     request: LiveRequest,
 ) -> Result<LiveOutcome, LiveSidecarError> {
     match request {
@@ -101,7 +105,8 @@ fn handle_request(
             let tab = TabId::parse(tab_id.clone())?;
             let profile = ProfileId::parse(profile_id)?;
             let url = UrlText::parse(url)?;
-            let session = ensure_session(host, sessions, tab_id, &tab, &profile, width, height)?;
+            let session =
+                ensure_session(host, sessions, tab_id.clone(), &tab, &profile, width, height)?;
 
             if apply_layout(host, session, width, height, page_zoom_percent)? {
                 session.awaiting_visible_frame = true;
@@ -131,14 +136,66 @@ fn handle_request(
             )? {
                 session.awaiting_visible_frame = true;
             }
-            poll_frame(host, session)
+            let webview_id = session.webview_id.clone();
+            let mut outcome = poll_frame(host, session)?;
+            populate_surface_fields(host, &webview_id, &tab_id, published_surface_ids, &mut outcome);
+            Ok(outcome)
         }
         LiveRequest::Poll { tab_id } => {
             let Some(session) = sessions.get_mut(&tab_id) else {
                 return Ok(LiveOutcome::empty());
             };
-            poll_frame(host, session)
+            let webview_id = session.webview_id.clone();
+            let mut outcome = poll_frame(host, session)?;
+            populate_surface_fields(host, &webview_id, &tab_id, published_surface_ids, &mut outcome);
+            Ok(outcome)
         }
+    }
+}
+
+/// Populate the hardware surface protocol fields on `outcome`. Two
+/// pieces of state ride out together:
+///
+///   * `current_surface_id` — set on every payload-bearing hardware
+///     frame so the receiver knows which previously-imported
+///     `MTLTexture` to sample THIS frame. surfman's attached swap
+///     chain rotates front/back surfaces, so this alternates between
+///     a small set of ids.
+///   * `surface_handle` — populated only the first time the sidecar
+///     sees a given `surface_id`; the receiver imports the IOSurface
+///     once and caches the resulting Metal texture. Minting a fresh
+///     mach port per frame would leak ports — `IOSurfaceCreateMachPort`
+///     hands out a new send right each call and they don't free
+///     automatically until the receiver `mach_port_deallocate`s.
+fn populate_surface_fields(
+    host: &SoftwareServoHost,
+    webview_id: &ely_domain::WebViewId,
+    tab_id: &str,
+    published_surface_ids: &mut HashMap<String, HashSet<u64>>,
+    outcome: &mut LiveOutcome,
+) {
+    if outcome.frame.is_none() {
+        return;
+    }
+    #[cfg(all(feature = "hardware-render", target_os = "macos"))]
+    {
+        let Ok(Some(identity)) = host.peek_iosurface_identity(webview_id) else {
+            return;
+        };
+        outcome.response.current_surface_id = Some(identity.surface_id);
+        let seen = published_surface_ids.entry(tab_id.to_string()).or_default();
+        if seen.contains(&identity.surface_id) {
+            return;
+        }
+        let Ok(Some(handle)) = host.current_iosurface_handle(webview_id) else {
+            return;
+        };
+        seen.insert(handle.surface_id);
+        outcome.response.surface_handle = Some(handle);
+    }
+    #[cfg(not(all(feature = "hardware-render", target_os = "macos")))]
+    {
+        let _ = (host, webview_id, tab_id, published_surface_ids);
     }
 }
 

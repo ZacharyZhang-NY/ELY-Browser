@@ -99,6 +99,13 @@ impl ServoLiveClient {
             log_frame_perf(perf);
         }
 
+        if let Some(handle) = response.surface_handle.as_ref() {
+            log_iosurface_handle(handle);
+        }
+        if let Some(surface_id) = response.current_surface_id {
+            log_iosurface_current(surface_id);
+        }
+
         let Some(report) = response.frame else {
             return Ok(None);
         };
@@ -338,6 +345,33 @@ struct LiveResponse {
     frame: Option<LiveFrameReport>,
     #[serde(default)]
     perf: Option<LiveFramePerfSummary>,
+    /// Hardware path only: present on the first frame after a new
+    /// IOSurface is bound (initial paint, resize, surfman swap chain
+    /// rotation). T10.4 will turn this into an imported Metal texture;
+    /// for now we log it on the `ely::servo::iosurface` target so the
+    /// pipeline is observable end-to-end without yet wiring it into
+    /// the renderer.
+    #[serde(default)]
+    surface_handle: Option<LiveSurfaceHandle>,
+    /// Hardware path only: which previously-imported IOSurface to
+    /// sample this frame. surfman's attached swap chain rotates the
+    /// bound surface, so this id alternates between the values the
+    /// receiver has already imported via `surface_handle`.
+    #[serde(default)]
+    current_surface_id: Option<u64>,
+}
+
+/// Wire mirror of `ely_servo_host::IOSurfaceHandle`. Duplicated rather
+/// than imported because `ely_app` only talks to the sidecar via
+/// stdin/stdout JSON — it has no crate dependency on `ely_servo_host`
+/// and adding one just to share a four-field struct would pull the
+/// Servo dep tree into the renderer process.
+#[derive(Clone, Copy, Debug, Deserialize)]
+struct LiveSurfaceHandle {
+    mach_port_name: u32,
+    surface_id: u64,
+    width: u32,
+    height: u32,
 }
 
 /// Aggregated frame-stage timings rolled up every N frames by the
@@ -360,6 +394,35 @@ struct LiveFramePerfSummary {
     total_p50_us: u64,
     total_p95_us: u64,
     total_p99_us: u64,
+}
+
+/// Per-frame tag that tells the renderer which already-imported
+/// `MTLTexture` to sample. Emitted at `trace` instead of `info` because
+/// it fires every frame on the hardware path; the import event above
+/// is the rare `info` and this trace is the steady-state breadcrumb.
+fn log_iosurface_current(surface_id: u64) {
+    tracing::trace!(
+        target: "ely::servo::iosurface",
+        surface_id,
+        "iosurface_current",
+    );
+}
+
+/// Emit one structured `tracing` event per IOSurface handover, on a
+/// dedicated target so `RUST_LOG=ely::servo::iosurface=info` lights up
+/// the cross-process surface pipeline without pulling in everything
+/// else. The renderer (T10.4) will turn the same handle into an
+/// imported Metal texture; today the event is the observable contract
+/// that T10.3 plumbing is alive.
+fn log_iosurface_handle(handle: &LiveSurfaceHandle) {
+    tracing::info!(
+        target: "ely::servo::iosurface",
+        mach_port_name = handle.mach_port_name,
+        surface_id = handle.surface_id,
+        width = handle.width,
+        height = handle.height,
+        "iosurface_handle",
+    );
 }
 
 /// Emit one structured `tracing` event per perf summary, on a

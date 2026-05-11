@@ -70,6 +70,17 @@ pub enum RenderingContextKind {
     Hardware,
 }
 
+/// Pair of rendering-context handles produced by
+/// [`SoftwareServoHost::new_rendering_context`]. The trait-object
+/// handle drives Servo's compositor; the concrete hardware handle is
+/// kept on the side so the host can call macOS-specific methods
+/// (IOSurface mach port extraction) without downcasting.
+struct RenderingContextHandles {
+    rendering_context: Rc<dyn RenderingContext>,
+    #[cfg(feature = "hardware-render")]
+    hardware_context: Option<Rc<crate::HardwareOffscreenContext>>,
+}
+
 pub struct SoftwareServoHost {
     servo: Servo,
     default_surface_size: ServoSurfaceSize,
@@ -377,10 +388,10 @@ impl SoftwareServoHost {
         size: ServoSurfaceSize,
     ) -> Result<WebViewId, ServoHostError> {
         let webview_id = WebViewId::new();
-        let rendering_context = self.new_rendering_context(size)?;
+        let handles = self.new_rendering_context(size)?;
         let delegate =
             Rc::new(HostWebViewDelegate::new(profile_id.clone(), self.permissions.clone()));
-        let webview = WebViewBuilder::new(&self.servo, rendering_context.clone())
+        let webview = WebViewBuilder::new(&self.servo, handles.rendering_context.clone())
             .delegate(delegate.clone())
             .build();
         // Cosmetic: makes the first frame paint into the rendering
@@ -396,7 +407,9 @@ impl SoftwareServoHost {
             HostWebView {
                 tab_id,
                 profile_id,
-                rendering_context,
+                rendering_context: handles.rendering_context,
+                #[cfg(feature = "hardware-render")]
+                hardware_context: handles.hardware_context,
                 webview,
                 delegate,
                 requested_url: None,
@@ -406,27 +419,81 @@ impl SoftwareServoHost {
         Ok(webview_id)
     }
 
+    /// Cheap peek at the IOSurface identity bound to this webview's
+    /// hardware context. Returns `None` for software webviews and on
+    /// non-macOS hosts; otherwise the surfman `SurfaceID`-derived
+    /// identity plus dimensions. Used by the sidecar's live loop to
+    /// dedup mach port creation.
+    #[cfg(all(feature = "hardware-render", target_os = "macos"))]
+    pub fn peek_iosurface_identity(
+        &self,
+        webview_id: &WebViewId,
+    ) -> Result<Option<crate::IOSurfaceIdentity>, ServoHostError> {
+        let webview = self.webview(webview_id)?;
+        let Some(hardware) = webview.hardware_context.as_ref() else {
+            return Ok(None);
+        };
+        hardware
+            .peek_iosurface_identity()
+            .map(Some)
+            .map_err(|_| ServoHostError::RenderingContextUnavailable)
+    }
+
+    /// Mint a fresh mach port for the IOSurface bound to this
+    /// webview's hardware context. The caller is responsible for
+    /// transferring the port to the receiving process; if no transfer
+    /// happens, the port leaks. Software webviews return `None`.
+    #[cfg(all(feature = "hardware-render", target_os = "macos"))]
+    pub fn current_iosurface_handle(
+        &self,
+        webview_id: &WebViewId,
+    ) -> Result<Option<crate::IOSurfaceHandle>, ServoHostError> {
+        let webview = self.webview(webview_id)?;
+        let Some(hardware) = webview.hardware_context.as_ref() else {
+            return Ok(None);
+        };
+        hardware
+            .current_iosurface_mach_port()
+            .map(Some)
+            .map_err(|_| ServoHostError::RenderingContextUnavailable)
+    }
+
     fn new_rendering_context(
         &self,
         size: ServoSurfaceSize,
-    ) -> Result<Rc<dyn RenderingContext>, ServoHostError> {
-        let rendering_context: Rc<dyn RenderingContext> = match self.rendering_context_kind {
-            RenderingContextKind::Software => Rc::new(
-                servo::SoftwareRenderingContext::new(size.physical())
-                    .map_err(|_| ServoHostError::RenderingContextUnavailable)?,
-            ),
-            #[cfg(feature = "hardware-render")]
-            RenderingContextKind::Hardware => Rc::new(
-                crate::HardwareOffscreenContext::new(size.physical())
-                    .map_err(|_| ServoHostError::RenderingContextUnavailable)?,
-            ),
-            #[cfg(not(feature = "hardware-render"))]
-            RenderingContextKind::Hardware => {
-                return Err(ServoHostError::HardwareRenderUnavailable);
+    ) -> Result<RenderingContextHandles, ServoHostError> {
+        match self.rendering_context_kind {
+            RenderingContextKind::Software => {
+                let rendering_context = Rc::new(
+                    servo::SoftwareRenderingContext::new(size.physical())
+                        .map_err(|_| ServoHostError::RenderingContextUnavailable)?,
+                );
+                rendering_context
+                    .make_current()
+                    .map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
+                Ok(RenderingContextHandles {
+                    rendering_context,
+                    #[cfg(feature = "hardware-render")]
+                    hardware_context: None,
+                })
             }
-        };
-        rendering_context.make_current().map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
-        Ok(rendering_context)
+            #[cfg(feature = "hardware-render")]
+            RenderingContextKind::Hardware => {
+                let hardware = Rc::new(
+                    crate::HardwareOffscreenContext::new(size.physical())
+                        .map_err(|_| ServoHostError::RenderingContextUnavailable)?,
+                );
+                hardware
+                    .make_current()
+                    .map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
+                Ok(RenderingContextHandles {
+                    rendering_context: hardware.clone(),
+                    hardware_context: Some(hardware),
+                })
+            }
+            #[cfg(not(feature = "hardware-render"))]
+            RenderingContextKind::Hardware => Err(ServoHostError::HardwareRenderUnavailable),
+        }
     }
 
     fn webview(&self, webview_id: &WebViewId) -> Result<&HostWebView, ServoHostError> {

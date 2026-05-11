@@ -147,28 +147,32 @@ impl RenderingContext for HardwareOffscreenContext {
     }
 }
 
-/// Cross-process handle to a hardware surface: the receiving process
-/// can rebuild an `IOSurfaceRef` from `mach_port_name` and import it as
-/// a Metal texture without ever copying the pixels.
-///
-/// `width`/`height` are reported in surface pixels (post-DPR), matching
-/// what surfman handed out at construction time. The receiver should
-/// scale layout coordinates by its own backing scale factor.
 #[cfg(target_os = "macos")]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct IOSurfaceHandle {
-    pub mach_port_name: u32,
-    pub width: u32,
-    pub height: u32,
-}
+use crate::iosurface_handle::{IOSurfaceHandle, IOSurfaceIdentity};
 
 #[cfg(target_os = "macos")]
 impl HardwareOffscreenContext {
+    /// Cheap, non-mutating identity probe of the currently bound
+    /// surface. Reads `Device::context_surface_info` (no unbind, no
+    /// mach port creation) so callers can dedup before paying the
+    /// price of `current_iosurface_mach_port`.
+    pub fn peek_iosurface_identity(&self) -> Result<IOSurfaceIdentity, SurfmanError> {
+        let device = self.inner.device.borrow();
+        let context = self.inner.context.borrow();
+        let info = device.context_surface_info(&context)?.ok_or(SurfmanError::Failed)?;
+        Ok(IOSurfaceIdentity {
+            surface_id: info.id.0 as u64,
+            width: u32::try_from(info.size.width).unwrap_or(0),
+            height: u32::try_from(info.size.height).unwrap_or(0),
+        })
+    }
+
     /// Snapshot the IOSurface currently bound to the context and
-    /// return its mach port name plus dimensions. Increments the
-    /// IOSurface's mach-port use count; the receiving process holds it
-    /// via `IOSurfaceLookupFromMachPort` and is responsible for
-    /// `mach_port_deallocate` once the import is finished.
+    /// return its mach port name plus dimensions and stable surface
+    /// id. Increments the IOSurface's mach-port use count; the
+    /// receiving process holds it via `IOSurfaceLookupFromMachPort` and
+    /// is responsible for `mach_port_deallocate` once the import is
+    /// finished.
     ///
     /// Implementation note: surfman's CGL backend keeps the bound
     /// surface inside the GL context. To inspect it we temporarily
@@ -189,6 +193,7 @@ impl HardwareOffscreenContext {
         let info = device.surface_info(&surface);
         let handle = IOSurfaceHandle {
             mach_port_name: mach_port,
+            surface_id: info.id.0 as u64,
             width: u32::try_from(info.size.width).unwrap_or(0),
             height: u32::try_from(info.size.height).unwrap_or(0),
         };

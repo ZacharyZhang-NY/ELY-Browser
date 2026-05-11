@@ -3,7 +3,7 @@
 
 use std::io;
 
-use ely_servo_host::{RenderedFrame, ServoHostError, WebViewSnapshot, WebViewState};
+use ely_servo_host::{IOSurfaceHandle, RenderedFrame, ServoHostError, WebViewSnapshot, WebViewState};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -89,19 +89,53 @@ pub(super) struct LiveResponse {
     pub frame: Option<LiveFrameReport>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub perf: Option<FramePerfSummary>,
+    /// Populated on the first frame the sidecar emits for a given
+    /// surface — initial paint, after a resize, or whenever surfman
+    /// rotates its swap chain to a surface we haven't seen yet. The
+    /// receiver imports the IOSurface (via
+    /// `IOSurfaceLookupFromMachPort`) once per `surface_id` and caches
+    /// the resulting Metal texture. Always `None` on the software
+    /// path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub surface_handle: Option<IOSurfaceHandle>,
+    /// Populated on every hardware paint frame. Tells the receiver
+    /// which previously-imported IOSurface to sample THIS frame. The
+    /// surfman attached swap chain rotates between front/back
+    /// surfaces, so this id alternates between the values the receiver
+    /// has already imported. Always `None` on the software path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_surface_id: Option<u64>,
 }
 
 impl LiveResponse {
     fn empty() -> Self {
-        Self { error: None, frame: None, perf: None }
+        Self {
+            error: None,
+            frame: None,
+            perf: None,
+            surface_handle: None,
+            current_surface_id: None,
+        }
     }
 
     fn frame(frame: LiveFrameReport) -> Self {
-        Self { error: None, frame: Some(frame), perf: None }
+        Self {
+            error: None,
+            frame: Some(frame),
+            perf: None,
+            surface_handle: None,
+            current_surface_id: None,
+        }
     }
 
     fn error(message: String) -> Self {
-        Self { error: Some(message), frame: None, perf: None }
+        Self {
+            error: Some(message),
+            frame: None,
+            perf: None,
+            surface_handle: None,
+            current_surface_id: None,
+        }
     }
 }
 
