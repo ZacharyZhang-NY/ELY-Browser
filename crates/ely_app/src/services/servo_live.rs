@@ -95,6 +95,10 @@ impl ServoLiveClient {
             return Err(ServoLiveError::SidecarFailed { message: error });
         }
 
+        if let Some(perf) = response.perf.as_ref() {
+            log_frame_perf(perf);
+        }
+
         let Some(report) = response.frame else {
             return Ok(None);
         };
@@ -332,6 +336,56 @@ enum LiveRequest {
 struct LiveResponse {
     error: Option<String>,
     frame: Option<LiveFrameReport>,
+    #[serde(default)]
+    perf: Option<LiveFramePerfSummary>,
+}
+
+/// Aggregated frame-stage timings rolled up every N frames by the
+/// sidecar. We accept anything matching the wire shape and let the
+/// `tracing` event echo the percentiles verbatim — the sidecar is
+/// the source of truth for histogram boundaries.
+#[derive(Deserialize)]
+struct LiveFramePerfSummary {
+    window: u32,
+    context: String,
+    paint_p50_us: u64,
+    paint_p95_us: u64,
+    paint_p99_us: u64,
+    encode_p50_us: u64,
+    encode_p95_us: u64,
+    encode_p99_us: u64,
+    write_p50_us: u64,
+    write_p95_us: u64,
+    write_p99_us: u64,
+    total_p50_us: u64,
+    total_p95_us: u64,
+    total_p99_us: u64,
+}
+
+/// Emit one structured `tracing` event per perf summary, on a
+/// dedicated target so `RUST_LOG=ely::servo::perf=info` flips the
+/// stream on without dragging the rest of the app along. Filtering
+/// happens upstream in the subscriber — this call is a single
+/// pointer + integer push.
+fn log_frame_perf(summary: &LiveFramePerfSummary) {
+    tracing::info!(
+        target: "ely::servo::perf",
+        window = summary.window,
+        context = %summary.context,
+        paint_p50_us = summary.paint_p50_us,
+        paint_p95_us = summary.paint_p95_us,
+        paint_p99_us = summary.paint_p99_us,
+        encode_p50_us = summary.encode_p50_us,
+        encode_p95_us = summary.encode_p95_us,
+        encode_p99_us = summary.encode_p99_us,
+        write_p50_us = summary.write_p50_us,
+        write_p95_us = summary.write_p95_us,
+        write_p99_us = summary.write_p99_us,
+        total_p50_us = summary.total_p50_us,
+        total_p95_us = summary.total_p95_us,
+        total_p99_us = summary.total_p99_us,
+        "frame_perf",
+    );
 }
 
 #[derive(Deserialize)]

@@ -9,32 +9,35 @@ use std::{
 use ely_domain::{DEFAULT_ZOOM_PERCENT, ProfileId, TabId, UrlText};
 use ely_servo_host::{
     KeyboardTextRequest, MouseClickRequest, MouseHoverRequest, NavigationRequest, PageZoomRequest,
-    PermissionDecision, PermissionRequest, RenderedFrame, ResizeRequest, ScrollRequest, ServoHost,
-    ServoHostError, ServoSurfaceSize, SoftwareServoHost, WebViewSnapshot, WebViewState,
+    PermissionDecision, PermissionRequest, RenderingContextKind, ResizeRequest, ScrollRequest,
+    ServoHost, ServoSurfaceSize, SoftwareServoHost,
 };
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 use super::args::LiveArgs;
+use super::live_protocol::{
+    LiveFrameReport, LiveOutcome, LiveRequest, LiveSitePermission, PartialFrameTimings,
+};
+pub(super) use super::live_protocol::LiveSidecarError;
+use super::perf::{FramePerfAggregator, FramePerfSummary, FrameStageTimings, elapsed_ns};
 
-/// Per-`Ensure` budget the sidecar waits for Servo to paint a frame
-/// after input dispatch. The original 60 ms was tuned for navigation
-/// alone — too tight for click + paint round trips on the software
-/// renderer. With 250 ms, a click dispatched into an already-loaded
-/// page (the common case for input dispatch) paints within the same
-/// `Ensure` so the user sees the page react instead of waiting for
-/// the next 16 ms `Poll` from the GPUI shell.
+/// Per-`Ensure` budget for Servo to paint after input dispatch.
+/// 250 ms catches the common click + paint round trip within the
+/// same `Ensure` instead of waiting for the next 16 ms `Poll`.
 const LIVE_FRAME_WAIT_TIMEOUT: Duration = Duration::from_millis(250);
 const LIVE_FRAME_WAIT_INTERVAL: Duration = Duration::from_millis(2);
 
 pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
     fs::create_dir_all(&args.profile_data_dir)?;
+    let context_label = rendering_context_label(args.rendering_context_kind);
     let mut host = SoftwareServoHost::new_with_config_dir_and_kind(
         ServoSurfaceSize::new(1, 1),
         Some(args.profile_data_dir),
         args.rendering_context_kind,
     )?;
     let mut sessions = HashMap::new();
+    let mut perf =
+        FramePerfAggregator::new(context_label, FramePerfAggregator::DEFAULT_WINDOW_SIZE);
+    let mut pending_summary: Option<FramePerfSummary> = None;
     let stdin = io::stdin();
     let mut stdout = io::stdout().lock();
 
@@ -48,10 +51,17 @@ pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
             Ok(request) => handle_request(&mut host, &mut sessions, request),
             Err(error) => Err(LiveSidecarError::Json(error)),
         };
-        write_outcome(&mut stdout, outcome)?;
+        write_outcome(&mut stdout, &mut perf, &mut pending_summary, outcome)?;
     }
 
     Ok(())
+}
+
+const fn rendering_context_label(kind: RenderingContextKind) -> &'static str {
+    match kind {
+        RenderingContextKind::Software => "software",
+        RenderingContextKind::Hardware => "hardware",
+    }
 }
 
 fn handle_request(
@@ -120,27 +130,51 @@ fn handle_request(
     }
 }
 
-/// Stream a JSON response line followed by the optional raw RGBA frame.
+/// Serialise the response then stream the optional raw RGBA frame on
+/// the same stdout pipe. The client reads the JSON line, takes
+/// `rgba_byte_count` from the report, then reads that many bytes
+/// from the same stream — no temp file round-trip.
 ///
-/// The frame bytes ride on the same stdout pipe as the JSON header
-/// rather than being staged through a temp file. The client reads the
-/// JSON line, takes `rgba_byte_count` from the report, then reads that
-/// many bytes from the same stream. A 1080p frame is 8 MB — at 60 fps
-/// the previous `fs::write` + main-process `fs::read` round-trip cost
-/// ~960 MB/s of syscall + memcpy traffic that the scroll/zoom path
-/// could never amortise. Same pipe, raw bytes: no kernel `open`, no
-/// page cache churn, no transient file lifecycle to clean up.
+/// After the bytes hit the pipe we fold paint+encode+write timings
+/// into the aggregator. Any summary it emits is stashed on
+/// `pending_summary` and rides out on the *next* response, because
+/// the protocol is one-line-per-response and an unsolicited summary
+/// line would desync the main process's read loop.
 fn write_outcome(
     stdout: &mut impl Write,
+    perf: &mut FramePerfAggregator,
+    pending_summary: &mut Option<FramePerfSummary>,
     outcome: Result<LiveOutcome, LiveSidecarError>,
 ) -> Result<(), LiveSidecarError> {
-    let outcome = outcome.unwrap_or_else(|error| LiveOutcome::error(error.to_string()));
+    let mut outcome = outcome.unwrap_or_else(|error| LiveOutcome::error(error.to_string()));
+    let partial_timings = outcome.partial_timings.take();
+    let frame_present = outcome.frame.is_some();
+    if let Some(summary) = pending_summary.take() {
+        outcome.response.perf = Some(summary);
+    }
+    let write_started_at = Instant::now();
     serde_json::to_writer(&mut *stdout, &outcome.response)?;
     stdout.write_all(b"\n")?;
     if let Some(frame) = outcome.frame.as_ref() {
         stdout.write_all(frame.rgba_bytes())?;
     }
     stdout.flush()?;
+    if frame_present {
+        let write_ns = elapsed_ns(write_started_at);
+        let partial = partial_timings.unwrap_or(PartialFrameTimings { paint_ns: 0, encode_ns: 0 });
+        let total = Duration::from_nanos(
+            partial.paint_ns.saturating_add(partial.encode_ns).saturating_add(write_ns),
+        );
+        let timings = FrameStageTimings::from_durations(
+            Duration::from_nanos(partial.paint_ns),
+            Duration::from_nanos(partial.encode_ns),
+            Duration::from_nanos(write_ns),
+            total,
+        );
+        if let Some(summary) = perf.record(timings) {
+            *pending_summary = Some(summary);
+        }
+    }
     Ok(())
 }
 
@@ -267,13 +301,18 @@ fn poll_frame(
         host.tick();
         let snapshot = host.snapshot(&session.webview_id)?;
         if snapshot.has_pending_frame() {
+            let paint_started_at = Instant::now();
             host.paint(&session.webview_id)?;
             let snapshot = host.snapshot(&session.webview_id)?;
             let frame = host.last_rendered_frame()?;
+            let paint_ns = elapsed_ns(paint_started_at);
+            let encode_started_at = Instant::now();
             let has_visible_content =
                 frame.non_white_pixel_count() > 0 && frame.content_pixel_count() > 0;
             let report = LiveFrameReport::new(&snapshot, &frame);
-            let outcome = LiveOutcome::from_frame(report, frame);
+            let encode_ns = elapsed_ns(encode_started_at);
+            let timings = PartialFrameTimings { paint_ns, encode_ns };
+            let outcome = LiveOutcome::from_frame(report, frame, timings);
             if has_visible_content {
                 session.awaiting_visible_frame = false;
                 return Ok(outcome);
@@ -319,142 +358,6 @@ impl LiveSession {
             scroll_y: 0,
             awaiting_visible_frame: false,
         }
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum LiveRequest {
-    Ensure {
-        tab_id: String,
-        profile_id: String,
-        url: String,
-        width: u32,
-        height: u32,
-        page_zoom_percent: u16,
-        scroll_delta_x: i32,
-        scroll_delta_y: i32,
-        click_x: Option<u32>,
-        click_y: Option<u32>,
-        #[serde(default)]
-        hover_x: Option<u32>,
-        #[serde(default)]
-        hover_y: Option<u32>,
-        typed_text: Option<String>,
-        site_permissions: Vec<LiveSitePermission>,
-    },
-    Poll {
-        tab_id: String,
-    },
-}
-
-#[derive(Deserialize)]
-struct LiveSitePermission {
-    origin: String,
-    feature: String,
-    decision: String,
-}
-
-/// A handle plus an optional rendered frame, kept together until the
-/// moment of writing to stdout. The JSON header advertises
-/// `rgba_byte_count`; the binary follows on the same pipe. We carry
-/// the `RenderedFrame` (one host-side clone, already paid for inside
-/// `host.last_rendered_frame`) instead of doing another `to_vec()`
-/// over `rgba_bytes()` — `write_all(&self.rgba_bytes()[..])` writes
-/// the existing slice straight to the pipe.
-struct LiveOutcome {
-    response: LiveResponse,
-    frame: Option<RenderedFrame>,
-}
-
-impl LiveOutcome {
-    fn empty() -> Self {
-        Self { response: LiveResponse::empty(), frame: None }
-    }
-
-    fn error(message: String) -> Self {
-        Self { response: LiveResponse::error(message), frame: None }
-    }
-
-    fn from_frame(report: LiveFrameReport, frame: RenderedFrame) -> Self {
-        Self { response: LiveResponse::frame(report), frame: Some(frame) }
-    }
-}
-
-#[derive(Serialize)]
-struct LiveResponse {
-    error: Option<String>,
-    frame: Option<LiveFrameReport>,
-}
-
-impl LiveResponse {
-    fn empty() -> Self {
-        Self { error: None, frame: None }
-    }
-
-    fn frame(frame: LiveFrameReport) -> Self {
-        Self { error: None, frame: Some(frame) }
-    }
-
-    fn error(message: String) -> Self {
-        Self { error: Some(message), frame: None }
-    }
-}
-
-#[derive(Serialize)]
-struct LiveFrameReport {
-    loaded_url: Option<String>,
-    title: Option<String>,
-    state: &'static str,
-    width: u32,
-    height: u32,
-    rgba_byte_count: usize,
-    non_white_pixel_count: u64,
-    content_pixel_count: u64,
-    sample_hash: u64,
-}
-
-impl LiveFrameReport {
-    fn new(snapshot: &WebViewSnapshot, frame: &RenderedFrame) -> Self {
-        Self {
-            loaded_url: snapshot.url().map(str::to_string),
-            title: snapshot.title().map(str::to_string),
-            state: state_label(snapshot.state()),
-            width: frame.width(),
-            height: frame.height(),
-            rgba_byte_count: frame.rgba_bytes().len(),
-            non_white_pixel_count: frame.non_white_pixel_count(),
-            content_pixel_count: frame.content_pixel_count(),
-            sample_hash: frame.sample_hash(),
-        }
-    }
-}
-
-#[derive(Debug, Error)]
-pub(super) enum LiveSidecarError {
-    #[error("live session is unavailable after creation")]
-    SessionUnavailable,
-
-    #[error(transparent)]
-    Domain(#[from] ely_domain::DomainError),
-
-    #[error(transparent)]
-    Host(#[from] ServoHostError),
-
-    #[error(transparent)]
-    Io(#[from] io::Error),
-
-    #[error(transparent)]
-    Json(#[from] serde_json::Error),
-}
-
-fn state_label(state: &WebViewState) -> &'static str {
-    match state {
-        WebViewState::Created => "created",
-        WebViewState::Loading => "loading",
-        WebViewState::Complete => "complete",
-        WebViewState::Sleeping => "sleeping",
-        WebViewState::Crashed => "crashed",
     }
 }
 

@@ -52,6 +52,7 @@ actions!(
 );
 
 fn main() {
+    init_tracing();
     let pending_deep_links = PendingDeepLinks::default();
     pending_deep_links.push(startup_deep_links(env::args().skip(1)));
     let open_url_queue = pending_deep_links.clone();
@@ -318,6 +319,18 @@ fn startup_deep_links(args: impl IntoIterator<Item = String>) -> Vec<String> {
 
 fn quit(_: &Quit, cx: &mut App) {
     cx.quit();
+}
+
+/// Install the global tracing subscriber. `RUST_LOG` drives the
+/// filter; absent it, only `warn` and above leak through so day-to-day
+/// runs stay quiet. The perf target is silent by default —
+/// `RUST_LOG=ely::servo::perf=info` flips on the frame-time stream
+/// without touching the rest of the app. We swallow re-init errors so
+/// tests that share the process state with main don't blow up.
+fn init_tracing() {
+    use tracing_subscriber::{EnvFilter, fmt};
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
+    let _ = fmt().with_env_filter(filter).with_target(true).try_init();
 }
 
 fn open_private_window(_: &OpenPrivateWindow, cx: &mut App) {
