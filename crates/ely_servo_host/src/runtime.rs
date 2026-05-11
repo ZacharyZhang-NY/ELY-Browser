@@ -53,9 +53,27 @@ impl ServoSurfaceSize {
     }
 }
 
+/// Selects the `RenderingContext` implementation each webview gets.
+///
+/// `Software` uses Servo's built-in `SoftwareRenderingContext`, which
+/// rasterises on the CPU. `Hardware` uses the vendored
+/// [`HardwareOffscreenContext`](crate::HardwareOffscreenContext),
+/// which rasterises through the real GPU adapter against a
+/// `SurfaceType::Generic` offscreen surface. The `Hardware` variant
+/// is only available when the `hardware-render` feature is enabled;
+/// requesting it without the feature is a configuration error
+/// surfaced via `ServoHostError::HardwareRenderUnavailable`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RenderingContextKind {
+    #[default]
+    Software,
+    Hardware,
+}
+
 pub struct SoftwareServoHost {
     servo: Servo,
     default_surface_size: ServoSurfaceSize,
+    rendering_context_kind: RenderingContextKind,
     webviews: HashMap<WebViewId, HostWebView>,
     permissions: PermissionStore,
     wake_requested: Arc<AtomicBool>,
@@ -64,13 +82,35 @@ pub struct SoftwareServoHost {
 
 impl SoftwareServoHost {
     pub fn new(size: ServoSurfaceSize) -> Result<Self, ServoHostError> {
-        Self::new_with_config_dir(size, None)
+        Self::new_with_config_dir_and_kind(size, None, RenderingContextKind::Software)
     }
 
     pub fn new_with_config_dir(
         size: ServoSurfaceSize,
         config_dir: Option<PathBuf>,
     ) -> Result<Self, ServoHostError> {
+        Self::new_with_config_dir_and_kind(size, config_dir, RenderingContextKind::Software)
+    }
+
+    /// Construct the host with an explicit [`RenderingContextKind`].
+    ///
+    /// `Hardware` requires the `hardware-render` feature; the call
+    /// fails with `ServoHostError::HardwareRenderUnavailable` if the
+    /// feature wasn't compiled in. This is the constructor the
+    /// sidecar binary will use once a `--rendering-context` CLI
+    /// flag lands; today the default path through `new` and
+    /// `new_with_config_dir` keeps the software behaviour unchanged.
+    pub fn new_with_config_dir_and_kind(
+        size: ServoSurfaceSize,
+        config_dir: Option<PathBuf>,
+        rendering_context_kind: RenderingContextKind,
+    ) -> Result<Self, ServoHostError> {
+        if rendering_context_kind == RenderingContextKind::Hardware
+            && !cfg!(feature = "hardware-render")
+        {
+            return Err(ServoHostError::HardwareRenderUnavailable);
+        }
+
         if SERVO_RUNTIME_STARTED
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
@@ -78,7 +118,7 @@ impl SoftwareServoHost {
             return Err(ServoHostError::RuntimeAlreadyStarted);
         }
 
-        let host = Self::new_started(size, config_dir);
+        let host = Self::new_started(size, config_dir, rendering_context_kind);
         if host.is_err() {
             SERVO_RUNTIME_STARTED.store(false, Ordering::Release);
         }
@@ -97,6 +137,7 @@ impl SoftwareServoHost {
     fn new_started(
         size: ServoSurfaceSize,
         config_dir: Option<PathBuf>,
+        rendering_context_kind: RenderingContextKind,
     ) -> Result<Self, ServoHostError> {
         let wake_requested = Arc::new(AtomicBool::new(false));
         let mut builder = ServoBuilder::default()
@@ -109,6 +150,7 @@ impl SoftwareServoHost {
         Ok(Self {
             servo,
             default_surface_size: size,
+            rendering_context_kind,
             webviews: HashMap::new(),
             permissions: Rc::new(RefCell::new(HashMap::new())),
             wake_requested,
@@ -335,7 +377,7 @@ impl SoftwareServoHost {
         size: ServoSurfaceSize,
     ) -> Result<WebViewId, ServoHostError> {
         let webview_id = WebViewId::new();
-        let rendering_context = Self::new_rendering_context(size)?;
+        let rendering_context = self.new_rendering_context(size)?;
         let delegate =
             Rc::new(HostWebViewDelegate::new(profile_id.clone(), self.permissions.clone()));
         let webview = WebViewBuilder::new(&self.servo, rendering_context.clone())
@@ -365,12 +407,24 @@ impl SoftwareServoHost {
     }
 
     fn new_rendering_context(
+        &self,
         size: ServoSurfaceSize,
     ) -> Result<Rc<dyn RenderingContext>, ServoHostError> {
-        let rendering_context = Rc::new(
-            servo::SoftwareRenderingContext::new(size.physical())
-                .map_err(|_| ServoHostError::RenderingContextUnavailable)?,
-        );
+        let rendering_context: Rc<dyn RenderingContext> = match self.rendering_context_kind {
+            RenderingContextKind::Software => Rc::new(
+                servo::SoftwareRenderingContext::new(size.physical())
+                    .map_err(|_| ServoHostError::RenderingContextUnavailable)?,
+            ),
+            #[cfg(feature = "hardware-render")]
+            RenderingContextKind::Hardware => Rc::new(
+                crate::HardwareOffscreenContext::new(size.physical())
+                    .map_err(|_| ServoHostError::RenderingContextUnavailable)?,
+            ),
+            #[cfg(not(feature = "hardware-render"))]
+            RenderingContextKind::Hardware => {
+                return Err(ServoHostError::HardwareRenderUnavailable);
+            }
+        };
         rendering_context.make_current().map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
         Ok(rendering_context)
     }

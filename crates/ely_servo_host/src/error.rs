@@ -24,6 +24,12 @@ pub enum ServoHostError {
     #[error("servo rendering context could not be made current")]
     RenderingContextNotCurrent,
 
+    #[error(
+        "hardware rendering context requested but the `hardware-render` feature \
+         was not compiled in; rebuild with --features servo-engine,hardware-render"
+    )]
+    HardwareRenderUnavailable,
+
     #[error("servo rendered frame is unavailable")]
     RenderedFrameUnavailable,
 

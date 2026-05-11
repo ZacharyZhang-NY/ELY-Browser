@@ -25,4 +25,4 @@ pub use host::{
     TouchTapRequest, WebViewSnapshot, WebViewState,
 };
 #[cfg(feature = "servo-engine")]
-pub use runtime::{ServoSurfaceSize, SoftwareServoHost};
+pub use runtime::{RenderingContextKind, ServoSurfaceSize, SoftwareServoHost};
