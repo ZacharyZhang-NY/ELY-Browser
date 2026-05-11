@@ -128,6 +128,10 @@ fn handle_request(
                 session.scroll_x = 0;
                 session.scroll_y = 0;
                 session.awaiting_visible_frame = true;
+                // New URL: the previous tab's pixels are no longer
+                // valid evidence that "we have visible content"; let
+                // the gate skip blank loading frames again.
+                session.ever_visible_frame = false;
             }
             if apply_input(
                 host,
@@ -417,9 +421,18 @@ fn poll_frame(
             // already encodes "Servo finished painting" — trust it
             // for the hardware path instead of double-checking via a
             // readback we know to be unreliable.
+            //
+            // For the software path, the threshold check is only
+            // useful once per URL: after we've confirmed at least one
+            // paint had real content, every subsequent input deserves
+            // an immediate return on the next pending frame instead
+            // of another 250 ms wait. `session.ever_visible_frame`
+            // tracks that, reset on navigate.
             let has_visible_content = match rendering_context_kind {
                 RenderingContextKind::Software => {
-                    frame.non_white_pixel_count() > 0 && frame.content_pixel_count() > 0
+                    session.ever_visible_frame
+                        || (frame.non_white_pixel_count() > 0
+                            && frame.content_pixel_count() > 0)
                 }
                 #[cfg(feature = "hardware-render")]
                 RenderingContextKind::Hardware => true,
@@ -434,6 +447,7 @@ fn poll_frame(
             let outcome = LiveOutcome::from_frame(report, frame, timings);
             if has_visible_content {
                 session.awaiting_visible_frame = false;
+                session.ever_visible_frame = true;
                 return Ok(outcome);
             }
             if !session.awaiting_visible_frame {
@@ -463,6 +477,16 @@ struct LiveSession {
     scroll_x: i32,
     scroll_y: i32,
     awaiting_visible_frame: bool,
+    /// Sticky for the lifetime of a single URL: flipped to `true`
+    /// the first time `poll_frame` sees a paint with real content
+    /// (non-white, non-empty) and reset to `false` on every navigate.
+    /// After it's `true`, the visible-content gate stops gating —
+    /// scroll/click/hover/type all return on the first
+    /// `has_pending_frame=true` (~3 ms) instead of waiting the full
+    /// `LIVE_FRAME_WAIT_TIMEOUT`. The gate stays armed for the
+    /// initial paint of each new URL so loading frames are still
+    /// skipped.
+    ever_visible_frame: bool,
 }
 
 impl LiveSession {
@@ -476,6 +500,7 @@ impl LiveSession {
             scroll_x: 0,
             scroll_y: 0,
             awaiting_visible_frame: false,
+            ever_visible_frame: false,
         }
     }
 }
