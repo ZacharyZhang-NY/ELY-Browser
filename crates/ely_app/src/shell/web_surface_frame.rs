@@ -1,8 +1,8 @@
 use std::cell::RefCell;
-use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 use std::sync::Arc;
 
+use ahash::AHasher;
 use gpui::RenderImage;
 use image::{ImageBuffer, Rgba};
 use thiserror::Error;
@@ -17,7 +17,15 @@ thread_local! {
     /// frame. The cache keys on a 64-bit hash of the raw bytes and
     /// reuses the existing `Arc<RenderImage>` whenever the hash
     /// matches, so steady-state idle pages no longer churn the GPUI
-    /// texture pool. Hash collisions are 1 in 2^64; if they ever
+    /// texture pool.
+    ///
+    /// Uses `AHasher` instead of std's `DefaultHasher`. SipHash13
+    /// (default) tops out around ~1.5 GB/s; an 8 MB 1080p frame
+    /// hashes in ~5 ms on a modern CPU, which eats roughly 30 % of
+    /// the 16 ms scroll budget on every cache-miss frame. AHash
+    /// runs ~10 GB/s on the same hardware, dropping the per-frame
+    /// hash cost to ~0.8 ms and giving the scroll path back most of
+    /// that budget. Hash collisions remain ~1 in 2^64; if they ever
     /// matter we'll trade in length + first/last 32 bytes as a
     /// disambiguator before paying the full memcmp.
     static LAST_FRAME_IMAGE: RefCell<Option<(u64, Arc<RenderImage>)>> =
@@ -201,7 +209,7 @@ pub(super) enum WebSurfaceError {
 }
 
 fn rgba_hash(bytes: &[u8]) -> u64 {
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = AHasher::default();
     hasher.write(bytes);
     hasher.finish()
 }

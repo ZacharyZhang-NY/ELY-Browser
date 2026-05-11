@@ -2242,6 +2242,7 @@ dependencies = [
 name = "ely_app"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "directories",
  "ed25519-dalek",
  "ely_browser_core",
