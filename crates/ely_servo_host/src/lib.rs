@@ -1,4 +1,6 @@
 mod error;
+#[cfg(feature = "hardware-render")]
+mod hardware_rendering_context;
 mod host;
 #[cfg(feature = "servo-engine")]
 mod keyboard;
@@ -14,6 +16,8 @@ mod runtime_waker;
 mod runtime_webview;
 
 pub use error::ServoHostError;
+#[cfg(feature = "hardware-render")]
+pub use hardware_rendering_context::HardwareOffscreenContext;
 pub use host::{
     KeyboardTextRequest, MouseClickRequest, MouseDragRequest, MouseHoverRequest,
     NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest, RenderedFrame,

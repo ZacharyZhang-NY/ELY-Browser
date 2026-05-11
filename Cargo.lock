@@ -2295,9 +2295,15 @@ version = "0.1.0"
 dependencies = [
  "dpi",
  "ely_domain",
+ "euclid",
+ "gleam",
+ "glow",
+ "image",
+ "log",
  "serde",
  "serde_json",
  "servo",
+ "surfman",
  "thiserror 2.0.18",
  "url",
 ]

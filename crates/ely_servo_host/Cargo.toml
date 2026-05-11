@@ -8,6 +8,15 @@ rust-version.workspace = true
 [features]
 default = []
 servo-engine = ["dep:dpi", "dep:serde", "dep:serde_json", "dep:servo", "dep:url"]
+hardware-render = [
+    "servo-engine",
+    "dep:euclid",
+    "dep:gleam",
+    "dep:glow",
+    "dep:image",
+    "dep:log",
+    "dep:surfman",
+]
 
 [[bin]]
 name = "ely_servo_sidecar"
@@ -17,9 +26,15 @@ required-features = ["servo-engine"]
 [dependencies]
 dpi = { workspace = true, optional = true }
 ely_domain = { path = "../ely_domain" }
+euclid = { version = "0.22", optional = true }
+gleam = { version = "0.15", optional = true }
+glow = { version = "0.16", optional = true }
+image = { workspace = true, optional = true }
+log = { version = "0.4", optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 servo = { workspace = true, optional = true }
+surfman = { version = "0.11", optional = true }
 thiserror.workspace = true
 url = { workspace = true, optional = true }
 
