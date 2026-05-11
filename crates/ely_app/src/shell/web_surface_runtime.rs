@@ -57,6 +57,7 @@ impl WebSurfaceRuntime {
                 width: size.width,
                 height: size.height,
                 page_zoom_percent: zoom_percent,
+                device_pixel_ratio: size.device_pixel_ratio_f32(),
                 scroll_delta_x: input.scroll_delta.map_or(0, |delta| delta.x()),
                 scroll_delta_y: input.scroll_delta.map_or(0, |delta| delta.y()),
                 click_x: input.click_point.map(|point| point.x()),

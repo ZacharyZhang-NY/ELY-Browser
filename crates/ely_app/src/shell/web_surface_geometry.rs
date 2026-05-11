@@ -4,6 +4,12 @@ use gpui::{Bounds, Pixels, Point};
 pub(super) struct WebSurfaceSize {
     pub(super) width: u32,
     pub(super) height: u32,
+    /// Encoded as percent × 1 (e.g. 100 = 1.0 DPR, 200 = 2.0 DPR on
+    /// Retina). u16 instead of f32 so the struct keeps `Eq` —
+    /// `WebSurfaceSession::started_loading` compares sizes by value
+    /// and a float wouldn't compose with that. Convert to/from f32
+    /// at the wire boundary via `device_pixel_ratio_f32`.
+    pub(super) device_pixel_ratio_percent: u16,
 }
 
 impl WebSurfaceSize {
@@ -11,8 +17,25 @@ impl WebSurfaceSize {
         Some(Self {
             width: viewport_dimension(bounds.size.width, scale_factor)?,
             height: viewport_dimension(bounds.size.height, scale_factor)?,
+            device_pixel_ratio_percent: encode_scale_factor(scale_factor),
         })
     }
+
+    pub(super) fn device_pixel_ratio_f32(&self) -> f32 {
+        f32::from(self.device_pixel_ratio_percent) / 100.0
+    }
+}
+
+/// Round `scale_factor` to the nearest whole percent and clamp into a
+/// sane range. macOS reports 1.0 / 2.0 typically, fractional values
+/// (1.25 / 1.5 / 1.75) show up on Windows / mixed-DPI setups. The
+/// clamp guards against `inf`/`nan` from a misbehaving platform.
+fn encode_scale_factor(scale_factor: f32) -> u16 {
+    if !scale_factor.is_finite() || scale_factor <= 0.0 {
+        return 100;
+    }
+    let scaled = (scale_factor * 100.0).round();
+    scaled.clamp(50.0, 500.0) as u16
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

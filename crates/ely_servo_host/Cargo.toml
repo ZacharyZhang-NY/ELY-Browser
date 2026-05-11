@@ -7,10 +7,9 @@ rust-version.workspace = true
 
 [features]
 default = []
-servo-engine = ["dep:dpi", "dep:serde", "dep:serde_json", "dep:servo", "dep:url"]
+servo-engine = ["dep:dpi", "dep:euclid", "dep:serde", "dep:serde_json", "dep:servo", "dep:url"]
 hardware-render = [
     "servo-engine",
-    "dep:euclid",
     "dep:gleam",
     "dep:glow",
     "dep:image",

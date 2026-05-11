@@ -235,6 +235,17 @@ pub struct PageZoomRequest {
     pub zoom_factor: f32,
 }
 
+/// Set the WebView's hidpi (device → CSS pixel) scale. Servo's
+/// builder defaults this to 1.0; on Retina hosts that produces
+/// half-size layout because the page treats physical pixels as CSS
+/// pixels. The embedder should mirror the platform's reported scale
+/// factor on every viewport-bound change.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HidpiScaleRequest {
+    pub webview_id: WebViewId,
+    pub scale_factor: f32,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MouseClickRequest {
     pub webview_id: WebViewId,
@@ -315,6 +326,8 @@ pub trait ServoHost {
     fn resize(&mut self, request: ResizeRequest) -> Result<(), ServoHostError>;
 
     fn set_page_zoom(&mut self, request: PageZoomRequest) -> Result<(), ServoHostError>;
+
+    fn set_hidpi_scale(&mut self, request: HidpiScaleRequest) -> Result<(), ServoHostError>;
 
     fn click(&mut self, request: MouseClickRequest) -> Result<(), ServoHostError>;
 

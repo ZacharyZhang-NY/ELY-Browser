@@ -99,6 +99,7 @@ fn handle_request(
             width,
             height,
             page_zoom_percent,
+            device_pixel_ratio,
             scroll_delta_x,
             scroll_delta_y,
             click_x,
@@ -114,7 +115,14 @@ fn handle_request(
             let session =
                 ensure_session(host, sessions, tab_id.clone(), &tab, &profile, width, height)?;
 
-            if apply_layout(host, session, width, height, page_zoom_percent)? {
+            if apply_layout(
+                host,
+                session,
+                width,
+                height,
+                page_zoom_percent,
+                device_pixel_ratio,
+            )? {
                 session.awaiting_visible_frame = true;
             }
             apply_permissions(host, session, &profile, site_permissions)?;
@@ -305,8 +313,26 @@ fn apply_layout(
     width: u32,
     height: u32,
     page_zoom_percent: u16,
+    device_pixel_ratio: f32,
 ) -> Result<bool, LiveSidecarError> {
     let mut changed = false;
+    // Push the device pixel ratio BEFORE resize. Servo's WebView
+    // defaults hidpi to 1.0; without this the first layout treats
+    // physical-pixel viewport widths as CSS-pixel widths and the page
+    // lays out half the size you'd expect on a Retina display. The
+    // sidecar-side `LiveSession::hidpi_scale_milli` keeps a u32 of
+    // (scale × 1000) so f32 jitter from JSON parsing doesn't churn
+    // the setter every frame.
+    let hidpi_scale_milli = encode_hidpi_scale_milli(device_pixel_ratio);
+    if session.hidpi_scale_milli != hidpi_scale_milli {
+        host.set_hidpi_scale(ely_servo_host::HidpiScaleRequest {
+            webview_id: session.webview_id.clone(),
+            scale_factor: hidpi_scale_milli_to_f32(hidpi_scale_milli),
+        })?;
+        session.hidpi_scale_milli = hidpi_scale_milli;
+        changed = true;
+    }
+
     if session.width != width || session.height != height {
         host.resize(ResizeRequest { webview_id: session.webview_id.clone(), width, height })?;
         session.width = width;
@@ -324,6 +350,18 @@ fn apply_layout(
     }
 
     Ok(changed)
+}
+
+fn encode_hidpi_scale_milli(scale: f32) -> u32 {
+    if !scale.is_finite() || scale <= 0.0 {
+        return 1_000;
+    }
+    let scaled = (scale * 1_000.0).round();
+    scaled.clamp(500.0, 5_000.0) as u32
+}
+
+fn hidpi_scale_milli_to_f32(milli: u32) -> f32 {
+    milli as f32 / 1_000.0
 }
 
 fn apply_permissions(
@@ -474,6 +512,11 @@ struct LiveSession {
     width: u32,
     height: u32,
     page_zoom_percent: u16,
+    /// Last hidpi factor pushed to Servo, encoded as `(scale × 1000)`.
+    /// Stored as a u32 so equality is cheap and stable across the
+    /// f32 jitter that JSON parsing can introduce. Init to 0 so the
+    /// first apply_layout call always pushes a real value.
+    hidpi_scale_milli: u32,
     scroll_x: i32,
     scroll_y: i32,
     awaiting_visible_frame: bool,
@@ -497,6 +540,7 @@ impl LiveSession {
             width: width.max(1),
             height: height.max(1),
             page_zoom_percent: DEFAULT_ZOOM_PERCENT,
+            hidpi_scale_milli: 0,
             scroll_x: 0,
             scroll_y: 0,
             awaiting_visible_frame: false,

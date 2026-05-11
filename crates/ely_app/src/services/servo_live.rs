@@ -81,6 +81,7 @@ impl ServoLiveClient {
             width: request.width,
             height: request.height,
             page_zoom_percent: request.page_zoom_percent,
+            device_pixel_ratio: request.device_pixel_ratio,
             scroll_delta_x: request.scroll_delta_x,
             scroll_delta_y: request.scroll_delta_y,
             click_x: request.click_x,
@@ -212,6 +213,11 @@ pub(crate) struct ServoLiveEnsureRequest {
     pub(crate) width: u32,
     pub(crate) height: u32,
     pub(crate) page_zoom_percent: u16,
+    /// Display scale factor (1.0 standard, 2.0 Retina). Servo's
+    /// WebView lays out CSS pixels = device pixels / hidpi factor;
+    /// without this, a Retina viewport gets desktop-CSS-pixel layout
+    /// and every visible element renders at half its expected size.
+    pub(crate) device_pixel_ratio: f32,
     pub(crate) scroll_delta_x: i32,
     pub(crate) scroll_delta_y: i32,
     pub(crate) click_x: Option<u32>,
@@ -401,6 +407,7 @@ enum LiveRequest {
         width: u32,
         height: u32,
         page_zoom_percent: u16,
+        device_pixel_ratio: f32,
         scroll_delta_x: i32,
         scroll_delta_y: i32,
         click_x: Option<u32>,

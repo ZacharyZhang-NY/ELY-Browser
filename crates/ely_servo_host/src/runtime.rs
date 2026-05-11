@@ -13,17 +13,33 @@ use std::{
 
 use dpi::PhysicalSize;
 use ely_domain::{ProfileId, TabId, WebViewId};
+use euclid::Scale;
 use servo::{
-    DeviceIntPoint, DeviceIntRect, DeviceIntSize, DevicePoint, DeviceVector2D, Opts,
-    RenderingContext, Scroll, Servo, ServoBuilder, WebViewBuilder, WebViewPoint, WebViewVector,
+    DeviceIndependentPixel, DeviceIntPoint, DeviceIntRect, DeviceIntSize, DevicePixel,
+    DevicePoint, DeviceVector2D, Opts, RenderingContext, Scroll, Servo, ServoBuilder,
+    WebViewBuilder, WebViewPoint, WebViewVector,
 };
+
+/// Wrap an `f32` scale factor in Servo's typed `Scale<f32, DeviceIndependentPixel,
+/// DevicePixel>`. The clamp guards against `NaN`/`inf` reaching Servo's
+/// layout (which assumes a positive finite scale).
+fn hidpi_scale_from_factor(
+    scale_factor: f32,
+) -> Scale<f32, DeviceIndependentPixel, DevicePixel> {
+    let safe = if scale_factor.is_finite() && scale_factor > 0.0 {
+        scale_factor.clamp(0.5, 5.0)
+    } else {
+        1.0
+    };
+    Scale::new(safe)
+}
 use url::Url;
 
 use crate::{
-    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, MouseHoverRequest,
-    NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest, RenderedFrame,
-    ResizeRequest, ScreenshotRequest, ScrollRequest, ServoHost, ServoHostError, TouchTapRequest,
-    WebViewSnapshot, WebViewState,
+    HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest, MouseDragRequest,
+    MouseHoverRequest, NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest,
+    RenderedFrame, ResizeRequest, ScreenshotRequest, ScrollRequest, ServoHost, ServoHostError,
+    TouchTapRequest, WebViewSnapshot, WebViewState,
     runtime_input::{
         send_keyboard_text, send_mouse_click, send_mouse_drag, send_mouse_hover, send_touch_tap,
     },
@@ -251,6 +267,17 @@ impl ServoHost for SoftwareServoHost {
             .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
 
         webview.webview.set_page_zoom(request.zoom_factor);
+        Ok(())
+    }
+
+    fn set_hidpi_scale(&mut self, request: HidpiScaleRequest) -> Result<(), ServoHostError> {
+        let webview = self
+            .webviews
+            .get(&request.webview_id)
+            .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
+
+        let scale = hidpi_scale_from_factor(request.scale_factor);
+        webview.webview.set_hidpi_scale_factor(scale);
         Ok(())
     }
 

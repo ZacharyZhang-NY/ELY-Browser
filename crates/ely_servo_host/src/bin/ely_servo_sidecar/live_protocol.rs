@@ -19,6 +19,14 @@ pub(super) enum LiveRequest {
         width: u32,
         height: u32,
         page_zoom_percent: u16,
+        /// Display scale factor reported by the host's window
+        /// (1.0 standard, 2.0 Retina). The sidecar plumbs this into
+        /// Servo's `WebView::set_hidpi_scale_factor` so CSS layout
+        /// happens at logical-pixel dimensions instead of physical.
+        /// Defaults to 1.0 for backward compatibility if a client
+        /// (e.g. the live perf bench) omits the field.
+        #[serde(default = "default_device_pixel_ratio")]
+        device_pixel_ratio: f32,
         scroll_delta_x: i32,
         scroll_delta_y: i32,
         click_x: Option<u32>,
@@ -33,6 +41,10 @@ pub(super) enum LiveRequest {
     Poll {
         tab_id: String,
     },
+}
+
+fn default_device_pixel_ratio() -> f32 {
+    1.0
 }
 
 #[derive(Deserialize)]

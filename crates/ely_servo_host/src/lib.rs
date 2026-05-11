@@ -21,10 +21,10 @@ pub use error::ServoHostError;
 pub use hardware_rendering_context::HardwareOffscreenContext;
 pub use iosurface_handle::{IOSurfaceHandle, IOSurfaceIdentity};
 pub use host::{
-    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, MouseHoverRequest,
-    NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest, RenderedFrame,
-    RenderedFrameSummary, ResizeRequest, ScreenshotRequest, ScrollRequest, ServoHost,
-    TouchTapRequest, WebViewSnapshot, WebViewState,
+    HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest, MouseDragRequest,
+    MouseHoverRequest, NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest,
+    RenderedFrame, RenderedFrameSummary, ResizeRequest, ScreenshotRequest, ScrollRequest,
+    ServoHost, TouchTapRequest, WebViewSnapshot, WebViewState,
 };
 #[cfg(feature = "servo-engine")]
 pub use runtime::{RenderingContextKind, ServoSurfaceSize, SoftwareServoHost};
