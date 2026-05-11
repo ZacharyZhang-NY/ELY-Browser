@@ -3,8 +3,6 @@ use gpui::{
     AnyElement, App, Entity, ImageSource, InteractiveElement, IntoElement, MouseButton, ObjectFit,
     ParentElement, Styled, StyledImage, Window, canvas, div, img, px, rgb,
 };
-#[cfg(target_os = "macos")]
-use gpui::surface;
 
 use super::{ElyShell, web_surface_frame::WebSurfaceFrame};
 use ely_design_system::colors;
@@ -14,24 +12,22 @@ pub(super) fn render_ready_web_surface(
     tab: &BrowserTab,
     state_entity: Entity<ElyShell>,
 ) -> AnyElement {
-    // Prefer the hardware path when the sidecar published an
-    // IOSurface and we successfully imported it into a CVPixelBuffer.
-    // GPUI's `surface(...)` hands the buffer to its Blade Metal
-    // renderer, which samples the IOSurface directly — no
-    // RGBA→texture upload, no LAST_FRAME_IMAGE dedup needed. The
-    // sidecar drops the RGBA payload from the wire whenever it
-    // populates `pixel_buffer`, so `image` is `None` on this branch
-    // and there's no software memcpy to fall back on.
-    #[cfg(target_os = "macos")]
-    if let Some(pixel_buffer) = frame.pixel_buffer.as_ref() {
-        return render_web_surface(
-            tab,
-            state_entity,
-            surface(pixel_buffer.clone()).size_full().object_fit(ObjectFit::Fill),
-        );
-    }
-    // Software path: the sidecar streamed the RGBA payload and the
-    // receiver decoded it into an Arc<RenderImage>.
+    // T14: the `gpui::surface(...)` hardware path is disabled.
+    //
+    // GPUI 0.2.2's Blade Metal renderer hard-asserts that any
+    // CVPixelBuffer handed to `surface(...)` is NV12 YUV
+    // (kCVPixelFormatType_420YpCbCr8BiPlanarFullRange). See
+    // ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/
+    //   gpui-0.2.2/src/platform/blade/blade_renderer.rs:832
+    // for the assert. Our sidecar produces BGRA IOSurfaces, so
+    // calling `surface()` with that buffer panics the renderer on
+    // the first frame.
+    //
+    // We keep `services::iosurface_metal` and
+    // `WebSurfaceFrame::pixel_buffer` intact so the wire-side
+    // IOSurfaceHandle import path stays exercised; once GPUI gains a
+    // BGRA-capable Surface element this branch can come back. Until
+    // then every frame must go through `img()` below.
     if let Some(image) = frame.image.as_ref() {
         return render_web_surface(
             tab,
@@ -39,10 +35,9 @@ pub(super) fn render_ready_web_surface(
             img(ImageSource::Render(image.clone())).size_full().object_fit(ObjectFit::Fill),
         );
     }
-    // Both image variants empty: shouldn't happen because the sidecar
-    // only drops RGBA when it has a hardware surface to publish, but
-    // a blank canvas is the honest user-facing fallback if it ever
-    // does.
+    // Both image variants empty: the sidecar should always publish
+    // RGBA while the hardware path is disabled, but a blank canvas is
+    // the honest user-facing fallback if it ever does not.
     render_web_surface(tab, state_entity, div().size_full())
 }
 
