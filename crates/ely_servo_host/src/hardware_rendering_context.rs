@@ -17,12 +17,17 @@
 //!
 //! Scope kept deliberately narrow:
 //!
-//!   * Only the methods `RenderingContext` requires for software-style
-//!     readback are vendored (`prepare_for_rendering`, `read_to_image`,
-//!     `size`, `resize`, `present`, `make_current`, `gleam_gl_api`,
-//!     `glow_gl_api`). `create_texture`/`destroy_texture`/`connection`
-//!     fall through to the trait's `None` defaults — Servo uses them
-//!     only when sharing surfman surfaces with its own compositor.
+//!   * `prepare_for_rendering`, `read_to_image`, `size`, `resize`,
+//!     `present`, `make_current`, `gleam_gl_api`, `glow_gl_api`, and
+//!     `connection` are vendored. `connection` is mandatory:
+//!     `servo-paint`'s painter calls `rendering_context.connection()
+//!     .expect("Failed to get connection")` while constructing its
+//!     painter, so a `None` default panics the compositor before the
+//!     first frame is ever painted.
+//!   * `create_texture`/`destroy_texture` still fall through to the
+//!     trait defaults — Servo only reaches for them when sharing
+//!     surfman surfaces with its compositor for WebGL/WebGPU, which
+//!     this readback path does not exercise.
 //!   * No `RefreshDriver`. The sidecar drives its own polling loop.
 //!   * The reading path inlines `read_framebuffer_to_image` from the
 //!     same upstream file so we don't take a dependency on a private
@@ -135,6 +140,10 @@ impl RenderingContext for HardwareOffscreenContext {
 
     fn glow_gl_api(&self) -> Arc<glow::Context> {
         self.inner.glow_gl.clone()
+    }
+
+    fn connection(&self) -> Option<Connection> {
+        Some(self.inner.device.borrow().connection())
     }
 }
 
