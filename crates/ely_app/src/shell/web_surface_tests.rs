@@ -327,6 +327,46 @@ fn click_survives_viewport_bounds_change_before_drain() -> Result<(), Box<dyn Er
     Ok(())
 }
 
+/// Servo's `read_pixels(gl::RGBA, gl::UNSIGNED_BYTE)` writes R-G-B-A
+/// in memory order. GPUI's `RenderImage` is documented as "in BGRA
+/// format" and the macOS Metal atlas uploads bytes as
+/// `MTLPixelFormat::BGRA8Unorm` (B-G-R-A in memory). If the bytes
+/// crossed the boundary unchanged, the Metal sampler would read the R
+/// byte as B and vice versa — every coloured pixel would render with
+/// R and B swapped. `WebSurfaceFrame::from_live_frame` is responsible
+/// for swapping the two channels before handing the buffer to GPUI.
+///
+/// This test fed `(R=255, G=0, B=0, A=255)` — one red RGBA pixel —
+/// through the live-frame conversion and asserts the resulting
+/// `RenderImage` carries `(B=0, G=0, R=255, A=255)` byte-for-byte.
+#[test]
+fn live_frame_swaps_red_and_blue_bytes_for_gpui_bgra() -> Result<(), Box<dyn Error>> {
+    use crate::services::servo_live::ServoLiveFrame;
+    use crate::shell::web_surface_frame::WebSurfaceFrame;
+    use crate::shell::web_surface_geometry::WebSurfaceScrollOffset;
+
+    let rgba_red_pixel = vec![255u8, 0, 0, 255];
+    let live = ServoLiveFrame::for_test(1, 1, rgba_red_pixel);
+    let frame = WebSurfaceFrame::from_live_frame(
+        "https://example.com/".to_string(),
+        WebSurfaceScrollOffset::default(),
+        100,
+        live,
+    )?;
+
+    let image = frame.image.as_ref().ok_or("software frame must produce a RenderImage")?;
+    let bytes = image.as_bytes(0).ok_or("RenderImage must expose its first frame's bytes")?;
+    assert_eq!(
+        bytes,
+        &[0u8, 0, 255, 255],
+        "Servo's RGBA red pixel must be swapped to BGRA (B=0, G=0, R=255, A=255) \
+         before GPUI uploads it as BGRA8Unorm. If this assert says \
+         `[255, 0, 0, 255]`, the swap is missing and every coloured \
+         pixel on the page renders with R and B exchanged.",
+    );
+    Ok(())
+}
+
 fn web_bounds() -> Bounds<gpui::Pixels> {
     Bounds::new(point(px(0.0), px(0.0)), size(px(640.0), px(480.0)))
 }

@@ -110,13 +110,19 @@ impl WebSurfaceFrame {
         let image = if parts.rgba_bytes.is_empty() {
             None
         } else {
-            let bytes_hash = rgba_hash(&parts.rgba_bytes);
-            Some(resolve_render_image(
-                parts.width,
-                parts.height,
-                parts.rgba_bytes,
-                bytes_hash,
-            )?)
+            // Servo's `read_pixels(gl::RGBA, gl::UNSIGNED_BYTE)`
+            // writes R-G-B-A in memory order. GPUI's `RenderImage` is
+            // documented as "in BGRA format" and uploads via
+            // `MTLPixelFormat::BGRA8Unorm`, which reads B-G-R-A. Hand
+            // the bytes across unchanged and the Metal sampler treats
+            // R as B (and vice versa) — every coloured pixel renders
+            // with R and B swapped. Swap once here so the rest of the
+            // pipeline (dedup hash, image buffer, GPU upload) all
+            // operate on the same BGRA representation.
+            let mut bytes = parts.rgba_bytes;
+            swap_red_blue_in_place(&mut bytes);
+            let bytes_hash = rgba_hash(&bytes);
+            Some(resolve_render_image(parts.width, parts.height, bytes, bytes_hash)?)
         };
 
         Ok(Self {
@@ -239,6 +245,15 @@ struct WebSurfaceFrameParts {
 pub(super) enum WebSurfaceError {
     #[error("invalid servo frame buffer for {width}x{height}")]
     InvalidFrameBuffer { width: u32, height: u32 },
+}
+
+/// Swap byte 0 and byte 2 of every 4-byte pixel, converting Servo's
+/// RGBA8 output into GPUI's expected BGRA8 in place. ~0.8 ms on a
+/// 1080p frame; cheap relative to the AHash pass that follows.
+fn swap_red_blue_in_place(bytes: &mut [u8]) {
+    for pixel in bytes.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+    }
 }
 
 fn rgba_hash(bytes: &[u8]) -> u64 {
