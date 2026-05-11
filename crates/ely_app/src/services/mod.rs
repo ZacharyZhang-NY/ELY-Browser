@@ -1,6 +1,8 @@
 pub mod download_checksums;
 pub mod download_files;
 pub mod http_downloads;
+#[cfg(target_os = "macos")]
+pub(crate) mod iosurface_metal;
 pub mod plugin_package_store;
 pub mod plugin_packages;
 pub mod plugin_signatures;

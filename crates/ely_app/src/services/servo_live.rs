@@ -22,10 +22,19 @@ use thiserror::Error;
 
 use super::servo_sidecar_command::{SidecarCommandError, default_sidecar_command};
 
+#[cfg(target_os = "macos")]
+use super::iosurface_metal::MetalSurfaceImporter;
+
 pub(crate) struct ServoLiveClient {
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
+    /// Cache of imported Metal textures keyed by surface_id. Built
+    /// lazily on the first `surface_handle` the sidecar publishes —
+    /// software-path tabs never trigger construction, so machines
+    /// without a Metal device aren't penalised.
+    #[cfg(target_os = "macos")]
+    metal_importer: Option<MetalSurfaceImporter>,
 }
 
 impl ServoLiveClient {
@@ -50,7 +59,13 @@ impl ServoLiveClient {
         let stdout =
             child.stdout.take().ok_or(ServoLiveError::PipeUnavailable { name: "stdout" })?;
 
-        Ok(Self { child, stdin, stdout: BufReader::new(stdout) })
+        Ok(Self {
+            child,
+            stdin,
+            stdout: BufReader::new(stdout),
+            #[cfg(target_os = "macos")]
+            metal_importer: None,
+        })
     }
 
     pub fn ensure(
@@ -101,6 +116,8 @@ impl ServoLiveClient {
 
         if let Some(handle) = response.surface_handle.as_ref() {
             log_iosurface_handle(handle);
+            #[cfg(target_os = "macos")]
+            self.import_iosurface_handle(handle);
         }
         if let Some(surface_id) = response.current_surface_id {
             log_iosurface_current(surface_id);
@@ -145,6 +162,56 @@ impl Drop for ServoLiveClient {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl ServoLiveClient {
+    /// Run a freshly-arrived `surface_handle` through the Metal
+    /// importer. Lazily constructs the importer on first call so
+    /// software-only sessions never touch the GPU. Failures are
+    /// logged but don't error the request — T10.5 will fall back to
+    /// the existing software RGBA path if `texture_for` returns
+    /// `None`, so the user still sees a frame.
+    fn import_iosurface_handle(&mut self, handle: &LiveSurfaceHandle) {
+        if self.metal_importer.is_none() {
+            match MetalSurfaceImporter::new() {
+                Ok(importer) => {
+                    self.metal_importer = Some(importer);
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        target: "ely::servo::iosurface",
+                        error = %error,
+                        "no Metal device for IOSurface import; staying on software path",
+                    );
+                    return;
+                }
+            }
+        }
+        let Some(importer) = self.metal_importer.as_mut() else {
+            return;
+        };
+        match importer.import(
+            handle.mach_port_name,
+            handle.surface_id,
+            handle.width,
+            handle.height,
+        ) {
+            Ok(()) => tracing::info!(
+                target: "ely::servo::iosurface",
+                surface_id = handle.surface_id,
+                width = handle.width,
+                height = handle.height,
+                "imported IOSurface into Metal texture cache",
+            ),
+            Err(error) => tracing::warn!(
+                target: "ely::servo::iosurface",
+                error = %error,
+                surface_id = handle.surface_id,
+                "IOSurface→MTLTexture import failed; subsequent samples will miss",
+            ),
+        }
     }
 }
 
