@@ -6,26 +6,34 @@
 //! loop. Sampling here costs one `Instant::now()` per stage boundary
 //! (single rdtsc-ish syscall) and adds no allocations on the steady
 //! state path. The aggregator carries fixed-size arrays — emitting a
-//! summary is a constant-time walk over 64 buckets per stage.
+//! summary is a constant-time walk over `BUCKET_COUNT` buckets per
+//! stage.
 //!
-//! The buckets are log2-spaced from 1 µs up to ~17 s
-//! (`1 << 64` ns / 1000). Every observation falls into exactly one
-//! bucket; the percentile pass is linear in `BUCKET_COUNT` and walks
-//! the running cumulative count until it crosses the requested
-//! threshold. Linear interpolation inside a bucket gives a closer
-//! number than "the bucket's lower bound" without bringing in a real
-//! histogram crate. Karpathy heuristic: don't add a dep when 100 lines
-//! of straight Rust covers the use case.
+//! The buckets cover the physical range of a sidecar frame: 1 µs up
+//! to ~262 ms, in power-of-2 µs steps. Bucket 0 is an underflow
+//! sentinel for sub-microsecond samples, bucket `BUCKET_COUNT - 1` is
+//! an overflow sentinel for anything past the top edge. The size is
+//! chosen to fit the problem rather than the integer width — a 64-bit
+//! log2 layout would leave ~40 dead buckets above 100 ms.
 
 use std::time::{Duration, Instant};
 
-const BUCKET_COUNT: usize = 64;
+/// 1 underflow + 18 doublings from 1 µs to 262 144 µs + 1 overflow.
+/// Top edge sits at ~262 ms, two orders of magnitude past a 60 fps
+/// budget, which is enough headroom for a stalled frame without
+/// wasting buckets on hours-long outliers.
+const BUCKET_COUNT: usize = 20;
+
+/// Number of doubling buckets above the underflow sentinel. Bucket
+/// `i` for `i` in `1..=DOUBLING_BUCKETS` covers `[2^(i-1), 2^i)` µs.
+const DOUBLING_BUCKETS: usize = 18;
 
 /// Per-frame stage timings captured by the live loop.
 ///
-/// `total_ns` is recorded explicitly rather than summed so we keep
-/// any per-frame overhead outside the three measured stages (e.g.
-/// snapshot reads, has-visible-content checks) accounted for.
+/// `total_ns` is the real wall-clock span from request arrival to the
+/// stdout flush returning, so it captures every byte of overhead
+/// outside paint/encode/write (snapshot reads, JSON parse, scratch
+/// allocations). It is measured at the loop boundary, not summed.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct FrameStageTimings {
     pub paint_ns: u64,
@@ -99,22 +107,37 @@ impl StageHistogram {
     }
 }
 
+/// Maps an observed nanosecond count to a bucket index. Bucket 0 is
+/// the `<1 µs` underflow sentinel; bucket `BUCKET_COUNT - 1` catches
+/// any sample past the top doubling edge.
 fn bucket_for(ns: u64) -> usize {
-    if ns == 0 {
+    if ns < 1_000 {
         return 0;
     }
-    let log = 64 - ns.leading_zeros() as usize;
-    log.min(BUCKET_COUNT - 1)
+    let us = ns / 1_000;
+    // `us >= 1` here, so `64 - leading_zeros` is the position of the
+    // top set bit (1-indexed). That index doubles as the bucket
+    // number for `[2^(i-1), 2^i) µs`.
+    let bucket = 64 - us.leading_zeros() as usize;
+    bucket.min(BUCKET_COUNT - 1)
 }
 
+/// Returns a representative microsecond value for a bucket. For
+/// doubling buckets that's the geometric midpoint `1.5 * 2^(i-1)`;
+/// underflow reports 0 µs (which is honest — samples here are
+/// genuinely sub-microsecond), and overflow reports the lower edge of
+/// the overflow band.
 fn bucket_midpoint_us(bucket: usize) -> u64 {
     if bucket == 0 {
         return 0;
     }
-    let low_ns = 1u64.checked_shl((bucket - 1) as u32).unwrap_or(u64::MAX);
-    let high_ns = 1u64.checked_shl(bucket as u32).unwrap_or(u64::MAX);
-    let midpoint_ns = low_ns.saturating_add(high_ns) / 2;
-    midpoint_ns / 1_000
+    if bucket >= BUCKET_COUNT - 1 {
+        // Overflow band starts at `2^DOUBLING_BUCKETS` µs.
+        return 1u64 << DOUBLING_BUCKETS;
+    }
+    let low_us = 1u64 << (bucket - 1);
+    let high_us = 1u64 << bucket;
+    (low_us + high_us) / 2
 }
 
 /// Aggregates a rolling window of [`FrameStageTimings`] across N
@@ -198,22 +221,40 @@ pub(super) struct FramePerfSummary {
 
 #[cfg(test)]
 mod tests {
-    use super::{FramePerfAggregator, FrameStageTimings, bucket_for, bucket_midpoint_us};
+    use super::{
+        BUCKET_COUNT, DOUBLING_BUCKETS, FramePerfAggregator, FrameStageTimings, bucket_for,
+        bucket_midpoint_us,
+    };
     use std::time::Duration;
 
     #[test]
-    fn bucket_for_handles_zero_and_small_values() {
+    fn bucket_for_routes_sub_microsecond_samples_to_underflow() {
         assert_eq!(bucket_for(0), 0);
-        assert_eq!(bucket_for(1), 1);
-        assert_eq!(bucket_for(2), 2);
-        assert_eq!(bucket_for(3), 2);
-        assert_eq!(bucket_for(4), 3);
+        assert_eq!(bucket_for(1), 0);
+        assert_eq!(bucket_for(999), 0);
+    }
+
+    #[test]
+    fn bucket_for_walks_doublings_from_one_microsecond() {
+        assert_eq!(bucket_for(1_000), 1);
+        assert_eq!(bucket_for(1_999), 1);
+        assert_eq!(bucket_for(2_000), 2);
+        assert_eq!(bucket_for(3_999), 2);
+        assert_eq!(bucket_for(4_000), 3);
+    }
+
+    #[test]
+    fn bucket_for_saturates_above_top_edge() {
+        let top_edge_us = 1u64 << DOUBLING_BUCKETS;
+        let beyond_ns = (top_edge_us + 1) * 1_000;
+        assert_eq!(bucket_for(beyond_ns), BUCKET_COUNT - 1);
+        assert_eq!(bucket_for(u64::MAX), BUCKET_COUNT - 1);
     }
 
     #[test]
     fn bucket_midpoint_is_monotonic_increasing() {
         let mut last = 0;
-        for bucket in 1..64 {
+        for bucket in 1..BUCKET_COUNT {
             let value = bucket_midpoint_us(bucket);
             assert!(value >= last, "bucket {bucket} midpoint regressed");
             last = value;

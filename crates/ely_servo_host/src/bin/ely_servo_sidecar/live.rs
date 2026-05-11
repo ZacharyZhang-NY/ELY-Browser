@@ -47,11 +47,23 @@ pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
             continue;
         }
 
+        // `frame_started_at` is the honest start of the end-to-end
+        // frame: a request just arrived and we're about to do
+        // everything required to put bytes back on the pipe. The
+        // matching stop is the `stdout.flush()` inside
+        // `write_outcome`.
+        let frame_started_at = Instant::now();
         let outcome = match serde_json::from_str::<LiveRequest>(&line) {
             Ok(request) => handle_request(&mut host, &mut sessions, request),
             Err(error) => Err(LiveSidecarError::Json(error)),
         };
-        write_outcome(&mut stdout, &mut perf, &mut pending_summary, outcome)?;
+        write_outcome(
+            &mut stdout,
+            &mut perf,
+            &mut pending_summary,
+            outcome,
+            frame_started_at,
+        )?;
     }
 
     Ok(())
@@ -135,8 +147,11 @@ fn handle_request(
 /// `rgba_byte_count` from the report, then reads that many bytes
 /// from the same stream — no temp file round-trip.
 ///
-/// After the bytes hit the pipe we fold paint+encode+write timings
-/// into the aggregator. Any summary it emits is stashed on
+/// After the bytes hit the pipe we fold paint/encode/write/total
+/// timings into the aggregator. `total_ns` is the wall-clock span
+/// from `frame_started_at` (request arrival) to the stdout flush
+/// returning, so it captures every per-frame cost outside the three
+/// measured stages. Any summary the aggregator emits is stashed on
 /// `pending_summary` and rides out on the *next* response, because
 /// the protocol is one-line-per-response and an unsolicited summary
 /// line would desync the main process's read loop.
@@ -145,6 +160,7 @@ fn write_outcome(
     perf: &mut FramePerfAggregator,
     pending_summary: &mut Option<FramePerfSummary>,
     outcome: Result<LiveOutcome, LiveSidecarError>,
+    frame_started_at: Instant,
 ) -> Result<(), LiveSidecarError> {
     let mut outcome = outcome.unwrap_or_else(|error| LiveOutcome::error(error.to_string()));
     let partial_timings = outcome.partial_timings.take();
@@ -161,15 +177,13 @@ fn write_outcome(
     stdout.flush()?;
     if frame_present {
         let write_ns = elapsed_ns(write_started_at);
+        let total_ns = elapsed_ns(frame_started_at);
         let partial = partial_timings.unwrap_or(PartialFrameTimings { paint_ns: 0, encode_ns: 0 });
-        let total = Duration::from_nanos(
-            partial.paint_ns.saturating_add(partial.encode_ns).saturating_add(write_ns),
-        );
         let timings = FrameStageTimings::from_durations(
             Duration::from_nanos(partial.paint_ns),
             Duration::from_nanos(partial.encode_ns),
             Duration::from_nanos(write_ns),
-            total,
+            Duration::from_nanos(total_ns),
         );
         if let Some(summary) = perf.record(timings) {
             *pending_summary = Some(summary);
