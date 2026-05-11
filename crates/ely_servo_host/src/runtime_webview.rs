@@ -98,7 +98,7 @@ impl HostWebViewDelegate {
         self.title.borrow().clone()
     }
 
-    fn has_pending_frame(&self) -> bool {
+    pub(super) fn has_pending_frame(&self) -> bool {
         self.has_pending_frame.get()
     }
 

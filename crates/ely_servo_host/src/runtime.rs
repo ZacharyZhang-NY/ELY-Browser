@@ -1,10 +1,11 @@
 use std::{
     cell::RefCell,
     collections::HashMap,
+    env,
     path::PathBuf,
     rc::Rc,
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
     thread,
@@ -51,6 +52,27 @@ use crate::{
 static SERVO_RUNTIME_STARTED: AtomicBool = AtomicBool::new(false);
 const SCREENSHOT_TIMEOUT: Duration = Duration::from_secs(20);
 const SCREENSHOT_POLL_INTERVAL: Duration = Duration::from_millis(2);
+
+/// Default upper bound on how long `paint()` will spin the Servo event
+/// loop waiting for `notify_new_frame_ready` after dispatching
+/// `webview.paint()`. 32 ms is two 60 Hz frames — enough headroom for
+/// the paint thread to land a real framebuffer before we read it back,
+/// short enough that a stuck paint can't stall the input/render loop.
+/// Overridable via `ELY_PAINT_BARRIER_MS`; `0` disables the barrier and
+/// restores the pre-T15 "fire and read" behaviour.
+const DEFAULT_PAINT_BARRIER_MS: u64 = 32;
+const PAINT_BARRIER_POLL_INTERVAL: Duration = Duration::from_millis(2);
+
+fn paint_barrier_budget() -> Duration {
+    static BUDGET: OnceLock<Duration> = OnceLock::new();
+    *BUDGET.get_or_init(|| {
+        let ms = env::var("ELY_PAINT_BARRIER_MS")
+            .ok()
+            .and_then(|raw| raw.parse::<u64>().ok())
+            .unwrap_or(DEFAULT_PAINT_BARRIER_MS);
+        Duration::from_millis(ms)
+    })
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ServoSurfaceSize {
@@ -391,10 +413,22 @@ impl ServoHost for SoftwareServoHost {
         let rendering_context = self.webview(webview_id)?.rendering_context.clone();
         rendering_context.make_current().map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
         rendering_context.prepare_for_rendering();
+        // `webview.paint()` dispatches a render command to Servo's paint
+        // thread — it does NOT block until the framebuffer is consistent.
+        // Without a barrier, `read_rendered_frame` below races the paint
+        // thread and reliably reads the cleared-white state on data: URLs.
+        // Clear the pending-frame flag first so we can detect the *next*
+        // `notify_new_frame_ready` (the one our `paint()` triggers), then
+        // pump the event loop until Servo reports the new frame is ready
+        // or `paint_barrier_budget()` elapses. On timeout we fall through
+        // and read anyway, preserving the pre-T15 fast path for callers
+        // that explicitly disable the barrier with `ELY_PAINT_BARRIER_MS=0`.
         {
             let webview = self.webview(webview_id)?;
+            webview.delegate.mark_frame_presented();
             webview.webview.paint();
         }
+        self.wait_for_paint_completion(webview_id);
         let rendered_frame = Self::read_rendered_frame(rendering_context.as_ref())?;
         rendering_context.present();
         self.webview(webview_id)?.delegate.mark_frame_presented();
@@ -550,6 +584,41 @@ impl SoftwareServoHost {
         webview.webview.show();
         webview.webview.focus();
         Ok(webview)
+    }
+
+    /// Spin Servo's event loop until the webview's delegate observes a
+    /// fresh `notify_new_frame_ready` callback (i.e. the framebuffer is
+    /// consistent for readback) or [`paint_barrier_budget`] elapses. The
+    /// caller is responsible for clearing the pending-frame flag before
+    /// dispatching `webview.paint()`; otherwise this returns immediately
+    /// off the *previous* frame and the race is preserved.
+    ///
+    /// Returns silently on timeout — `paint()` falls through to
+    /// `read_rendered_frame` so callers still get whatever pixels the
+    /// rendering context currently holds. That keeps the fast path open
+    /// when `ELY_PAINT_BARRIER_MS=0` disables the budget entirely, and
+    /// matches the pre-T15 behaviour on the (rare) case where Servo
+    /// can't land a frame inside two refresh intervals.
+    fn wait_for_paint_completion(&mut self, webview_id: &WebViewId) {
+        let budget = paint_barrier_budget();
+        if budget.is_zero() {
+            return;
+        }
+        let started_at = Instant::now();
+        loop {
+            self.servo.spin_event_loop();
+            let ready = self
+                .webviews
+                .get(webview_id)
+                .is_some_and(|webview| webview.delegate.has_pending_frame());
+            if ready {
+                return;
+            }
+            if started_at.elapsed() >= budget {
+                return;
+            }
+            thread::sleep(PAINT_BARRIER_POLL_INTERVAL);
+        }
     }
 
     fn read_rendered_frame(
