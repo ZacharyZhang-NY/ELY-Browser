@@ -225,11 +225,24 @@ fn write_outcome(
     if let Some(summary) = pending_summary.take() {
         outcome.response.perf = Some(summary);
     }
+    // Hardware path: receiver samples the IOSurface directly through
+    // its CVPixelBuffer cache, so the raw RGBA payload is dead
+    // weight. Drop it from the wire (and zero the byte count in the
+    // header so the client knows nothing follows). At 1080p × 60 fps
+    // that's 8 MB × 60 = ~480 MB/s of pipe traffic eliminated.
+    let drop_rgba_payload = outcome.response.current_surface_id.is_some();
+    if drop_rgba_payload {
+        if let Some(report) = outcome.response.frame.as_mut() {
+            report.rgba_byte_count = 0;
+        }
+    }
     let write_started_at = Instant::now();
     serde_json::to_writer(&mut *stdout, &outcome.response)?;
     stdout.write_all(b"\n")?;
-    if let Some(frame) = outcome.frame.as_ref() {
-        stdout.write_all(frame.rgba_bytes())?;
+    if !drop_rgba_payload {
+        if let Some(frame) = outcome.frame.as_ref() {
+            stdout.write_all(frame.rgba_bytes())?;
+        }
     }
     stdout.flush()?;
     if frame_present {

@@ -132,13 +132,14 @@ impl ServoLiveClient {
         // Sanity bound the byte count advertised by the sidecar
         // header so a buggy or hostile sidecar can't park us on
         // `read_exact` for an arbitrarily-sized buffer. The honest
-        // upper limit is `width * height * 4` (RGBA8); anything
-        // larger is a protocol violation and we fail the request
-        // instead of allocating against it.
+        // upper limit is `width * height * 4` (RGBA8); `0` is the
+        // explicit "hardware path active, sample the IOSurface
+        // instead" signal — anything else is a protocol violation.
         let pixel_byte_count = (report.width as u64)
             .saturating_mul(report.height as u64)
             .saturating_mul(4);
-        if (report.rgba_byte_count as u64) != pixel_byte_count {
+        let advertised = report.rgba_byte_count as u64;
+        if advertised != 0 && advertised != pixel_byte_count {
             return Err(ServoLiveError::FrameBudgetExceeded {
                 advertised: report.rgba_byte_count,
                 pixel_budget: pixel_byte_count,
@@ -147,14 +148,18 @@ impl ServoLiveClient {
             });
         }
 
-        // Raw frame bytes follow the JSON header on the same pipe.
-        // `read_exact` drains BufReader's buffer first (the line read
-        // never crosses the `\n` boundary) and then pulls the rest
-        // straight from the child's stdout — no fs::read, no temp file.
+        // Raw frame bytes follow the JSON header on the same pipe
+        // ONLY when the sidecar didn't drop the payload for the
+        // hardware path. `read_exact` drains BufReader's buffer first
+        // (the line read never crosses the `\n` boundary) and then
+        // pulls the rest straight from the child's stdout — no
+        // fs::read, no temp file.
         let mut rgba_bytes = vec![0u8; report.rgba_byte_count];
-        self.stdout
-            .read_exact(&mut rgba_bytes)
-            .map_err(ServoLiveError::FrameRead)?;
+        if report.rgba_byte_count > 0 {
+            self.stdout
+                .read_exact(&mut rgba_bytes)
+                .map_err(ServoLiveError::FrameRead)?;
+        }
 
         let mut frame = ServoLiveFrame::from_parts(report, rgba_bytes);
 

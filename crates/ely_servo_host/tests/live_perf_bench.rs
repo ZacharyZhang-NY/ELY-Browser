@@ -129,6 +129,10 @@ fn run_live_bench() -> Result<(), Box<dyn Error>> {
     print_summaries(&kind, frames, &outcome.summaries);
     print_surface_handles(&kind, &outcome.surface_handles);
     print_current_surface_summary(&kind, &outcome.current_surface_ids);
+    eprintln!(
+        "\n=== ELY_PERF_KIND={kind} rgba_bytes_received={} ===",
+        outcome.rgba_bytes_received
+    );
     assert!(
         !outcome.summaries.is_empty(),
         "expected at least one FramePerfSummary across {frames} frames"
@@ -154,6 +158,18 @@ fn run_live_bench() -> Result<(), Box<dyn Error>> {
             !outcome.current_surface_ids.is_empty(),
             "hardware path must report current_surface_id on every frame"
         );
+        // T10.6: once the receiver samples the IOSurface directly,
+        // the sidecar drops the RGBA payload. The initial navigate
+        // response may still carry bytes (no current_surface_id yet
+        // because surfman hasn't bound the painted surface), but the
+        // steady-state per-frame cost must be zero.
+        assert!(
+            outcome.rgba_bytes_received < (frames as u64) * 1_024,
+            "hardware path leaked {} RGBA bytes across {} frames \
+             (expected ~0 — the wire-drop optimisation regressed)",
+            outcome.rgba_bytes_received,
+            frames + 1,
+        );
     } else {
         assert!(
             outcome.surface_handles.is_empty(),
@@ -163,6 +179,15 @@ fn run_live_bench() -> Result<(), Box<dyn Error>> {
             outcome.current_surface_ids.is_empty(),
             "software path must never report current_surface_id"
         );
+        // Software path keeps streaming pixels — every frame must
+        // carry a full RGBA payload.
+        let viewport_bytes = (1024u64) * (768u64) * 4;
+        assert!(
+            outcome.rgba_bytes_received >= viewport_bytes,
+            "software path delivered only {} bytes — expected at least one full frame ({})",
+            outcome.rgba_bytes_received,
+            viewport_bytes,
+        );
     }
     Ok(())
 }
@@ -171,6 +196,7 @@ struct BenchOutcome {
     summaries: Vec<FramePerfSummary>,
     surface_handles: Vec<BenchSurfaceHandle>,
     current_surface_ids: Vec<u64>,
+    rgba_bytes_received: u64,
 }
 
 fn spawn_sidecar(kind: &str, profile_data_dir: &PathBuf) -> Result<Child, Box<dyn Error>> {
@@ -199,6 +225,7 @@ fn drive_bench(
     let mut summaries = Vec::new();
     let mut surface_handles = Vec::new();
     let mut current_surface_ids = Vec::new();
+    let mut rgba_bytes_received: u64 = 0;
 
     let navigate = build_ensure(tab, profile_id, url, 0, 0, false);
     write_request(stdin, &navigate)?;
@@ -206,6 +233,7 @@ fn drive_bench(
     record_summary(&response, kind, &mut summaries);
     record_surface_handle(&response, kind, &mut surface_handles);
     record_current_surface_id(&response, &mut current_surface_ids);
+    rgba_bytes_received += response.frame.as_ref().map_or(0, |f| f.rgba_byte_count as u64);
 
     let mut accumulated_scroll = 0;
     for frame_index in 0..frames {
@@ -224,10 +252,11 @@ fn drive_bench(
         record_summary(&response, kind, &mut summaries);
         record_surface_handle(&response, kind, &mut surface_handles);
         record_current_surface_id(&response, &mut current_surface_ids);
+        rgba_bytes_received += response.frame.as_ref().map_or(0, |f| f.rgba_byte_count as u64);
     }
     let _ = accumulated_scroll;
 
-    Ok(BenchOutcome { summaries, surface_handles, current_surface_ids })
+    Ok(BenchOutcome { summaries, surface_handles, current_surface_ids, rgba_bytes_received })
 }
 
 fn record_surface_handle(

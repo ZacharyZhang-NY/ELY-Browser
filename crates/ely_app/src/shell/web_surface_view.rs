@@ -18,9 +18,10 @@ pub(super) fn render_ready_web_surface(
     // IOSurface and we successfully imported it into a CVPixelBuffer.
     // GPUI's `surface(...)` hands the buffer to its Blade Metal
     // renderer, which samples the IOSurface directly — no
-    // RGBA→texture upload, no LAST_FRAME_IMAGE dedup needed. Falls
-    // back to the software RGBA image when the buffer is missing
-    // (software webview, import failure, non-macOS host).
+    // RGBA→texture upload, no LAST_FRAME_IMAGE dedup needed. The
+    // sidecar drops the RGBA payload from the wire whenever it
+    // populates `pixel_buffer`, so `image` is `None` on this branch
+    // and there's no software memcpy to fall back on.
     #[cfg(target_os = "macos")]
     if let Some(pixel_buffer) = frame.pixel_buffer.as_ref() {
         return render_web_surface(
@@ -29,11 +30,20 @@ pub(super) fn render_ready_web_surface(
             surface(pixel_buffer.clone()).size_full().object_fit(ObjectFit::Fill),
         );
     }
-    render_web_surface(
-        tab,
-        state_entity,
-        img(ImageSource::Render(frame.image.clone())).size_full().object_fit(ObjectFit::Fill),
-    )
+    // Software path: the sidecar streamed the RGBA payload and the
+    // receiver decoded it into an Arc<RenderImage>.
+    if let Some(image) = frame.image.as_ref() {
+        return render_web_surface(
+            tab,
+            state_entity,
+            img(ImageSource::Render(image.clone())).size_full().object_fit(ObjectFit::Fill),
+        );
+    }
+    // Both image variants empty: shouldn't happen because the sidecar
+    // only drops RGBA when it has a hardware surface to publish, but
+    // a blank canvas is the honest user-facing fallback if it ever
+    // does.
+    render_web_surface(tab, state_entity, div().size_full())
 }
 
 pub(super) fn render_loading_web_surface(

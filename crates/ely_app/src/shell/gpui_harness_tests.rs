@@ -1085,16 +1085,24 @@ fn identical_live_frames_share_render_image_arc() {
     )
     .expect("second frame builds from identical bytes");
 
+    let first_image = first
+        .image
+        .as_ref()
+        .expect("software path always produces an Arc<RenderImage>");
+    let second_image = second
+        .image
+        .as_ref()
+        .expect("software path always produces an Arc<RenderImage>");
     assert!(
-        Arc::ptr_eq(&first.image, &second.image),
+        Arc::ptr_eq(first_image, second_image),
         "TDD red: two ServoLiveFrames with byte-identical RGBA produced \
          distinct Arc<RenderImage> instances (first={:p}, second={:p}). \
          WebSurfaceFrame::from_parts must dedup the upload against the \
          previous frame's bytes, or the rendering pipeline must switch \
          to a GPU-side source of truth (IOSurface) so per-frame host \
          allocations stop entirely.",
-        Arc::as_ptr(&first.image),
-        Arc::as_ptr(&second.image),
+        Arc::as_ptr(first_image),
+        Arc::as_ptr(second_image),
     );
 }
 

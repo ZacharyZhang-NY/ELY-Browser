@@ -57,12 +57,15 @@ pub(super) struct WebSurfaceFrame {
     content_pixel_count: u64,
     #[cfg(all(test, feature = "live-site-smoke"))]
     sample_hash: u64,
-    pub(super) image: Arc<RenderImage>,
+    /// Software-path image. `None` whenever the sidecar took the
+    /// hardware shortcut and dropped the RGBA payload from the
+    /// wire — the IOSurface in `pixel_buffer` is the source of truth
+    /// for that frame.
+    pub(super) image: Option<Arc<RenderImage>>,
     /// Hardware-path companion: when present, the view samples the
     /// IOSurface through GPUI's Metal pipeline via `gpui::surface(...)`
     /// instead of uploading the RGBA bytes again. Always `None` on
-    /// the software path; the RGBA copy in `image` is the source of
-    /// truth in that case.
+    /// the software path; `image` is the source of truth there.
     #[cfg(target_os = "macos")]
     pub(super) pixel_buffer: Option<CVPixelBuffer>,
 }
@@ -100,8 +103,21 @@ impl WebSurfaceFrame {
     }
 
     fn from_parts(parts: WebSurfaceFrameParts) -> Result<Self, WebSurfaceError> {
-        let bytes_hash = rgba_hash(&parts.rgba_bytes);
-        let image = resolve_render_image(parts.width, parts.height, parts.rgba_bytes, bytes_hash)?;
+        // Hardware path frames arrive with `rgba_bytes` empty — the
+        // sidecar dropped the 8 MB payload from the wire and the
+        // receiver samples the IOSurface directly. In that case the
+        // RGBA hash + LAST_FRAME_IMAGE dedup are skipped entirely.
+        let image = if parts.rgba_bytes.is_empty() {
+            None
+        } else {
+            let bytes_hash = rgba_hash(&parts.rgba_bytes);
+            Some(resolve_render_image(
+                parts.width,
+                parts.height,
+                parts.rgba_bytes,
+                bytes_hash,
+            )?)
+        };
 
         Ok(Self {
             requested_url: parts.requested_url,
