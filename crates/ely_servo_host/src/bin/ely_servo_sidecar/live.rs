@@ -28,11 +28,12 @@ const LIVE_FRAME_WAIT_INTERVAL: Duration = Duration::from_millis(2);
 
 pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
     fs::create_dir_all(&args.profile_data_dir)?;
-    let context_label = rendering_context_label(args.rendering_context_kind);
+    let rendering_context_kind = args.rendering_context_kind;
+    let context_label = rendering_context_label(rendering_context_kind);
     let mut host = SoftwareServoHost::new_with_config_dir_and_kind(
         ServoSurfaceSize::new(1, 1),
         Some(args.profile_data_dir),
-        args.rendering_context_kind,
+        rendering_context_kind,
     )?;
     let mut sessions = HashMap::new();
     let mut perf =
@@ -55,9 +56,13 @@ pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
         // `write_outcome`.
         let frame_started_at = Instant::now();
         let outcome = match serde_json::from_str::<LiveRequest>(&line) {
-            Ok(request) => {
-                handle_request(&mut host, &mut sessions, &mut published_surface_ids, request)
-            }
+            Ok(request) => handle_request(
+                &mut host,
+                &mut sessions,
+                &mut published_surface_ids,
+                rendering_context_kind,
+                request,
+            ),
             Err(error) => Err(LiveSidecarError::Json(error)),
         };
         write_outcome(
@@ -83,6 +88,7 @@ fn handle_request(
     host: &mut SoftwareServoHost,
     sessions: &mut HashMap<String, LiveSession>,
     published_surface_ids: &mut HashMap<String, HashSet<u64>>,
+    rendering_context_kind: RenderingContextKind,
     request: LiveRequest,
 ) -> Result<LiveOutcome, LiveSidecarError> {
     match request {
@@ -134,10 +140,16 @@ fn handle_request(
                 hover_y,
                 typed_text,
             )? {
+                // Tell poll_frame to actually wait for Servo to paint
+                // a response to this input. The visible-content gate
+                // is bypassed on the hardware path inside poll_frame,
+                // so we return on the first `has_pending_frame=true`
+                // (~3 ms in practice) rather than burning the full
+                // LIVE_FRAME_WAIT_TIMEOUT.
                 session.awaiting_visible_frame = true;
             }
             let webview_id = session.webview_id.clone();
-            let mut outcome = poll_frame(host, session)?;
+            let mut outcome = poll_frame(host, session, rendering_context_kind)?;
             populate_surface_fields(host, &webview_id, &tab_id, published_surface_ids, &mut outcome);
             Ok(outcome)
         }
@@ -146,7 +158,7 @@ fn handle_request(
                 return Ok(LiveOutcome::empty());
             };
             let webview_id = session.webview_id.clone();
-            let mut outcome = poll_frame(host, session)?;
+            let mut outcome = poll_frame(host, session, rendering_context_kind)?;
             populate_surface_fields(host, &webview_id, &tab_id, published_surface_ids, &mut outcome);
             Ok(outcome)
         }
@@ -377,6 +389,7 @@ fn apply_input(
 fn poll_frame(
     host: &mut SoftwareServoHost,
     session: &mut LiveSession,
+    rendering_context_kind: RenderingContextKind,
 ) -> Result<LiveOutcome, LiveSidecarError> {
     let started_at = Instant::now();
     let mut latest = None;
@@ -391,8 +404,30 @@ fn poll_frame(
             let frame = host.last_rendered_frame()?;
             let paint_ns = elapsed_ns(paint_started_at);
             let encode_started_at = Instant::now();
-            let has_visible_content =
-                frame.non_white_pixel_count() > 0 && frame.content_pixel_count() > 0;
+            // `non_white`/`content_pixel_count` come from a CPU
+            // readback of the bound framebuffer. On the software
+            // path that's the source of truth: Servo's compositor
+            // returns a white framebuffer until layout completes, so
+            // the threshold check is how we skip blank loading
+            // frames. On the hardware path the readback goes through
+            // `glReadPixels` on the surfman swap-chain surface, which
+            // can return content that fails the threshold even when
+            // Servo painted real pixels (the IOSurface itself is
+            // valid for GPUI to sample directly). `has_pending_frame`
+            // already encodes "Servo finished painting" — trust it
+            // for the hardware path instead of double-checking via a
+            // readback we know to be unreliable.
+            let has_visible_content = match rendering_context_kind {
+                RenderingContextKind::Software => {
+                    frame.non_white_pixel_count() > 0 && frame.content_pixel_count() > 0
+                }
+                #[cfg(feature = "hardware-render")]
+                RenderingContextKind::Hardware => true,
+                #[cfg(not(feature = "hardware-render"))]
+                RenderingContextKind::Hardware => {
+                    frame.non_white_pixel_count() > 0 && frame.content_pixel_count() > 0
+                }
+            };
             let report = LiveFrameReport::new(&snapshot, &frame);
             let encode_ns = elapsed_ns(encode_started_at);
             let timings = PartialFrameTimings { paint_ns, encode_ns };
