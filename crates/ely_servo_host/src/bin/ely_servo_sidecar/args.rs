@@ -4,6 +4,7 @@ use ely_domain::{
     DEFAULT_ZOOM_PERCENT, ProfileId, SiteOrigin, SitePermissionDecision, SitePermissionFeature,
     UrlText, validate_zoom_percent,
 };
+use ely_servo_host::RenderingContextKind;
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -14,6 +15,13 @@ pub(super) enum SidecarCommand {
 
 pub(super) struct LiveArgs {
     pub(super) profile_data_dir: PathBuf,
+    /// Rendering context the host's webviews are built against.
+    /// Defaults to [`RenderingContextKind::Software`], which keeps
+    /// the binary's behaviour bit-identical to pre-flag builds.
+    /// `Hardware` is only accepted when the `hardware-render`
+    /// feature is compiled in (otherwise the `SoftwareServoHost`
+    /// constructor returns `HardwareRenderUnavailable`).
+    pub(super) rendering_context_kind: RenderingContextKind,
 }
 
 pub(super) struct SnapshotArgs {
@@ -98,6 +106,12 @@ pub(super) enum SidecarArgsError {
         source: serde_json::Error,
     },
 
+    #[error(
+        "invalid --rendering-context value: {value:?} (expected \"software\" or \
+         \"hardware\")"
+    )]
+    InvalidRenderingContext { value: String },
+
     #[error(transparent)]
     Domain(#[from] ely_domain::DomainError),
 }
@@ -123,6 +137,7 @@ fn parse_command(
 fn parse_live_args(args: impl IntoIterator<Item = String>) -> Result<LiveArgs, SidecarArgsError> {
     let mut args = args.into_iter();
     let mut profile_data_dir = None;
+    let mut rendering_context_kind = RenderingContextKind::default();
 
     while let Some(name) = args.next() {
         match name.as_str() {
@@ -132,6 +147,14 @@ fn parse_live_args(args: impl IntoIterator<Item = String>) -> Result<LiveArgs, S
                     next_argument(&mut args, "--profile-data-dir")?,
                 )?)
             }
+            "--rendering-context" => {
+                let value = next_argument(&mut args, "--rendering-context")?;
+                rendering_context_kind = match value.as_str() {
+                    "software" => RenderingContextKind::Software,
+                    "hardware" => RenderingContextKind::Hardware,
+                    _ => return Err(SidecarArgsError::InvalidRenderingContext { value }),
+                };
+            }
             _ => return Err(SidecarArgsError::UnknownArgument { value: name }),
         }
     }
@@ -139,6 +162,7 @@ fn parse_live_args(args: impl IntoIterator<Item = String>) -> Result<LiveArgs, S
     Ok(LiveArgs {
         profile_data_dir: profile_data_dir
             .ok_or(SidecarArgsError::MissingRequiredArgument { name: "--profile-data-dir" })?,
+        rendering_context_kind,
     })
 }
 
@@ -367,6 +391,7 @@ mod tests {
     use ely_domain::{
         DEFAULT_ZOOM_PERCENT, DomainError, ProfileId, SitePermissionDecision, SitePermissionFeature,
     };
+    use ely_servo_host::RenderingContextKind;
 
     #[test]
     fn parses_snapshot_profile_identity() -> Result<(), SidecarArgsError> {
@@ -489,5 +514,52 @@ mod tests {
         ]
         .into_iter()
         .collect()
+    }
+
+    fn parse_live(extra_args: &[&str]) -> Result<super::LiveArgs, SidecarArgsError> {
+        let base = ["ely_servo_sidecar", "live", "--profile-data-dir", "/tmp/sidecar-live"];
+        let argv: Vec<String> =
+            base.iter().chain(extra_args.iter()).map(|s| (*s).to_string()).collect();
+        let SidecarCommand::Live(args) = parse_command(argv)? else {
+            return Err(SidecarArgsError::UnknownCommand { value: "live-extracted-as-snapshot".into() });
+        };
+        Ok(args)
+    }
+
+    #[test]
+    fn live_defaults_rendering_context_to_software() -> Result<(), SidecarArgsError> {
+        let args = parse_live(&[])?;
+        assert_eq!(args.rendering_context_kind, RenderingContextKind::Software);
+        Ok(())
+    }
+
+    #[test]
+    fn live_accepts_explicit_software_rendering_context() -> Result<(), SidecarArgsError> {
+        let args = parse_live(&["--rendering-context", "software"])?;
+        assert_eq!(args.rendering_context_kind, RenderingContextKind::Software);
+        Ok(())
+    }
+
+    #[test]
+    fn live_accepts_explicit_hardware_rendering_context() -> Result<(), SidecarArgsError> {
+        let args = parse_live(&["--rendering-context", "hardware"])?;
+        assert_eq!(args.rendering_context_kind, RenderingContextKind::Hardware);
+        Ok(())
+    }
+
+    #[test]
+    fn live_rejects_unknown_rendering_context_value() {
+        assert!(matches!(
+            parse_live(&["--rendering-context", "gpu"]),
+            Err(SidecarArgsError::InvalidRenderingContext { value }) if value == "gpu"
+        ));
+    }
+
+    #[test]
+    fn live_requires_rendering_context_value() {
+        assert!(matches!(
+            parse_live(&["--rendering-context"]),
+            Err(SidecarArgsError::MissingArgumentValue { name: "--rendering-context" })
+        ));
     }
 }

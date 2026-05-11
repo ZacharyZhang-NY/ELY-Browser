@@ -1,8 +1,20 @@
 use std::{
+    env,
     io::{self, BufRead, BufReader, Read, Write},
     path::PathBuf,
     process::{Child, ChildStdin, ChildStdout, Stdio},
 };
+
+/// Environment variable that lets the user pick the rendering context
+/// kind used by the spawned sidecar. Accepted values: `software`
+/// (default — bit-identical to pre-flag builds) and `hardware` (real
+/// GPU adapter via the vendored `HardwareOffscreenContext`; requires
+/// the sidecar binary to be compiled with the `hardware-render`
+/// feature). Anything else is silently dropped and the sidecar
+/// defaults to software so a typo'd value never blocks the browser
+/// from starting; the sidecar's own arg parser still errors loudly on
+/// an unrecognised value when set explicitly via the flag.
+const RENDERING_CONTEXT_ENV: &str = "ELY_SERVO_RENDERING_CONTEXT";
 
 use ely_domain::SitePermissionDecision;
 use serde::{Deserialize, Serialize};
@@ -25,6 +37,9 @@ impl ServoLiveClient {
 
         let mut command = command_target.command();
         command.arg("live").arg("--profile-data-dir").arg(profile_data_dir);
+        if let Some(rendering_context) = rendering_context_from_env() {
+            command.arg("--rendering-context").arg(rendering_context);
+        }
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -333,4 +348,19 @@ struct LiveFrameReport {
     content_pixel_count: u64,
     #[cfg(all(test, feature = "live-site-smoke"))]
     sample_hash: u64,
+}
+
+/// Map `ELY_SERVO_RENDERING_CONTEXT` to a CLI argument value if it's
+/// one we recognise. Unset variable returns `None` (sidecar uses its
+/// own default of software); unknown value also returns `None`
+/// rather than `Some("garbage")` so a stale env var doesn't fail the
+/// sidecar startup. The sidecar's own arg parser is the source of
+/// truth for what values are valid — we just gate which ones we
+/// forward.
+fn rendering_context_from_env() -> Option<&'static str> {
+    match env::var(RENDERING_CONTEXT_ENV).ok()?.to_lowercase().as_str() {
+        "software" => Some("software"),
+        "hardware" => Some("hardware"),
+        _ => None,
+    }
 }

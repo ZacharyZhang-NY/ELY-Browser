@@ -29,9 +29,10 @@ const LIVE_FRAME_WAIT_INTERVAL: Duration = Duration::from_millis(2);
 
 pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
     fs::create_dir_all(&args.profile_data_dir)?;
-    let mut host = SoftwareServoHost::new_with_config_dir(
+    let mut host = SoftwareServoHost::new_with_config_dir_and_kind(
         ServoSurfaceSize::new(1, 1),
         Some(args.profile_data_dir),
+        args.rendering_context_kind,
     )?;
     let mut sessions = HashMap::new();
     let stdin = io::stdin();
