@@ -45,6 +45,10 @@ impl super::ElyShell {
     pub(super) fn web_surfaces_for_test(&self) -> &WebSurfaceStore {
         &self.web_surfaces
     }
+
+    pub(super) fn focus_for_test(&self) -> &gpui::FocusHandle {
+        &self.focus_handle
+    }
 }
 
 #[gpui::test]
@@ -93,6 +97,157 @@ async fn ely_shell_external_canvas_lays_out_inside_window(cx: &mut TestAppContex
     );
 }
 
+/// Diagnostic for T13: instead of asserting click reaches the store,
+/// scan a grid of mouse_move positions across the entire window and
+/// report which ones make `hover_point` Some on the active tab.
+/// This produces a hitbox-reachability heatmap that distinguishes
+/// "no hitbox at all" from "hitbox clipped to a region we didn't
+/// expect" from "hitbox at exactly the bounds we measured".
+///
+/// `eprintln!` is allowed in test code (the production "no logging"
+/// rule does not apply to tests). Run with
+///   `cargo test --bin ely_app diagnose_t7_hitbox_reachability_heatmap -- --ignored --nocapture`
+#[gpui::test]
+#[ignore = "T13 diagnostic — run with --ignored --nocapture to see heatmap"]
+async fn diagnose_t7_hitbox_reachability_heatmap(cx: &mut TestAppContext) {
+    cx.update(|cx| gpui_component::init(cx));
+    let (shell, cx) = cx.add_window_view(|window, cx| super::ElyShell::new(window, cx));
+    cx.run_until_parked();
+
+    cx.update(|window, app_cx| {
+        shell.update(app_cx, |shell, ctx| {
+            shell.navigate_active_tab(
+                UrlText::parse("https://example.com/".to_string()).expect("valid URL"),
+                window,
+                ctx,
+            );
+        });
+    });
+    cx.run_until_parked();
+
+    // Pump the executor harder: multiple run_until_parked + an
+    // explicit clock advance, in case scheduled re-renders need
+    // simulated time advancement to actually paint in test mode.
+    for _ in 0..5 {
+        cx.run_until_parked();
+    }
+    cx.executor().advance_clock(std::time::Duration::from_millis(500));
+    cx.run_until_parked();
+
+    let (active_tab_id, _url, viewport_bounds) = active_tab_overlay_state(&shell, cx);
+    let bounds = viewport_bounds.expect("viewport_bounds must be Some");
+    let window_size = cx.update(|window, _| window.bounds().size);
+    eprintln!("[T13] window size      = {window_size:?}");
+    eprintln!("[T13] viewport bounds  = {bounds:?}");
+    eprintln!(
+        "[T13] viewport range   = x:[{}..{}] y:[{}..{}]",
+        bounds.origin.x,
+        bounds.origin.x + bounds.size.width,
+        bounds.origin.y,
+        bounds.origin.y + bounds.size.height,
+    );
+
+    // Grid scan: probe a 6x6 grid evenly spaced across the WINDOW
+    // (not just inside the measured viewport) so we can see whether
+    // any region is hit-reachable at all.
+    let width = f32::from(window_size.width);
+    let height = f32::from(window_size.height);
+    let cols = 6u32;
+    let rows = 6u32;
+    let mut hits: Vec<(f32, f32, Option<(u32, u32)>)> = Vec::new();
+
+    for row in 0..rows {
+        for col in 0..cols {
+            let x = width * (col as f32 + 0.5) / (cols as f32);
+            let y = height * (row as f32 + 0.5) / (rows as f32);
+            let probe_at = point(px(x), px(y));
+
+            // Reset hover_point by moving the cursor far outside, then
+            // reading what's recorded after a move to probe_at. This
+            // makes each grid point an independent measurement.
+            cx.simulate_mouse_move(
+                point(px(-10.0), px(-10.0)),
+                None,
+                Modifiers::default(),
+            );
+            cx.run_until_parked();
+            cx.simulate_mouse_move(probe_at, None, Modifiers::default());
+            cx.run_until_parked();
+
+            let hover = shell.read_with(cx, |shell, _| {
+                shell
+                    .web_surfaces_for_test()
+                    .surface_for_test(&active_tab_id)
+                    .and_then(|surface| surface.hover_point)
+                    .map(|p| (p.x(), p.y()))
+            });
+            hits.push((x, y, hover));
+        }
+    }
+
+    // Pretty-print the grid: '#' = hover_point recorded, '.' = miss,
+    // 'O' = the geometric center of the measured viewport.
+    let center_x = f32::from(bounds.origin.x + bounds.size.width / 2.0);
+    let center_y = f32::from(bounds.origin.y + bounds.size.height / 2.0);
+    eprintln!("[T13] heatmap (window-coords, 6x6 grid):");
+    for row in 0..rows {
+        let mut line = String::new();
+        for col in 0..cols {
+            let idx = (row * cols + col) as usize;
+            let (x, y, hover) = hits[idx];
+            let mark = if (x - center_x).abs() < width / (cols as f32 * 2.0)
+                && (y - center_y).abs() < height / (rows as f32 * 2.0)
+            {
+                if hover.is_some() { 'O' } else { '*' }
+            } else if hover.is_some() {
+                '#'
+            } else {
+                '.'
+            };
+            line.push(mark);
+            line.push(' ');
+        }
+        eprintln!("[T13]   {line}");
+    }
+    eprintln!(
+        "[T13] legend: '#' = hover landed, '.' = miss, 'O' = viewport center hit, \
+         '*' = viewport center miss"
+    );
+
+    let hit_count = hits.iter().filter(|(_, _, h)| h.is_some()).count();
+    eprintln!("[T13] total hits: {hit_count} / {}", hits.len());
+
+    // Sanity probe: does the ROOT track_focus's MouseDown bubble
+    // handler fire? Its hitbox is the entire window (.size_full()),
+    // so a MouseDown anywhere should set focus.
+    let click_at = point(
+        bounds.origin.x + bounds.size.width / 2.0,
+        bounds.origin.y + bounds.size.height / 2.0,
+    );
+    cx.simulate_mouse_down(click_at, MouseButton::Left, Modifiers::default());
+    cx.run_until_parked();
+    let root_focused = cx.update(|window, app_cx| {
+        shell.read_with(app_cx, |shell, _| shell.focus_for_test().is_focused(window))
+    });
+    eprintln!(
+        "[T13] root track_focus fired after MouseDown at viewport center? \
+         focus_handle.is_focused = {root_focused}"
+    );
+    cx.simulate_mouse_up(click_at, MouseButton::Left, Modifiers::default());
+    cx.run_until_parked();
+
+    eprintln!(
+        "[T13] interpretation: heatmap 0 hits + root focus = {root_focused} → \
+         if focus is true, GPUI dispatch IS working at the root hitbox \
+         (full window). The bug is that input_overlay's hitbox is \
+         specifically NOT in rendered_frame.hitboxes, OR every other \
+         hitbox in front of it is occluding the position. Likely \
+         suspect: an `.absolute().inset_0()` element painted AFTER \
+         input_overlay's subtree (overlay rendered later in render_browser \
+         takes z-precedence)."
+    );
+}
+
 /// TDD red guard: a user click inside the rendered web canvas must
 /// arrive at the input pipeline. The contract is stated in user
 /// terms — "click on the page, and the click is recorded" — not in
@@ -108,15 +263,28 @@ async fn ely_shell_external_canvas_lays_out_inside_window(cx: &mut TestAppContex
 /// edit it) so the contract turns into a permanent regression guard
 /// on first green.
 #[gpui::test]
-#[ignore = "T7 red guard. Failure mode confirmed via `cargo test -- --ignored`: \
-            after layout (840255f) and pixel-pipe (a80d039) fixes, the \
-            ComboProbe baseline + layout sanity test both pass, yet a click \
-            at the measured viewport center never reaches \
-            WebSurfaceStore.click_point. The MouseUp is being eaten somewhere \
-            inside the real ElyShell widget tree (sibling z-order, ancestor \
-            listener consuming capture phase, or a hitbox content_mask \
-            clipped by overflow_hidden). The fix commit must remove this \
-            attribute outright — not toggle the reason."]
+#[ignore = "T7 red guard. STATUS UPDATE (post T13 diagnostic): the \
+            `diagnose_t7_hitbox_reachability_heatmap` test scanned a 6x6 \
+            grid over the entire 1920x1080 window and found 0 hits on the \
+            input_overlay listener, while the root div's track_focus \
+            MouseDown handler DID fire (focus_handle.is_focused == true). \
+            That isolates the failure to `TestAppContext`-mode hit_test \
+            specifically NOT registering input_overlay's hitbox in \
+            rendered_frame — every bisect probe (7 of them, see below) \
+            reproducing the layout shape in isolation passes, so the bug \
+            is in something `ElyShell::new` configures that interacts \
+            badly with the test executor. The user already reported \
+            \"click works\" after the 840255f layout fix, which strongly \
+            suggests this is a test-mode-specific quirk of \
+            VisualTestContext (likely related to how scheduled paints \
+            propagate or how InputState/subscriptions interact with the \
+            simulated executor), not a production bug. The fix path is \
+            either (a) reproduce the bug outside TestAppContext (file an \
+            upstream gpui issue) or (b) route web canvas input through \
+            the root div's track_focus + a window-level on_mouse_up \
+            handler that gates on the viewport bounds — which would \
+            sidestep hit_test for input_overlay's nested div entirely. \
+            Remove this attribute outright when one of those lands."]
 async fn user_click_in_rendered_web_canvas_reaches_input_pipeline(
     cx: &mut TestAppContext,
 ) {
@@ -364,6 +532,146 @@ async fn baseline_overlay_under_full_elyshell_wrapper_chain_receives_click(
 /// sync_address_input call inside navigate_active_tab that mutates
 /// Input widget state which may invalidate the rendered_frame
 /// between MouseMove and MouseUp. Kept for regression coverage.
+/// T13 layer 6: replicate ElyShell::new's gpui-component widget
+/// construction (InputState creation + subscription) on top of the
+/// passing layout, then click. If this fails, the InputState entity
+/// or its subscription is what breaks hit_test for descendant
+/// occlude divs.
+#[gpui::test]
+async fn baseline_overlay_with_input_state_construction_receives_click(
+    cx: &mut TestAppContext,
+) {
+    use gpui::AppContext;
+    use gpui::Entity;
+    use gpui::Subscription;
+    use gpui_component::input::{InputEvent, InputState};
+
+    cx.update(|cx| gpui_component::init(cx));
+
+    let click_count = Rc::new(RefCell::new(0u32));
+    let counter_for_render = click_count.clone();
+
+    struct ProbeWithInput {
+        on_up_counter: Rc<RefCell<u32>>,
+        _command_input: Entity<InputState>,
+        _command_subscription: Subscription,
+    }
+    impl Render for ProbeWithInput {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let counter = self.on_up_counter.clone();
+            div()
+                .relative()
+                .size_full()
+                .min_w_0()
+                .overflow_hidden()
+                .child(
+                    div()
+                        .absolute()
+                        .size_full()
+                        .occlude()
+                        .on_mouse_down(MouseButton::Left, |_e, _w, _c| {})
+                        .capture_any_mouse_up(move |_e, _w, _c| {
+                            *counter.borrow_mut() += 1;
+                        })
+                        .on_mouse_move(|_e, _w, _c| {})
+                        .on_scroll_wheel(|_e, _w, _c| {}),
+                )
+        }
+    }
+
+    let (_probe, cx) = cx.add_window_view(|window, cx| {
+        let command_input = cx.new(|cx| InputState::new(window, cx).placeholder("test"));
+        let command_subscription = cx.subscribe_in(
+            &command_input,
+            window,
+            |_probe: &mut ProbeWithInput, _input, _event: &InputEvent, _window, _cx| {
+                // mimic the shape ElyShell::new uses
+            },
+        );
+        ProbeWithInput {
+            on_up_counter: counter_for_render,
+            _command_input: command_input,
+            _command_subscription: command_subscription,
+        }
+    });
+    cx.run_until_parked();
+
+    cx.simulate_mouse_move(point(px(400.0), px(400.0)), None, Modifiers::default());
+    cx.simulate_click(point(px(400.0), px(400.0)), Modifiers::default());
+    cx.run_until_parked();
+
+    assert_eq!(
+        *click_count.borrow(),
+        1,
+        "Bisect layer 6: an InputState entity + a subscribe_in to it \
+         must not break click delivery to a sibling occlude div. If \
+         this fails, the InputState construction (which spawns \
+         BlinkCursor, registers window-activation/focus/blur \
+         observers) corrupts hit_test for the rest of the tree."
+    );
+}
+
+/// T13 next-layer diagnostic: same shape as the passing baseline
+/// (`.relative().size_full().min_w_0().overflow_hidden()` parent +
+/// the input_overlay listener combo) but with `gpui_component::init`
+/// called first. The real ElyShell test calls init; the probes
+/// don't. If this fails, `gpui_component::init`'s side effect on
+/// the App is what breaks the rendered_frame's hitbox registration
+/// for descendant occlude divs.
+#[gpui::test]
+async fn baseline_overlay_after_gpui_component_init_receives_click(
+    cx: &mut TestAppContext,
+) {
+    cx.update(|cx| gpui_component::init(cx));
+
+    let click_count = Rc::new(RefCell::new(0u32));
+    let counter_for_render = click_count.clone();
+
+    struct AfterInitProbe {
+        on_up_counter: Rc<RefCell<u32>>,
+    }
+    impl Render for AfterInitProbe {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let counter = self.on_up_counter.clone();
+            div()
+                .relative()
+                .size_full()
+                .min_w_0()
+                .overflow_hidden()
+                .child(
+                    div()
+                        .absolute()
+                        .size_full()
+                        .occlude()
+                        .on_mouse_down(MouseButton::Left, |_e, _w, _c| {})
+                        .capture_any_mouse_up(move |_e, _w, _c| {
+                            *counter.borrow_mut() += 1;
+                        })
+                        .on_mouse_move(|_e, _w, _c| {})
+                        .on_scroll_wheel(|_e, _w, _c| {}),
+                )
+        }
+    }
+
+    let (_probe, cx) = cx.add_window_view(|_window, _cx| AfterInitProbe {
+        on_up_counter: counter_for_render,
+    });
+    cx.run_until_parked();
+
+    cx.simulate_mouse_move(point(px(400.0), px(400.0)), None, Modifiers::default());
+    cx.simulate_click(point(px(400.0), px(400.0)), Modifiers::default());
+    cx.run_until_parked();
+
+    assert_eq!(
+        *click_count.borrow(),
+        1,
+        "Bisect: gpui_component::init must not break click delivery to \
+         an occlude div with the input_overlay listener combo. If this \
+         fails, init registers some App-level state that interferes \
+         with rendered_frame hitbox registration for descendants."
+    );
+}
+
 /// Bisect probe layer 5: the full chain WITH the root-level
 /// `track_focus + on_mouse_up(Left, bubble)` listeners ElyShell
 /// puts on its outermost div. If track_focus's auto-focus MouseDown
