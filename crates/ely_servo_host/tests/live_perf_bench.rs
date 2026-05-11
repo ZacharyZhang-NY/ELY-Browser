@@ -43,6 +43,18 @@ div.row{height:80px;border-bottom:2px solid #0008;color:#fff;font:24px/80px sans
 </style>\
 <script>for(let i=0;i<100;i++){let d=document.createElement('div');d.className='row';d.textContent='row '+i;document.body.appendChild(d)}</script>";
 
+/// Solid red page used by the pixel-content sanity test. If the
+/// sidecar's paint barrier (T15) does its job, every pixel of the
+/// viewport reads back as approximately (255, 0, 0, 255) in Servo's
+/// gl::RGBA byte order. If the framebuffer is still being read before
+/// Servo paints, every byte is 255 (the initial clear-to-white state)
+/// and the assertion catches it.
+const SOLID_RED_DATA_URL: &str =
+    "data:text/html,<body style=\"margin:0;background:%23ff0000;height:4000px\">";
+
+const SOLID_BLUE_DATA_URL: &str =
+    "data:text/html,<body style=\"margin:0;background:%230000ff;height:4000px\">";
+
 #[derive(Deserialize, Debug)]
 struct LiveResponse {
     error: Option<String>,
@@ -66,6 +78,10 @@ struct BenchSurfaceHandle {
 #[derive(Deserialize, Debug)]
 struct LiveFrameReport {
     rgba_byte_count: usize,
+    #[serde(default)]
+    width: u32,
+    #[serde(default)]
+    height: u32,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -349,6 +365,13 @@ fn read_response(
     reader: &mut BufReader<ChildStdout>,
     timeout: Duration,
 ) -> Result<LiveResponse, Box<dyn Error>> {
+    Ok(read_response_with_bytes(reader, timeout)?.0)
+}
+
+fn read_response_with_bytes(
+    reader: &mut BufReader<ChildStdout>,
+    timeout: Duration,
+) -> Result<(LiveResponse, Vec<u8>), Box<dyn Error>> {
     let started_at = Instant::now();
     let mut json_line = String::new();
     loop {
@@ -367,13 +390,14 @@ fn read_response(
         break;
     }
     let response: LiveResponse = serde_json::from_str(json_line.trim_end())?;
+    let mut rgba = Vec::new();
     if let Some(frame) = response.frame.as_ref() {
         if frame.rgba_byte_count > 0 {
-            let mut scratch = vec![0u8; frame.rgba_byte_count];
-            reader.read_exact(&mut scratch)?;
+            rgba.resize(frame.rgba_byte_count, 0);
+            reader.read_exact(&mut rgba)?;
         }
     }
-    Ok(response)
+    Ok((response, rgba))
 }
 
 fn record_summary(response: &LiveResponse, kind: &str, summaries: &mut Vec<FramePerfSummary>) {
@@ -421,5 +445,184 @@ fn cleanup(profile_data_dir: &PathBuf) -> Result<(), Box<dyn Error>> {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error.into()),
+    }
+}
+
+/// End-to-end pixel-content test. Drives the sidecar with a solid-red
+/// HTML page, reads the frame off the wire, samples a handful of
+/// pixels from the centre of the viewport, and asserts the RGBA
+/// matches red. Catches three regressions in one shot:
+///   * T15 paint barrier — if `read_to_image` runs before Servo
+///     paints, every pixel is the framebuffer's clear-to-white state
+///     `(255, 255, 255, 255)` and the red assertion fires.
+///   * T13 hidpi — if the viewport is mis-scaled, the body might not
+///     fill the canvas and the centre pixel would sample whatever's
+///     outside.
+///   * General pipeline rot — confirms `build_ensure` + JSON wire +
+///     RGBA byte stream still delivers the bytes Servo painted.
+#[test]
+#[ignore = "drives a real sidecar via stdin/stdout; takes a few seconds"]
+fn red_data_url_yields_red_rgba() -> Result<(), Box<dyn Error>> {
+    assert_solid_color_renders("software", SOLID_RED_DATA_URL, ColorTarget::Red)?;
+    Ok(())
+}
+
+#[test]
+#[ignore = "drives a real sidecar via stdin/stdout; takes a few seconds"]
+fn blue_data_url_yields_blue_rgba() -> Result<(), Box<dyn Error>> {
+    assert_solid_color_renders("software", SOLID_BLUE_DATA_URL, ColorTarget::Blue)?;
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum ColorTarget {
+    Red,
+    Blue,
+}
+
+impl ColorTarget {
+    fn label(self) -> &'static str {
+        match self {
+            ColorTarget::Red => "red",
+            ColorTarget::Blue => "blue",
+        }
+    }
+}
+
+fn assert_solid_color_renders(
+    kind: &str,
+    url: &str,
+    target: ColorTarget,
+) -> Result<(), Box<dyn Error>> {
+    let profile_id = ProfileId::new();
+    let tab = TabId::new();
+    let profile_data_dir = env::temp_dir().join(format!(
+        "ely-pixel-{}-{}-{}",
+        std::process::id(),
+        target.label(),
+        profile_id.as_str(),
+    ));
+    fs::create_dir_all(&profile_data_dir)?;
+
+    let mut child = spawn_sidecar(kind, &profile_data_dir)?;
+    let mut stdin = child.stdin.take().ok_or("sidecar stdin missing")?;
+    let stdout = child.stdout.take().ok_or("sidecar stdout missing")?;
+    let mut reader = BufReader::new(stdout);
+
+    let outcome = drive_solid_color_render(&mut stdin, &mut reader, &tab, &profile_id, url, target);
+
+    drop(stdin);
+    let _ = child.wait();
+    cleanup(&profile_data_dir)?;
+
+    outcome
+}
+
+fn drive_solid_color_render(
+    stdin: &mut ChildStdin,
+    reader: &mut BufReader<ChildStdout>,
+    tab: &TabId,
+    profile_id: &ProfileId,
+    url: &str,
+    target: ColorTarget,
+) -> Result<(), Box<dyn Error>> {
+    // The navigate response itself is the one most likely to carry
+    // real pixels — the sidecar's `awaiting_visible_frame` is armed
+    // on a new URL and `poll_frame` will wait inside its own budget
+    // for Servo to paint. Send navigate, capture the bytes, then
+    // drive scroll iterations to give Servo additional repaint
+    // opportunities. The first matching frame wins.
+    let mut bytes = Vec::new();
+    let mut report = None;
+    for iteration in 0..30 {
+        let scroll_y = if iteration == 0 {
+            0
+        } else if iteration % 2 == 1 {
+            1
+        } else {
+            -1
+        };
+        let request = build_ensure(tab, profile_id, url, 0, scroll_y, false);
+        write_request(stdin, &request)?;
+        let (response, response_bytes) = read_response_with_bytes(reader, RESPONSE_TIMEOUT)?;
+        if let Some(error) = response.error.as_ref() {
+            return Err(format!("sidecar error: {error}").into());
+        }
+        if let Some(frame_report) = response.frame {
+            if !response_bytes.is_empty()
+                && sample_matches_target(
+                    &response_bytes,
+                    frame_report.width,
+                    frame_report.height,
+                    target,
+                )
+            {
+                report = Some(frame_report);
+                bytes = response_bytes;
+                break;
+            }
+            if !response_bytes.is_empty() {
+                bytes = response_bytes;
+                report = Some(frame_report);
+            }
+        }
+    }
+
+    let report = report.ok_or("never received a frame with bytes")?;
+    let width = report.width as usize;
+    let height = report.height as usize;
+    assert_eq!(
+        bytes.len(),
+        width * height * 4,
+        "rgba byte count must match width × height × 4",
+    );
+
+    // Sample 9 evenly-spaced points in the inner quartile of the
+    // viewport. Solid backgrounds should pass every sample; if Servo
+    // is still painting initial-white we'll see (255, 255, 255, 255)
+    // across the grid and the per-pixel asserts will explain.
+    let mut samples = Vec::new();
+    for fy in [1, 2, 3] {
+        for fx in [1, 2, 3] {
+            let x = width * fx / 4;
+            let y = height * fy / 4;
+            let idx = (y * width + x) * 4;
+            samples.push((x, y, bytes[idx], bytes[idx + 1], bytes[idx + 2], bytes[idx + 3]));
+        }
+    }
+    eprintln!("[pixel sample {}] {:?}", target.label(), samples);
+
+    let mut hits = 0;
+    for (_x, _y, r, g, b, _a) in &samples {
+        if matches_color(*r, *g, *b, target) {
+            hits += 1;
+        }
+    }
+    assert!(
+        hits >= 5,
+        "expected ≥5/9 centre-quadrant pixels to be {} after rendering {}; got samples {:?}",
+        target.label(),
+        url,
+        samples,
+    );
+    Ok(())
+}
+
+fn sample_matches_target(bytes: &[u8], width: u32, height: u32, target: ColorTarget) -> bool {
+    let w = width as usize;
+    let h = height as usize;
+    if bytes.len() < w * h * 4 || w == 0 || h == 0 {
+        return false;
+    }
+    let cx = w / 2;
+    let cy = h / 2;
+    let idx = (cy * w + cx) * 4;
+    matches_color(bytes[idx], bytes[idx + 1], bytes[idx + 2], target)
+}
+
+fn matches_color(r: u8, g: u8, b: u8, target: ColorTarget) -> bool {
+    match target {
+        ColorTarget::Red => r >= 200 && g <= 60 && b <= 60,
+        ColorTarget::Blue => r <= 60 && g <= 60 && b >= 200,
     }
 }
