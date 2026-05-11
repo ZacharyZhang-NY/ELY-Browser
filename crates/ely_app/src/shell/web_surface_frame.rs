@@ -3,6 +3,8 @@ use std::hash::Hasher;
 use std::sync::Arc;
 
 use ahash::AHasher;
+#[cfg(target_os = "macos")]
+use core_video::pixel_buffer::CVPixelBuffer;
 use gpui::RenderImage;
 use image::{ImageBuffer, Rgba};
 use thiserror::Error;
@@ -56,6 +58,13 @@ pub(super) struct WebSurfaceFrame {
     #[cfg(all(test, feature = "live-site-smoke"))]
     sample_hash: u64,
     pub(super) image: Arc<RenderImage>,
+    /// Hardware-path companion: when present, the view samples the
+    /// IOSurface through GPUI's Metal pipeline via `gpui::surface(...)`
+    /// instead of uploading the RGBA bytes again. Always `None` on
+    /// the software path; the RGBA copy in `image` is the source of
+    /// truth in that case.
+    #[cfg(target_os = "macos")]
+    pub(super) pixel_buffer: Option<CVPixelBuffer>,
 }
 
 impl WebSurfaceFrame {
@@ -65,6 +74,8 @@ impl WebSurfaceFrame {
         zoom_percent: u16,
         frame: ServoLiveFrame,
     ) -> Result<Self, WebSurfaceError> {
+        #[cfg(target_os = "macos")]
+        let pixel_buffer = frame.pixel_buffer().cloned();
         Self::from_parts(WebSurfaceFrameParts {
             requested_url,
             loaded_url: frame.loaded_url().map(str::to_string),
@@ -83,6 +94,8 @@ impl WebSurfaceFrame {
             #[cfg(all(test, feature = "live-site-smoke"))]
             sample_hash: frame.sample_hash(),
             rgba_bytes: frame.into_rgba_bytes(),
+            #[cfg(target_os = "macos")]
+            pixel_buffer,
         })
     }
 
@@ -108,6 +121,8 @@ impl WebSurfaceFrame {
             #[cfg(all(test, feature = "live-site-smoke"))]
             sample_hash: parts.sample_hash,
             image,
+            #[cfg(target_os = "macos")]
+            pixel_buffer: parts.pixel_buffer,
         })
     }
 
@@ -200,6 +215,8 @@ struct WebSurfaceFrameParts {
     #[cfg(all(test, feature = "live-site-smoke"))]
     sample_hash: u64,
     rgba_bytes: Vec<u8>,
+    #[cfg(target_os = "macos")]
+    pixel_buffer: Option<CVPixelBuffer>,
 }
 
 #[derive(Debug, Error)]

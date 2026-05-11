@@ -3,6 +3,8 @@ use gpui::{
     AnyElement, App, Entity, ImageSource, InteractiveElement, IntoElement, MouseButton, ObjectFit,
     ParentElement, Styled, StyledImage, Window, canvas, div, img, px, rgb,
 };
+#[cfg(target_os = "macos")]
+use gpui::surface;
 
 use super::{ElyShell, web_surface_frame::WebSurfaceFrame};
 use ely_design_system::colors;
@@ -12,6 +14,21 @@ pub(super) fn render_ready_web_surface(
     tab: &BrowserTab,
     state_entity: Entity<ElyShell>,
 ) -> AnyElement {
+    // Prefer the hardware path when the sidecar published an
+    // IOSurface and we successfully imported it into a CVPixelBuffer.
+    // GPUI's `surface(...)` hands the buffer to its Blade Metal
+    // renderer, which samples the IOSurface directly — no
+    // RGBA→texture upload, no LAST_FRAME_IMAGE dedup needed. Falls
+    // back to the software RGBA image when the buffer is missing
+    // (software webview, import failure, non-macOS host).
+    #[cfg(target_os = "macos")]
+    if let Some(pixel_buffer) = frame.pixel_buffer.as_ref() {
+        return render_web_surface(
+            tab,
+            state_entity,
+            surface(pixel_buffer.clone()).size_full().object_fit(ObjectFit::Fill),
+        );
+    }
     render_web_surface(
         tab,
         state_entity,

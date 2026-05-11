@@ -23,18 +23,19 @@ use thiserror::Error;
 use super::servo_sidecar_command::{SidecarCommandError, default_sidecar_command};
 
 #[cfg(target_os = "macos")]
-use super::iosurface_metal::MetalSurfaceImporter;
+use super::iosurface_metal::IOSurfaceCache;
+#[cfg(target_os = "macos")]
+use core_video::pixel_buffer::CVPixelBuffer;
 
 pub(crate) struct ServoLiveClient {
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
-    /// Cache of imported Metal textures keyed by surface_id. Built
+    /// Cache of imported `CVPixelBuffer`s keyed by surface_id. Built
     /// lazily on the first `surface_handle` the sidecar publishes —
-    /// software-path tabs never trigger construction, so machines
-    /// without a Metal device aren't penalised.
+    /// software-path tabs never trigger construction.
     #[cfg(target_os = "macos")]
-    metal_importer: Option<MetalSurfaceImporter>,
+    iosurface_cache: IOSurfaceCache,
 }
 
 impl ServoLiveClient {
@@ -64,9 +65,10 @@ impl ServoLiveClient {
             stdin,
             stdout: BufReader::new(stdout),
             #[cfg(target_os = "macos")]
-            metal_importer: None,
+            iosurface_cache: IOSurfaceCache::new(),
         })
     }
+
 
     pub fn ensure(
         &mut self,
@@ -154,7 +156,14 @@ impl ServoLiveClient {
             .read_exact(&mut rgba_bytes)
             .map_err(ServoLiveError::FrameRead)?;
 
-        Ok(Some(ServoLiveFrame::from_parts(report, rgba_bytes)))
+        let mut frame = ServoLiveFrame::from_parts(report, rgba_bytes);
+
+        #[cfg(target_os = "macos")]
+        if let Some(surface_id) = response.current_surface_id {
+            frame.pixel_buffer = self.iosurface_cache.pixel_buffer_for(surface_id);
+        }
+
+        Ok(Some(frame))
     }
 }
 
@@ -167,49 +176,25 @@ impl Drop for ServoLiveClient {
 
 #[cfg(target_os = "macos")]
 impl ServoLiveClient {
-    /// Run a freshly-arrived `surface_handle` through the Metal
-    /// importer. Lazily constructs the importer on first call so
-    /// software-only sessions never touch the GPU. Failures are
-    /// logged but don't error the request — T10.5 will fall back to
-    /// the existing software RGBA path if `texture_for` returns
-    /// `None`, so the user still sees a frame.
+    /// Convert the sidecar's `surface_handle` into a `CVPixelBuffer`
+    /// in the local cache. Failures are logged but don't error the
+    /// request — the renderer falls back to the existing software
+    /// `Arc<RenderImage>` path when no pixel buffer is available, so
+    /// the user always sees a frame.
     fn import_iosurface_handle(&mut self, handle: &LiveSurfaceHandle) {
-        if self.metal_importer.is_none() {
-            match MetalSurfaceImporter::new() {
-                Ok(importer) => {
-                    self.metal_importer = Some(importer);
-                }
-                Err(error) => {
-                    tracing::warn!(
-                        target: "ely::servo::iosurface",
-                        error = %error,
-                        "no Metal device for IOSurface import; staying on software path",
-                    );
-                    return;
-                }
-            }
-        }
-        let Some(importer) = self.metal_importer.as_mut() else {
-            return;
-        };
-        match importer.import(
-            handle.mach_port_name,
-            handle.surface_id,
-            handle.width,
-            handle.height,
-        ) {
+        match self.iosurface_cache.import(handle.mach_port_name, handle.surface_id) {
             Ok(()) => tracing::info!(
                 target: "ely::servo::iosurface",
                 surface_id = handle.surface_id,
                 width = handle.width,
                 height = handle.height,
-                "imported IOSurface into Metal texture cache",
+                "imported IOSurface into CVPixelBuffer cache",
             ),
             Err(error) => tracing::warn!(
                 target: "ely::servo::iosurface",
                 error = %error,
                 surface_id = handle.surface_id,
-                "IOSurface→MTLTexture import failed; subsequent samples will miss",
+                "IOSurface→CVPixelBuffer import failed; subsequent samples will miss",
             ),
         }
     }
@@ -262,6 +247,12 @@ pub(crate) struct ServoLiveFrame {
     #[cfg(all(test, feature = "live-site-smoke"))]
     sample_hash: u64,
     rgba_bytes: Vec<u8>,
+    /// Hardware-path companion: when present, the renderer can hand
+    /// the underlying IOSurface straight to GPUI's Metal pipeline via
+    /// `gpui::surface(...)` and skip the RGBA upload entirely. Always
+    /// `None` on the software path and on non-macOS hosts.
+    #[cfg(target_os = "macos")]
+    pixel_buffer: Option<CVPixelBuffer>,
 }
 
 impl ServoLiveFrame {
@@ -279,7 +270,18 @@ impl ServoLiveFrame {
             #[cfg(all(test, feature = "live-site-smoke"))]
             sample_hash: report.sample_hash,
             rgba_bytes,
+            #[cfg(target_os = "macos")]
+            pixel_buffer: None,
         }
+    }
+
+    /// Returns the imported `CVPixelBuffer` matching the frame's
+    /// current hardware surface, if any. The renderer hands this to
+    /// `gpui::surface(...)` to skip the RGBA→texture upload path.
+    #[cfg(target_os = "macos")]
+    #[must_use]
+    pub fn pixel_buffer(&self) -> Option<&CVPixelBuffer> {
+        self.pixel_buffer.as_ref()
     }
 
     #[must_use]
@@ -345,6 +347,8 @@ impl ServoLiveFrame {
             #[cfg(all(test, feature = "live-site-smoke"))]
             sample_hash: 0,
             rgba_bytes,
+            #[cfg(target_os = "macos")]
+            pixel_buffer: None,
         }
     }
 }
