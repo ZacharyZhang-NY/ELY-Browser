@@ -432,6 +432,64 @@ fn hardware_live_frame_with_pixel_buffer_skips_software_image() -> Result<(), St
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn hardware_live_frame_rejects_mismatched_surface_size() -> Result<(), String> {
+    use core_video::pixel_buffer::{CVPixelBuffer, kCVPixelFormatType_32BGRA};
+
+    use crate::services::servo_live::ServoLiveFrame;
+    use crate::shell::web_surface_frame::WebSurfaceFrame;
+    use crate::shell::web_surface_geometry::WebSurfaceScrollOffset;
+
+    let pixel_buffer = CVPixelBuffer::new(kCVPixelFormatType_32BGRA, 2, 1, None)
+        .map_err(|status| format!("CVPixelBufferCreate returned status {status}"))?;
+    let live = ServoLiveFrame::for_test_with_pixel_buffer(1, 1, pixel_buffer);
+    let result = WebSurfaceFrame::from_live_frame(
+        "https://example.com/".to_string(),
+        WebSurfaceScrollOffset::default(),
+        100,
+        live,
+    );
+
+    let error = match result {
+        Ok(_) => return Err("mismatched hardware surface reached Ready state".to_string()),
+        Err(error) => error,
+    };
+    assert_eq!(error.to_string(), "servo hardware surface size 2x1 did not match frame report 1x1",);
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn hardware_live_frame_rejects_unsupported_surface_format() -> Result<(), String> {
+    use core_video::pixel_buffer::{CVPixelBuffer, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange};
+
+    use crate::services::servo_live::ServoLiveFrame;
+    use crate::shell::web_surface_frame::WebSurfaceFrame;
+    use crate::shell::web_surface_geometry::WebSurfaceScrollOffset;
+
+    let pixel_buffer =
+        CVPixelBuffer::new(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange, 2, 2, None)
+            .map_err(|status| format!("CVPixelBufferCreate returned status {status}"))?;
+    let live = ServoLiveFrame::for_test_with_pixel_buffer(2, 2, pixel_buffer);
+    let result = WebSurfaceFrame::from_live_frame(
+        "https://example.com/".to_string(),
+        WebSurfaceScrollOffset::default(),
+        100,
+        live,
+    );
+
+    let error = match result {
+        Ok(_) => return Err("unsupported hardware surface format reached Ready state".to_string()),
+        Err(error) => error,
+    };
+    assert_eq!(
+        error.to_string(),
+        "servo hardware surface pixel format 0x34323066 is unsupported; expected 32BGRA",
+    );
+    Ok(())
+}
+
 fn web_bounds() -> Bounds<gpui::Pixels> {
     Bounds::new(point(px(0.0), px(0.0)), size(px(640.0), px(480.0)))
 }

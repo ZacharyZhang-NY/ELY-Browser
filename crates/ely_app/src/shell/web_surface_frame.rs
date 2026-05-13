@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use ahash::AHasher;
 #[cfg(target_os = "macos")]
-use core_video::pixel_buffer::CVPixelBuffer;
+use core_video::pixel_buffer::{CVPixelBuffer, kCVPixelFormatType_32BGRA};
 use gpui::RenderImage;
 use image::{ImageBuffer, Rgba};
 use thiserror::Error;
@@ -107,6 +107,11 @@ impl WebSurfaceFrame {
 
         if parts.rgba_bytes.is_empty() && !has_pixel_buffer {
             return Err(WebSurfaceError::MissingRenderablePayload);
+        }
+
+        #[cfg(target_os = "macos")]
+        if let Some(pixel_buffer) = parts.pixel_buffer.as_ref() {
+            validate_hardware_pixel_buffer(pixel_buffer, parts.width, parts.height)?;
         }
 
         let image = if parts.rgba_bytes.is_empty() {
@@ -249,6 +254,44 @@ pub(super) enum WebSurfaceError {
     InvalidFrameBuffer { width: u32, height: u32 },
     #[error("servo live frame did not include a software image or hardware IOSurface")]
     MissingRenderablePayload,
+    #[cfg(target_os = "macos")]
+    #[error(
+        "servo hardware surface size {actual_width}x{actual_height} did not match frame report {expected_width}x{expected_height}"
+    )]
+    HardwareSurfaceSizeMismatch {
+        expected_width: u32,
+        expected_height: u32,
+        actual_width: usize,
+        actual_height: usize,
+    },
+    #[cfg(target_os = "macos")]
+    #[error("servo hardware surface pixel format 0x{actual:x} is unsupported; expected 32BGRA")]
+    UnsupportedHardwareSurfaceFormat { actual: u32 },
+}
+
+#[cfg(target_os = "macos")]
+fn validate_hardware_pixel_buffer(
+    pixel_buffer: &CVPixelBuffer,
+    expected_width: u32,
+    expected_height: u32,
+) -> Result<(), WebSurfaceError> {
+    let actual_width = pixel_buffer.get_width();
+    let actual_height = pixel_buffer.get_height();
+    if actual_width != expected_width as usize || actual_height != expected_height as usize {
+        return Err(WebSurfaceError::HardwareSurfaceSizeMismatch {
+            expected_width,
+            expected_height,
+            actual_width,
+            actual_height,
+        });
+    }
+
+    let actual_format = pixel_buffer.get_pixel_format();
+    if actual_format != kCVPixelFormatType_32BGRA {
+        return Err(WebSurfaceError::UnsupportedHardwareSurfaceFormat { actual: actual_format });
+    }
+
+    Ok(())
 }
 
 /// Swap byte 0 and byte 2 of every 4-byte pixel, converting Servo's
