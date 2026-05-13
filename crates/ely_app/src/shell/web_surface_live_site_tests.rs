@@ -205,16 +205,21 @@ fn wait_for_ready_frame(
     case: &LiveSiteCase,
 ) -> Result<WebSurfaceFrame, String> {
     let started_at = Instant::now();
+    let mut last_error = None;
 
     loop {
         if started_at.elapsed() >= LIVE_SITE_WAIT_TIMEOUT {
-            return Err(format!("timed out rendering {}", case.url));
+            return Err(last_error.unwrap_or_else(|| format!("timed out rendering {}", case.url)));
         }
 
         store.tick(std::slice::from_ref(tab_id));
         match store.state(tab_id) {
             Some(WebSurfaceState::Ready(frame)) => {
-                validate_prd_frame(frame, case, 0)?;
+                if let Err(error) = validate_prd_frame(frame, case, 0) {
+                    last_error = Some(error);
+                    thread::sleep(LIVE_SITE_WAIT_INTERVAL);
+                    continue;
+                }
                 return Ok(frame.clone());
             }
             Some(WebSurfaceState::Failed { message, .. }) => {
