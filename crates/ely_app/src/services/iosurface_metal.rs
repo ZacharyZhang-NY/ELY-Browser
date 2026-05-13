@@ -1,13 +1,12 @@
 //! macOS-only import of cross-process IOSurface handles into
-//! `CVPixelBuffer`s suitable for GPUI's `Surface` element.
+//! `CVPixelBuffer`s that preserve the sidecar's IOSurface identity.
 //!
 //! `T10.4` originally imported the IOSurface into an `MTLTexture`
-//! directly, but GPUI 0.2.2 already speaks `CVPixelBuffer` end-to-end
-//! through `Window::paint_surface` / `elements::surface::Surface`. Its
-//! internal Blade Metal renderer takes care of building the Metal
-//! texture, so a parallel MTLTexture cache here would be wasted work.
-//! The cache now hands the renderer the CVPixelBuffer GPUI already
-//! knows how to render.
+//! directly. GPUI 0.2.2 exposes `Window::paint_surface` /
+//! `elements::surface::Surface` for `CVPixelBuffer`, and that public
+//! path is wired for NV12 video frames. Servo's hardware renderer
+//! publishes BGRA IOSurfaces, so this cache stays as verified
+//! cross-process plumbing until the presenter accepts BGRA surfaces.
 //!
 //! Lifetime contract:
 //!
@@ -211,7 +210,9 @@ mod tests {
         assert!(mach_port != 0, "IOSurfaceCreateMachPort must yield a real port");
         let surface_id: u64 = 0xDEAD_BEEFu64;
 
-        cache.import(mach_port, surface_id).expect("local IOSurface must round-trip into a CVPixelBuffer");
+        cache
+            .import(mach_port, surface_id)
+            .expect("local IOSurface must round-trip into a CVPixelBuffer");
 
         let pixel_buffer = cache
             .pixel_buffer_for(surface_id)

@@ -383,6 +383,28 @@ fn live_frame_swaps_red_and_blue_bytes_for_gpui_bgra() -> Result<(), Box<dyn Err
     Ok(())
 }
 
+#[test]
+fn empty_live_frame_payload_is_rejected() {
+    use crate::services::servo_live::ServoLiveFrame;
+    use crate::shell::web_surface_frame::WebSurfaceFrame;
+    use crate::shell::web_surface_geometry::WebSurfaceScrollOffset;
+
+    let result = WebSurfaceFrame::from_live_frame(
+        "https://example.com/".to_string(),
+        WebSurfaceScrollOffset::default(),
+        100,
+        ServoLiveFrame::for_test(1, 1, Vec::new()),
+    );
+
+    let Err(error) = result else {
+        panic!("empty Servo frame payload must be rejected before it reaches Ready state");
+    };
+    assert_eq!(
+        error.to_string(),
+        "servo live frame did not include renderable pixels; BGRA IOSurface presentation is unavailable in GPUI 0.2.2",
+    );
+}
+
 fn web_bounds() -> Bounds<gpui::Pixels> {
     Bounds::new(point(px(0.0), px(0.0)), size(px(640.0), px(480.0)))
 }

@@ -10,10 +10,11 @@ use std::{
 /// (default — bit-identical to pre-flag builds) and `hardware` (real
 /// GPU adapter via the vendored `HardwareOffscreenContext`; requires
 /// the sidecar binary to be compiled with the `hardware-render`
-/// feature). Anything else is silently dropped and the sidecar
-/// defaults to software so a typo'd value never blocks the browser
-/// from starting; the sidecar's own arg parser still errors loudly on
-/// an unrecognised value when set explicitly via the flag.
+/// feature and a GPUI BGRA surface presenter). Anything else is
+/// silently dropped and the sidecar defaults to software so a typo'd
+/// value never blocks the browser from starting; the sidecar's own
+/// arg parser still errors loudly on an unrecognised value when set
+/// explicitly via the flag.
 const RENDERING_CONTEXT_ENV: &str = "ELY_SERVO_RENDERING_CONTEXT";
 
 use ely_domain::SitePermissionDecision;
@@ -265,10 +266,10 @@ pub(crate) struct ServoLiveFrame {
     #[cfg(all(test, feature = "live-site-smoke"))]
     sample_hash: u64,
     rgba_bytes: Vec<u8>,
-    /// Hardware-path companion: when present, the renderer can hand
-    /// the underlying IOSurface straight to GPUI's Metal pipeline via
-    /// `gpui::surface(...)` and skip the RGBA upload entirely. Always
-    /// `None` on the software path and on non-macOS hosts.
+    /// Hardware-path companion: the imported IOSurface published by
+    /// the sidecar. GPUI 0.2.2 presents `surface(...)` through its
+    /// NV12 video path, so the current BGRA Servo surface stays as
+    /// observability plumbing until a BGRA presenter lands.
     #[cfg(target_os = "macos")]
     pixel_buffer: Option<CVPixelBuffer>,
 }
@@ -294,8 +295,9 @@ impl ServoLiveFrame {
     }
 
     /// Returns the imported `CVPixelBuffer` matching the frame's
-    /// current hardware surface, if any. The renderer hands this to
-    /// `gpui::surface(...)` to skip the RGBA→texture upload path.
+    /// current hardware surface, if any. The renderer keeps this as
+    /// wire-path evidence while GPUI's public `surface(...)` element
+    /// remains NV12-only.
     #[cfg(target_os = "macos")]
     #[must_use]
     pub fn pixel_buffer(&self) -> Option<&CVPixelBuffer> {
@@ -412,9 +414,52 @@ pub(crate) enum ServoLiveError {
 /// truth for what values are valid — we just gate which ones we
 /// forward.
 fn rendering_context_from_env() -> Option<&'static str> {
-    match env::var(RENDERING_CONTEXT_ENV).ok()?.to_lowercase().as_str() {
-        "software" => Some("software"),
-        "hardware" => Some("hardware"),
-        _ => None,
+    let raw = env::var(RENDERING_CONTEXT_ENV).ok()?;
+    match rendering_context_selection(raw.as_str()) {
+        RenderingContextSelection::Forward(value) => Some(value),
+        RenderingContextSelection::HoldHardware => {
+            tracing::warn!(
+                target: "ely::servo::iosurface",
+                "hardware rendering context requested; GPUI 0.2.2 surface presenter accepts NV12 CVPixelBuffers; Servo publishes BGRA IOSurfaces; using software rendering context",
+            );
+            None
+        }
+        RenderingContextSelection::Ignore => None,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RenderingContextSelection {
+    Forward(&'static str),
+    HoldHardware,
+    Ignore,
+}
+
+fn rendering_context_selection(raw: &str) -> RenderingContextSelection {
+    match raw.to_lowercase().as_str() {
+        "software" => RenderingContextSelection::Forward("software"),
+        "hardware" => RenderingContextSelection::HoldHardware,
+        _ => RenderingContextSelection::Ignore,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RenderingContextSelection, rendering_context_selection};
+
+    #[test]
+    fn hardware_env_is_held_until_gpui_can_present_bgra_surfaces() {
+        assert_eq!(
+            rendering_context_selection("hardware"),
+            RenderingContextSelection::HoldHardware
+        );
+    }
+
+    #[test]
+    fn software_env_still_forwards_to_the_sidecar() {
+        assert_eq!(
+            rendering_context_selection("software"),
+            RenderingContextSelection::Forward("software"),
+        );
     }
 }

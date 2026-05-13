@@ -12,7 +12,7 @@ pub(super) fn render_ready_web_surface(
     tab: &BrowserTab,
     state_entity: Entity<ElyShell>,
 ) -> AnyElement {
-    // T14: the `gpui::surface(...)` hardware path is disabled.
+    // T14: the `gpui::surface(...)` hardware path is held.
     //
     // GPUI 0.2.2's Blade Metal renderer hard-asserts that any
     // CVPixelBuffer handed to `surface(...)` is NV12 YUV
@@ -35,10 +35,11 @@ pub(super) fn render_ready_web_surface(
             img(ImageSource::Render(image.clone())).size_full().object_fit(ObjectFit::Fill),
         );
     }
-    // Both image variants empty: the sidecar should always publish
-    // RGBA while the hardware path is disabled, but a blank canvas is
-    // the honest user-facing fallback if it ever does not.
-    render_web_surface(tab, state_entity, div().size_full())
+    render_web_surface(
+        tab,
+        state_entity,
+        error_page("Web surface frame did not include renderable pixels."),
+    )
 }
 
 pub(super) fn render_loading_web_surface(

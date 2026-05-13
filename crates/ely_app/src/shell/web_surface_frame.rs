@@ -57,15 +57,14 @@ pub(super) struct WebSurfaceFrame {
     content_pixel_count: u64,
     #[cfg(all(test, feature = "live-site-smoke"))]
     sample_hash: u64,
-    /// Software-path image. `None` whenever the sidecar took the
-    /// hardware shortcut and dropped the RGBA payload from the
-    /// wire — the IOSurface in `pixel_buffer` is the source of truth
-    /// for that frame.
+    /// Software-path image. Current GPUI builds require this for every
+    /// ready web frame because BGRA IOSurface presentation is still
+    /// held at the protocol boundary.
     pub(super) image: Option<Arc<RenderImage>>,
-    /// Hardware-path companion: when present, the view samples the
-    /// IOSurface through GPUI's Metal pipeline via `gpui::surface(...)`
-    /// instead of uploading the RGBA bytes again. Always `None` on
-    /// the software path; `image` is the source of truth there.
+    /// Hardware-path companion imported from the sidecar. GPUI 0.2.2's
+    /// public `surface(...)` presenter accepts NV12 video buffers, and
+    /// Servo publishes BGRA IOSurfaces; this remains observability
+    /// state until a BGRA presenter is available.
     #[cfg(target_os = "macos")]
     pub(super) pixel_buffer: Option<CVPixelBuffer>,
 }
@@ -103,27 +102,23 @@ impl WebSurfaceFrame {
     }
 
     fn from_parts(parts: WebSurfaceFrameParts) -> Result<Self, WebSurfaceError> {
-        // Hardware path frames arrive with `rgba_bytes` empty — the
-        // sidecar dropped the 8 MB payload from the wire and the
-        // receiver samples the IOSurface directly. In that case the
-        // RGBA hash + LAST_FRAME_IMAGE dedup are skipped entirely.
-        let image = if parts.rgba_bytes.is_empty() {
-            None
-        } else {
-            // Servo's `read_pixels(gl::RGBA, gl::UNSIGNED_BYTE)`
-            // writes R-G-B-A in memory order. GPUI's `RenderImage` is
-            // documented as "in BGRA format" and uploads via
-            // `MTLPixelFormat::BGRA8Unorm`, which reads B-G-R-A. Hand
-            // the bytes across unchanged and the Metal sampler treats
-            // R as B (and vice versa) — every coloured pixel renders
-            // with R and B swapped. Swap once here so the rest of the
-            // pipeline (dedup hash, image buffer, GPU upload) all
-            // operate on the same BGRA representation.
-            let mut bytes = parts.rgba_bytes;
-            swap_red_blue_in_place(&mut bytes);
-            let bytes_hash = rgba_hash(&bytes);
-            Some(resolve_render_image(parts.width, parts.height, bytes, bytes_hash)?)
-        };
+        if parts.rgba_bytes.is_empty() {
+            return Err(WebSurfaceError::MissingRenderablePayload);
+        }
+
+        // Servo's `read_pixels(gl::RGBA, gl::UNSIGNED_BYTE)` writes
+        // R-G-B-A in memory order. GPUI's `RenderImage` is documented
+        // as "in BGRA format" and uploads via
+        // `MTLPixelFormat::BGRA8Unorm`, which reads B-G-R-A. Hand the bytes across
+        // unchanged and the Metal sampler treats R as B (and vice
+        // versa) — every coloured pixel renders with R and B swapped.
+        // Swap once here so the rest of the pipeline (dedup hash,
+        // image buffer, GPU upload) all operate on the same BGRA
+        // representation.
+        let mut bytes = parts.rgba_bytes;
+        swap_red_blue_in_place(&mut bytes);
+        let bytes_hash = rgba_hash(&bytes);
+        let image = Some(resolve_render_image(parts.width, parts.height, bytes, bytes_hash)?);
 
         Ok(Self {
             requested_url: parts.requested_url,
@@ -245,6 +240,10 @@ struct WebSurfaceFrameParts {
 pub(super) enum WebSurfaceError {
     #[error("invalid servo frame buffer for {width}x{height}")]
     InvalidFrameBuffer { width: u32, height: u32 },
+    #[error(
+        "servo live frame did not include renderable pixels; BGRA IOSurface presentation is unavailable in GPUI 0.2.2"
+    )]
+    MissingRenderablePayload,
 }
 
 /// Swap byte 0 and byte 2 of every 4-byte pixel, converting Servo's
@@ -268,20 +267,18 @@ fn resolve_render_image(
     rgba_bytes: Vec<u8>,
     bytes_hash: u64,
 ) -> Result<Arc<RenderImage>, WebSurfaceError> {
-    LAST_FRAME_IMAGE.with(
-        |cache| -> Result<Arc<RenderImage>, WebSurfaceError> {
-            let mut cache = cache.borrow_mut();
-            if let Some((cached_hash, cached_image)) = cache.as_ref() {
-                if *cached_hash == bytes_hash {
-                    return Ok(cached_image.clone());
-                }
+    LAST_FRAME_IMAGE.with(|cache| -> Result<Arc<RenderImage>, WebSurfaceError> {
+        let mut cache = cache.borrow_mut();
+        if let Some((cached_hash, cached_image)) = cache.as_ref() {
+            if *cached_hash == bytes_hash {
+                return Ok(cached_image.clone());
             }
+        }
 
-            let image_buffer = ImageBuffer::<Rgba<u8>, _>::from_raw(width, height, rgba_bytes)
-                .ok_or(WebSurfaceError::InvalidFrameBuffer { width, height })?;
-            let new_image = Arc::new(RenderImage::new([image::Frame::new(image_buffer)]));
-            *cache = Some((bytes_hash, new_image.clone()));
-            Ok(new_image)
-        },
-    )
+        let image_buffer = ImageBuffer::<Rgba<u8>, _>::from_raw(width, height, rgba_bytes)
+            .ok_or(WebSurfaceError::InvalidFrameBuffer { width, height })?;
+        let new_image = Arc::new(RenderImage::new([image::Frame::new(image_buffer)]));
+        *cache = Some((bytes_hash, new_image.clone()));
+        Ok(new_image)
+    })
 }
