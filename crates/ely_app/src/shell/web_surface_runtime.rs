@@ -101,7 +101,7 @@ impl WebSurfaceRuntime {
         Ok(WebSurfaceEnsureResult { requested_url, started_loading, frame, url_change })
     }
 
-    pub(super) fn tick(&mut self) -> Vec<WebSurfaceRuntimeFrame> {
+    pub(super) fn tick(&mut self, visible_tab_ids: &[TabId]) -> Vec<WebSurfaceRuntimeFrame> {
         let (state, sessions) = (&mut self.state, &mut self.sessions);
         let RuntimeState::Ready { client, .. } = state else {
             return Vec::new();
@@ -109,6 +109,9 @@ impl WebSurfaceRuntime {
 
         let mut frames = Vec::new();
         for (tab_id, session) in sessions {
+            if !visible_tab_ids.iter().any(|visible_tab_id| visible_tab_id == tab_id) {
+                continue;
+            }
             match client.poll(tab_id.as_str().to_string()) {
                 Ok(Some(frame)) => match WebSurfaceFrame::from_live_frame(
                     session.requested_url.clone(),

@@ -134,7 +134,7 @@ fn wait_for_ready_frame(
             return Err(format!("timed out rendering {}", case.url));
         }
 
-        store.tick();
+        store.tick(std::slice::from_ref(tab_id));
         match store.state(tab_id) {
             Some(WebSurfaceState::Ready(frame)) => {
                 validate_prd_frame(frame, case)?;

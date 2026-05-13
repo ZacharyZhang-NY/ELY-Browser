@@ -74,8 +74,8 @@ impl WebSurfaceStore {
         }
     }
 
-    pub(super) fn tick(&mut self) -> WebSurfaceTickResult {
-        let frames = self.runtime.tick();
+    pub(super) fn tick(&mut self, visible_tab_ids: &[TabId]) -> WebSurfaceTickResult {
+        let frames = self.runtime.tick(visible_tab_ids);
         let mut result = WebSurfaceTickResult::default();
 
         for frame in frames {

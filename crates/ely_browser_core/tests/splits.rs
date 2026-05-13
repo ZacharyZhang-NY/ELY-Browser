@@ -26,6 +26,31 @@ fn split_right_creates_two_pane_layout() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn visible_content_tab_ids_returns_active_tab_without_split() -> Result<(), Box<dyn Error>> {
+    let core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let active_tab_id = core.active_tab()?.id().clone();
+
+    assert_eq!(core.visible_content_tab_ids()?, vec![active_tab_id]);
+    Ok(())
+}
+
+#[test]
+fn visible_content_tab_ids_returns_split_panes() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let split_id = core.split_active_tab_right()?;
+    let snapshot = core.snapshot()?;
+    let layout = snapshot
+        .split_layouts
+        .iter()
+        .find(|layout| layout.id() == &split_id)
+        .ok_or("missing split layout")?;
+    let pane_ids = layout.panes().iter().map(|pane| pane.tab_id().clone()).collect::<Vec<_>>();
+
+    assert_eq!(core.visible_content_tab_ids()?, pane_ids);
+    Ok(())
+}
+
+#[test]
 fn split_right_command_focuses_new_pane() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
 

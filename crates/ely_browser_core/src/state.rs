@@ -36,6 +36,7 @@ mod tab_lifecycle;
 mod tab_order;
 mod tab_selection;
 mod tabs;
+mod visible_content;
 
 pub use bookmarks::{
     BookmarkImportSummary, ELYBOOKMARKS_FILE_EXTENSION, ELYBOOKMARKS_SCHEMA_VERSION,
