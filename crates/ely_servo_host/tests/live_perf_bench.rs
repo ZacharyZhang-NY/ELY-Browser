@@ -38,8 +38,8 @@ const RESPONSE_TIMEOUT: Duration = Duration::from_secs(20);
 const SCROLL_PAGE_DATA_URL: &str = "data:text/html,\
 <!doctype html><meta charset=utf-8><title>perf</title>\
 <style>html,body{margin:0;padding:0}\
-body{height:8000px;background:linear-gradient(180deg,#ff6b6b,#4ecdc4,#1d3557,#f1faee,#e63946)}\
-div.row{height:80px;border-bottom:2px solid #0008;color:#fff;font:24px/80px sans-serif;padding-left:24px}\
+body{height:8000px;background:linear-gradient(180deg,red,teal,navy,white,crimson)}\
+div.row{height:80px;border-bottom:2px solid rgba(0,0,0,.5);color:white;font:24px/80px sans-serif;padding-left:24px}\
 </style>\
 <script>for(let i=0;i<100;i++){let d=document.createElement('div');d.className='row';d.textContent='row '+i;document.body.appendChild(d)}</script>";
 
