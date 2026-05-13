@@ -226,7 +226,13 @@ fn exercise_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
     }
 
     let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
-    host.scroll(ScrollRequest { webview_id: webview_id.clone(), delta_x: 0, delta_y: 480 })?;
+    host.scroll(ScrollRequest {
+        webview_id: webview_id.clone(),
+        delta_x: 0,
+        delta_y: 480,
+        point_x: 0,
+        point_y: 0,
+    })?;
     let snapshot = wait_for_rendered_webview(&mut host, &webview_id, Some(previous_frame_hash))?;
     assert_eq!(snapshot.state(), &WebViewState::Complete, "snapshot: {snapshot:?}");
     assert_rendered_frame_has_content(&host, "https://servo.org scrolled", MINIMUM_CONTENT_PIXELS)?;

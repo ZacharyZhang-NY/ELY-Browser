@@ -14,10 +14,10 @@ use ely_servo_host::{
 };
 
 use super::args::LiveArgs;
+pub(super) use super::live_protocol::LiveSidecarError;
 use super::live_protocol::{
     LiveFrameReport, LiveOutcome, LiveRequest, LiveSitePermission, PartialFrameTimings,
 };
-pub(super) use super::live_protocol::LiveSidecarError;
 use super::perf::{FramePerfAggregator, FramePerfSummary, FrameStageTimings, elapsed_ns};
 
 /// Per-`Ensure` budget for Servo to paint after input dispatch.
@@ -65,13 +65,7 @@ pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
             ),
             Err(error) => Err(LiveSidecarError::Json(error)),
         };
-        write_outcome(
-            &mut stdout,
-            &mut perf,
-            &mut pending_summary,
-            outcome,
-            frame_started_at,
-        )?;
+        write_outcome(&mut stdout, &mut perf, &mut pending_summary, outcome, frame_started_at)?;
     }
 
     Ok(())
@@ -102,6 +96,8 @@ fn handle_request(
             device_pixel_ratio,
             scroll_delta_x,
             scroll_delta_y,
+            scroll_point_x,
+            scroll_point_y,
             click_x,
             click_y,
             hover_x,
@@ -115,14 +111,7 @@ fn handle_request(
             let session =
                 ensure_session(host, sessions, tab_id.clone(), &tab, &profile, width, height)?;
 
-            if apply_layout(
-                host,
-                session,
-                width,
-                height,
-                page_zoom_percent,
-                device_pixel_ratio,
-            )? {
+            if apply_layout(host, session, width, height, page_zoom_percent, device_pixel_ratio)? {
                 session.awaiting_visible_frame = true;
             }
             apply_permissions(host, session, &profile, site_permissions)?;
@@ -141,17 +130,18 @@ fn handle_request(
                 // the gate skip blank loading frames again.
                 session.ever_visible_frame = false;
             }
-            if apply_input(
-                host,
-                session,
+            let input = LiveInput {
                 scroll_delta_x,
                 scroll_delta_y,
+                scroll_point_x,
+                scroll_point_y,
                 click_x,
                 click_y,
                 hover_x,
                 hover_y,
                 typed_text,
-            )? {
+            };
+            if apply_input(host, session, input)? {
                 // Tell poll_frame to actually wait for Servo to paint
                 // a response to this input. The visible-content gate
                 // is bypassed on the hardware path inside poll_frame,
@@ -162,7 +152,13 @@ fn handle_request(
             }
             let webview_id = session.webview_id.clone();
             let mut outcome = poll_frame(host, session, rendering_context_kind)?;
-            populate_surface_fields(host, &webview_id, &tab_id, published_surface_ids, &mut outcome);
+            populate_surface_fields(
+                host,
+                &webview_id,
+                &tab_id,
+                published_surface_ids,
+                &mut outcome,
+            );
             Ok(outcome)
         }
         LiveRequest::Poll { tab_id } => {
@@ -171,7 +167,13 @@ fn handle_request(
             };
             let webview_id = session.webview_id.clone();
             let mut outcome = poll_frame(host, session, rendering_context_kind)?;
-            populate_surface_fields(host, &webview_id, &tab_id, published_surface_ids, &mut outcome);
+            populate_surface_fields(
+                host,
+                &webview_id,
+                &tab_id,
+                published_surface_ids,
+                &mut outcome,
+            );
             Ok(outcome)
         }
     }
@@ -255,18 +257,18 @@ fn write_outcome(
     // header so the client knows nothing follows). At 1080p × 60 fps
     // that's 8 MB × 60 = ~480 MB/s of pipe traffic eliminated.
     let drop_rgba_payload = outcome.response.current_surface_id.is_some();
-    if drop_rgba_payload {
-        if let Some(report) = outcome.response.frame.as_mut() {
-            report.rgba_byte_count = 0;
-        }
+    if drop_rgba_payload
+        && let Some(report) = outcome.response.frame.as_mut()
+    {
+        report.rgba_byte_count = 0;
     }
     let write_started_at = Instant::now();
     serde_json::to_writer(&mut *stdout, &outcome.response)?;
     stdout.write_all(b"\n")?;
-    if !drop_rgba_payload {
-        if let Some(frame) = outcome.frame.as_ref() {
-            stdout.write_all(frame.rgba_bytes())?;
-        }
+    if !drop_rgba_payload
+        && let Some(frame) = outcome.frame.as_ref()
+    {
+        stdout.write_all(frame.rgba_bytes())?;
     }
     stdout.flush()?;
     if frame_present {
@@ -390,42 +392,61 @@ fn apply_permissions(
 fn apply_input(
     host: &mut SoftwareServoHost,
     session: &mut LiveSession,
-    scroll_delta_x: i32,
-    scroll_delta_y: i32,
-    click_x: Option<u32>,
-    click_y: Option<u32>,
-    hover_x: Option<u32>,
-    hover_y: Option<u32>,
-    typed_text: Option<String>,
+    input: LiveInput,
 ) -> Result<bool, LiveSidecarError> {
     let mut changed = false;
-    if scroll_delta_x != 0 || scroll_delta_y != 0 {
+    if input.scroll_delta_x != 0 || input.scroll_delta_y != 0 {
+        let (point_x, point_y) = input.scroll_point()?;
         host.scroll(ScrollRequest {
             webview_id: session.webview_id.clone(),
-            delta_x: scroll_delta_x,
-            delta_y: scroll_delta_y,
+            delta_x: input.scroll_delta_x,
+            delta_y: input.scroll_delta_y,
+            point_x,
+            point_y,
         })?;
-        session.scroll_x = positive_scroll_component(session.scroll_x, scroll_delta_x);
-        session.scroll_y = positive_scroll_component(session.scroll_y, scroll_delta_y);
+        session.scroll_x = positive_scroll_component(session.scroll_x, input.scroll_delta_x);
+        session.scroll_y = positive_scroll_component(session.scroll_y, input.scroll_delta_y);
         changed = true;
     }
 
-    if let (Some(x), Some(y)) = (hover_x, hover_y) {
+    if let (Some(x), Some(y)) = (input.hover_x, input.hover_y) {
         host.hover(MouseHoverRequest { webview_id: session.webview_id.clone(), x, y })?;
         changed = true;
     }
 
-    if let (Some(x), Some(y)) = (click_x, click_y) {
+    if let (Some(x), Some(y)) = (input.click_x, input.click_y) {
         host.click(MouseClickRequest { webview_id: session.webview_id.clone(), x, y })?;
         changed = true;
     }
 
-    if let Some(text) = typed_text {
+    if let Some(text) = input.typed_text {
         host.type_text(KeyboardTextRequest { webview_id: session.webview_id.clone(), text })?;
         changed = true;
     }
 
     Ok(changed)
+}
+
+struct LiveInput {
+    scroll_delta_x: i32,
+    scroll_delta_y: i32,
+    scroll_point_x: Option<u32>,
+    scroll_point_y: Option<u32>,
+    click_x: Option<u32>,
+    click_y: Option<u32>,
+    hover_x: Option<u32>,
+    hover_y: Option<u32>,
+    typed_text: Option<String>,
+}
+
+impl LiveInput {
+    fn scroll_point(&self) -> Result<(u32, u32), LiveSidecarError> {
+        let point = match (self.scroll_point_x, self.scroll_point_y) {
+            (Some(x), Some(y)) => (x, y),
+            _ => return Err(LiveSidecarError::IncompleteScrollPoint),
+        };
+        Ok(point)
+    }
 }
 
 fn poll_frame(
@@ -469,8 +490,7 @@ fn poll_frame(
             let has_visible_content = match rendering_context_kind {
                 RenderingContextKind::Software => {
                     session.ever_visible_frame
-                        || (frame.non_white_pixel_count() > 0
-                            && frame.content_pixel_count() > 0)
+                        || (frame.non_white_pixel_count() > 0 && frame.content_pixel_count() > 0)
                 }
                 #[cfg(feature = "hardware-render")]
                 RenderingContextKind::Hardware => true,

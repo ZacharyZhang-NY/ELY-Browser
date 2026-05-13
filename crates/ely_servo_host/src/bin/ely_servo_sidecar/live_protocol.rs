@@ -3,7 +3,9 @@
 
 use std::io;
 
-use ely_servo_host::{IOSurfaceHandle, RenderedFrame, ServoHostError, WebViewSnapshot, WebViewState};
+use ely_servo_host::{
+    IOSurfaceHandle, RenderedFrame, ServoHostError, WebViewSnapshot, WebViewState,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -29,6 +31,8 @@ pub(super) enum LiveRequest {
         device_pixel_ratio: f32,
         scroll_delta_x: i32,
         scroll_delta_y: i32,
+        scroll_point_x: Option<u32>,
+        scroll_point_y: Option<u32>,
         click_x: Option<u32>,
         click_y: Option<u32>,
         #[serde(default)]
@@ -194,6 +198,9 @@ fn state_label(state: &WebViewState) -> &'static str {
 pub(super) enum LiveSidecarError {
     #[error("live session is unavailable after creation")]
     SessionUnavailable,
+
+    #[error("scroll input requires both scroll_point_x and scroll_point_y")]
+    IncompleteScrollPoint,
 
     #[error(transparent)]
     Domain(#[from] ely_domain::DomainError),

@@ -45,6 +45,8 @@ impl WebSurfaceRuntime {
         if active_scope != &scope {
             return Err(active_scope.error_for(&scope));
         }
+        let (scroll_delta_x, scroll_delta_y, scroll_point_x, scroll_point_y) =
+            scroll_wire_fields(input.scroll_delta, input.scroll_point)?;
 
         let session = sessions.entry(tab.id().clone()).or_insert_with(WebSurfaceSession::default);
         let next_scroll_offset = input.scroll_offset;
@@ -58,8 +60,10 @@ impl WebSurfaceRuntime {
                 height: size.height,
                 page_zoom_percent: zoom_percent,
                 device_pixel_ratio: size.device_pixel_ratio_f32(),
-                scroll_delta_x: input.scroll_delta.map_or(0, |delta| delta.x()),
-                scroll_delta_y: input.scroll_delta.map_or(0, |delta| delta.y()),
+                scroll_delta_x,
+                scroll_delta_y,
+                scroll_point_x,
+                scroll_point_y,
                 click_x: input.click_point.map(|point| point.x()),
                 click_y: input.click_point.map(|point| point.y()),
                 hover_x: input.hover_point.map(|point| point.x()),
@@ -224,6 +228,20 @@ fn config_dir_for_scope(
             fs::create_dir_all(&config_dir).map_err(|error| error.to_string())?;
             Ok((config_dir.clone(), Some(config_dir)))
         }
+    }
+}
+
+fn scroll_wire_fields(
+    delta: Option<super::web_surface_geometry::WebSurfaceScrollDelta>,
+    point: Option<super::web_surface_geometry::WebSurfaceClickPoint>,
+) -> Result<(i32, i32, Option<u32>, Option<u32>), String> {
+    match delta {
+        Some(delta) => {
+            let point = point
+                .ok_or_else(|| "Servo scroll input is missing a viewport point".to_string())?;
+            Ok((delta.x(), delta.y(), Some(point.x()), Some(point.y())))
+        }
+        None => Ok((0, 0, None, None)),
     }
 }
 

@@ -72,12 +72,7 @@ fn error_page(message: &str) -> impl IntoElement {
                 .text_color(rgb(colors::INK))
                 .child("Page unavailable"),
         )
-        .child(
-            div()
-                .text_size(px(14.0))
-                .text_color(rgb(colors::INK_3))
-                .child(message.to_string()),
-        )
+        .child(div().text_size(px(14.0)).text_color(rgb(colors::INK_3)).child(message.to_string()))
 }
 
 fn render_web_surface(
@@ -95,12 +90,7 @@ fn render_web_surface(
         .size_full()
         .min_w_0()
         .overflow_hidden()
-        .child(
-            div()
-                .absolute()
-                .inset_0()
-                .child(content),
-        )
+        .child(div().absolute().inset_0().child(content))
         .child(render_viewport_tracker(tab.id().clone(), tracker_entity))
         .child(render_input_overlay(input_tab_id, input_url, input_entity))
         .into_any_element()
@@ -169,6 +159,7 @@ fn render_input_overlay(
                     scroll_tab_id.clone(),
                     scroll_url.clone(),
                     delta,
+                    event.position,
                     scale_factor,
                     cx,
                 );

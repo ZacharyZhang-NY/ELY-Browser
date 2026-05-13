@@ -220,6 +220,8 @@ pub struct ScrollRequest {
     pub webview_id: WebViewId,
     pub delta_x: i32,
     pub delta_y: i32,
+    pub point_x: u32,
+    pub point_y: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

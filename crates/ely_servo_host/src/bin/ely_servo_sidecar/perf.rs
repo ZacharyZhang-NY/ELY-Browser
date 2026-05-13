@@ -262,17 +262,19 @@ mod tests {
     }
 
     #[test]
-    fn aggregator_emits_summary_after_window_size_records() {
+    fn aggregator_emits_summary_after_window_size_records() -> Result<(), &'static str> {
         let mut aggregator =
             FramePerfAggregator::new("software", FramePerfAggregator::DEFAULT_WINDOW_SIZE);
         for index in 0..(FramePerfAggregator::DEFAULT_WINDOW_SIZE - 1) {
             let result = aggregator.record(constant_timing());
             assert!(result.is_none(), "should not flush at frame {index}");
         }
-        let summary = aggregator.record(constant_timing());
-        let summary = summary.expect("aggregator must flush at window boundary");
+        let summary = aggregator
+            .record(constant_timing())
+            .ok_or("aggregator must flush at window boundary")?;
         assert_eq!(summary.window, FramePerfAggregator::DEFAULT_WINDOW_SIZE);
         assert_eq!(summary.context, "software");
+        Ok(())
     }
 
     #[test]
@@ -286,7 +288,7 @@ mod tests {
     }
 
     #[test]
-    fn aggregator_percentiles_track_increasing_paint_durations() {
+    fn aggregator_percentiles_track_increasing_paint_durations() -> Result<(), &'static str> {
         let mut aggregator = FramePerfAggregator::new("software", 4);
         let paint_durations_us = [10u64, 100, 1_000, 10_000];
         let mut summary = None;
@@ -298,11 +300,12 @@ mod tests {
                 Duration::from_micros(paint_us + 2),
             ));
         }
-        let summary = summary.expect("4-frame window must flush");
+        let summary = summary.ok_or("4-frame window must flush")?;
         assert!(
             summary.paint_p50_us < summary.paint_p99_us,
             "p99 must dominate p50 for increasing samples: {summary:?}"
         );
+        Ok(())
     }
 
     fn constant_timing() -> FrameStageTimings {

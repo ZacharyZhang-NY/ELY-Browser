@@ -150,6 +150,8 @@ fn apply_scroll_if_requested(
         webview_id: webview_id.clone(),
         delta_x: args.scroll_x,
         delta_y: args.scroll_y,
+        point_x: 0,
+        point_y: 0,
     })?;
     wait_for_changed_or_settled_frame(host, webview_id, previous_frame_hash)
 }

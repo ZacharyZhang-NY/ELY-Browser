@@ -332,6 +332,11 @@ fn build_ensure(
 ) -> String {
     let hover_x = if include_hover { Some(256u32) } else { None };
     let hover_y = if include_hover { Some(256u32) } else { None };
+    let scroll_point = if scroll_dx != 0 || scroll_dy != 0 {
+        Some((256u32, 256u32))
+    } else {
+        None
+    };
     let hover_x_json = match hover_x {
         Some(value) => format!("{value}"),
         None => "null".to_string(),
@@ -340,8 +345,16 @@ fn build_ensure(
         Some(value) => format!("{value}"),
         None => "null".to_string(),
     };
+    let scroll_point_x_json = match scroll_point {
+        Some((x, _)) => format!("{x}"),
+        None => "null".to_string(),
+    };
+    let scroll_point_y_json = match scroll_point {
+        Some((_, y)) => format!("{y}"),
+        None => "null".to_string(),
+    };
     format!(
-        r#"{{"type":"ensure","tab_id":"{tab}","profile_id":"{profile}","url":{url},"width":{w},"height":{h},"page_zoom_percent":100,"scroll_delta_x":{dx},"scroll_delta_y":{dy},"click_x":null,"click_y":null,"hover_x":{hx},"hover_y":{hy},"typed_text":null,"site_permissions":[]}}"#,
+        r#"{{"type":"ensure","tab_id":"{tab}","profile_id":"{profile}","url":{url},"width":{w},"height":{h},"page_zoom_percent":100,"scroll_delta_x":{dx},"scroll_delta_y":{dy},"scroll_point_x":{sx},"scroll_point_y":{sy},"click_x":null,"click_y":null,"hover_x":{hx},"hover_y":{hy},"typed_text":null,"site_permissions":[]}}"#,
         tab = tab.as_str(),
         profile = profile_id.as_str(),
         url = serde_json::to_string(url).unwrap_or_else(|_| "\"\"".to_string()),
@@ -349,6 +362,8 @@ fn build_ensure(
         h = VIEWPORT_HEIGHT,
         dx = scroll_dx,
         dy = scroll_dy,
+        sx = scroll_point_x_json,
+        sy = scroll_point_y_json,
         hx = hover_x_json,
         hy = hover_y_json,
     )
@@ -391,11 +406,11 @@ fn read_response_with_bytes(
     }
     let response: LiveResponse = serde_json::from_str(json_line.trim_end())?;
     let mut rgba = Vec::new();
-    if let Some(frame) = response.frame.as_ref() {
-        if frame.rgba_byte_count > 0 {
-            rgba.resize(frame.rgba_byte_count, 0);
-            reader.read_exact(&mut rgba)?;
-        }
+    if let Some(frame) = response.frame.as_ref()
+        && frame.rgba_byte_count > 0
+    {
+        rgba.resize(frame.rgba_byte_count, 0);
+        reader.read_exact(&mut rgba)?;
     }
     Ok((response, rgba))
 }

@@ -42,12 +42,14 @@ fn scroll_delta_enters_pending_input_after_wheel() -> Result<(), Box<dyn Error>>
         tab.id(),
         tab.url().as_str(),
         point(px(0.0), px(140.0)),
+        point(px(320.0), px(240.0)),
         1.0,
     ));
     assert_applied(store.record_scroll_delta(
         tab.id(),
         tab.url().as_str(),
         point(px(0.0), px(60.0)),
+        point(px(300.0), px(220.0)),
         1.0,
     ));
 
@@ -55,6 +57,7 @@ fn scroll_delta_enters_pending_input_after_wheel() -> Result<(), Box<dyn Error>>
 
     assert_eq!(input.scroll_offset.y(), 200);
     assert_eq!(input.scroll_delta.map(|delta| (delta.x(), delta.y())), Some((0, 200)));
+    assert_eq!(input.scroll_point.map(|point| (point.x(), point.y())), Some((300, 220)));
     Ok(())
 }
 
@@ -91,7 +94,13 @@ fn scroll_after_click_keeps_keyboard_focus_and_typed_text() -> Result<(), Box<dy
     assert_applied(store.record_click_point(tab.id(), url, point(px(160.0), px(120.0)), 1.0));
     assert_applied(store.record_typed_text(tab.id(), url, "h"));
 
-    assert_applied(store.record_scroll_delta(tab.id(), url, point(px(0.0), px(140.0)), 1.0));
+    assert_applied(store.record_scroll_delta(
+        tab.id(),
+        url,
+        point(px(0.0), px(140.0)),
+        point(px(160.0), px(120.0)),
+        1.0,
+    ));
 
     assert_eq!(
         store.record_typed_text(tab.id(), url, "i"),
@@ -134,7 +143,13 @@ fn retina_scale_factor_doubles_every_input_coordinate() -> Result<(), Box<dyn Er
     assert_applied(store.record_viewport_size(tab.id(), web_bounds(), 2.0));
     assert_applied(store.record_click_point(tab.id(), url, point(px(160.0), px(120.0)), 2.0));
     assert_applied(store.record_typed_text(tab.id(), url, "h"));
-    assert_applied(store.record_scroll_delta(tab.id(), url, point(px(0.0), px(140.0)), 2.0));
+    assert_applied(store.record_scroll_delta(
+        tab.id(),
+        url,
+        point(px(0.0), px(140.0)),
+        point(px(160.0), px(120.0)),
+        2.0,
+    ));
 
     let input = store.take_pending_input(tab.id(), url);
 
@@ -145,8 +160,7 @@ fn retina_scale_factor_doubles_every_input_coordinate() -> Result<(), Box<dyn Er
     );
     assert_eq!(input.scroll_offset.y(), 280, "scroll offset accumulates in device px");
     assert_eq!(
-        input.click_point,
-        None,
+        input.click_point, None,
         "scroll drops the buffered click — its viewport coords are stale",
     );
     Ok(())
@@ -181,12 +195,7 @@ fn click_before_viewport_measured_reports_no_viewport_bounds() -> Result<(), Box
     let tab = web_tab("https://example.com/form")?;
 
     assert_eq!(
-        store.record_click_point(
-            tab.id(),
-            tab.url().as_str(),
-            point(px(160.0), px(120.0)),
-            1.0,
-        ),
+        store.record_click_point(tab.id(), tab.url().as_str(), point(px(160.0), px(120.0)), 1.0,),
         WebSurfaceInputOutcome::DroppedNoViewportBounds,
     );
     Ok(())
@@ -206,6 +215,7 @@ fn zero_wheel_delta_reports_zero_delta() -> Result<(), Box<dyn Error>> {
             tab.id(),
             tab.url().as_str(),
             point(px(0.0), px(0.0)),
+            point(px(160.0), px(120.0)),
             1.0,
         ),
         WebSurfaceInputOutcome::DroppedZeroDelta,
@@ -276,7 +286,13 @@ fn zero_wheel_delta_must_not_erase_buffered_click() -> Result<(), Box<dyn Error>
     assert_applied(store.record_click_point(tab.id(), url, point(px(160.0), px(120.0)), 1.0));
 
     assert_eq!(
-        store.record_scroll_delta(tab.id(), url, point(px(0.0), px(0.0)), 1.0),
+        store.record_scroll_delta(
+            tab.id(),
+            url,
+            point(px(0.0), px(0.0)),
+            point(px(160.0), px(120.0)),
+            1.0,
+        ),
         WebSurfaceInputOutcome::DroppedZeroDelta,
     );
 

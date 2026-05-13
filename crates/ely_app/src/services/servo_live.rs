@@ -69,7 +69,6 @@ impl ServoLiveClient {
         })
     }
 
-
     pub fn ensure(
         &mut self,
         request: ServoLiveEnsureRequest,
@@ -84,6 +83,8 @@ impl ServoLiveClient {
             device_pixel_ratio: request.device_pixel_ratio,
             scroll_delta_x: request.scroll_delta_x,
             scroll_delta_y: request.scroll_delta_y,
+            scroll_point_x: request.scroll_point_x,
+            scroll_point_y: request.scroll_point_y,
             click_x: request.click_x,
             click_y: request.click_y,
             hover_x: request.hover_x,
@@ -136,9 +137,8 @@ impl ServoLiveClient {
         // upper limit is `width * height * 4` (RGBA8); `0` is the
         // explicit "hardware path active, sample the IOSurface
         // instead" signal — anything else is a protocol violation.
-        let pixel_byte_count = (report.width as u64)
-            .saturating_mul(report.height as u64)
-            .saturating_mul(4);
+        let pixel_byte_count =
+            (report.width as u64).saturating_mul(report.height as u64).saturating_mul(4);
         let advertised = report.rgba_byte_count as u64;
         if advertised != 0 && advertised != pixel_byte_count {
             return Err(ServoLiveError::FrameBudgetExceeded {
@@ -157,9 +157,7 @@ impl ServoLiveClient {
         // fs::read, no temp file.
         let mut rgba_bytes = vec![0u8; report.rgba_byte_count];
         if report.rgba_byte_count > 0 {
-            self.stdout
-                .read_exact(&mut rgba_bytes)
-                .map_err(ServoLiveError::FrameRead)?;
+            self.stdout.read_exact(&mut rgba_bytes).map_err(ServoLiveError::FrameRead)?;
         }
 
         let mut frame = ServoLiveFrame::from_parts(report, rgba_bytes);
@@ -220,6 +218,8 @@ pub(crate) struct ServoLiveEnsureRequest {
     pub(crate) device_pixel_ratio: f32,
     pub(crate) scroll_delta_x: i32,
     pub(crate) scroll_delta_y: i32,
+    pub(crate) scroll_point_x: Option<u32>,
+    pub(crate) scroll_point_y: Option<u32>,
     pub(crate) click_x: Option<u32>,
     pub(crate) click_y: Option<u32>,
     pub(crate) hover_x: Option<u32>,
@@ -410,6 +410,8 @@ enum LiveRequest {
         device_pixel_ratio: f32,
         scroll_delta_x: i32,
         scroll_delta_y: i32,
+        scroll_point_x: Option<u32>,
+        scroll_point_y: Option<u32>,
         click_x: Option<u32>,
         click_y: Option<u32>,
         hover_x: Option<u32>,

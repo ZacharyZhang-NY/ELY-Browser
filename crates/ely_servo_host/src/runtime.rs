@@ -16,17 +16,15 @@ use dpi::PhysicalSize;
 use ely_domain::{ProfileId, TabId, WebViewId};
 use euclid::Scale;
 use servo::{
-    DeviceIndependentPixel, DeviceIntPoint, DeviceIntRect, DeviceIntSize, DevicePixel,
-    DevicePoint, DeviceVector2D, Opts, RenderingContext, Scroll, Servo, ServoBuilder,
-    WebViewBuilder, WebViewPoint, WebViewVector,
+    DeviceIndependentPixel, DeviceIntPoint, DeviceIntRect, DeviceIntSize, DevicePixel, DevicePoint,
+    DeviceVector2D, Opts, RenderingContext, Scroll, Servo, ServoBuilder, WebViewBuilder,
+    WebViewPoint, WebViewVector,
 };
 
 /// Wrap an `f32` scale factor in Servo's typed `Scale<f32, DeviceIndependentPixel,
 /// DevicePixel>`. The clamp guards against `NaN`/`inf` reaching Servo's
 /// layout (which assumes a positive finite scale).
-fn hidpi_scale_from_factor(
-    scale_factor: f32,
-) -> Scale<f32, DeviceIndependentPixel, DevicePixel> {
+fn hidpi_scale_from_factor(scale_factor: f32) -> Scale<f32, DeviceIndependentPixel, DevicePixel> {
     let safe = if scale_factor.is_finite() && scale_factor > 0.0 {
         scale_factor.clamp(0.5, 5.0)
     } else {
@@ -37,10 +35,10 @@ fn hidpi_scale_from_factor(
 use url::Url;
 
 use crate::{
-    HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest, MouseDragRequest,
-    MouseHoverRequest, NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest,
-    RenderedFrame, ResizeRequest, ScreenshotRequest, ScrollRequest, ServoHost, ServoHostError,
-    TouchTapRequest, WebViewSnapshot, WebViewState,
+    HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest, MouseDragRequest, MouseHoverRequest,
+    NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest, RenderedFrame,
+    ResizeRequest, ScreenshotRequest, ScrollRequest, ServoHost, ServoHostError, TouchTapRequest,
+    WebViewSnapshot, WebViewState,
     runtime_input::{
         send_keyboard_text, send_mouse_click, send_mouse_drag, send_mouse_hover, send_touch_tap,
     },
@@ -265,7 +263,7 @@ impl ServoHost for SoftwareServoHost {
                 request.delta_x as f32,
                 request.delta_y as f32,
             ))),
-            WebViewPoint::Device(DevicePoint::zero()),
+            WebViewPoint::Device(DevicePoint::new(request.point_x as f32, request.point_y as f32)),
         );
         Ok(())
     }
@@ -544,9 +542,7 @@ impl SoftwareServoHost {
                     crate::HardwareOffscreenContext::new(size.physical())
                         .map_err(|_| ServoHostError::RenderingContextUnavailable)?,
                 );
-                hardware
-                    .make_current()
-                    .map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
+                hardware.make_current().map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
                 Ok(RenderingContextHandles {
                     rendering_context: hardware.clone(),
                     hardware_context: Some(hardware),
@@ -576,10 +572,7 @@ impl SoftwareServoHost {
     /// Re-asserting per dispatch keeps the invariant on the dispatch
     /// path instead of spread across creation, navigation, and
     /// tab-switching.
-    fn webview_for_input(
-        &self,
-        webview_id: &WebViewId,
-    ) -> Result<&HostWebView, ServoHostError> {
+    fn webview_for_input(&self, webview_id: &WebViewId) -> Result<&HostWebView, ServoHostError> {
         let webview = self.webview(webview_id)?;
         webview.webview.show();
         webview.webview.focus();

@@ -45,6 +45,7 @@ pub(super) struct WebSurfaceTextInputState {
 pub(super) struct WebSurfacePendingInput {
     pub(super) scroll_offset: WebSurfaceScrollOffset,
     pub(super) scroll_delta: Option<WebSurfaceScrollDelta>,
+    pub(super) scroll_point: Option<WebSurfaceClickPoint>,
     pub(super) click_point: Option<WebSurfaceClickPoint>,
     pub(super) hover_point: Option<WebSurfaceClickPoint>,
     pub(super) typed_text: Option<String>,
@@ -116,6 +117,7 @@ pub(super) struct PerTabSurface {
     pub(super) hover_point: Option<WebSurfaceClickPoint>,
     pub(super) click_point: Option<WebSurfaceClickState>,
     pub(super) pending_scroll_delta: Option<WebSurfaceScrollDelta>,
+    pub(super) pending_scroll_point: Option<WebSurfaceClickPoint>,
     pub(super) scroll_offset: Option<WebSurfaceScrollState>,
     pub(super) typed_text: Option<WebSurfaceTextInputState>,
     pub(super) state: Option<WebSurfaceState>,
@@ -130,6 +132,7 @@ impl PerTabSurface {
             hover_point: None,
             click_point: None,
             pending_scroll_delta: None,
+            pending_scroll_point: None,
             scroll_offset: None,
             typed_text: None,
             state: None,

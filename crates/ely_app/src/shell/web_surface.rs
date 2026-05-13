@@ -27,11 +27,7 @@ pub(super) struct WebSurfaceStore {
 
 impl WebSurfaceStore {
     pub(super) fn new() -> Self {
-        Self {
-            runtime: WebSurfaceRuntime::new(),
-            surfaces: BTreeMap::new(),
-            keyboard_focus: None,
-        }
+        Self { runtime: WebSurfaceRuntime::new(), surfaces: BTreeMap::new(), keyboard_focus: None }
     }
 
     pub(super) fn state(&self, tab_id: &TabId) -> Option<&WebSurfaceState> {
@@ -102,10 +98,20 @@ impl WebSurfaceStore {
         tab_id: &TabId,
         requested_url: &str,
         delta: Point<Pixels>,
+        position: Point<Pixels>,
         scale_factor: f32,
     ) -> WebSurfaceInputOutcome {
         let Some(delta) = WebSurfaceScrollDelta::from_point(delta, scale_factor) else {
             return WebSurfaceInputOutcome::DroppedZeroDelta;
+        };
+        let Some(bounds) = self.surfaces.get(tab_id).and_then(|surface| surface.viewport_bounds)
+        else {
+            return WebSurfaceInputOutcome::DroppedNoViewportBounds;
+        };
+        let Some(point) =
+            WebSurfaceClickPoint::from_window_position(bounds, position, scale_factor)
+        else {
+            return WebSurfaceInputOutcome::DroppedOutOfBounds;
         };
 
         let surface = self.surface_mut(tab_id);
@@ -121,6 +127,7 @@ impl WebSurfaceStore {
             Some(current) => current.combined_with(delta),
             None => delta,
         });
+        surface.pending_scroll_point = Some(point);
         // Drop any buffered click — its viewport coordinates were
         // captured against the pre-scroll page, so applying it after
         // the scroll would land on the wrong DOM element. Keep
@@ -170,12 +177,14 @@ impl WebSurfaceStore {
         position: Point<Pixels>,
         scale_factor: f32,
     ) -> WebSurfaceInputOutcome {
-        let surface = self.surfaces.get_mut(tab_id).filter(|surface| surface.viewport_bounds.is_some());
+        let surface =
+            self.surfaces.get_mut(tab_id).filter(|surface| surface.viewport_bounds.is_some());
         let Some(surface) = surface else {
             return WebSurfaceInputOutcome::DroppedNoViewportBounds;
         };
         let bounds = surface.viewport_bounds.expect("viewport_bounds checked above");
-        let Some(point) = WebSurfaceClickPoint::from_window_position(bounds, position, scale_factor)
+        let Some(point) =
+            WebSurfaceClickPoint::from_window_position(bounds, position, scale_factor)
         else {
             return WebSurfaceInputOutcome::DroppedOutOfBounds;
         };
@@ -190,12 +199,12 @@ impl WebSurfaceStore {
         position: Point<Pixels>,
         scale_factor: f32,
     ) -> WebSurfaceInputOutcome {
-        let Some(bounds) =
-            self.surfaces.get(tab_id).and_then(|surface| surface.viewport_bounds)
+        let Some(bounds) = self.surfaces.get(tab_id).and_then(|surface| surface.viewport_bounds)
         else {
             return WebSurfaceInputOutcome::DroppedNoViewportBounds;
         };
-        let Some(point) = WebSurfaceClickPoint::from_window_position(bounds, position, scale_factor)
+        let Some(point) =
+            WebSurfaceClickPoint::from_window_position(bounds, position, scale_factor)
         else {
             return WebSurfaceInputOutcome::DroppedOutOfBounds;
         };
@@ -206,11 +215,8 @@ impl WebSurfaceStore {
             .map(|surface| surface.scroll_offset_for(requested_url))
             .unwrap_or_default();
 
-        let state = WebSurfaceClickState {
-            requested_url: requested_url.to_string(),
-            scroll_offset,
-            point,
-        };
+        let state =
+            WebSurfaceClickState { requested_url: requested_url.to_string(), scroll_offset, point };
         self.keyboard_focus = Some(WebSurfaceKeyboardFocusState {
             tab_id: tab_id.clone(),
             requested_url: requested_url.to_string(),
@@ -273,6 +279,7 @@ impl WebSurfaceStore {
         let surface = self.surface_mut(tab_id);
         let scroll_offset = surface.scroll_offset_for(requested_url);
         let scroll_delta = surface.pending_scroll_delta.take();
+        let scroll_point = surface.pending_scroll_point.take();
         let click_point = surface
             .click_point
             .take()
@@ -287,7 +294,14 @@ impl WebSurfaceStore {
             .map(|state| state.text);
         let hover_point = surface.hover_point.take();
 
-        WebSurfacePendingInput { scroll_offset, scroll_delta, click_point, hover_point, typed_text }
+        WebSurfacePendingInput {
+            scroll_offset,
+            scroll_delta,
+            scroll_point,
+            click_point,
+            hover_point,
+            typed_text,
+        }
     }
 
     fn previous_ready_frame(

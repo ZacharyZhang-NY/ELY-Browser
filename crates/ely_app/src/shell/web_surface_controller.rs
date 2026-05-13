@@ -67,6 +67,7 @@ impl ElyShell {
         tab_id: TabId,
         requested_url: String,
         delta: Point<Pixels>,
+        position: Point<Pixels>,
         scale_factor: f32,
         cx: &mut Context<Self>,
     ) {
@@ -74,6 +75,7 @@ impl ElyShell {
             &tab_id,
             requested_url.as_str(),
             delta,
+            position,
             scale_factor,
         ) == WebSurfaceInputOutcome::Applied
         {
