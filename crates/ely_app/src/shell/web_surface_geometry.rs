@@ -1,4 +1,4 @@
-use gpui::{Bounds, Pixels, Point};
+use gpui::{Bounds, Pixels, Point, point};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct WebSurfaceSize {
@@ -129,6 +129,10 @@ impl WebSurfaceScrollDelta {
     }
 }
 
+pub(super) fn servo_scroll_delta_from_wheel_delta(delta: Point<Pixels>) -> Point<Pixels> {
+    point(-delta.x, -delta.y)
+}
+
 fn viewport_dimension(pixels: Pixels, scale_factor: f32) -> Option<u32> {
     let value = (f32::from(pixels) * positive_scale_or_one(scale_factor)).round();
     if !value.is_finite() || value < 1.0 || value > u32::MAX as f32 {
@@ -191,4 +195,27 @@ fn combined_scroll_delta(current: i32, next: i32) -> i32 {
 /// fall back to 1.0 rather than collapsing every coordinate to zero.
 fn positive_scale_or_one(scale_factor: f32) -> f32 {
     if scale_factor.is_finite() && scale_factor > 0.0 { scale_factor } else { 1.0 }
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui::{point, px};
+
+    use super::servo_scroll_delta_from_wheel_delta;
+
+    #[test]
+    fn wheel_delta_down_becomes_servo_scroll_down() {
+        let delta = servo_scroll_delta_from_wheel_delta(point(px(0.0), px(-120.0)));
+
+        assert_eq!(f32::from(delta.x), 0.0);
+        assert_eq!(f32::from(delta.y), 120.0);
+    }
+
+    #[test]
+    fn wheel_delta_up_becomes_servo_scroll_up() {
+        let delta = servo_scroll_delta_from_wheel_delta(point(px(0.0), px(80.0)));
+
+        assert_eq!(f32::from(delta.x), 0.0);
+        assert_eq!(f32::from(delta.y), -80.0);
+    }
 }

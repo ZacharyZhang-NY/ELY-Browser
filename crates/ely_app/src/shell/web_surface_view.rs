@@ -4,7 +4,10 @@ use gpui::{
     ParentElement, Styled, StyledImage, Window, canvas, div, img, px, rgb, surface,
 };
 
-use super::{ElyShell, web_surface_frame::WebSurfaceFrame};
+use super::{
+    ElyShell, web_surface_frame::WebSurfaceFrame,
+    web_surface_geometry::servo_scroll_delta_from_wheel_delta,
+};
 use ely_design_system::colors;
 
 pub(super) fn render_ready_web_surface(
@@ -146,7 +149,8 @@ fn render_input_overlay(
             });
         })
         .on_scroll_wheel(move |event, window, cx| {
-            let delta = event.delta.pixel_delta(window.line_height());
+            let delta =
+                servo_scroll_delta_from_wheel_delta(event.delta.pixel_delta(window.line_height()));
             let scale_factor = window.scale_factor();
             scroll_entity.update(cx, |shell, cx| {
                 shell.scroll_external_web_viewport(
