@@ -1,5 +1,5 @@
 use ely_browser_core::BrowserSnapshot;
-use ely_domain::{BrowserTab, ProfileKind, TabId};
+use ely_domain::{BrowserTab, ProfileKind, TabId, UrlText};
 use gpui::{AnyElement, Bounds, Context, Pixels, Point};
 
 use crate::services::ProfileDataMode;
@@ -7,6 +7,7 @@ use crate::services::ProfileDataMode;
 use super::{
     ElyShell,
     web_surface_permissions::web_surface_site_permissions_for_tab,
+    web_surface_runtime::{WebSurfaceUrlChange, WebSurfaceUrlChangeKind},
     web_surface_state::{WebSurfaceInputOutcome, WebSurfaceState},
     web_surface_view::{
         render_failed_web_surface, render_loading_web_surface, render_ready_web_surface,
@@ -26,7 +27,12 @@ impl ElyShell {
         };
 
         let permissions = web_surface_site_permissions_for_tab(tab, snapshot);
-        self.web_surfaces.ensure_surface(tab, profile_data_mode, &permissions);
+        if let Some(url_change) =
+            self.web_surfaces.ensure_surface(tab, profile_data_mode, &permissions)
+            && self.apply_web_surface_url_change(url_change)
+        {
+            cx.notify();
+        }
 
         match self.web_surfaces.state(tab.id()) {
             Some(WebSurfaceState::Ready(frame)) => {
@@ -45,7 +51,12 @@ impl ElyShell {
     }
 
     pub(super) fn tick_external_web_surfaces(&mut self) -> bool {
-        self.web_surfaces.tick()
+        let result = self.web_surfaces.tick();
+        let mut url_changed = false;
+        for url_change in result.url_changes {
+            url_changed |= self.apply_web_surface_url_change(url_change);
+        }
+        result.changed || url_changed
     }
 
     pub(super) fn record_external_web_viewport(
@@ -141,6 +152,26 @@ impl ElyShell {
         }
 
         false
+    }
+}
+
+impl ElyShell {
+    fn apply_web_surface_url_change(&mut self, change: WebSurfaceUrlChange) -> bool {
+        let Ok(url) = UrlText::parse(change.loaded_url) else {
+            return false;
+        };
+        let super::ShellState::Ready(core) = &mut self.state else {
+            return false;
+        };
+
+        match change.kind {
+            WebSurfaceUrlChangeKind::UserInitiated => {
+                core.navigate_tab_to_loaded_url(&change.tab_id, url).is_ok_and(|changed| changed)
+            }
+            WebSurfaceUrlChangeKind::Observed => {
+                core.replace_tab_loaded_url(&change.tab_id, url).is_ok_and(|changed| changed)
+            }
+        }
     }
 }
 

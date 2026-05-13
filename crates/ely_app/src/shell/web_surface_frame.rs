@@ -200,6 +200,10 @@ impl WebSurfaceFrame {
         self.zoom_percent
     }
 
+    pub(super) fn loaded_url(&self) -> Option<&str> {
+        self.loaded_url.as_deref()
+    }
+
     #[cfg(all(test, feature = "live-site-smoke"))]
     pub(super) fn click_point(&self) -> Option<WebSurfaceClickPoint> {
         self.click_point

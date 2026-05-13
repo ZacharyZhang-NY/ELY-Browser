@@ -2,9 +2,9 @@ use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
 use ely_domain::{BrowserTab, ThemeMode};
 use gpui::{
-    AnyElement, BoxShadow, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, div, hsla, point, prelude::FluentBuilder, px,
-    rgb, rgba,
+    AnyElement, BoxShadow, Context, Focusable, FontWeight, InteractiveElement, IntoElement,
+    ParentElement, SharedString, StatefulInteractiveElement, Styled, Window, div, hsla, point,
+    prelude::FluentBuilder, px, rgb, rgba,
 };
 use gpui_component::{IconName, input::Input};
 
@@ -16,6 +16,7 @@ pub(crate) fn render_topbar(
     snapshot: &BrowserSnapshot,
     active_tab: &BrowserTab,
     sidebar_collapsed: bool,
+    window: &mut Window,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     div()
@@ -42,7 +43,7 @@ pub(crate) fn render_topbar(
             cx,
             |shell, window, cx| shell.navigate_active_tab_forward(window, cx),
         ))
-        .child(render_omnibar(shell, active_tab, cx))
+        .child(render_omnibar(shell, active_tab, window, cx))
         .child(render_topbar_action("share-url", IconName::Copy, cx, |shell, window, cx| {
             shell.copy_active_tab_url(window, cx)
         }))
@@ -64,14 +65,14 @@ pub(crate) fn render_topbar(
 fn render_omnibar(
     shell: &mut ElyShell,
     active_tab: &BrowserTab,
+    window: &mut Window,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let favorite_active = active_tab.flags().favorite;
     let favorite_icon = if favorite_active { IconName::Star } else { IconName::StarOff };
-    let input_value = shell.command_input.read(cx).value().to_string();
     let active_url = active_tab.url().as_str().to_string();
-    let show_styled =
-        !input_value.is_empty() && input_value == active_url && active_url != "ely://new-tab";
+    let command_focused = shell.command_input.read(cx).focus_handle(cx).is_focused(window);
+    let show_styled = !command_focused && active_url != "ely://new-tab";
     let secure = active_url.starts_with("https://") || active_url.starts_with("ely://");
 
     div()

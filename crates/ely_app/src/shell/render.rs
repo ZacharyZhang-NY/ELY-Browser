@@ -17,10 +17,10 @@ use super::sidebar::collapsed_sidebar_active;
 use super::{ElyShell, ShellState};
 
 impl Render for ElyShell {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         match &self.state {
             ShellState::Ready(core) => match (core.snapshot(), core.active_tab().cloned()) {
-                (Ok(snapshot), Ok(active_tab)) => self.render_browser(snapshot, active_tab, cx),
+                (Ok(snapshot), Ok(active_tab)) => self.render_browser(snapshot, active_tab, window, cx),
                 (Err(error), _) | (_, Err(error)) => render_error(error.to_string()),
             },
             ShellState::StartupError(message) => render_error(message.clone()),
@@ -33,6 +33,7 @@ impl ElyShell {
         &mut self,
         snapshot: BrowserSnapshot,
         active_tab: BrowserTab,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let sidebar_width = match active_sidebar_width(&snapshot) {
@@ -88,7 +89,7 @@ impl ElyShell {
                         sidebar_hidden,
                         cx,
                     ))
-                    .child(self.render_main_pane(&snapshot, &active_tab, sidebar_collapsed, cx)),
+                    .child(self.render_main_pane(&snapshot, &active_tab, sidebar_collapsed, window, cx)),
             )
             .when(hover_expanded, |el| {
                 el.child(self.render_hidden_sidebar_overlay(&snapshot, cx))
@@ -144,6 +145,7 @@ impl ElyShell {
         snapshot: &BrowserSnapshot,
         active_tab: &BrowserTab,
         sidebar_collapsed: bool,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let panel_color = panel_bg(snapshot);
@@ -159,7 +161,7 @@ impl ElyShell {
             .border_color(rgba(MAIN_PANE_HIGHLIGHT_BORDER))
             .shadow(panel_shadow())
             .overflow_hidden()
-            .child(render_topbar_chrome(self, snapshot, active_tab, sidebar_collapsed, cx))
+            .child(render_topbar_chrome(self, snapshot, active_tab, sidebar_collapsed, window, cx))
             .child(
                 div()
                     .flex_1()

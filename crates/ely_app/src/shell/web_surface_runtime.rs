@@ -47,10 +47,17 @@ impl WebSurfaceRuntime {
         }
         let (scroll_delta_x, scroll_delta_y, scroll_point_x, scroll_point_y) =
             scroll_wire_fields(input.scroll_delta, input.scroll_point)?;
+        let user_navigation_input = input_requests_history_navigation(&input);
 
         let session = sessions.entry(tab.id().clone()).or_insert_with(WebSurfaceSession::default);
         let next_scroll_offset = input.scroll_offset;
         let started_loading = session.started_loading(&requested_url, size, zoom_percent);
+        if started_loading {
+            session.pending_user_navigation = false;
+        }
+        if user_navigation_input {
+            session.pending_user_navigation = true;
+        }
         let frame = client
             .ensure(ServoLiveEnsureRequest {
                 tab_id: tab.id().as_str().to_string(),
@@ -82,17 +89,20 @@ impl WebSurfaceRuntime {
                 .map_err(|error| error.to_string())
             })
             .transpose()?;
+        let url_change = frame
+            .as_ref()
+            .and_then(|frame| session.url_change_for(tab.id(), requested_url.as_str(), frame));
 
         session.requested_url = requested_url.clone();
         session.size = size;
         session.zoom_percent = zoom_percent;
         session.scroll_offset = next_scroll_offset;
 
-        Ok(WebSurfaceEnsureResult { requested_url, started_loading, frame })
+        Ok(WebSurfaceEnsureResult { requested_url, started_loading, frame, url_change })
     }
 
     pub(super) fn tick(&mut self) -> Vec<WebSurfaceRuntimeFrame> {
-        let (state, sessions) = (&mut self.state, &self.sessions);
+        let (state, sessions) = (&mut self.state, &mut self.sessions);
         let RuntimeState::Ready { client, .. } = state else {
             return Vec::new();
         };
@@ -107,7 +117,14 @@ impl WebSurfaceRuntime {
                     frame,
                 ) {
                     Ok(frame) => {
-                        frames.push(WebSurfaceRuntimeFrame::Ready { tab_id: tab_id.clone(), frame })
+                        let requested_url = session.requested_url.clone();
+                        let url_change =
+                            session.url_change_for(tab_id, requested_url.as_str(), &frame);
+                        frames.push(WebSurfaceRuntimeFrame::Ready {
+                            tab_id: tab_id.clone(),
+                            frame: Box::new(frame),
+                            url_change,
+                        })
                     }
                     Err(error) => frames.push(WebSurfaceRuntimeFrame::Failed {
                         tab_id: tab_id.clone(),
@@ -185,6 +202,7 @@ struct WebSurfaceSession {
     size: WebSurfaceSize,
     zoom_percent: u16,
     scroll_offset: WebSurfaceScrollOffset,
+    pending_user_navigation: bool,
 }
 
 impl WebSurfaceSession {
@@ -198,17 +216,55 @@ impl WebSurfaceSession {
             || self.size != size
             || self.zoom_percent != zoom_percent
     }
+
+    fn url_change_for(
+        &mut self,
+        tab_id: &TabId,
+        requested_url: &str,
+        frame: &WebSurfaceFrame,
+    ) -> Option<WebSurfaceUrlChange> {
+        let loaded_url = frame.loaded_url()?;
+        if loaded_url == requested_url {
+            return None;
+        }
+
+        let kind = if self.pending_user_navigation {
+            WebSurfaceUrlChangeKind::UserInitiated
+        } else {
+            WebSurfaceUrlChangeKind::Observed
+        };
+        self.pending_user_navigation = false;
+        Some(WebSurfaceUrlChange {
+            tab_id: tab_id.clone(),
+            loaded_url: loaded_url.to_string(),
+            kind,
+        })
+    }
 }
 
 pub(super) struct WebSurfaceEnsureResult {
     pub(super) requested_url: String,
     pub(super) started_loading: bool,
     pub(super) frame: Option<WebSurfaceFrame>,
+    pub(super) url_change: Option<WebSurfaceUrlChange>,
 }
 
 pub(super) enum WebSurfaceRuntimeFrame {
-    Ready { tab_id: TabId, frame: WebSurfaceFrame },
+    Ready { tab_id: TabId, frame: Box<WebSurfaceFrame>, url_change: Option<WebSurfaceUrlChange> },
     Failed { tab_id: TabId, message: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct WebSurfaceUrlChange {
+    pub(super) tab_id: TabId,
+    pub(super) loaded_url: String,
+    pub(super) kind: WebSurfaceUrlChangeKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum WebSurfaceUrlChangeKind {
+    UserInitiated,
+    Observed,
 }
 
 fn config_dir_for_scope(
@@ -243,6 +299,11 @@ fn scroll_wire_fields(
         }
         None => Ok((0, 0, None, None)),
     }
+}
+
+fn input_requests_history_navigation(input: &WebSurfacePendingInput) -> bool {
+    input.click_point.is_some()
+        || input.typed_text.as_deref().is_some_and(|text| text.contains('\n'))
 }
 
 impl From<&WebSurfaceSitePermission> for ServoLiveSitePermission {

@@ -23,17 +23,24 @@ impl BrowserCore {
     /// no new tab is created and the active tab id is unchanged.
     pub fn navigate_active_tab(&mut self, url: UrlText) -> Result<(), CoreError> {
         let active_id = self.active_tab_id.clone();
-        let tab_index = self
-            .tabs
-            .iter()
-            .position(|tab| tab.id() == &active_id)
-            .ok_or_else(|| CoreError::TabNotFound { id: active_id.clone() })?;
-        self.tabs[tab_index].navigate_to(url);
-        self.tabs[tab_index].mark_ready();
-        let snapshot_tab = self.tabs[tab_index].clone();
-        self.record_history_entry(&snapshot_tab);
-        self.record_tab_activity(&active_id, SystemTime::now());
+        self.update_tab_url(&active_id, url, TabUrlUpdate::PushHistory)?;
         Ok(())
+    }
+
+    pub fn navigate_tab_to_loaded_url(
+        &mut self,
+        tab_id: &TabId,
+        url: UrlText,
+    ) -> Result<bool, CoreError> {
+        self.update_tab_url(tab_id, url, TabUrlUpdate::PushHistory)
+    }
+
+    pub fn replace_tab_loaded_url(
+        &mut self,
+        tab_id: &TabId,
+        url: UrlText,
+    ) -> Result<bool, CoreError> {
+        self.update_tab_url(tab_id, url, TabUrlUpdate::PreserveHistory)
     }
 
     pub fn navigate_active_tab_back(&mut self) -> Result<bool, CoreError> {
@@ -377,6 +384,32 @@ impl BrowserCore {
         self.tabs.get_mut(active_index).ok_or(CoreError::MissingActiveTab)
     }
 
+    fn update_tab_url(
+        &mut self,
+        tab_id: &TabId,
+        url: UrlText,
+        update: TabUrlUpdate,
+    ) -> Result<bool, CoreError> {
+        let tab_index = self
+            .tabs
+            .iter()
+            .position(|tab| tab.id() == tab_id)
+            .ok_or_else(|| CoreError::TabNotFound { id: tab_id.clone() })?;
+        if self.tabs[tab_index].url() == &url {
+            return Ok(false);
+        }
+
+        match update {
+            TabUrlUpdate::PushHistory => self.tabs[tab_index].navigate_to(url),
+            TabUrlUpdate::PreserveHistory => self.tabs[tab_index].set_url(url),
+        }
+        self.tabs[tab_index].mark_ready();
+        let snapshot_tab = self.tabs[tab_index].clone();
+        self.record_history_entry(&snapshot_tab);
+        self.record_tab_activity(tab_id, SystemTime::now());
+        Ok(true)
+    }
+
     fn navigate_active_tab_history(
         &mut self,
         direction: TabHistoryDirection,
@@ -458,4 +491,9 @@ impl BrowserCore {
 enum TabHistoryDirection {
     Back,
     Forward,
+}
+
+enum TabUrlUpdate {
+    PushHistory,
+    PreserveHistory,
 }

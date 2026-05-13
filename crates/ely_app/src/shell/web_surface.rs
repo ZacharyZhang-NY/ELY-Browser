@@ -9,7 +9,7 @@ use super::{
     web_surface_frame::WebSurfaceFrame,
     web_surface_geometry::{WebSurfaceClickPoint, WebSurfaceScrollDelta, WebSurfaceSize},
     web_surface_permissions::WebSurfaceSitePermission,
-    web_surface_runtime::{WebSurfaceRuntime, WebSurfaceRuntimeFrame},
+    web_surface_runtime::{WebSurfaceRuntime, WebSurfaceRuntimeFrame, WebSurfaceUrlChange},
     web_surface_state::{
         PerTabSurface, WebSurfaceClickState, WebSurfaceInputOutcome, WebSurfaceKeyboardFocusState,
         WebSurfacePendingInput, WebSurfaceScrollState, WebSurfaceState, WebSurfaceTextInputState,
@@ -39,58 +39,62 @@ impl WebSurfaceStore {
         tab: &BrowserTab,
         profile_data_mode: ProfileDataMode,
         permissions: &[WebSurfaceSitePermission],
-    ) {
+    ) -> Option<WebSurfaceUrlChange> {
         if !is_external_web_url(tab.url().as_str()) {
-            return;
+            return None;
         }
 
         let requested_url = tab.url().as_str().to_string();
-        let Some(size) = self.surfaces.get(tab.id()).and_then(|surface| surface.viewport_size)
-        else {
-            return;
-        };
+        let size = self.surfaces.get(tab.id()).and_then(|surface| surface.viewport_size)?;
         let input = self.take_pending_input(tab.id(), requested_url.as_str());
         let previous_frame =
             self.previous_ready_frame(tab.id(), requested_url.as_str(), tab.zoom_percent());
 
         match self.runtime.ensure_tab(tab, size, profile_data_mode, permissions, input) {
             Ok(result) if result.frame.is_some() => {
+                let url_change = result.url_change;
                 let Some(frame) = result.frame else {
-                    return;
+                    return url_change;
                 };
                 self.surface_mut(tab.id()).state = Some(WebSurfaceState::Ready(frame));
+                url_change
             }
             Ok(result) if result.started_loading => {
                 self.surface_mut(tab.id()).state = Some(WebSurfaceState::Loading {
                     requested_url: result.requested_url,
                     previous_frame,
                 });
+                result.url_change
             }
-            Ok(_) => {}
+            Ok(result) => result.url_change,
             Err(message) => {
                 self.surface_mut(tab.id()).state = Some(WebSurfaceState::Failed { message });
+                None
             }
         }
     }
 
-    pub(super) fn tick(&mut self) -> bool {
+    pub(super) fn tick(&mut self) -> WebSurfaceTickResult {
         let frames = self.runtime.tick();
-        let mut changed = false;
+        let mut result = WebSurfaceTickResult::default();
 
         for frame in frames {
             match frame {
-                WebSurfaceRuntimeFrame::Ready { tab_id, frame } => {
-                    self.surface_mut(&tab_id).state = Some(WebSurfaceState::Ready(frame));
-                    changed = true;
+                WebSurfaceRuntimeFrame::Ready { tab_id, frame, url_change } => {
+                    self.surface_mut(&tab_id).state = Some(WebSurfaceState::Ready(*frame));
+                    result.changed = true;
+                    if let Some(url_change) = url_change {
+                        result.url_changes.push(url_change);
+                    }
                 }
                 WebSurfaceRuntimeFrame::Failed { tab_id, message } => {
                     self.surface_mut(&tab_id).state = Some(WebSurfaceState::Failed { message });
-                    changed = true;
+                    result.changed = true;
                 }
             }
         }
 
-        changed
+        result
     }
 
     pub(super) fn record_scroll_delta(
@@ -338,6 +342,12 @@ impl WebSurfaceStore {
 
 pub(super) fn is_external_web_url(url: &str) -> bool {
     url.starts_with("https://") || url.starts_with("http://")
+}
+
+#[derive(Default)]
+pub(super) struct WebSurfaceTickResult {
+    pub(super) changed: bool,
+    pub(super) url_changes: Vec<WebSurfaceUrlChange>,
 }
 
 #[cfg(test)]
