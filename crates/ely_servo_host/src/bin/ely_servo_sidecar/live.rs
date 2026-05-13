@@ -14,6 +14,8 @@ use ely_servo_host::{
 };
 
 use super::args::LiveArgs;
+#[cfg(all(feature = "hardware-render", target_os = "macos"))]
+use super::iosurface_mach::{IOSurfaceMachSender, send_surface_port_if_needed};
 use super::live_output::{populate_surface_fields, write_outcome};
 pub(super) use super::live_protocol::LiveSidecarError;
 use super::live_protocol::{
@@ -28,14 +30,19 @@ const LIVE_FRAME_WAIT_TIMEOUT: Duration = Duration::from_millis(250);
 const LIVE_FRAME_WAIT_INTERVAL: Duration = Duration::from_millis(2);
 
 pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
-    fs::create_dir_all(&args.profile_data_dir)?;
-    let rendering_context_kind = args.rendering_context_kind;
+    let LiveArgs { profile_data_dir, iosurface_mach_service, rendering_context_kind } = args;
+    fs::create_dir_all(&profile_data_dir)?;
     let context_label = rendering_context_label(rendering_context_kind);
     let mut host = SoftwareServoHost::new_with_config_dir_and_kind(
         ServoSurfaceSize::new(1, 1),
-        Some(args.profile_data_dir),
+        Some(profile_data_dir),
         rendering_context_kind,
     )?;
+    #[cfg(all(feature = "hardware-render", target_os = "macos"))]
+    let mut iosurface_mach_sender =
+        iosurface_mach_service.as_deref().map(IOSurfaceMachSender::connect).transpose()?;
+    #[cfg(not(all(feature = "hardware-render", target_os = "macos")))]
+    let _ = iosurface_mach_service;
     let mut sessions = HashMap::new();
     let mut perf =
         FramePerfAggregator::new(context_label, FramePerfAggregator::DEFAULT_WINDOW_SIZE);
@@ -56,7 +63,7 @@ pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
         // matching stop is the `stdout.flush()` inside
         // `write_outcome`.
         let frame_started_at = Instant::now();
-        let outcome = match serde_json::from_str::<LiveRequest>(&line) {
+        let mut outcome = match serde_json::from_str::<LiveRequest>(&line) {
             Ok(request) => handle_request(
                 &mut host,
                 &mut sessions,
@@ -66,6 +73,8 @@ pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
             ),
             Err(error) => Err(LiveSidecarError::Json(error)),
         };
+        #[cfg(all(feature = "hardware-render", target_os = "macos"))]
+        send_surface_port_if_needed(iosurface_mach_sender.as_mut(), &mut outcome);
         write_outcome(&mut stdout, &mut perf, &mut pending_summary, outcome, frame_started_at)?;
     }
 

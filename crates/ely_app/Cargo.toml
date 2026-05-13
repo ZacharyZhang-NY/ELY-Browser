@@ -35,10 +35,12 @@ core-foundation = "0.10"
 # version it built against.
 core-video = "0.4"
 io-surface = "0.16"
+mach2 = "0.6"
 objc2 = "0.6"
 objc2-core-foundation = { version = "0.3.2", features = ["CFBase", "CFDictionary", "CFNumber", "CFString"] }
 objc2-foundation = { version = "0.3.1", features = ["NSDictionary", "NSString", "NSValue"] }
 objc2-io-surface = "0.3.2"
+uuid.workspace = true
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

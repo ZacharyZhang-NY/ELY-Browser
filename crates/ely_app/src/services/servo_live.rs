@@ -2,6 +2,7 @@ use std::{
     io::{self, BufRead, BufReader, Read, Write},
     path::PathBuf,
     process::{Child, ChildStdin, ChildStdout, Stdio},
+    time::Duration,
 };
 
 /// Environment variable that lets the user pick the rendering context
@@ -18,13 +19,16 @@ use thiserror::Error;
 mod wire;
 
 use super::servo_sidecar_command::{
-    SidecarCommandError, default_sidecar_command, rendering_context_from_env,
+    SidecarCommandError, SidecarRenderingContext, default_sidecar_command,
+    rendering_context_from_env,
 };
 use wire::{
     LiveFrameReport, LiveRequest, LiveResponse, LiveSurfaceHandle, log_frame_perf,
     log_iosurface_current, log_iosurface_handle,
 };
 
+#[cfg(target_os = "macos")]
+use super::iosurface_mach::{IOSurfaceMachError, IOSurfaceMachReceiver};
 #[cfg(target_os = "macos")]
 use super::iosurface_metal::IOSurfaceCache;
 #[cfg(target_os = "macos")]
@@ -39,6 +43,8 @@ pub(crate) struct ServoLiveClient {
     /// software-path tabs never trigger construction.
     #[cfg(target_os = "macos")]
     iosurface_cache: IOSurfaceCache,
+    #[cfg(target_os = "macos")]
+    iosurface_receiver: Option<IOSurfaceMachReceiver>,
 }
 
 impl ServoLiveClient {
@@ -48,9 +54,18 @@ impl ServoLiveClient {
             return Err(ServoLiveError::SidecarBinaryUnavailable { path: path.to_path_buf() });
         }
 
+        let rendering_context = rendering_context_from_env();
         let mut command = command_target.command();
         command.arg("live").arg("--profile-data-dir").arg(profile_data_dir);
-        command.arg("--rendering-context").arg(rendering_context_from_env().cli_arg());
+        command.arg("--rendering-context").arg(rendering_context.cli_arg());
+        #[cfg(target_os = "macos")]
+        let iosurface_receiver = if rendering_context == SidecarRenderingContext::Hardware {
+            let receiver = IOSurfaceMachReceiver::new()?;
+            command.arg("--iosurface-mach-service").arg(receiver.service_name());
+            Some(receiver)
+        } else {
+            None
+        };
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -67,6 +82,8 @@ impl ServoLiveClient {
             stdout: BufReader::new(stdout),
             #[cfg(target_os = "macos")]
             iosurface_cache: IOSurfaceCache::new(),
+            #[cfg(target_os = "macos")]
+            iosurface_receiver,
         })
     }
 
@@ -195,7 +212,13 @@ impl ServoLiveClient {
         &mut self,
         handle: &LiveSurfaceHandle,
     ) -> Result<(), ServoLiveError> {
-        match self.iosurface_cache.import(handle.mach_port_name, handle.surface_id) {
+        let mach_port_name = match self.iosurface_receiver.as_mut() {
+            Some(receiver) => {
+                receiver.receive_port_for_surface(handle.surface_id, Duration::from_secs(1))?
+            }
+            None => handle.mach_port_name,
+        };
+        match self.iosurface_cache.import(mach_port_name, handle.surface_id) {
             Ok(()) => tracing::info!(
                 target: "ely::servo::iosurface",
                 surface_id = handle.surface_id,
@@ -212,7 +235,7 @@ impl ServoLiveClient {
                 );
                 return Err(ServoLiveError::IOSurfaceImportFailed {
                     surface_id: handle.surface_id,
-                    mach_port_name: handle.mach_port_name,
+                    mach_port_name,
                     message: error.to_string(),
                 });
             }
@@ -437,6 +460,10 @@ pub(crate) enum ServoLiveError {
     #[cfg(target_os = "macos")]
     #[error("servo live IOSurface {surface_id:#x} was selected before its pixel buffer import")]
     IOSurfacePixelBufferMissing { surface_id: u64 },
+
+    #[cfg(target_os = "macos")]
+    #[error(transparent)]
+    IOSurfaceMach(#[from] IOSurfaceMachError),
 
     #[error(transparent)]
     Json(#[from] serde_json::Error),

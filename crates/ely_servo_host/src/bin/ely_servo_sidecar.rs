@@ -14,6 +14,9 @@ use thiserror::Error;
 
 #[path = "ely_servo_sidecar/args.rs"]
 mod args;
+#[cfg(all(feature = "hardware-render", target_os = "macos"))]
+#[path = "ely_servo_sidecar/iosurface_mach.rs"]
+mod iosurface_mach;
 #[path = "ely_servo_sidecar/live.rs"]
 mod live;
 #[path = "ely_servo_sidecar/live_output.rs"]

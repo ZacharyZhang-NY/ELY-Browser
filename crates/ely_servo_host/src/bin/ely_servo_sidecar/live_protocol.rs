@@ -9,6 +9,8 @@ use ely_servo_host::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+#[cfg(all(feature = "hardware-render", target_os = "macos"))]
+use super::iosurface_mach::IOSurfaceMachError;
 use super::perf::FramePerfSummary;
 
 #[derive(Deserialize)]
@@ -242,6 +244,10 @@ pub(super) enum LiveSidecarError {
 
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+
+    #[cfg(all(feature = "hardware-render", target_os = "macos"))]
+    #[error(transparent)]
+    IOSurfaceMach(#[from] IOSurfaceMachError),
 }
 
 #[cfg(test)]

@@ -14,6 +14,7 @@ hardware-render = [
     "dep:glow",
     "dep:image",
     "dep:log",
+    "dep:mach2",
     "dep:surfman",
     "dep:objc2-io-surface",
 ]
@@ -39,6 +40,7 @@ thiserror.workspace = true
 url = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+mach2 = { version = "0.6", optional = true }
 objc2-io-surface = { version = "0.3.2", optional = true }
 
 [lints]

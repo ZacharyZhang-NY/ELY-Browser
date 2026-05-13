@@ -2255,6 +2255,7 @@ dependencies = [
  "gpui-component-assets",
  "image",
  "io-surface",
+ "mach2",
  "objc2",
  "objc2-core-foundation",
  "objc2-foundation",
@@ -2268,6 +2269,7 @@ dependencies = [
  "tracing-subscriber",
  "ureq",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -2309,6 +2311,7 @@ dependencies = [
  "glow",
  "image",
  "log",
+ "mach2",
  "objc2-io-surface",
  "serde",
  "serde_json",

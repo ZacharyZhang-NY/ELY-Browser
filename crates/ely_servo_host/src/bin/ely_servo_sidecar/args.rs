@@ -15,6 +15,7 @@ pub(super) enum SidecarCommand {
 
 pub(super) struct LiveArgs {
     pub(super) profile_data_dir: PathBuf,
+    pub(super) iosurface_mach_service: Option<String>,
     /// Rendering context the host's webviews are built against.
     /// Defaults to [`RenderingContextKind::Software`], which keeps
     /// the binary's behaviour bit-identical to pre-flag builds.
@@ -137,6 +138,7 @@ fn parse_command(
 fn parse_live_args(args: impl IntoIterator<Item = String>) -> Result<LiveArgs, SidecarArgsError> {
     let mut args = args.into_iter();
     let mut profile_data_dir = None;
+    let mut iosurface_mach_service = None;
     let mut rendering_context_kind = RenderingContextKind::default();
 
     while let Some(name) = args.next() {
@@ -155,6 +157,10 @@ fn parse_live_args(args: impl IntoIterator<Item = String>) -> Result<LiveArgs, S
                     _ => return Err(SidecarArgsError::InvalidRenderingContext { value }),
                 };
             }
+            "--iosurface-mach-service" => {
+                iosurface_mach_service =
+                    Some(next_argument(&mut args, "--iosurface-mach-service")?);
+            }
             _ => return Err(SidecarArgsError::UnknownArgument { value: name }),
         }
     }
@@ -162,6 +168,7 @@ fn parse_live_args(args: impl IntoIterator<Item = String>) -> Result<LiveArgs, S
     Ok(LiveArgs {
         profile_data_dir: profile_data_dir
             .ok_or(SidecarArgsError::MissingRequiredArgument { name: "--profile-data-dir" })?,
+        iosurface_mach_service,
         rendering_context_kind,
     })
 }

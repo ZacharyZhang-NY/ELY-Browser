@@ -160,6 +160,13 @@ fn live_accepts_explicit_hardware_rendering_context() -> Result<(), SidecarArgsE
 }
 
 #[test]
+fn live_accepts_iosurface_mach_service_name() -> Result<(), SidecarArgsError> {
+    let args = parse_live(&["--iosurface-mach-service", "com.ely.test.iosurface"])?;
+    assert_eq!(args.iosurface_mach_service.as_deref(), Some("com.ely.test.iosurface"));
+    Ok(())
+}
+
+#[test]
 fn live_rejects_unknown_rendering_context_value() {
     assert!(matches!(
         parse_live(&["--rendering-context", "gpu"]),
