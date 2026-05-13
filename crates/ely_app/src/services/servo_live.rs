@@ -126,7 +126,7 @@ impl ServoLiveClient {
         if let Some(handle) = response.surface_handle.as_ref() {
             log_iosurface_handle(handle);
             #[cfg(target_os = "macos")]
-            self.import_iosurface_handle(handle);
+            self.import_iosurface_handle(handle)?;
         }
         if let Some(surface_id) = response.current_surface_id {
             log_iosurface_current(surface_id);
@@ -163,11 +163,16 @@ impl ServoLiveClient {
             self.stdout.read_exact(&mut rgba_bytes).map_err(ServoLiveError::FrameRead)?;
         }
 
+        let has_software_payload = report.rgba_byte_count > 0;
         let mut frame = ServoLiveFrame::from_parts(report, rgba_bytes);
 
         #[cfg(target_os = "macos")]
         if let Some(surface_id) = response.current_surface_id {
-            frame.pixel_buffer = self.iosurface_cache.pixel_buffer_for(surface_id);
+            let pixel_buffer = self.iosurface_cache.pixel_buffer_for(surface_id);
+            if pixel_buffer.is_none() && !has_software_payload {
+                return Err(ServoLiveError::IOSurfacePixelBufferMissing { surface_id });
+            }
+            frame.pixel_buffer = pixel_buffer;
         }
 
         Ok(Some(frame))
@@ -186,7 +191,10 @@ impl ServoLiveClient {
     /// Convert the sidecar's `surface_handle` into a `CVPixelBuffer`
     /// in the local cache. A later frame with a missing pixel buffer
     /// becomes a web-surface error instead of a blank ready frame.
-    fn import_iosurface_handle(&mut self, handle: &LiveSurfaceHandle) {
+    fn import_iosurface_handle(
+        &mut self,
+        handle: &LiveSurfaceHandle,
+    ) -> Result<(), ServoLiveError> {
         match self.iosurface_cache.import(handle.mach_port_name, handle.surface_id) {
             Ok(()) => tracing::info!(
                 target: "ely::servo::iosurface",
@@ -195,13 +203,21 @@ impl ServoLiveClient {
                 height = handle.height,
                 "imported IOSurface into CVPixelBuffer cache",
             ),
-            Err(error) => tracing::warn!(
-                target: "ely::servo::iosurface",
-                error = %error,
-                surface_id = handle.surface_id,
-                "IOSurface→CVPixelBuffer import failed; subsequent samples will miss",
-            ),
+            Err(error) => {
+                tracing::warn!(
+                    target: "ely::servo::iosurface",
+                    error = %error,
+                    surface_id = handle.surface_id,
+                    "IOSurface→CVPixelBuffer import failed",
+                );
+                return Err(ServoLiveError::IOSurfaceImportFailed {
+                    surface_id: handle.surface_id,
+                    mach_port_name: handle.mach_port_name,
+                    message: error.to_string(),
+                });
+            }
         }
+        Ok(())
     }
 }
 
@@ -410,6 +426,17 @@ pub(crate) enum ServoLiveError {
          the {width}x{height} pixel budget ({pixel_budget} bytes)"
     )]
     FrameBudgetExceeded { advertised: usize, pixel_budget: u64, width: u32, height: u32 },
+
+    #[cfg(target_os = "macos")]
+    #[error(
+        "servo live IOSurface import failed for surface {surface_id:#x} \
+         mach port 0x{mach_port_name:x}: {message}"
+    )]
+    IOSurfaceImportFailed { surface_id: u64, mach_port_name: u32, message: String },
+
+    #[cfg(target_os = "macos")]
+    #[error("servo live IOSurface {surface_id:#x} was selected before its pixel buffer import")]
+    IOSurfacePixelBufferMissing { surface_id: u64 },
 
     #[error(transparent)]
     Json(#[from] serde_json::Error),
