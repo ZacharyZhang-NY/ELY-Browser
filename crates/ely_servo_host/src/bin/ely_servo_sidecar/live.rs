@@ -347,7 +347,6 @@ fn poll_frame(
     rendering_context_kind: RenderingContextKind,
 ) -> Result<LiveOutcome, LiveSidecarError> {
     let started_at = Instant::now();
-    let mut latest = None;
 
     loop {
         host.tick();
@@ -363,14 +362,13 @@ fn poll_frame(
             if !session.awaiting_visible_frame {
                 return Ok(outcome);
             }
-            latest = Some(outcome);
         }
 
         if !session.awaiting_visible_frame {
             return Ok(LiveOutcome::empty());
         }
         if started_at.elapsed() >= LIVE_FRAME_WAIT_TIMEOUT {
-            return Ok(latest.unwrap_or_else(LiveOutcome::empty));
+            return Ok(LiveOutcome::empty());
         }
 
         thread::sleep(LIVE_FRAME_WAIT_INTERVAL);
