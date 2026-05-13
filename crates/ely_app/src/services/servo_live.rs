@@ -1,5 +1,4 @@
 use std::{
-    env,
     io::{self, BufRead, BufReader, Read, Write},
     path::PathBuf,
     process::{Child, ChildStdin, ChildStdout, Stdio},
@@ -7,16 +6,9 @@ use std::{
 
 /// Environment variable that lets the user pick the rendering context
 /// kind used by the spawned sidecar. Accepted values: `software`
-/// (default — bit-identical to pre-flag builds) and `hardware` (real
-/// GPU adapter via the vendored `HardwareOffscreenContext`; requires
-/// the sidecar binary to be compiled with the `hardware-render`
-/// feature and the local GPUI BGRA surface presenter). Anything else is
-/// silently dropped and the sidecar defaults to software so a typo'd
-/// value never blocks the browser from starting; the sidecar's own
-/// arg parser still errors loudly on an unrecognised value when set
-/// explicitly via the flag.
-const RENDERING_CONTEXT_ENV: &str = "ELY_SERVO_RENDERING_CONTEXT";
-
+/// and `hardware`. macOS defaults to hardware because GPUI can now
+/// present Servo's BGRA IOSurfaces directly; other platforms keep the
+/// software context until they have an equivalent presenter.
 use ely_domain::SitePermissionDecision;
 use serde::Serialize;
 use thiserror::Error;
@@ -24,7 +16,9 @@ use thiserror::Error;
 #[path = "servo_live_wire.rs"]
 mod wire;
 
-use super::servo_sidecar_command::{SidecarCommandError, default_sidecar_command};
+use super::servo_sidecar_command::{
+    SidecarCommandError, default_sidecar_command, rendering_context_from_env,
+};
 use wire::{
     LiveFrameReport, LiveRequest, LiveResponse, LiveSurfaceHandle, log_frame_perf,
     log_iosurface_current, log_iosurface_handle,
@@ -55,9 +49,7 @@ impl ServoLiveClient {
 
         let mut command = command_target.command();
         command.arg("live").arg("--profile-data-dir").arg(profile_data_dir);
-        if let Some(rendering_context) = rendering_context_from_env() {
-            command.arg("--rendering-context").arg(rendering_context);
-        }
+        command.arg("--rendering-context").arg(rendering_context_from_env().cli_arg());
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -419,54 +411,4 @@ pub(crate) enum ServoLiveError {
 
     #[error(transparent)]
     SidecarCommand(#[from] SidecarCommandError),
-}
-
-/// Map `ELY_SERVO_RENDERING_CONTEXT` to a CLI argument value if it's
-/// one we recognise. Unset variable returns `None` (sidecar uses its
-/// own default of software); unknown value also returns `None`
-/// rather than `Some("garbage")` so a stale env var doesn't fail the
-/// sidecar startup. The sidecar's own arg parser is the source of
-/// truth for what values are valid — we just gate which ones we
-/// forward.
-fn rendering_context_from_env() -> Option<&'static str> {
-    let raw = env::var(RENDERING_CONTEXT_ENV).ok()?;
-    match rendering_context_selection(raw.as_str()) {
-        RenderingContextSelection::Forward(value) => Some(value),
-        RenderingContextSelection::Ignore => None,
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RenderingContextSelection {
-    Forward(&'static str),
-    Ignore,
-}
-
-fn rendering_context_selection(raw: &str) -> RenderingContextSelection {
-    match raw.to_lowercase().as_str() {
-        "software" => RenderingContextSelection::Forward("software"),
-        "hardware" => RenderingContextSelection::Forward("hardware"),
-        _ => RenderingContextSelection::Ignore,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{RenderingContextSelection, rendering_context_selection};
-
-    #[test]
-    fn hardware_env_forwards_to_the_sidecar() {
-        assert_eq!(
-            rendering_context_selection("hardware"),
-            RenderingContextSelection::Forward("hardware")
-        );
-    }
-
-    #[test]
-    fn software_env_still_forwards_to_the_sidecar() {
-        assert_eq!(
-            rendering_context_selection("software"),
-            RenderingContextSelection::Forward("software"),
-        );
-    }
 }

@@ -48,6 +48,28 @@ impl SidecarCommandTarget {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum SidecarRenderingContext {
+    Software,
+    Hardware,
+}
+
+impl SidecarRenderingContext {
+    pub(super) fn cli_arg(self) -> &'static str {
+        match self {
+            Self::Software => "software",
+            Self::Hardware => "hardware",
+        }
+    }
+
+    fn sidecar_features(self) -> &'static str {
+        match self {
+            Self::Software => SOFTWARE_SIDECAR_FEATURES,
+            Self::Hardware => HARDWARE_SIDECAR_FEATURES,
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub(crate) enum SidecarCommandError {
     #[error("current executable path is unavailable: {0}")]
@@ -68,7 +90,8 @@ pub(super) fn default_sidecar_command() -> Result<SidecarCommandTarget, SidecarC
     })?;
     let adjacent_sidecar = exe_dir.join(sidecar_binary_name());
     let workspace_manifest = workspace_manifest_path();
-    let prefer_cargo_hardware_sidecar = hardware_rendering_context_requested()
+    let prefer_cargo_hardware_sidecar = rendering_context_from_env()
+        == SidecarRenderingContext::Hardware
         && workspace_manifest.as_ref().is_some_and(|path| path.is_file());
     if adjacent_sidecar.is_file() && !prefer_cargo_hardware_sidecar {
         return Ok(SidecarCommandTarget::Binary(adjacent_sidecar));
@@ -93,28 +116,31 @@ fn workspace_manifest_path() -> Option<PathBuf> {
     option_env!("ELY_WORKSPACE_MANIFEST").map(PathBuf::from)
 }
 
-fn hardware_rendering_context_requested() -> bool {
-    env::var(RENDERING_CONTEXT_ENV).ok().as_deref().is_some_and(rendering_context_requests_hardware)
+pub(super) fn rendering_context_from_env() -> SidecarRenderingContext {
+    let raw = env::var(RENDERING_CONTEXT_ENV).ok();
+    rendering_context_selection(raw.as_deref())
 }
 
 fn sidecar_features_from_env() -> &'static str {
-    env::var(RENDERING_CONTEXT_ENV)
-        .ok()
-        .as_deref()
-        .map(sidecar_features_for_rendering_context)
-        .unwrap_or(SOFTWARE_SIDECAR_FEATURES)
+    rendering_context_from_env().sidecar_features()
 }
 
-fn sidecar_features_for_rendering_context(raw: &str) -> &'static str {
-    if rendering_context_requests_hardware(raw) {
-        HARDWARE_SIDECAR_FEATURES
-    } else {
-        SOFTWARE_SIDECAR_FEATURES
+fn rendering_context_selection(raw: Option<&str>) -> SidecarRenderingContext {
+    match raw.map(str::to_lowercase).as_deref() {
+        Some("software") => SidecarRenderingContext::Software,
+        Some("hardware") => SidecarRenderingContext::Hardware,
+        _ => default_rendering_context(),
     }
 }
 
-fn rendering_context_requests_hardware(raw: &str) -> bool {
-    raw.eq_ignore_ascii_case("hardware")
+#[cfg(target_os = "macos")]
+fn default_rendering_context() -> SidecarRenderingContext {
+    SidecarRenderingContext::Hardware
+}
+
+#[cfg(not(target_os = "macos"))]
+fn default_rendering_context() -> SidecarRenderingContext {
+    SidecarRenderingContext::Software
 }
 
 fn workspace_target_sidecar_path(manifest_path: &Path) -> Option<PathBuf> {
@@ -129,19 +155,39 @@ fn sidecar_binary_name() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        HARDWARE_SIDECAR_FEATURES, SOFTWARE_SIDECAR_FEATURES,
-        sidecar_features_for_rendering_context,
+        HARDWARE_SIDECAR_FEATURES, SOFTWARE_SIDECAR_FEATURES, SidecarRenderingContext,
+        rendering_context_selection,
     };
 
     #[test]
     fn hardware_rendering_context_enables_hardware_sidecar_feature() {
-        assert_eq!(sidecar_features_for_rendering_context("hardware"), HARDWARE_SIDECAR_FEATURES);
-        assert_eq!(sidecar_features_for_rendering_context("HARDWARE"), HARDWARE_SIDECAR_FEATURES);
+        let context = rendering_context_selection(Some("hardware"));
+        assert_eq!(context, SidecarRenderingContext::Hardware);
+        assert_eq!(context.sidecar_features(), HARDWARE_SIDECAR_FEATURES);
+        assert_eq!(
+            rendering_context_selection(Some("HARDWARE")),
+            SidecarRenderingContext::Hardware
+        );
     }
 
     #[test]
-    fn software_and_unknown_contexts_use_software_sidecar_feature() {
-        assert_eq!(sidecar_features_for_rendering_context("software"), SOFTWARE_SIDECAR_FEATURES);
-        assert_eq!(sidecar_features_for_rendering_context("garbage"), SOFTWARE_SIDECAR_FEATURES);
+    fn software_rendering_context_uses_software_sidecar_feature() {
+        let context = rendering_context_selection(Some("software"));
+        assert_eq!(context, SidecarRenderingContext::Software);
+        assert_eq!(context.sidecar_features(), SOFTWARE_SIDECAR_FEATURES);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_defaults_to_hardware_rendering_context() {
+        assert_eq!(rendering_context_selection(None), SidecarRenderingContext::Hardware);
+        assert_eq!(rendering_context_selection(Some("garbage")), SidecarRenderingContext::Hardware);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn non_macos_defaults_to_software_rendering_context() {
+        assert_eq!(rendering_context_selection(None), SidecarRenderingContext::Software);
+        assert_eq!(rendering_context_selection(Some("garbage")), SidecarRenderingContext::Software);
     }
 }
