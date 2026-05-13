@@ -28,12 +28,20 @@ impl BrowserCore {
             .iter()
             .position(|tab| tab.id() == &active_id)
             .ok_or_else(|| CoreError::TabNotFound { id: active_id.clone() })?;
-        self.tabs[tab_index].set_url(url);
+        self.tabs[tab_index].navigate_to(url);
         self.tabs[tab_index].mark_ready();
         let snapshot_tab = self.tabs[tab_index].clone();
         self.record_history_entry(&snapshot_tab);
         self.record_tab_activity(&active_id, SystemTime::now());
         Ok(())
+    }
+
+    pub fn navigate_active_tab_back(&mut self) -> Result<bool, CoreError> {
+        self.navigate_active_tab_history(TabHistoryDirection::Back)
+    }
+
+    pub fn navigate_active_tab_forward(&mut self) -> Result<bool, CoreError> {
+        self.navigate_active_tab_history(TabHistoryDirection::Forward)
     }
 
     pub fn open_tab(&mut self, url: UrlText) -> TabId {
@@ -369,6 +377,27 @@ impl BrowserCore {
         self.tabs.get_mut(active_index).ok_or(CoreError::MissingActiveTab)
     }
 
+    fn navigate_active_tab_history(
+        &mut self,
+        direction: TabHistoryDirection,
+    ) -> Result<bool, CoreError> {
+        let active_id = self.active_tab_id.clone();
+        let tab_index = self.active_tab_index()?;
+        let navigated_url = match direction {
+            TabHistoryDirection::Back => self.tabs[tab_index].navigate_back(),
+            TabHistoryDirection::Forward => self.tabs[tab_index].navigate_forward(),
+        };
+        let Some(_url) = navigated_url else {
+            return Ok(false);
+        };
+
+        self.tabs[tab_index].mark_ready();
+        let snapshot_tab = self.tabs[tab_index].clone();
+        self.record_history_entry(&snapshot_tab);
+        self.record_tab_activity(&active_id, SystemTime::now());
+        Ok(true)
+    }
+
     pub(super) fn build_tab(&self, url: UrlText) -> BrowserTab {
         self.build_tab_for(self.active_space_id.clone(), self.active_profile_id.clone(), url)
             .with_parent_tab_id(self.active_tab_id.clone())
@@ -424,4 +453,9 @@ impl BrowserCore {
             },
         )
     }
+}
+
+enum TabHistoryDirection {
+    Back,
+    Forward,
 }

@@ -31,6 +31,8 @@ pub struct BrowserTab {
     profile_id: ProfileId,
     title: String,
     url: UrlText,
+    back_stack: Vec<UrlText>,
+    forward_stack: Vec<UrlText>,
     favicon_key: Option<String>,
     parent_tab_id: Option<TabId>,
     state: TabState,
@@ -60,6 +62,8 @@ impl BrowserTab {
             profile_id,
             title: title.into(),
             url,
+            back_stack: Vec::new(),
+            forward_stack: Vec::new(),
             favicon_key: None,
             parent_tab_id: None,
             state: TabState::Ready,
@@ -114,6 +118,16 @@ impl BrowserTab {
     #[must_use]
     pub fn url(&self) -> &UrlText {
         &self.url
+    }
+
+    #[must_use]
+    pub fn can_navigate_back(&self) -> bool {
+        !self.back_stack.is_empty()
+    }
+
+    #[must_use]
+    pub fn can_navigate_forward(&self) -> bool {
+        !self.forward_stack.is_empty()
     }
 
     #[must_use]
@@ -271,14 +285,38 @@ impl BrowserTab {
         self.sync_enabled = sync_enabled;
     }
 
-    /// Replace this tab's URL in place. Used for in-tab navigation
-    /// (clicking a link, picking a settings sub-page, etc.) where the
-    /// active tab should follow the user instead of spawning a new
-    /// one for every URL change. Title stays as set; the caller can
-    /// re-derive it from the new URL if it wants to.
+    /// Replace this tab's URL directly while preserving navigation
+    /// stacks. Title stays as set; callers can re-derive it from the
+    /// new URL when needed.
     pub fn set_url(&mut self, url: UrlText) {
         self.url = url;
         self.last_active_at = SystemTime::now();
+    }
+
+    /// Navigate in place and record the previous URL in this tab's
+    /// back stack.
+    pub fn navigate_to(&mut self, url: UrlText) {
+        if self.url != url {
+            self.back_stack.push(self.url.clone());
+            self.forward_stack.clear();
+        }
+        self.set_url(url);
+    }
+
+    pub fn navigate_back(&mut self) -> Option<UrlText> {
+        let target = self.back_stack.pop()?;
+        let current = std::mem::replace(&mut self.url, target);
+        self.forward_stack.push(current);
+        self.last_active_at = SystemTime::now();
+        Some(self.url.clone())
+    }
+
+    pub fn navigate_forward(&mut self) -> Option<UrlText> {
+        let target = self.forward_stack.pop()?;
+        let current = std::mem::replace(&mut self.url, target);
+        self.back_stack.push(current);
+        self.last_active_at = SystemTime::now();
+        Some(self.url.clone())
     }
 }
 

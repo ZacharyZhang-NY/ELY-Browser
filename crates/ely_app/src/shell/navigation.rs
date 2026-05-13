@@ -78,6 +78,28 @@ impl ElyShell {
         }
     }
 
+    pub(super) fn navigate_active_tab_back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.navigate_active_tab_back().is_ok_and(|changed| changed)
+        {
+            self.sync_address_input(window, cx);
+            cx.notify();
+        }
+    }
+
+    pub(super) fn navigate_active_tab_forward(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let ShellState::Ready(core) = &mut self.state
+            && core.navigate_active_tab_forward().is_ok_and(|changed| changed)
+        {
+            self.sync_address_input(window, cx);
+            cx.notify();
+        }
+    }
+
     /// Spawn a fresh tab for `url`. Reserved for "+ New Tab" buttons
     /// and the deep-link router — anything that explicitly wants a
     /// new sibling tab rather than navigating in place.
@@ -162,9 +184,7 @@ impl ElyShell {
             return;
         };
         let needle = stripped.trim().to_lowercase();
-        let rows = crate::shell::chrome::command_match::visible_command_rows(
-            &snapshot, &needle,
-        );
+        let rows = crate::shell::chrome::command_match::visible_command_rows(&snapshot, &needle);
         if rows.is_empty() {
             return;
         }

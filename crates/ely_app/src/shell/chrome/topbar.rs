@@ -3,8 +3,8 @@ use ely_design_system::{colors, spacing};
 use ely_domain::{BrowserTab, ThemeMode};
 use gpui::{
     AnyElement, BoxShadow, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, div, hsla, point,
-    prelude::FluentBuilder, px, rgb, rgba,
+    SharedString, StatefulInteractiveElement, Styled, div, hsla, point, prelude::FluentBuilder, px,
+    rgb, rgba,
 };
 use gpui_component::{IconName, input::Input};
 
@@ -27,36 +27,37 @@ pub(crate) fn render_topbar(
         .flex_shrink_0()
         .border_b_1()
         .border_color(rgba(colors::DIVIDER))
-        .when(sidebar_collapsed, |el| {
-            el.child(render_command_bar_identity(snapshot, 56.0, true))
-        })
-        .child(render_nav_arrow("nav-back", IconName::ArrowLeft))
-        .child(render_nav_arrow("nav-forward", IconName::ArrowRight))
+        .when(sidebar_collapsed, |el| el.child(render_command_bar_identity(snapshot, 56.0, true)))
+        .child(render_nav_arrow(
+            "nav-back",
+            IconName::ArrowLeft,
+            active_tab.can_navigate_back(),
+            cx,
+            |shell, window, cx| shell.navigate_active_tab_back(window, cx),
+        ))
+        .child(render_nav_arrow(
+            "nav-forward",
+            IconName::ArrowRight,
+            active_tab.can_navigate_forward(),
+            cx,
+            |shell, window, cx| shell.navigate_active_tab_forward(window, cx),
+        ))
         .child(render_omnibar(shell, active_tab, cx))
-        .child(render_topbar_action(
-            "share-url",
-            IconName::Copy,
-            cx,
-            |shell, window, cx| shell.copy_active_tab_url(window, cx),
-        ))
-        .child(render_topbar_action(
-            "open-downloads",
-            IconName::Folder,
-            cx,
-            |shell, window, cx| shell.open_downloads(window, cx),
-        ))
+        .child(render_topbar_action("share-url", IconName::Copy, cx, |shell, window, cx| {
+            shell.copy_active_tab_url(window, cx)
+        }))
+        .child(render_topbar_action("open-downloads", IconName::Folder, cx, |shell, window, cx| {
+            shell.open_downloads(window, cx)
+        }))
         .child(render_topbar_action(
             "toggle-theme",
             theme_mode_icon(snapshot.appearance.theme_mode()),
             cx,
             |shell, _window, cx| shell.cycle_theme_mode(cx),
         ))
-        .child(render_topbar_action(
-            "open-menu",
-            IconName::Menu,
-            cx,
-            |shell, window, cx| shell.open_internal_tab("ely://settings", window, cx),
-        ))
+        .child(render_topbar_action("open-menu", IconName::Menu, cx, |shell, window, cx| {
+            shell.open_internal_tab("ely://settings", window, cx)
+        }))
         .into_any_element()
 }
 
@@ -66,16 +67,11 @@ fn render_omnibar(
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let favorite_active = active_tab.flags().favorite;
-    let favorite_icon = if favorite_active {
-        IconName::Star
-    } else {
-        IconName::StarOff
-    };
+    let favorite_icon = if favorite_active { IconName::Star } else { IconName::StarOff };
     let input_value = shell.command_input.read(cx).value().to_string();
     let active_url = active_tab.url().as_str().to_string();
-    let show_styled = !input_value.is_empty()
-        && input_value == active_url
-        && active_url != "ely://new-tab";
+    let show_styled =
+        !input_value.is_empty() && input_value == active_url && active_url != "ely://new-tab";
     let secure = active_url.starts_with("https://") || active_url.starts_with("ely://");
 
     div()
@@ -123,18 +119,11 @@ fn render_omnibar(
 }
 
 fn render_omnibar_input(shell: &ElyShell) -> AnyElement {
-    Input::new(&shell.command_input)
-        .appearance(false)
-        .cleanable(true)
-        .into_any_element()
+    Input::new(&shell.command_input).appearance(false).cleanable(true).into_any_element()
 }
 
 fn render_styled_url(active_tab: &BrowserTab) -> AnyElement {
-    let host = active_tab
-        .url()
-        .host()
-        .map(|host| host.to_string())
-        .unwrap_or_default();
+    let host = active_tab.url().host().map(|host| host.to_string()).unwrap_or_default();
     let url = active_tab.url().as_str();
     let path_start = url.find("://").map(|prefix| prefix + 3).unwrap_or(0);
     let from_path = &url[path_start..];
@@ -148,32 +137,14 @@ fn render_styled_url(active_tab: &BrowserTab) -> AnyElement {
         .items_center()
         .gap(px(2.0))
         .text_size(px(13.0))
-        .child(
-            div()
-                .font_weight(FontWeight(500.0))
-                .text_color(rgb(colors::INK))
-                .child(host),
-        )
-        .child(
-            div()
-                .min_w_0()
-                .truncate()
-                .text_color(rgb(colors::INK_3))
-                .child(path),
-        )
+        .child(div().font_weight(FontWeight(500.0)).text_color(rgb(colors::INK)).child(host))
+        .child(div().min_w_0().truncate().text_color(rgb(colors::INK_3)).child(path))
         .into_any_element()
 }
 
 fn render_lock_or_search(secure: bool, show_styled: bool) -> AnyElement {
-    let icon = if show_styled && !secure {
-        IconName::Globe
-    } else {
-        IconName::Search
-    };
-    div()
-        .text_color(rgb(colors::INK_3))
-        .child(icon)
-        .into_any_element()
+    let icon = if show_styled && !secure { IconName::Globe } else { IconName::Search };
+    div().text_color(rgb(colors::INK_3)).child(icon).into_any_element()
 }
 
 fn render_omnibar_chip<F>(
@@ -203,12 +174,17 @@ where
         .into_any_element()
 }
 
-/// Topbar nav arrow placeholder. Per-tab back/forward history is not yet
-/// wired through `BrowserCore`, so the buttons render in the design's
-/// `disabled` state — visible at INK_5, no hover, no cursor pointer —
-/// to honor the "no fake handlers, no mockup" rule. When real history
-/// navigation lands the caller can flip these to a clickable variant.
-fn render_nav_arrow(id: &'static str, icon: IconName) -> AnyElement {
+fn render_nav_arrow<F>(
+    id: &'static str,
+    icon: IconName,
+    enabled: bool,
+    cx: &mut Context<ElyShell>,
+    handler: F,
+) -> AnyElement
+where
+    F: Fn(&mut ElyShell, &mut gpui::Window, &mut Context<ElyShell>) + 'static,
+{
+    let color = if enabled { colors::INK_3 } else { colors::INK_5 };
     div()
         .id(SharedString::from(id))
         .size(px(30.0))
@@ -216,7 +192,13 @@ fn render_nav_arrow(id: &'static str, icon: IconName) -> AnyElement {
         .flex()
         .items_center()
         .justify_center()
-        .text_color(rgb(colors::INK_5))
+        .text_color(rgb(color))
+        .when(enabled, |el| {
+            el.cursor_pointer()
+                .hover(|style| style.bg(rgba(OMNIBAR_BG)).text_color(rgb(colors::INK)))
+                .active(|style| style.opacity(0.82))
+                .on_click(cx.listener(move |shell, _, window, cx| handler(shell, window, cx)))
+        })
         .child(icon)
         .into_any_element()
 }
