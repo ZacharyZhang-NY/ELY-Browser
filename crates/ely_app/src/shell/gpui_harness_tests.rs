@@ -28,17 +28,20 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use ely_domain::{TabId, UrlText};
-use gpui::{
-    Bounds, Context, IntoElement, Modifiers, MouseButton, ParentElement, Pixels, Render,
-    Styled, TestAppContext, Window, canvas, div, point, px,
-};
 use gpui::InteractiveElement;
+use gpui::{
+    Bounds, Context, IntoElement, Modifiers, MouseButton, ParentElement, Pixels, Render, Styled,
+    TestAppContext, Window, canvas, div, point, px,
+};
 
 use super::ShellState;
 use super::web_surface::WebSurfaceStore;
 use super::web_surface_frame::WebSurfaceFrame;
 use super::web_surface_geometry::WebSurfaceScrollOffset;
 use crate::services::servo_live::ServoLiveFrame;
+
+type OverlayState = (TabId, String, Option<Bounds<Pixels>>);
+type ProbeHit = (f32, f32, Option<(u32, u32)>);
 
 #[cfg(test)]
 impl super::ElyShell {
@@ -53,35 +56,46 @@ impl super::ElyShell {
 
 #[gpui::test]
 async fn ely_shell_external_canvas_lays_out_inside_window(cx: &mut TestAppContext) {
-    cx.update(|cx| gpui_component::init(cx));
+    cx.update(gpui_component::init);
 
-    let (shell, cx) = cx.add_window_view(|window, cx| super::ElyShell::new(window, cx));
+    let (shell, cx) = cx.add_window_view(super::ElyShell::new);
     cx.run_until_parked();
 
+    let url = example_url();
+    assert!(url.is_ok(), "example URL literal must parse");
+    let Ok(url) = url else {
+        return;
+    };
     cx.update(|window, app_cx| {
         shell.update(app_cx, |shell, ctx| {
-            shell.navigate_active_tab(
-                UrlText::parse("https://example.com/".to_string()).expect("valid URL"),
-                window,
-                ctx,
-            );
+            shell.navigate_active_tab(url, window, ctx);
         });
     });
     cx.run_until_parked();
 
-    let (_active_tab_id, active_tab_url, viewport_bounds) = active_tab_overlay_state(&shell, cx);
+    let overlay_state = active_tab_overlay_state(&shell, cx);
+    assert!(
+        overlay_state.is_ok(),
+        "active tab overlay state must be readable: {:?}",
+        overlay_state.as_ref().err(),
+    );
+    let Ok((_active_tab_id, active_tab_url, viewport_bounds)) = overlay_state else {
+        return;
+    };
     assert!(
         active_tab_url.starts_with("https://"),
         "active tab URL must be external https for render_external_web_canvas \
          to render the input_overlay (got {active_tab_url:?})."
     );
-    let bounds = viewport_bounds.unwrap_or_else(|| {
-        panic!(
-            "viewport_bounds for the active tab is None. The canvas tracker \
-             in render_input_overlay's sibling never fired its layout \
-             callback — render_external_web_canvas was not reached."
-        )
-    });
+    assert!(
+        viewport_bounds.is_some(),
+        "viewport_bounds for the active tab is None. The canvas tracker \
+         in render_input_overlay's sibling never fired its layout callback — \
+         render_external_web_canvas was not reached.",
+    );
+    let Some(bounds) = viewport_bounds else {
+        return;
+    };
     let window_size = cx.update(|window, _| window.bounds().size);
     assert!(
         bounds.origin.y + bounds.size.height <= window_size.height + px(1.0)
@@ -110,17 +124,18 @@ async fn ely_shell_external_canvas_lays_out_inside_window(cx: &mut TestAppContex
 #[gpui::test]
 #[ignore = "T13 diagnostic — run with --ignored --nocapture to see heatmap"]
 async fn diagnose_t7_hitbox_reachability_heatmap(cx: &mut TestAppContext) {
-    cx.update(|cx| gpui_component::init(cx));
-    let (shell, cx) = cx.add_window_view(|window, cx| super::ElyShell::new(window, cx));
+    cx.update(gpui_component::init);
+    let (shell, cx) = cx.add_window_view(super::ElyShell::new);
     cx.run_until_parked();
 
+    let url = example_url();
+    assert!(url.is_ok(), "example URL literal must parse");
+    let Ok(url) = url else {
+        return;
+    };
     cx.update(|window, app_cx| {
         shell.update(app_cx, |shell, ctx| {
-            shell.navigate_active_tab(
-                UrlText::parse("https://example.com/".to_string()).expect("valid URL"),
-                window,
-                ctx,
-            );
+            shell.navigate_active_tab(url, window, ctx);
         });
     });
     cx.run_until_parked();
@@ -134,8 +149,19 @@ async fn diagnose_t7_hitbox_reachability_heatmap(cx: &mut TestAppContext) {
     cx.executor().advance_clock(std::time::Duration::from_millis(500));
     cx.run_until_parked();
 
-    let (active_tab_id, _url, viewport_bounds) = active_tab_overlay_state(&shell, cx);
-    let bounds = viewport_bounds.expect("viewport_bounds must be Some");
+    let overlay_state = active_tab_overlay_state(&shell, cx);
+    assert!(
+        overlay_state.is_ok(),
+        "active tab overlay state must be readable: {:?}",
+        overlay_state.as_ref().err(),
+    );
+    let Ok((active_tab_id, _url, viewport_bounds)) = overlay_state else {
+        return;
+    };
+    assert!(viewport_bounds.is_some(), "viewport_bounds must be Some");
+    let Some(bounds) = viewport_bounds else {
+        return;
+    };
     let window_size = cx.update(|window, _| window.bounds().size);
     eprintln!("[T13] window size      = {window_size:?}");
     eprintln!("[T13] viewport bounds  = {bounds:?}");
@@ -154,7 +180,7 @@ async fn diagnose_t7_hitbox_reachability_heatmap(cx: &mut TestAppContext) {
     let height = f32::from(window_size.height);
     let cols = 6u32;
     let rows = 6u32;
-    let mut hits: Vec<(f32, f32, Option<(u32, u32)>)> = Vec::new();
+    let mut hits: Vec<ProbeHit> = Vec::new();
 
     for row in 0..rows {
         for col in 0..cols {
@@ -165,11 +191,7 @@ async fn diagnose_t7_hitbox_reachability_heatmap(cx: &mut TestAppContext) {
             // Reset hover_point by moving the cursor far outside, then
             // reading what's recorded after a move to probe_at. This
             // makes each grid point an independent measurement.
-            cx.simulate_mouse_move(
-                point(px(-10.0), px(-10.0)),
-                None,
-                Modifiers::default(),
-            );
+            cx.simulate_mouse_move(point(px(-10.0), px(-10.0)), None, Modifiers::default());
             cx.run_until_parked();
             cx.simulate_mouse_move(probe_at, None, Modifiers::default());
             cx.run_until_parked();
@@ -285,31 +307,41 @@ async fn diagnose_t7_hitbox_reachability_heatmap(cx: &mut TestAppContext) {
             handler that gates on the viewport bounds — which would \
             sidestep hit_test for input_overlay's nested div entirely. \
             Remove this attribute outright when one of those lands."]
-async fn user_click_in_rendered_web_canvas_reaches_input_pipeline(
-    cx: &mut TestAppContext,
-) {
-    cx.update(|cx| gpui_component::init(cx));
+async fn user_click_in_rendered_web_canvas_reaches_input_pipeline(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
 
-    let (shell, cx) = cx.add_window_view(|window, cx| super::ElyShell::new(window, cx));
+    let (shell, cx) = cx.add_window_view(super::ElyShell::new);
     cx.run_until_parked();
 
+    let url = example_url();
+    assert!(url.is_ok(), "example URL literal must parse");
+    let Ok(url) = url else {
+        return;
+    };
     cx.update(|window, app_cx| {
         shell.update(app_cx, |shell, ctx| {
-            shell.navigate_active_tab(
-                UrlText::parse("https://example.com/".to_string()).expect("valid URL"),
-                window,
-                ctx,
-            );
+            shell.navigate_active_tab(url, window, ctx);
         });
     });
     cx.run_until_parked();
 
-    let (active_tab_id, _active_tab_url, viewport_bounds) =
-        active_tab_overlay_state(&shell, cx);
-    let bounds = viewport_bounds.expect(
+    let overlay_state = active_tab_overlay_state(&shell, cx);
+    assert!(
+        overlay_state.is_ok(),
+        "active tab overlay state must be readable: {:?}",
+        overlay_state.as_ref().err(),
+    );
+    let Ok((active_tab_id, _active_tab_url, viewport_bounds)) = overlay_state else {
+        return;
+    };
+    assert!(
+        viewport_bounds.is_some(),
         "viewport_bounds must be Some before T7 can be exercised — the layout \
          regression test catches the upstream failure mode separately",
     );
+    let Some(bounds) = viewport_bounds else {
+        return;
+    };
 
     let surface_state_label = shell.read_with(cx, |shell, _| {
         match shell
@@ -367,9 +399,7 @@ async fn user_click_in_rendered_web_canvas_reaches_input_pipeline(
 /// fix in 840255f. If this passes, the bug is upstream of the
 /// relative wrapper itself.
 #[gpui::test]
-async fn baseline_overlay_under_overflow_hidden_relative_receives_click(
-    cx: &mut TestAppContext,
-) {
+async fn baseline_overlay_under_overflow_hidden_relative_receives_click(cx: &mut TestAppContext) {
     let click_count = Rc::new(RefCell::new(0u32));
     let counter_for_render = click_count.clone();
 
@@ -379,29 +409,23 @@ async fn baseline_overlay_under_overflow_hidden_relative_receives_click(
     impl Render for WrappedProbe {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             let counter = self.on_up_counter.clone();
-            div()
-                .relative()
-                .size_full()
-                .min_w_0()
-                .overflow_hidden()
-                .child(
-                    div()
-                        .absolute()
-                        .size_full()
-                        .occlude()
-                        .on_mouse_down(MouseButton::Left, |_event, _window, _cx| {})
-                        .capture_any_mouse_up(move |_event, _window, _cx| {
-                            *counter.borrow_mut() += 1;
-                        })
-                        .on_mouse_move(|_event, _window, _cx| {})
-                        .on_scroll_wheel(|_event, _window, _cx| {}),
-                )
+            div().relative().size_full().min_w_0().overflow_hidden().child(
+                div()
+                    .absolute()
+                    .size_full()
+                    .occlude()
+                    .on_mouse_down(MouseButton::Left, |_event, _window, _cx| {})
+                    .capture_any_mouse_up(move |_event, _window, _cx| {
+                        *counter.borrow_mut() += 1;
+                    })
+                    .on_mouse_move(|_event, _window, _cx| {})
+                    .on_scroll_wheel(|_event, _window, _cx| {}),
+            )
         }
     }
 
-    let (_probe, cx) = cx.add_window_view(|_window, _cx| WrappedProbe {
-        on_up_counter: counter_for_render,
-    });
+    let (_probe, cx) =
+        cx.add_window_view(|_window, _cx| WrappedProbe { on_up_counter: counter_for_render });
     cx.run_until_parked();
 
     cx.simulate_mouse_move(point(px(100.0), px(100.0)), None, Modifiers::default());
@@ -441,70 +465,44 @@ async fn baseline_overlay_under_full_elyshell_wrapper_chain_receives_click(
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             let counter = self.on_up_counter.clone();
             // Root: matches render_browser's outer div.
-            div()
-                .size_full()
-                .child(
-                    // Absolute flex container matches render_browser's child layout.
+            div().size_full().child(
+                // Absolute flex container matches render_browser's child layout.
+                div().absolute().inset_0().p(px(16.0)).gap(px(12.0)).flex().child(
+                    // Main pane: matches render_main_pane.
                     div()
-                        .absolute()
-                        .inset_0()
-                        .p(px(16.0))
-                        .gap(px(12.0))
+                        .flex_1()
+                        .h_full()
+                        .min_w_0()
                         .flex()
+                        .flex_col()
+                        .rounded(px(18.0))
+                        .border_1()
+                        .overflow_hidden()
                         .child(
-                            // Main pane: matches render_main_pane.
-                            div()
-                                .flex_1()
-                                .h_full()
-                                .min_w_0()
-                                .flex()
-                                .flex_col()
-                                .rounded(px(18.0))
-                                .border_1()
-                                .overflow_hidden()
-                                .child(
-                                    // Content wrapper: matches the flex_1 child of main_pane.
+                            // Content wrapper: matches the flex_1 child of main_pane.
+                            div().flex_1().overflow_hidden().child(
+                                // Surface wrapper: matches render_web_surface root.
+                                div().relative().size_full().min_w_0().overflow_hidden().child(
                                     div()
-                                        .flex_1()
-                                        .overflow_hidden()
-                                        .child(
-                                            // Surface wrapper: matches render_web_surface root.
-                                            div()
-                                                .relative()
-                                                .size_full()
-                                                .min_w_0()
-                                                .overflow_hidden()
-                                                .child(
-                                                    div()
-                                                        .absolute()
-                                                        .size_full()
-                                                        .occlude()
-                                                        .on_mouse_down(
-                                                            MouseButton::Left,
-                                                            |_event, _window, _cx| {},
-                                                        )
-                                                        .capture_any_mouse_up(
-                                                            move |_event, _window, _cx| {
-                                                                *counter.borrow_mut() += 1;
-                                                            },
-                                                        )
-                                                        .on_mouse_move(
-                                                            |_event, _window, _cx| {},
-                                                        )
-                                                        .on_scroll_wheel(
-                                                            |_event, _window, _cx| {},
-                                                        ),
-                                                ),
-                                        ),
+                                        .absolute()
+                                        .size_full()
+                                        .occlude()
+                                        .on_mouse_down(MouseButton::Left, |_event, _window, _cx| {})
+                                        .capture_any_mouse_up(move |_event, _window, _cx| {
+                                            *counter.borrow_mut() += 1;
+                                        })
+                                        .on_mouse_move(|_event, _window, _cx| {})
+                                        .on_scroll_wheel(|_event, _window, _cx| {}),
                                 ),
+                            ),
                         ),
-                )
+                ),
+            )
         }
     }
 
-    let (_probe, cx) = cx.add_window_view(|_window, _cx| DeepProbe {
-        on_up_counter: counter_for_render,
-    });
+    let (_probe, cx) =
+        cx.add_window_view(|_window, _cx| DeepProbe { on_up_counter: counter_for_render });
     cx.run_until_parked();
 
     cx.simulate_mouse_move(point(px(400.0), px(400.0)), None, Modifiers::default());
@@ -538,15 +536,13 @@ async fn baseline_overlay_under_full_elyshell_wrapper_chain_receives_click(
 /// or its subscription is what breaks hit_test for descendant
 /// occlude divs.
 #[gpui::test]
-async fn baseline_overlay_with_input_state_construction_receives_click(
-    cx: &mut TestAppContext,
-) {
+async fn baseline_overlay_with_input_state_construction_receives_click(cx: &mut TestAppContext) {
     use gpui::AppContext;
     use gpui::Entity;
     use gpui::Subscription;
     use gpui_component::input::{InputEvent, InputState};
 
-    cx.update(|cx| gpui_component::init(cx));
+    cx.update(gpui_component::init);
 
     let click_count = Rc::new(RefCell::new(0u32));
     let counter_for_render = click_count.clone();
@@ -559,23 +555,18 @@ async fn baseline_overlay_with_input_state_construction_receives_click(
     impl Render for ProbeWithInput {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             let counter = self.on_up_counter.clone();
-            div()
-                .relative()
-                .size_full()
-                .min_w_0()
-                .overflow_hidden()
-                .child(
-                    div()
-                        .absolute()
-                        .size_full()
-                        .occlude()
-                        .on_mouse_down(MouseButton::Left, |_e, _w, _c| {})
-                        .capture_any_mouse_up(move |_e, _w, _c| {
-                            *counter.borrow_mut() += 1;
-                        })
-                        .on_mouse_move(|_e, _w, _c| {})
-                        .on_scroll_wheel(|_e, _w, _c| {}),
-                )
+            div().relative().size_full().min_w_0().overflow_hidden().child(
+                div()
+                    .absolute()
+                    .size_full()
+                    .occlude()
+                    .on_mouse_down(MouseButton::Left, |_e, _w, _c| {})
+                    .capture_any_mouse_up(move |_e, _w, _c| {
+                        *counter.borrow_mut() += 1;
+                    })
+                    .on_mouse_move(|_e, _w, _c| {})
+                    .on_scroll_wheel(|_e, _w, _c| {}),
+            )
         }
     }
 
@@ -619,10 +610,8 @@ async fn baseline_overlay_with_input_state_construction_receives_click(
 /// the App is what breaks the rendered_frame's hitbox registration
 /// for descendant occlude divs.
 #[gpui::test]
-async fn baseline_overlay_after_gpui_component_init_receives_click(
-    cx: &mut TestAppContext,
-) {
-    cx.update(|cx| gpui_component::init(cx));
+async fn baseline_overlay_after_gpui_component_init_receives_click(cx: &mut TestAppContext) {
+    cx.update(gpui_component::init);
 
     let click_count = Rc::new(RefCell::new(0u32));
     let counter_for_render = click_count.clone();
@@ -633,29 +622,23 @@ async fn baseline_overlay_after_gpui_component_init_receives_click(
     impl Render for AfterInitProbe {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             let counter = self.on_up_counter.clone();
-            div()
-                .relative()
-                .size_full()
-                .min_w_0()
-                .overflow_hidden()
-                .child(
-                    div()
-                        .absolute()
-                        .size_full()
-                        .occlude()
-                        .on_mouse_down(MouseButton::Left, |_e, _w, _c| {})
-                        .capture_any_mouse_up(move |_e, _w, _c| {
-                            *counter.borrow_mut() += 1;
-                        })
-                        .on_mouse_move(|_e, _w, _c| {})
-                        .on_scroll_wheel(|_e, _w, _c| {}),
-                )
+            div().relative().size_full().min_w_0().overflow_hidden().child(
+                div()
+                    .absolute()
+                    .size_full()
+                    .occlude()
+                    .on_mouse_down(MouseButton::Left, |_e, _w, _c| {})
+                    .capture_any_mouse_up(move |_e, _w, _c| {
+                        *counter.borrow_mut() += 1;
+                    })
+                    .on_mouse_move(|_e, _w, _c| {})
+                    .on_scroll_wheel(|_e, _w, _c| {}),
+            )
         }
     }
 
-    let (_probe, cx) = cx.add_window_view(|_window, _cx| AfterInitProbe {
-        on_up_counter: counter_for_render,
-    });
+    let (_probe, cx) =
+        cx.add_window_view(|_window, _cx| AfterInitProbe { on_up_counter: counter_for_render });
     cx.run_until_parked();
 
     cx.simulate_mouse_move(point(px(400.0), px(400.0)), None, Modifiers::default());
@@ -683,9 +666,7 @@ async fn baseline_overlay_after_gpui_component_init_receives_click(
 /// capture-specific — every listener on input_overlay is missing
 /// its hit.
 #[gpui::test]
-async fn baseline_overlay_under_root_with_track_focus_receives_click(
-    cx: &mut TestAppContext,
-) {
+async fn baseline_overlay_under_root_with_track_focus_receives_click(cx: &mut TestAppContext) {
     use gpui::FocusHandle;
 
     let click_count = Rc::new(RefCell::new(0u32));
@@ -707,74 +688,46 @@ async fn baseline_overlay_under_root_with_track_focus_receives_click(
                 .track_focus(&self.focus)
                 .on_mouse_up(MouseButton::Left, |_event, _window, _cx| {})
                 .child(
-                    div()
-                        .absolute()
-                        .inset_0()
-                        .p(px(16.0))
-                        .gap(px(12.0))
-                        .flex()
-                        .child(
-                            div()
-                                .flex_1()
-                                .h_full()
-                                .min_w_0()
-                                .flex()
-                                .flex_col()
-                                .rounded(px(18.0))
-                                .border_1()
-                                .overflow_hidden()
-                                .child(
+                    div().absolute().inset_0().p(px(16.0)).gap(px(12.0)).flex().child(
+                        div()
+                            .flex_1()
+                            .h_full()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .rounded(px(18.0))
+                            .border_1()
+                            .overflow_hidden()
+                            .child(
+                                div().flex_1().overflow_hidden().child(
                                     div()
-                                        .flex_1()
+                                        .relative()
+                                        .size_full()
+                                        .min_w_0()
                                         .overflow_hidden()
+                                        .child(div().absolute().inset_0().child(div().size_full()))
+                                        .child(
+                                            canvas(move |_b, _w, _c| {}, |_, _, _, _| {})
+                                                .absolute()
+                                                .size_full(),
+                                        )
                                         .child(
                                             div()
-                                                .relative()
+                                                .absolute()
                                                 .size_full()
-                                                .min_w_0()
-                                                .overflow_hidden()
-                                                .child(
-                                                    div()
-                                                        .absolute()
-                                                        .inset_0()
-                                                        .child(div().size_full()),
-                                                )
-                                                .child(
-                                                    canvas(
-                                                        move |_b, _w, _c| {},
-                                                        |_, _, _, _| {},
-                                                    )
-                                                    .absolute()
-                                                    .size_full(),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .absolute()
-                                                        .size_full()
-                                                        .occlude()
-                                                        .on_mouse_down(
-                                                            MouseButton::Left,
-                                                            |_e, _w, _c| {},
-                                                        )
-                                                        .capture_any_mouse_up(
-                                                            move |_e, _w, _c| {
-                                                                *counter_up
-                                                                    .borrow_mut() += 1;
-                                                            },
-                                                        )
-                                                        .on_mouse_move(
-                                                            move |_e, _w, _c| {
-                                                                *counter_move
-                                                                    .borrow_mut() += 1;
-                                                            },
-                                                        )
-                                                        .on_scroll_wheel(
-                                                            |_e, _w, _c| {},
-                                                        ),
-                                                ),
+                                                .occlude()
+                                                .on_mouse_down(MouseButton::Left, |_e, _w, _c| {})
+                                                .capture_any_mouse_up(move |_e, _w, _c| {
+                                                    *counter_up.borrow_mut() += 1;
+                                                })
+                                                .on_mouse_move(move |_e, _w, _c| {
+                                                    *counter_move.borrow_mut() += 1;
+                                                })
+                                                .on_scroll_wheel(|_e, _w, _c| {}),
                                         ),
                                 ),
-                        ),
+                            ),
+                    ),
                 )
         }
     }
@@ -818,9 +771,7 @@ async fn baseline_overlay_under_root_with_track_focus_receives_click(
 /// frame whose hitboxes no longer match the listeners' captured
 /// snapshots, and this test will go red.
 #[gpui::test]
-async fn baseline_overlay_with_entity_update_in_mouse_down_receives_click(
-    cx: &mut TestAppContext,
-) {
+async fn baseline_overlay_with_entity_update_in_mouse_down_receives_click(cx: &mut TestAppContext) {
     let click_count = Rc::new(RefCell::new(0u32));
     let counter_for_render = click_count.clone();
 
@@ -839,12 +790,7 @@ async fn baseline_overlay_with_entity_update_in_mouse_down_receives_click(
                 .overflow_hidden()
                 .child(div().absolute().inset_0().child(div().size_full()))
                 .child(
-                    canvas(
-                        move |_bounds, _window, _cx| {},
-                        |_, _, _, _| {},
-                    )
-                    .absolute()
-                    .size_full(),
+                    canvas(move |_bounds, _window, _cx| {}, |_, _, _, _| {}).absolute().size_full(),
                 )
                 .child(
                     div()
@@ -891,9 +837,7 @@ async fn baseline_overlay_with_entity_update_in_mouse_down_receives_click(
 /// somehow disturbs hitbox registration or mouse_listeners ordering,
 /// this test will go red and pinpoint the suspect.
 #[gpui::test]
-async fn baseline_overlay_with_canvas_sibling_receives_click(
-    cx: &mut TestAppContext,
-) {
+async fn baseline_overlay_with_canvas_sibling_receives_click(cx: &mut TestAppContext) {
     let click_count = Rc::new(RefCell::new(0u32));
     let counter_for_render = click_count.clone();
 
@@ -908,19 +852,9 @@ async fn baseline_overlay_with_canvas_sibling_receives_click(
                 .size_full()
                 .min_w_0()
                 .overflow_hidden()
+                .child(div().absolute().inset_0().child(div().size_full()))
                 .child(
-                    div()
-                        .absolute()
-                        .inset_0()
-                        .child(div().size_full()),
-                )
-                .child(
-                    canvas(
-                        move |_bounds, _window, _cx| {},
-                        |_, _, _, _| {},
-                    )
-                    .absolute()
-                    .size_full(),
+                    canvas(move |_bounds, _window, _cx| {}, |_, _, _, _| {}).absolute().size_full(),
                 )
                 .child(
                     div()
@@ -937,9 +871,8 @@ async fn baseline_overlay_with_canvas_sibling_receives_click(
         }
     }
 
-    let (_probe, cx) = cx.add_window_view(|_window, _cx| CanvasSiblingProbe {
-        on_up_counter: counter_for_render,
-    });
+    let (_probe, cx) =
+        cx.add_window_view(|_window, _cx| CanvasSiblingProbe { on_up_counter: counter_for_render });
     cx.run_until_parked();
 
     cx.simulate_mouse_move(point(px(400.0), px(400.0)), None, Modifiers::default());
@@ -958,9 +891,7 @@ async fn baseline_overlay_with_canvas_sibling_receives_click(
 }
 
 #[gpui::test]
-async fn baseline_overlay_with_full_listener_combo_receives_click(
-    cx: &mut TestAppContext,
-) {
+async fn baseline_overlay_with_full_listener_combo_receives_click(cx: &mut TestAppContext) {
     let click_count = Rc::new(RefCell::new(0u32));
     let counter_for_render = click_count.clone();
 
@@ -985,9 +916,8 @@ async fn baseline_overlay_with_full_listener_combo_receives_click(
         }
     }
 
-    let (_probe, cx) = cx.add_window_view(|_window, _cx| ComboProbe {
-        on_up_counter: counter_for_render,
-    });
+    let (_probe, cx) =
+        cx.add_window_view(|_window, _cx| ComboProbe { on_up_counter: counter_for_render });
     cx.run_until_parked();
 
     cx.simulate_mouse_move(point(px(100.0), px(100.0)), None, Modifiers::default());
@@ -1024,9 +954,8 @@ async fn baseline_overlay_div_receives_simulated_click(cx: &mut TestAppContext) 
         }
     }
 
-    let (_probe, cx) = cx.add_window_view(|_window, _cx| Probe {
-        on_up_counter: counter_for_render,
-    });
+    let (_probe, cx) =
+        cx.add_window_view(|_window, _cx| Probe { on_up_counter: counter_for_render });
     cx.run_until_parked();
 
     cx.simulate_mouse_move(point(px(100.0), px(100.0)), None, Modifiers::default());
@@ -1065,7 +994,7 @@ async fn baseline_overlay_div_receives_simulated_click(cx: &mut TestAppContext) 
 /// returns to ~960 MB/s of host-side RGBA cloning + per-frame GPUI
 /// texture allocations.
 #[test]
-fn identical_live_frames_share_render_image_arc() {
+fn identical_live_frames_share_render_image_arc() -> Result<(), String> {
     let width = 16u32;
     let height = 8u32;
     let rgba_bytes = vec![0xAAu8; (width as usize) * (height as usize) * 4];
@@ -1076,23 +1005,23 @@ fn identical_live_frames_share_render_image_arc() {
         100,
         ServoLiveFrame::for_test(width, height, rgba_bytes.clone()),
     )
-    .expect("first frame builds from identical bytes");
+    .map_err(|error| error.to_string())?;
     let second = WebSurfaceFrame::from_live_frame(
         "https://example.com/".to_string(),
         WebSurfaceScrollOffset::default(),
         100,
         ServoLiveFrame::for_test(width, height, rgba_bytes),
     )
-    .expect("second frame builds from identical bytes");
+    .map_err(|error| error.to_string())?;
 
     let first_image = first
         .image
         .as_ref()
-        .expect("software path always produces an Arc<RenderImage>");
+        .ok_or_else(|| "software path must produce an Arc<RenderImage>".to_string())?;
     let second_image = second
         .image
         .as_ref()
-        .expect("software path always produces an Arc<RenderImage>");
+        .ok_or_else(|| "software path must produce an Arc<RenderImage>".to_string())?;
     assert!(
         Arc::ptr_eq(first_image, second_image),
         "TDD red: two ServoLiveFrames with byte-identical RGBA produced \
@@ -1104,17 +1033,18 @@ fn identical_live_frames_share_render_image_arc() {
         Arc::as_ptr(first_image),
         Arc::as_ptr(second_image),
     );
+    Ok(())
 }
 
 fn active_tab_overlay_state(
     shell: &gpui::Entity<super::ElyShell>,
     cx: &mut gpui::VisualTestContext,
-) -> (TabId, String, Option<Bounds<Pixels>>) {
+) -> Result<OverlayState, String> {
     shell.read_with(cx, |shell, _cx| {
         let tab = match &shell.state {
-            ShellState::Ready(core) => core.active_tab().expect("active tab exists"),
+            ShellState::Ready(core) => core.active_tab().map_err(|error| error.to_string())?,
             ShellState::StartupError(message) => {
-                panic!("ElyShell failed to start in test: {message}")
+                return Err(format!("ElyShell failed to start in test: {message}"));
             }
         };
         let tab_id = tab.id().clone();
@@ -1123,6 +1053,10 @@ fn active_tab_overlay_state(
             .web_surfaces_for_test()
             .surface_for_test(&tab_id)
             .and_then(|surface| surface.viewport_bounds);
-        (tab_id, url, bounds)
+        Ok((tab_id, url, bounds))
     })
+}
+
+fn example_url() -> Result<UrlText, ely_domain::DomainError> {
+    UrlText::parse("https://example.com/".to_string())
 }
