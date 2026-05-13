@@ -7,10 +7,8 @@ use std::{
 
 /// Environment variable that lets the user pick the rendering context
 /// kind used by the spawned sidecar. Accepted values: `software`
-/// and `hardware`. The default stays on the software context because
-/// the live sidecar talks to the app over stdio; the hardware path
-/// requires a transport that moves the IOSurface mach send right into
-/// the receiver process.
+/// and `hardware`. macOS defaults to the hardware path and receives
+/// IOSurface mach send rights over a side Mach channel.
 use ely_domain::SitePermissionDecision;
 use serde::Serialize;
 use thiserror::Error;

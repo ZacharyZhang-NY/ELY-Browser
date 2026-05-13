@@ -139,7 +139,11 @@ fn rendering_context_selection(raw: Option<&str>) -> SidecarRenderingContext {
 }
 
 fn default_rendering_context() -> SidecarRenderingContext {
-    SidecarRenderingContext::Software
+    if cfg!(target_os = "macos") {
+        SidecarRenderingContext::Hardware
+    } else {
+        SidecarRenderingContext::Software
+    }
 }
 
 fn workspace_target_sidecar_path(manifest_path: &Path) -> Option<PathBuf> {
@@ -176,8 +180,16 @@ mod tests {
         assert_eq!(context.sidecar_features(), SOFTWARE_SIDECAR_FEATURES);
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
-    fn defaults_to_software_rendering_context() {
+    fn defaults_to_hardware_rendering_context_on_macos() {
+        assert_eq!(rendering_context_selection(None), SidecarRenderingContext::Hardware);
+        assert_eq!(rendering_context_selection(Some("garbage")), SidecarRenderingContext::Hardware);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn defaults_to_software_rendering_context_off_macos() {
         assert_eq!(rendering_context_selection(None), SidecarRenderingContext::Software);
         assert_eq!(rendering_context_selection(Some("garbage")), SidecarRenderingContext::Software);
     }
