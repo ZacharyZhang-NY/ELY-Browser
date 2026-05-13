@@ -10,7 +10,7 @@ use std::{
 /// (default — bit-identical to pre-flag builds) and `hardware` (real
 /// GPU adapter via the vendored `HardwareOffscreenContext`; requires
 /// the sidecar binary to be compiled with the `hardware-render`
-/// feature and a GPUI BGRA surface presenter). Anything else is
+/// feature and the local GPUI BGRA surface presenter). Anything else is
 /// silently dropped and the sidecar defaults to software so a typo'd
 /// value never blocks the browser from starting; the sidecar's own
 /// arg parser still errors loudly on an unrecognised value when set
@@ -143,8 +143,8 @@ impl ServoLiveClient {
         // header so a buggy or hostile sidecar can't park us on
         // `read_exact` for an arbitrarily-sized buffer. The honest
         // upper limit is `width * height * 4` (RGBA8); `0` is the
-        // explicit "hardware path active, sample the IOSurface
-        // instead" signal — anything else is a protocol violation.
+        // explicit "hardware path active, sample the IOSurface"
+        // signal; any other byte count is a protocol violation.
         let pixel_byte_count =
             (report.width as u64).saturating_mul(report.height as u64).saturating_mul(4);
         let advertised = report.rgba_byte_count as u64;
@@ -157,12 +157,10 @@ impl ServoLiveClient {
             });
         }
 
-        // Raw frame bytes follow the JSON header on the same pipe
-        // ONLY when the sidecar didn't drop the payload for the
-        // hardware path. `read_exact` drains BufReader's buffer first
+        // Raw frame bytes follow the JSON header on the same pipe for
+        // software frames. `read_exact` drains BufReader's buffer first
         // (the line read never crosses the `\n` boundary) and then
-        // pulls the rest straight from the child's stdout — no
-        // fs::read, no temp file.
+        // pulls the rest straight from the child's stdout.
         let mut rgba_bytes = vec![0u8; report.rgba_byte_count];
         if report.rgba_byte_count > 0 {
             self.stdout.read_exact(&mut rgba_bytes).map_err(ServoLiveError::FrameRead)?;
@@ -189,10 +187,8 @@ impl Drop for ServoLiveClient {
 #[cfg(target_os = "macos")]
 impl ServoLiveClient {
     /// Convert the sidecar's `surface_handle` into a `CVPixelBuffer`
-    /// in the local cache. Failures are logged but don't error the
-    /// request — the renderer falls back to the existing software
-    /// `Arc<RenderImage>` path when no pixel buffer is available, so
-    /// the user always sees a frame.
+    /// in the local cache. A later frame with a missing pixel buffer
+    /// becomes a web-surface error instead of a blank ready frame.
     fn import_iosurface_handle(&mut self, handle: &LiveSurfaceHandle) {
         match self.iosurface_cache.import(handle.mach_port_name, handle.surface_id) {
             Ok(()) => tracing::info!(
@@ -266,10 +262,8 @@ pub(crate) struct ServoLiveFrame {
     #[cfg(all(test, feature = "live-site-smoke"))]
     sample_hash: u64,
     rgba_bytes: Vec<u8>,
-    /// Hardware-path companion: the imported IOSurface published by
-    /// the sidecar. GPUI 0.2.2 presents `surface(...)` through its
-    /// NV12 video path, so the current BGRA Servo surface stays as
-    /// observability plumbing until a BGRA presenter lands.
+    /// Hardware-path surface: the imported IOSurface published by the
+    /// sidecar, wrapped as a CVPixelBuffer for GPUI's `surface(...)`.
     #[cfg(target_os = "macos")]
     pixel_buffer: Option<CVPixelBuffer>,
 }
@@ -295,9 +289,7 @@ impl ServoLiveFrame {
     }
 
     /// Returns the imported `CVPixelBuffer` matching the frame's
-    /// current hardware surface, if any. The renderer keeps this as
-    /// wire-path evidence while GPUI's public `surface(...)` element
-    /// remains NV12-only.
+    /// current hardware surface.
     #[cfg(target_os = "macos")]
     #[must_use]
     pub fn pixel_buffer(&self) -> Option<&CVPixelBuffer> {
@@ -371,6 +363,29 @@ impl ServoLiveFrame {
             pixel_buffer: None,
         }
     }
+
+    #[cfg(all(test, target_os = "macos"))]
+    pub(crate) fn for_test_with_pixel_buffer(
+        width: u32,
+        height: u32,
+        pixel_buffer: CVPixelBuffer,
+    ) -> Self {
+        Self {
+            loaded_url: Some("https://example.com/".to_string()),
+            title: Some("Example".to_string()),
+            render_state: "complete".to_string(),
+            width,
+            height,
+            #[cfg(all(test, feature = "live-site-smoke"))]
+            non_white_pixel_count: 0,
+            #[cfg(all(test, feature = "live-site-smoke"))]
+            content_pixel_count: 0,
+            #[cfg(all(test, feature = "live-site-smoke"))]
+            sample_hash: 0,
+            rgba_bytes: Vec::new(),
+            pixel_buffer: Some(pixel_buffer),
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -417,13 +432,6 @@ fn rendering_context_from_env() -> Option<&'static str> {
     let raw = env::var(RENDERING_CONTEXT_ENV).ok()?;
     match rendering_context_selection(raw.as_str()) {
         RenderingContextSelection::Forward(value) => Some(value),
-        RenderingContextSelection::HoldHardware => {
-            tracing::warn!(
-                target: "ely::servo::iosurface",
-                "hardware rendering context requested; GPUI 0.2.2 surface presenter accepts NV12 CVPixelBuffers; Servo publishes BGRA IOSurfaces; using software rendering context",
-            );
-            None
-        }
         RenderingContextSelection::Ignore => None,
     }
 }
@@ -431,14 +439,13 @@ fn rendering_context_from_env() -> Option<&'static str> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RenderingContextSelection {
     Forward(&'static str),
-    HoldHardware,
     Ignore,
 }
 
 fn rendering_context_selection(raw: &str) -> RenderingContextSelection {
     match raw.to_lowercase().as_str() {
         "software" => RenderingContextSelection::Forward("software"),
-        "hardware" => RenderingContextSelection::HoldHardware,
+        "hardware" => RenderingContextSelection::Forward("hardware"),
         _ => RenderingContextSelection::Ignore,
     }
 }
@@ -448,10 +455,10 @@ mod tests {
     use super::{RenderingContextSelection, rendering_context_selection};
 
     #[test]
-    fn hardware_env_is_held_until_gpui_can_present_bgra_surfaces() {
+    fn hardware_env_forwards_to_the_sidecar() {
         assert_eq!(
             rendering_context_selection("hardware"),
-            RenderingContextSelection::HoldHardware
+            RenderingContextSelection::Forward("hardware")
         );
     }
 

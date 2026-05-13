@@ -177,12 +177,12 @@ impl WebSurfaceStore {
         position: Point<Pixels>,
         scale_factor: f32,
     ) -> WebSurfaceInputOutcome {
-        let surface =
-            self.surfaces.get_mut(tab_id).filter(|surface| surface.viewport_bounds.is_some());
-        let Some(surface) = surface else {
+        let Some(surface) = self.surfaces.get_mut(tab_id) else {
             return WebSurfaceInputOutcome::DroppedNoViewportBounds;
         };
-        let bounds = surface.viewport_bounds.expect("viewport_bounds checked above");
+        let Some(bounds) = surface.viewport_bounds else {
+            return WebSurfaceInputOutcome::DroppedNoViewportBounds;
+        };
         let Some(point) =
             WebSurfaceClickPoint::from_window_position(bounds, position, scale_factor)
         else {

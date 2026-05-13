@@ -10,7 +10,7 @@ macos_dir="${contents_dir}/MacOS"
 resources_dir="${contents_dir}/Resources"
 
 cargo build -p ely_app
-cargo build -p ely_servo_host --features servo-engine --bin ely_servo_sidecar
+cargo build -p ely_servo_host --features servo-engine,hardware-render --bin ely_servo_sidecar
 
 rm -rf "${bundle_root}"
 mkdir -p "${macos_dir}" "${resources_dir}"

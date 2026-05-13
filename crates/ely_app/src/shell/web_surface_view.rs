@@ -1,7 +1,7 @@
 use ely_domain::{BrowserTab, TabId};
 use gpui::{
     AnyElement, App, Entity, ImageSource, InteractiveElement, IntoElement, MouseButton, ObjectFit,
-    ParentElement, Styled, StyledImage, Window, canvas, div, img, px, rgb,
+    ParentElement, Styled, StyledImage, Window, canvas, div, img, px, rgb, surface,
 };
 
 use super::{ElyShell, web_surface_frame::WebSurfaceFrame};
@@ -12,22 +12,15 @@ pub(super) fn render_ready_web_surface(
     tab: &BrowserTab,
     state_entity: Entity<ElyShell>,
 ) -> AnyElement {
-    // T14: the `gpui::surface(...)` hardware path is held.
-    //
-    // GPUI 0.2.2's Blade Metal renderer hard-asserts that any
-    // CVPixelBuffer handed to `surface(...)` is NV12 YUV
-    // (kCVPixelFormatType_420YpCbCr8BiPlanarFullRange). See
-    // ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/
-    //   gpui-0.2.2/src/platform/blade/blade_renderer.rs:832
-    // for the assert. Our sidecar produces BGRA IOSurfaces, so
-    // calling `surface()` with that buffer panics the renderer on
-    // the first frame.
-    //
-    // We keep `services::iosurface_metal` and
-    // `WebSurfaceFrame::pixel_buffer` intact so the wire-side
-    // IOSurfaceHandle import path stays exercised; once GPUI gains a
-    // BGRA-capable Surface element this branch can come back. Until
-    // then every frame must go through `img()` below.
+    #[cfg(target_os = "macos")]
+    if let Some(pixel_buffer) = frame.pixel_buffer.as_ref() {
+        return render_web_surface(
+            tab,
+            state_entity,
+            surface(pixel_buffer.clone()).size_full().object_fit(ObjectFit::Fill),
+        );
+    }
+
     if let Some(image) = frame.image.as_ref() {
         return render_web_surface(
             tab,

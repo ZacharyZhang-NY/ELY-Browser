@@ -384,7 +384,7 @@ fn live_frame_swaps_red_and_blue_bytes_for_gpui_bgra() -> Result<(), Box<dyn Err
 }
 
 #[test]
-fn empty_live_frame_payload_is_rejected() {
+fn empty_live_frame_payload_is_rejected() -> Result<(), String> {
     use crate::services::servo_live::ServoLiveFrame;
     use crate::shell::web_surface_frame::WebSurfaceFrame;
     use crate::shell::web_surface_geometry::WebSurfaceScrollOffset;
@@ -396,13 +396,40 @@ fn empty_live_frame_payload_is_rejected() {
         ServoLiveFrame::for_test(1, 1, Vec::new()),
     );
 
-    let Err(error) = result else {
-        panic!("empty Servo frame payload must be rejected before it reaches Ready state");
+    let error = match result {
+        Ok(_) => return Err("empty Servo frame payload reached Ready state".to_string()),
+        Err(error) => error,
     };
     assert_eq!(
         error.to_string(),
-        "servo live frame did not include renderable pixels; BGRA IOSurface presentation is unavailable in GPUI 0.2.2",
+        "servo live frame did not include a software image or hardware IOSurface",
     );
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn hardware_live_frame_with_pixel_buffer_skips_software_image() -> Result<(), String> {
+    use core_video::pixel_buffer::{CVPixelBuffer, kCVPixelFormatType_32BGRA};
+
+    use crate::services::servo_live::ServoLiveFrame;
+    use crate::shell::web_surface_frame::WebSurfaceFrame;
+    use crate::shell::web_surface_geometry::WebSurfaceScrollOffset;
+
+    let pixel_buffer = CVPixelBuffer::new(kCVPixelFormatType_32BGRA, 1, 1, None)
+        .map_err(|status| format!("CVPixelBufferCreate returned status {status}"))?;
+    let live = ServoLiveFrame::for_test_with_pixel_buffer(1, 1, pixel_buffer);
+    let frame = WebSurfaceFrame::from_live_frame(
+        "https://example.com/".to_string(),
+        WebSurfaceScrollOffset::default(),
+        100,
+        live,
+    )
+    .map_err(|error| error.to_string())?;
+
+    assert!(frame.image.is_none(), "hardware frame should use the CVPixelBuffer surface path");
+    assert!(frame.pixel_buffer.is_some(), "hardware frame should carry the imported CVPixelBuffer");
+    Ok(())
 }
 
 fn web_bounds() -> Bounds<gpui::Pixels> {

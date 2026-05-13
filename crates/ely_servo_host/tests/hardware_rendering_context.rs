@@ -38,7 +38,7 @@ fn constructs_or_explains_why_not() {
 
 #[cfg(target_os = "macos")]
 #[test]
-fn extracts_iosurface_mach_port_from_current_surface() {
+fn extracts_iosurface_mach_port_from_current_surface() -> Result<(), String> {
     let width = 256;
     let height = 192;
     let context = match HardwareOffscreenContext::new(PhysicalSize::new(width, height)) {
@@ -48,13 +48,13 @@ fn extracts_iosurface_mach_port_from_current_surface() {
                 "hardware GL adapter not available on this host \
                  (acceptable in headless / no-GPU environments): {error:?}"
             );
-            return;
+            return Ok(());
         }
     };
 
     let first = context
         .current_iosurface_mach_port()
-        .expect("first IOSurface mach port extraction must succeed");
+        .map_err(|error| format!("first IOSurface mach port extraction failed: {error:?}"))?;
     assert!(
         first.mach_port_name != 0,
         "IOSurfaceCreateMachPort must return a non-null mach_port_t (got 0)"
@@ -67,8 +67,9 @@ fn extracts_iosurface_mach_port_from_current_surface() {
     // a stale `Framebuffer::None`.
     let second = context
         .current_iosurface_mach_port()
-        .expect("repeated mach port extraction must succeed after rebind");
+        .map_err(|error| format!("repeated mach port extraction failed: {error:?}"))?;
     assert!(second.mach_port_name != 0);
     assert_eq!(second.width, width);
     assert_eq!(second.height, height);
+    Ok(())
 }

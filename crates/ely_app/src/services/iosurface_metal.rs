@@ -3,10 +3,9 @@
 //!
 //! `T10.4` originally imported the IOSurface into an `MTLTexture`
 //! directly. GPUI 0.2.2 exposes `Window::paint_surface` /
-//! `elements::surface::Surface` for `CVPixelBuffer`, and that public
-//! path is wired for NV12 video frames. Servo's hardware renderer
-//! publishes BGRA IOSurfaces, so this cache stays as verified
-//! cross-process plumbing until the presenter accepts BGRA surfaces.
+//! `elements::surface::Surface` for `CVPixelBuffer`; the local GPUI
+//! patch adds a BGRA fragment pipeline for Servo's hardware
+//! IOSurfaces, so this cache is the renderer-side handoff point.
 //!
 //! Lifetime contract:
 //!
@@ -161,11 +160,14 @@ mod tests {
     const TEST_HEIGHT: u32 = 48;
 
     /// Build a CPU-backed IOSurface from scratch, the same way
-    /// surfman's macOS backend does — BGRA8 (four-cc '32BGRA'), width
-    /// + height + bytes_per_element + bytes_per_row in a Core
-    /// Foundation properties dictionary. The pointer-casts mirror
+    /// surfman's macOS backend does.
+    ///
+    /// BGRA8 (four-cc '32BGRA'), width + height + bytes_per_element
+    /// + bytes_per_row live in a Core Foundation properties dictionary.
+    ///
+    /// The pointer-casts mirror
     /// `surfman::platform::macos::system::surface::create_io_surface`.
-    fn build_local_iosurface() -> CFRetained<IOSurfaceRef> {
+    fn build_local_iosurface() -> Result<CFRetained<IOSurfaceRef>, String> {
         let pixel_format: i32 = i32::from_be_bytes(*b"BGRA");
         let bytes_per_element: i32 = 4;
         let bytes_per_row: i32 = (TEST_WIDTH as i32) * bytes_per_element;
@@ -196,27 +198,25 @@ mod tests {
                 &kCFTypeDictionaryKeyCallBacks,
                 &kCFTypeDictionaryValueCallBacks,
             )
-            .expect("CFDictionaryCreate must succeed for the properties dict");
+            .ok_or_else(|| "CFDictionaryCreate returned null".to_string())?;
             IOSurfaceRef::new(&properties)
-                .expect("IOSurfaceCreate must succeed for a well-formed properties dict")
+                .ok_or_else(|| "IOSurfaceCreate returned null".to_string())
         }
     }
 
     #[test]
-    fn imports_local_iosurface_into_pixel_buffer() {
+    fn imports_local_iosurface_into_pixel_buffer() -> Result<(), String> {
         let mut cache = IOSurfaceCache::new();
-        let iosurface = build_local_iosurface();
+        let iosurface = build_local_iosurface()?;
         let mach_port = iosurface.create_mach_port();
         assert!(mach_port != 0, "IOSurfaceCreateMachPort must yield a real port");
         let surface_id: u64 = 0xDEAD_BEEFu64;
 
-        cache
-            .import(mach_port, surface_id)
-            .expect("local IOSurface must round-trip into a CVPixelBuffer");
+        cache.import(mach_port, surface_id).map_err(|error| error.to_string())?;
 
         let pixel_buffer = cache
             .pixel_buffer_for(surface_id)
-            .expect("imported pixel buffer must be retrievable by surface_id");
+            .ok_or_else(|| "imported pixel buffer was missing".to_string())?;
         assert_eq!(
             pixel_buffer.get_width() as u32,
             TEST_WIDTH,
@@ -228,20 +228,22 @@ mod tests {
             "CVPixelBuffer height must match the source IOSurface",
         );
         assert_eq!(cache.cached_surface_count(), 1);
+        Ok(())
     }
 
     #[test]
-    fn second_import_with_same_surface_id_is_idempotent() {
+    fn second_import_with_same_surface_id_is_idempotent() -> Result<(), String> {
         let mut cache = IOSurfaceCache::new();
-        let iosurface = build_local_iosurface();
+        let iosurface = build_local_iosurface()?;
         let port_a = iosurface.create_mach_port();
         let port_b = iosurface.create_mach_port();
         assert!(port_a != 0 && port_b != 0 && port_a != port_b);
 
-        cache.import(port_a, 0xAAAA_AAAA).expect("first import");
+        cache.import(port_a, 0xAAAA_AAAA).map_err(|error| error.to_string())?;
         // Same surface_id → defensive dedup path; port_b is deallocated
         // without minting a duplicate CVPixelBuffer.
-        cache.import(port_b, 0xAAAA_AAAA).expect("duplicate import is idempotent");
+        cache.import(port_b, 0xAAAA_AAAA).map_err(|error| error.to_string())?;
         assert_eq!(cache.cached_surface_count(), 1);
+        Ok(())
     }
 }

@@ -35,6 +35,10 @@ ureq = "2.12.1"
 url = "2.5.4"
 uuid = { version = "1.12.1", features = ["v7"] }
 
+[patch.crates-io]
+# Local GPUI 0.2.2 patch: macOS `surface(CVPixelBuffer)` accepts Servo's BGRA IOSurfaces.
+gpui = { path = "third_party/gpui" }
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 
