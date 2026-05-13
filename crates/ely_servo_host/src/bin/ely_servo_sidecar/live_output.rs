@@ -29,7 +29,7 @@ pub(super) fn populate_surface_fields(
     host: &SoftwareServoHost,
     webview_id: &ely_domain::WebViewId,
     tab_id: &str,
-    published_surface_ids: &mut HashMap<String, HashSet<u64>>,
+    published_surface_ids: &mut HashMap<String, HashSet<IOSurfaceIdentity>>,
     outcome: &mut LiveOutcome,
 ) {
     if outcome.response.frame.is_none() {
@@ -40,6 +40,7 @@ pub(super) fn populate_surface_fields(
         let Ok(Some(identity)) = host.peek_iosurface_identity(webview_id) else {
             return;
         };
+        align_report_to_surface_identity(outcome, identity);
         let handle = if surface_has_been_published(published_surface_ids, tab_id, identity) {
             None
         } else {
@@ -57,13 +58,11 @@ pub(super) fn populate_surface_fields(
 
 #[cfg(any(test, all(feature = "hardware-render", target_os = "macos")))]
 fn surface_has_been_published(
-    published_surface_ids: &HashMap<String, HashSet<u64>>,
+    published_surface_ids: &HashMap<String, HashSet<IOSurfaceIdentity>>,
     tab_id: &str,
     identity: IOSurfaceIdentity,
 ) -> bool {
-    published_surface_ids
-        .get(tab_id)
-        .is_some_and(|published| published.contains(&identity.surface_id))
+    published_surface_ids.get(tab_id).is_some_and(|published| published.contains(&identity))
 }
 
 #[cfg(any(test, all(feature = "hardware-render", target_os = "macos")))]
@@ -75,7 +74,7 @@ struct SurfacePublication {
 
 #[cfg(any(test, all(feature = "hardware-render", target_os = "macos")))]
 fn surface_publication_for(
-    published_surface_ids: &mut HashMap<String, HashSet<u64>>,
+    published_surface_ids: &mut HashMap<String, HashSet<IOSurfaceIdentity>>,
     tab_id: &str,
     identity: IOSurfaceIdentity,
     handle: Option<IOSurfaceHandle>,
@@ -91,7 +90,10 @@ fn surface_publication_for(
         return SurfacePublication { current_surface_id: None, surface_handle: None };
     };
 
-    published_surface_ids.entry(tab_id.to_string()).or_default().insert(handle.surface_id);
+    published_surface_ids
+        .entry(tab_id.to_string())
+        .or_default()
+        .insert(IOSurfaceIdentity::from_handle(handle));
     SurfacePublication { current_surface_id: Some(handle.surface_id), surface_handle: Some(handle) }
 }
 
@@ -100,6 +102,14 @@ fn handle_matches_identity(handle: IOSurfaceHandle, identity: IOSurfaceIdentity)
     handle.surface_id == identity.surface_id
         && handle.width == identity.width
         && handle.height == identity.height
+}
+
+#[cfg(any(test, all(feature = "hardware-render", target_os = "macos")))]
+fn align_report_to_surface_identity(outcome: &mut LiveOutcome, identity: IOSurfaceIdentity) {
+    if let Some(frame) = outcome.response.frame.as_mut() {
+        frame.width = identity.width;
+        frame.height = identity.height;
+    }
 }
 
 /// Serialise the response then stream the optional raw RGBA frame on
@@ -163,11 +173,7 @@ pub(super) fn write_outcome(
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::{HashMap, HashSet},
-        error::Error,
-        time::Instant,
-    };
+    use std::{collections::HashMap, error::Error, time::Instant};
 
     use ely_servo_host::{IOSurfaceHandle, IOSurfaceIdentity};
 
@@ -175,7 +181,7 @@ mod tests {
         live_protocol::{LiveFrameReport, LiveOutcome, PartialFrameTimings},
         perf::FramePerfAggregator,
     };
-    use super::{surface_publication_for, write_outcome};
+    use super::{align_report_to_surface_identity, surface_publication_for, write_outcome};
 
     #[test]
     fn unpublished_surface_without_handle_leaves_selector_empty() {
@@ -197,17 +203,50 @@ mod tests {
 
         assert_eq!(publication.current_surface_id, Some(7));
         assert_eq!(publication.surface_handle, Some(handle));
-        assert!(published.get("tab-1").is_some_and(|ids| ids.contains(&7)));
+        assert!(published.get("tab-1").is_some_and(|ids| ids.contains(&identity(7, 800, 600))));
     }
 
     #[test]
     fn published_surface_reuses_selector_without_republishing_handle() {
-        let mut published = HashMap::from([("tab-1".to_string(), HashSet::from([7]))]);
+        let mut published = HashMap::new();
+        let handle = handle(7, 800, 600);
+        let _ =
+            surface_publication_for(&mut published, "tab-1", identity(7, 800, 600), Some(handle));
         let publication =
             surface_publication_for(&mut published, "tab-1", identity(7, 800, 600), None);
 
         assert_eq!(publication.current_surface_id, Some(7));
         assert!(publication.surface_handle.is_none());
+    }
+
+    #[test]
+    fn same_surface_id_with_changed_dimensions_republishes_handle() {
+        let mut published = HashMap::new();
+        let initial = handle(7, 800, 600);
+        let resized = handle(7, 1024, 768);
+
+        let _ =
+            surface_publication_for(&mut published, "tab-1", identity(7, 800, 600), Some(initial));
+        let publication =
+            surface_publication_for(&mut published, "tab-1", identity(7, 1024, 768), Some(resized));
+
+        assert_eq!(publication.current_surface_id, Some(7));
+        assert_eq!(publication.surface_handle, Some(resized));
+    }
+
+    #[test]
+    fn hardware_report_uses_surface_identity_dimensions() -> Result<(), Box<dyn Error>> {
+        let mut outcome = LiveOutcome::from_report(
+            report_with_size(2180, 1586),
+            PartialFrameTimings { paint_ns: 1_000, encode_ns: 2_000 },
+        );
+
+        align_report_to_surface_identity(&mut outcome, identity(7, 2168, 1566));
+
+        let report = outcome.response.frame.ok_or("report must remain present")?;
+        assert_eq!(report.width, 2168);
+        assert_eq!(report.height, 1566);
+        Ok(())
     }
 
     #[test]
@@ -263,13 +302,19 @@ mod tests {
     }
 
     fn report_with_byte_count(rgba_byte_count: usize) -> LiveFrameReport {
+        let mut report = report_with_size(2, 2);
+        report.rgba_byte_count = rgba_byte_count;
+        report
+    }
+
+    fn report_with_size(width: u32, height: u32) -> LiveFrameReport {
         LiveFrameReport {
             loaded_url: Some("https://example.com/".to_string()),
             title: Some("Example".to_string()),
             state: "complete",
-            width: 2,
-            height: 2,
-            rgba_byte_count,
+            width,
+            height,
+            rgba_byte_count: 0,
             non_white_pixel_count: 0,
             content_pixel_count: 0,
             sample_hash: 0,

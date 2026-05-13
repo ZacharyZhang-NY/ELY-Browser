@@ -8,9 +8,10 @@ use std::{
 
 use ely_domain::{DEFAULT_ZOOM_PERCENT, ProfileId, TabId, UrlText};
 use ely_servo_host::{
-    KeyboardTextRequest, MouseClickRequest, MouseHoverRequest, NavigationRequest, PageZoomRequest,
-    PermissionDecision, PermissionRequest, RenderingContextKind, ResizeRequest, ScrollRequest,
-    ServoHost, ServoSurfaceSize, SoftwareServoHost,
+    IOSurfaceIdentity, KeyboardTextRequest, MouseClickRequest, MouseHoverRequest,
+    NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest,
+    RenderingContextKind, ResizeRequest, ScrollRequest, ServoHost, ServoSurfaceSize,
+    SoftwareServoHost,
 };
 
 use super::args::LiveArgs;
@@ -47,7 +48,7 @@ pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
     let mut perf =
         FramePerfAggregator::new(context_label, FramePerfAggregator::DEFAULT_WINDOW_SIZE);
     let mut pending_summary: Option<FramePerfSummary> = None;
-    let mut published_surface_ids: HashMap<String, HashSet<u64>> = HashMap::new();
+    let mut published_surface_ids: HashMap<String, HashSet<IOSurfaceIdentity>> = HashMap::new();
     let stdin = io::stdin();
     let mut stdout = io::stdout().lock();
 
@@ -91,7 +92,7 @@ const fn rendering_context_label(kind: RenderingContextKind) -> &'static str {
 fn handle_request(
     host: &mut SoftwareServoHost,
     sessions: &mut HashMap<String, LiveSession>,
-    published_surface_ids: &mut HashMap<String, HashSet<u64>>,
+    published_surface_ids: &mut HashMap<String, HashSet<IOSurfaceIdentity>>,
     rendering_context_kind: RenderingContextKind,
     request: LiveRequest,
 ) -> Result<LiveOutcome, LiveSidecarError> {

@@ -28,6 +28,8 @@ use super::WebSurfaceStore;
 
 const LIVE_SURFACE_WIDTH: u32 = 934;
 const LIVE_SURFACE_HEIGHT: u32 = 657;
+const RESIZED_LIVE_SURFACE_WIDTH: u32 = LIVE_SURFACE_WIDTH + 12;
+const RESIZED_LIVE_SURFACE_HEIGHT: u32 = LIVE_SURFACE_HEIGHT + 20;
 const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
 const LIVE_SITE_RENDER_ATTEMPTS: usize = 3;
 const LIVE_SITE_WAIT_TIMEOUT: Duration = Duration::from_secs(20);
@@ -61,6 +63,13 @@ fn web_surface_opens_and_renders_prd_reference_sites() -> Result<(), Box<dyn Err
 fn web_surface_scrolls_prd_site_down_and_up() -> Result<(), Box<dyn Error>> {
     run_isolated_live_site_test("web_surface_scrolls_prd_site_down_and_up", || {
         assert_web_surface_scrolls_prd_site()
+    })
+}
+
+#[test]
+fn web_surface_resizes_prd_site_without_failed_state() -> Result<(), Box<dyn Error>> {
+    run_isolated_live_site_test("web_surface_resizes_prd_site_without_failed_state", || {
+        assert_web_surface_resizes_prd_site()
     })
 }
 
@@ -161,6 +170,54 @@ fn assert_web_surface_scrolls_prd_site() -> Result<(), Box<dyn Error>> {
         case,
         LIVE_SITE_SCROLL_DOWN_Y + LIVE_SITE_SCROLL_UP_Y,
         Some(down.sample_hash()),
+    )?;
+    store.close_surface(tab.id());
+    Ok(())
+}
+
+fn assert_web_surface_resizes_prd_site() -> Result<(), Box<dyn Error>> {
+    let mut store = WebSurfaceStore::new();
+    let profile_id = ProfileId::new();
+    let case = PRD_TOP_SITE_CASES
+        .iter()
+        .find(|case| case.url == "https://servo.org/")
+        .ok_or("missing servo.org live-site case")?;
+    let tab = web_tab(profile_id, case.url)?;
+
+    assert_eq!(
+        store.record_viewport_size(tab.id(), live_surface_bounds(), 1.0),
+        WebSurfaceInputOutcome::Applied,
+        "{}",
+        case.url,
+    );
+    store.ensure_surface(&tab, ProfileDataMode::Transient, &[]);
+    let _ = wait_for_ready_frame_at_size(
+        &mut store,
+        tab.id(),
+        case,
+        LIVE_SURFACE_WIDTH,
+        LIVE_SURFACE_HEIGHT,
+    )?;
+
+    assert_eq!(
+        store.record_viewport_size(tab.id(), resized_live_surface_bounds(), 1.0),
+        WebSurfaceInputOutcome::Buffered,
+        "{}",
+        case.url,
+    );
+    assert_eq!(
+        store.record_viewport_size(tab.id(), resized_live_surface_bounds(), 1.0),
+        WebSurfaceInputOutcome::Applied,
+        "{}",
+        case.url,
+    );
+    store.ensure_surface(&tab, ProfileDataMode::Transient, &[]);
+    wait_for_ready_frame_at_size(
+        &mut store,
+        tab.id(),
+        case,
+        RESIZED_LIVE_SURFACE_WIDTH,
+        RESIZED_LIVE_SURFACE_HEIGHT,
     )?;
     store.close_surface(tab.id());
     Ok(())
@@ -283,6 +340,49 @@ fn wait_for_ready_frame_at_scroll(
     }
 }
 
+fn wait_for_ready_frame_at_size(
+    store: &mut WebSurfaceStore,
+    tab_id: &TabId,
+    case: &LiveSiteCase,
+    expected_width: u32,
+    expected_height: u32,
+) -> Result<WebSurfaceFrame, String> {
+    let started_at = Instant::now();
+    let mut last_error = None;
+
+    loop {
+        if started_at.elapsed() >= LIVE_SITE_WAIT_TIMEOUT {
+            return Err(last_error.unwrap_or_else(|| {
+                format!("timed out rendering {} at {expected_width}x{expected_height}", case.url)
+            }));
+        }
+
+        store.tick(std::slice::from_ref(tab_id));
+        match store.state(tab_id) {
+            Some(WebSurfaceState::Ready(frame))
+                if frame.size().width == expected_width
+                    && frame.size().height == expected_height =>
+            {
+                if let Err(error) =
+                    validate_prd_frame_at_size(frame, case, expected_width, expected_height)
+                {
+                    last_error = Some(error);
+                    thread::sleep(LIVE_SITE_WAIT_INTERVAL);
+                    continue;
+                }
+                return Ok(frame.clone());
+            }
+            Some(WebSurfaceState::Ready(_)) => {}
+            Some(WebSurfaceState::Failed { message, .. }) => {
+                return Err(format!("{} failed: {message}", case.url));
+            }
+            Some(WebSurfaceState::Loading { .. }) | None => {}
+        }
+
+        thread::sleep(LIVE_SITE_WAIT_INTERVAL);
+    }
+}
+
 fn validate_prd_frame(
     frame: &WebSurfaceFrame,
     case: &LiveSiteCase,
@@ -330,6 +430,41 @@ fn validate_prd_frame(
     require(frame.sample_hash() > 0, case.url.to_string())
 }
 
+fn validate_prd_frame_at_size(
+    frame: &WebSurfaceFrame,
+    case: &LiveSiteCase,
+    expected_width: u32,
+    expected_height: u32,
+) -> Result<(), String> {
+    require(
+        frame.size()
+            == WebSurfaceSize {
+                width: expected_width,
+                height: expected_height,
+                device_pixel_ratio_percent: 100,
+            },
+        format!("{} size: {:?}", case.url, frame.size()),
+    )?;
+    require_render_state_is_open(frame.render_state(), case.url)?;
+    require(
+        frame.url_label().contains(normalized_url(case.url)),
+        format!("url: {}", frame.url_label()),
+    )?;
+    require(
+        frame.title_label().contains(case.title_fragment),
+        format!("title: {}", frame.title_label()),
+    )?;
+    if frame.has_hardware_surface() {
+        return Ok(());
+    }
+    require(frame.non_white_pixel_count() > 0, case.url.to_string())?;
+    require(
+        frame.content_pixel_count() >= MINIMUM_CONTENT_PIXELS,
+        format!("{} content pixels: {}", case.url, frame.content_pixel_count()),
+    )?;
+    require(frame.sample_hash() > 0, case.url.to_string())
+}
+
 fn log_prd_frame(label: &str, frame: &WebSurfaceFrame, case: &LiveSiteCase) {
     eprintln!(
         "prd-live-site {label} url={} loaded={} title={} state={} size={}x{} content_pixels={} non_white_pixels={} sample_hash={}",
@@ -357,6 +492,13 @@ fn live_surface_bounds() -> Bounds<gpui::Pixels> {
     Bounds::new(
         point(px(0.0), px(0.0)),
         size(px(LIVE_SURFACE_WIDTH as f32), px(LIVE_SURFACE_HEIGHT as f32)),
+    )
+}
+
+fn resized_live_surface_bounds() -> Bounds<gpui::Pixels> {
+    Bounds::new(
+        point(px(0.0), px(0.0)),
+        size(px(RESIZED_LIVE_SURFACE_WIDTH as f32), px(RESIZED_LIVE_SURFACE_HEIGHT as f32)),
     )
 }
 

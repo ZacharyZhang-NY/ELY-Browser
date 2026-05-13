@@ -890,10 +890,10 @@ fragment float4 surface_bgra_fragment(SurfaceFragmentInput input [[stage_in]],
                                       texture2d<float> bgra_texture
                                       [[texture(SurfaceInputIndex_YTexture)]]) {
   constexpr sampler texture_sampler(mag_filter::linear, min_filter::linear);
-  // Servo's CGL-backed IOSurfaces use the opposite framebuffer origin from
-  // GPUI's surface quad, so flip both texture axes for browser frames.
+  // Servo's CGL-backed IOSurfaces use the opposite vertical framebuffer origin
+  // from GPUI's surface quad, matching the software readback path.
   float2 texture_position =
-      float2(1.0 - input.texture_position.x, 1.0 - input.texture_position.y);
+      float2(input.texture_position.x, 1.0 - input.texture_position.y);
   return bgra_texture.sample(texture_sampler, texture_position);
 }
 
