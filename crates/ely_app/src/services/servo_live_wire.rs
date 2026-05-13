@@ -27,6 +27,9 @@ pub(super) enum LiveRequest {
     Poll {
         tab_id: String,
     },
+    Close {
+        tab_id: String,
+    },
 }
 
 #[derive(Deserialize)]
@@ -155,4 +158,20 @@ pub(super) fn log_frame_perf(summary: &LiveFramePerfSummary) {
         total_p99_us = summary.total_p99_us,
         "frame_perf",
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn close_request_serializes_to_wire() -> Result<(), serde_json::Error> {
+        let value =
+            serde_json::to_value(LiveRequest::Close { tab_id: "tab-live-close".to_string() })?;
+
+        assert_eq!(value, json!({"type": "close", "tab_id": "tab-live-close"}));
+        Ok(())
+    }
 }

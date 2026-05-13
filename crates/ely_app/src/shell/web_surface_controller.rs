@@ -51,12 +51,13 @@ impl ElyShell {
     }
 
     pub(super) fn tick_external_web_surfaces(&mut self) -> bool {
-        let visible_tab_ids = match &self.state {
+        let (visible_tab_ids, open_tab_ids) = match &self.state {
             super::ShellState::Ready(core) => {
-                core.visible_content_tab_ids().unwrap_or_else(|_| Vec::new())
+                (core.visible_content_tab_ids().unwrap_or_else(|_| Vec::new()), core.open_tab_ids())
             }
-            super::ShellState::StartupError(_) => Vec::new(),
+            super::ShellState::StartupError(_) => (Vec::new(), Vec::new()),
         };
+        self.web_surfaces.retain_tabs(&open_tab_ids);
         let result = self.web_surfaces.tick(&visible_tab_ids);
         let mut url_changed = false;
         for url_change in result.url_changes {

@@ -97,6 +97,22 @@ impl WebSurfaceStore {
         result
     }
 
+    pub(super) fn retain_tabs(&mut self, open_tab_ids: &[TabId]) {
+        let stale_tab_ids = self
+            .surfaces
+            .keys()
+            .filter(|tab_id| !open_tab_ids.iter().any(|open_tab_id| open_tab_id == *tab_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        for tab_id in stale_tab_ids {
+            self.close_surface(&tab_id);
+        }
+    }
+
+    pub(super) fn close_surface(&mut self, tab_id: &TabId) {
+        self.close_surface_for_tab(tab_id);
+    }
+
     pub(super) fn record_scroll_delta(
         &mut self,
         tab_id: &TabId,
@@ -332,6 +348,14 @@ impl WebSurfaceStore {
 
     fn surface_mut(&mut self, tab_id: &TabId) -> &mut PerTabSurface {
         self.surfaces.entry(tab_id.clone()).or_insert_with(PerTabSurface::new)
+    }
+
+    fn close_surface_for_tab(&mut self, tab_id: &TabId) {
+        self.runtime.close_tab(tab_id);
+        self.surfaces.remove(tab_id);
+        if self.keyboard_focus.as_ref().is_some_and(|focus| focus.tab_id == *tab_id) {
+            self.keyboard_focus = None;
+        }
     }
 
     #[cfg(test)]

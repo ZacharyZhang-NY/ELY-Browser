@@ -177,6 +177,13 @@ fn handle_request(
             );
             Ok(outcome)
         }
+        LiveRequest::Close { tab_id } => {
+            if let Some(session) = sessions.remove(&tab_id) {
+                host.close_webview(&session.webview_id);
+            }
+            published_surface_ids.remove(&tab_id);
+            Ok(LiveOutcome::empty())
+        }
     }
 }
 

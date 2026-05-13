@@ -1,4 +1,7 @@
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use ely_domain::{BrowserTab, ProfileId, SpaceId, TabId, UrlText};
 
@@ -11,6 +14,8 @@ use crate::{
 };
 
 use super::*;
+
+static FAKE_CLOSE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
 fn runtime_keeps_independent_clients_for_profile_scopes() -> Result<(), String> {
@@ -55,6 +60,23 @@ fn runtime_keeps_independent_clients_for_profile_scopes() -> Result<(), String> 
 }
 
 #[test]
+fn close_tab_removes_session_and_closes_client() -> Result<(), String> {
+    let before = FAKE_CLOSE_COUNT.load(Ordering::SeqCst);
+    let mut runtime = WebSurfaceRuntime::new_with_client_factory(fake_client_factory);
+    let tab = web_tab(TabId::new(), ProfileId::new(), "https://example.com/close")?;
+
+    runtime.ensure_tab(&tab, surface_size(), ProfileDataMode::Transient, &[], pending_input())?;
+    runtime.close_tab(tab.id());
+
+    assert_eq!(runtime.session_scope_for_test(tab.id()), None);
+    assert_eq!(FAKE_CLOSE_COUNT.load(Ordering::SeqCst), before + 1);
+
+    runtime.close_tab(tab.id());
+    assert_eq!(FAKE_CLOSE_COUNT.load(Ordering::SeqCst), before + 1);
+    Ok(())
+}
+
+#[test]
 fn session_scope_change_resets_tab_state() {
     let tab_id = TabId::new();
     let first_scope = WebSurfaceRuntimeScope::new(ProfileId::new(), ProfileDataMode::Persistent);
@@ -87,6 +109,11 @@ impl LiveRuntimeClient for FakeLiveRuntimeClient {
 
     fn poll(&mut self, _tab_id: String) -> Result<Option<WebLiveFrame>, String> {
         Ok(None)
+    }
+
+    fn close(&mut self, _tab_id: String) -> Result<(), String> {
+        FAKE_CLOSE_COUNT.fetch_add(1, Ordering::SeqCst);
+        Ok(())
     }
 }
 

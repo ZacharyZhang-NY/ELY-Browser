@@ -149,6 +149,15 @@ impl WebSurfaceRuntime {
         frames
     }
 
+    pub(super) fn close_tab(&mut self, tab_id: &TabId) {
+        let Some(session) = self.sessions.remove(tab_id) else {
+            return;
+        };
+        if let Some(client) = self.clients.get_mut(&session.scope) {
+            let _ = client.client.close(tab_id.as_str().to_string());
+        }
+    }
+
     fn ensure_runtime(&mut self, scope: WebSurfaceRuntimeScope) -> Result<(), String> {
         if self.clients.contains_key(&scope) {
             return Ok(());
@@ -200,6 +209,8 @@ trait LiveRuntimeClient {
     fn ensure(&mut self, request: ServoLiveEnsureRequest) -> Result<Option<WebLiveFrame>, String>;
 
     fn poll(&mut self, tab_id: String) -> Result<Option<WebLiveFrame>, String>;
+
+    fn close(&mut self, tab_id: String) -> Result<(), String>;
 }
 
 type WebLiveFrame = crate::services::servo_live::ServoLiveFrame;
@@ -211,6 +222,10 @@ impl LiveRuntimeClient for ServoLiveClient {
 
     fn poll(&mut self, tab_id: String) -> Result<Option<WebLiveFrame>, String> {
         ServoLiveClient::poll(self, tab_id).map_err(|error| error.to_string())
+    }
+
+    fn close(&mut self, tab_id: String) -> Result<(), String> {
+        ServoLiveClient::close(self, tab_id).map_err(|error| error.to_string())
     }
 }
 

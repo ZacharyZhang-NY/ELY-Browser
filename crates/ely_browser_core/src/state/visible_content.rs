@@ -4,6 +4,10 @@ use super::BrowserCore;
 use crate::CoreError;
 
 impl BrowserCore {
+    pub fn open_tab_ids(&self) -> Vec<TabId> {
+        self.tabs.iter().map(|tab| tab.id().clone()).collect()
+    }
+
     pub fn visible_content_tab_ids(&self) -> Result<Vec<TabId>, CoreError> {
         let active_tab = self.active_tab()?;
         let Some(split_id) = active_tab.split_id() else {

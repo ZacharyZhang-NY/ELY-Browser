@@ -114,6 +114,10 @@ impl SoftwareServoHost {
         self.paint_webview(webview_id, false).map(|_| ())
     }
 
+    pub fn close_webview(&mut self, webview_id: &WebViewId) -> bool {
+        self.webviews.remove(webview_id).is_some()
+    }
+
     fn new_started(
         size: ServoSurfaceSize,
         config_dir: Option<PathBuf>,

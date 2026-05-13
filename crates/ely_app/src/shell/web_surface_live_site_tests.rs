@@ -109,7 +109,10 @@ fn render_web_surface_frame(
         );
         store.ensure_surface(&tab, ProfileDataMode::Transient, &[]);
 
-        match wait_for_ready_frame(store, tab.id(), case) {
+        let result = wait_for_ready_frame(store, tab.id(), case);
+        store.close_surface(tab.id());
+
+        match result {
             Ok(frame) => return Ok(frame),
             Err(error) => last_error = error,
         }

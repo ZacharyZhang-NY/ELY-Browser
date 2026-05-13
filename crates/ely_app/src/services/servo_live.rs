@@ -99,6 +99,10 @@ impl ServoLiveClient {
         self.request(LiveRequest::Poll { tab_id })
     }
 
+    pub fn close(&mut self, tab_id: String) -> Result<(), ServoLiveError> {
+        self.request(LiveRequest::Close { tab_id }).map(|_| ())
+    }
+
     fn request(&mut self, request: LiveRequest) -> Result<Option<ServoLiveFrame>, ServoLiveError> {
         serde_json::to_writer(&mut self.stdin, &request)?;
         self.stdin.write_all(b"\n").map_err(ServoLiveError::Command)?;

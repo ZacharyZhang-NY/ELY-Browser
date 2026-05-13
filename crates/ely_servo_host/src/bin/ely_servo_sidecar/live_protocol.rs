@@ -45,6 +45,9 @@ pub(super) enum LiveRequest {
     Poll {
         tab_id: String,
     },
+    Close {
+        tab_id: String,
+    },
 }
 
 fn default_device_pixel_ratio() -> f32 {
@@ -239,4 +242,21 @@ pub(super) enum LiveSidecarError {
 
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn close_request_deserializes_from_wire() -> Result<(), serde_json::Error> {
+        let request =
+            serde_json::from_str::<LiveRequest>(r#"{"type":"close","tab_id":"tab-live-close"}"#)?;
+
+        assert!(matches!(
+            request,
+            LiveRequest::Close { tab_id } if tab_id == "tab-live-close"
+        ));
+        Ok(())
+    }
 }
