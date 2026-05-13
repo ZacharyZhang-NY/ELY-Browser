@@ -5,6 +5,8 @@ use std::{
 };
 
 use ely_servo_host::SoftwareServoHost;
+#[cfg(any(test, all(feature = "hardware-render", target_os = "macos")))]
+use ely_servo_host::{IOSurfaceHandle, IOSurfaceIdentity};
 
 use super::live_protocol::{LiveOutcome, LiveSidecarError, PartialFrameTimings};
 use super::perf::{FramePerfAggregator, FramePerfSummary, FrameStageTimings, elapsed_ns};
@@ -38,21 +40,66 @@ pub(super) fn populate_surface_fields(
         let Ok(Some(identity)) = host.peek_iosurface_identity(webview_id) else {
             return;
         };
-        outcome.response.current_surface_id = Some(identity.surface_id);
-        let seen = published_surface_ids.entry(tab_id.to_string()).or_default();
-        if seen.contains(&identity.surface_id) {
-            return;
-        }
-        let Ok(Some(handle)) = host.current_iosurface_handle(webview_id) else {
-            return;
+        let handle = if surface_has_been_published(published_surface_ids, tab_id, identity) {
+            None
+        } else {
+            host.current_iosurface_handle(webview_id).ok().flatten()
         };
-        seen.insert(handle.surface_id);
-        outcome.response.surface_handle = Some(handle);
+        let publication = surface_publication_for(published_surface_ids, tab_id, identity, handle);
+        outcome.response.current_surface_id = publication.current_surface_id;
+        outcome.response.surface_handle = publication.surface_handle;
     }
     #[cfg(not(all(feature = "hardware-render", target_os = "macos")))]
     {
         let _ = (host, webview_id, tab_id, published_surface_ids);
     }
+}
+
+#[cfg(any(test, all(feature = "hardware-render", target_os = "macos")))]
+fn surface_has_been_published(
+    published_surface_ids: &HashMap<String, HashSet<u64>>,
+    tab_id: &str,
+    identity: IOSurfaceIdentity,
+) -> bool {
+    published_surface_ids
+        .get(tab_id)
+        .is_some_and(|published| published.contains(&identity.surface_id))
+}
+
+#[cfg(any(test, all(feature = "hardware-render", target_os = "macos")))]
+#[derive(Clone, Copy)]
+struct SurfacePublication {
+    current_surface_id: Option<u64>,
+    surface_handle: Option<IOSurfaceHandle>,
+}
+
+#[cfg(any(test, all(feature = "hardware-render", target_os = "macos")))]
+fn surface_publication_for(
+    published_surface_ids: &mut HashMap<String, HashSet<u64>>,
+    tab_id: &str,
+    identity: IOSurfaceIdentity,
+    handle: Option<IOSurfaceHandle>,
+) -> SurfacePublication {
+    if surface_has_been_published(published_surface_ids, tab_id, identity) {
+        return SurfacePublication {
+            current_surface_id: Some(identity.surface_id),
+            surface_handle: None,
+        };
+    }
+
+    let Some(handle) = handle.filter(|handle| handle_matches_identity(*handle, identity)) else {
+        return SurfacePublication { current_surface_id: None, surface_handle: None };
+    };
+
+    published_surface_ids.entry(tab_id.to_string()).or_default().insert(handle.surface_id);
+    SurfacePublication { current_surface_id: Some(handle.surface_id), surface_handle: Some(handle) }
+}
+
+#[cfg(any(test, all(feature = "hardware-render", target_os = "macos")))]
+fn handle_matches_identity(handle: IOSurfaceHandle, identity: IOSurfaceIdentity) -> bool {
+    handle.surface_id == identity.surface_id
+        && handle.width == identity.width
+        && handle.height == identity.height
 }
 
 /// Serialise the response then stream the optional raw RGBA frame on
@@ -112,4 +159,69 @@ pub(super) fn write_outcome(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{HashMap, HashSet};
+
+    use ely_servo_host::{IOSurfaceHandle, IOSurfaceIdentity};
+
+    use super::surface_publication_for;
+
+    #[test]
+    fn unpublished_surface_without_handle_leaves_selector_empty() {
+        let mut published = HashMap::new();
+        let publication =
+            surface_publication_for(&mut published, "tab-1", identity(7, 800, 600), None);
+
+        assert_eq!(publication.current_surface_id, None);
+        assert!(publication.surface_handle.is_none());
+        assert!(published.is_empty());
+    }
+
+    #[test]
+    fn unpublished_surface_with_matching_handle_publishes_selector_and_handle() {
+        let mut published = HashMap::new();
+        let handle = handle(7, 800, 600);
+        let publication =
+            surface_publication_for(&mut published, "tab-1", identity(7, 800, 600), Some(handle));
+
+        assert_eq!(publication.current_surface_id, Some(7));
+        assert_eq!(publication.surface_handle, Some(handle));
+        assert!(published.get("tab-1").is_some_and(|ids| ids.contains(&7)));
+    }
+
+    #[test]
+    fn published_surface_reuses_selector_without_republishing_handle() {
+        let mut published = HashMap::from([("tab-1".to_string(), HashSet::from([7]))]);
+        let publication =
+            surface_publication_for(&mut published, "tab-1", identity(7, 800, 600), None);
+
+        assert_eq!(publication.current_surface_id, Some(7));
+        assert!(publication.surface_handle.is_none());
+    }
+
+    #[test]
+    fn mismatched_handle_leaves_surface_unpublished() {
+        let mut published = HashMap::new();
+        let publication = surface_publication_for(
+            &mut published,
+            "tab-1",
+            identity(7, 800, 600),
+            Some(handle(8, 800, 600)),
+        );
+
+        assert_eq!(publication.current_surface_id, None);
+        assert!(publication.surface_handle.is_none());
+        assert!(published.is_empty());
+    }
+
+    fn identity(surface_id: u64, width: u32, height: u32) -> IOSurfaceIdentity {
+        IOSurfaceIdentity { surface_id, width, height }
+    }
+
+    fn handle(surface_id: u64, width: u32, height: u32) -> IOSurfaceHandle {
+        IOSurfaceHandle { mach_port_name: 42, surface_id, width, height }
+    }
 }
