@@ -183,7 +183,7 @@ impl WebSurfaceFrame {
 
     #[cfg(all(test, feature = "live-site-smoke"))]
     pub(super) fn size(&self) -> WebSurfaceSize {
-        WebSurfaceSize { width: self.width, height: self.height }
+        WebSurfaceSize { width: self.width, height: self.height, device_pixel_ratio_percent: 100 }
     }
 
     #[cfg(all(test, feature = "live-site-smoke"))]
@@ -205,16 +205,6 @@ impl WebSurfaceFrame {
     }
 
     #[cfg(all(test, feature = "live-site-smoke"))]
-    pub(super) fn click_point(&self) -> Option<WebSurfaceClickPoint> {
-        self.click_point
-    }
-
-    #[cfg(all(test, feature = "live-site-smoke"))]
-    pub(super) fn typed_text(&self) -> Option<&str> {
-        self.typed_text.as_deref()
-    }
-
-    #[cfg(all(test, feature = "live-site-smoke"))]
     pub(super) fn non_white_pixel_count(&self) -> u64 {
         self.non_white_pixel_count
     }
@@ -227,6 +217,18 @@ impl WebSurfaceFrame {
     #[cfg(all(test, feature = "live-site-smoke"))]
     pub(super) fn sample_hash(&self) -> u64 {
         self.sample_hash
+    }
+
+    #[cfg(all(test, feature = "live-site-smoke"))]
+    pub(super) fn has_hardware_surface(&self) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            self.pixel_buffer.is_some()
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            false
+        }
     }
 }
 

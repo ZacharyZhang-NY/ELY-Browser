@@ -106,6 +106,14 @@ impl SoftwareServoHost {
         self.create_webview_in_context(tab_id, profile_id, size)
     }
 
+    /// Paint and present the webview's current surface while leaving
+    /// framebuffer readback to callers that explicitly need RGBA
+    /// bytes. The live hardware path uses this before publishing the
+    /// IOSurface handle to the renderer process.
+    pub fn paint_without_readback(&mut self, webview_id: &WebViewId) -> Result<(), ServoHostError> {
+        self.paint_webview(webview_id, false).map(|_| ())
+    }
+
     fn new_started(
         size: ServoSurfaceSize,
         config_dir: Option<PathBuf>,
@@ -128,6 +136,40 @@ impl SoftwareServoHost {
             wake_requested,
             last_rendered_frame: None,
         })
+    }
+
+    fn paint_webview(
+        &mut self,
+        webview_id: &WebViewId,
+        capture_frame: bool,
+    ) -> Result<Option<RenderedFrame>, ServoHostError> {
+        let rendering_context = self.webview(webview_id)?.rendering_context.clone();
+        rendering_context.make_current().map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
+        rendering_context.prepare_for_rendering();
+        // `webview.paint()` dispatches a render command to Servo's paint
+        // thread — it does NOT block until the framebuffer is consistent.
+        // Without a barrier, `read_rendered_frame` below races the paint
+        // thread and reliably reads the cleared-white state on data: URLs.
+        // Clear the pending-frame flag first so we can detect the *next*
+        // `notify_new_frame_ready` (the one our `paint()` triggers), then
+        // pump the event loop until Servo reports the new frame is ready
+        // or `paint_barrier_budget()` elapses. On timeout we fall through
+        // and read anyway, preserving the pre-T15 fast path for callers
+        // that explicitly disable the barrier with `ELY_PAINT_BARRIER_MS=0`.
+        {
+            let webview = self.webview(webview_id)?;
+            webview.delegate.mark_frame_presented();
+            webview.webview.paint();
+        }
+        self.wait_for_paint_completion(webview_id);
+        let rendered_frame = if capture_frame {
+            Some(Self::read_rendered_frame(rendering_context.as_ref())?)
+        } else {
+            None
+        };
+        rendering_context.present();
+        self.webview(webview_id)?.delegate.mark_frame_presented();
+        Ok(rendered_frame)
     }
 }
 
@@ -333,28 +375,9 @@ impl ServoHost for SoftwareServoHost {
     }
 
     fn paint(&mut self, webview_id: &WebViewId) -> Result<(), ServoHostError> {
-        let rendering_context = self.webview(webview_id)?.rendering_context.clone();
-        rendering_context.make_current().map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
-        rendering_context.prepare_for_rendering();
-        // `webview.paint()` dispatches a render command to Servo's paint
-        // thread — it does NOT block until the framebuffer is consistent.
-        // Without a barrier, `read_rendered_frame` below races the paint
-        // thread and reliably reads the cleared-white state on data: URLs.
-        // Clear the pending-frame flag first so we can detect the *next*
-        // `notify_new_frame_ready` (the one our `paint()` triggers), then
-        // pump the event loop until Servo reports the new frame is ready
-        // or `paint_barrier_budget()` elapses. On timeout we fall through
-        // and read anyway, preserving the pre-T15 fast path for callers
-        // that explicitly disable the barrier with `ELY_PAINT_BARRIER_MS=0`.
-        {
-            let webview = self.webview(webview_id)?;
-            webview.delegate.mark_frame_presented();
-            webview.webview.paint();
-        }
-        self.wait_for_paint_completion(webview_id);
-        let rendered_frame = Self::read_rendered_frame(rendering_context.as_ref())?;
-        rendering_context.present();
-        self.webview(webview_id)?.delegate.mark_frame_presented();
+        let Some(rendered_frame) = self.paint_webview(webview_id, true)? else {
+            return Err(ServoHostError::RenderedFrameUnavailable);
+        };
         self.last_rendered_frame = Some(rendered_frame);
         Ok(())
     }

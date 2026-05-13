@@ -353,48 +353,8 @@ fn poll_frame(
         host.tick();
         let snapshot = host.snapshot(&session.webview_id)?;
         if snapshot.has_pending_frame() {
-            let paint_started_at = Instant::now();
-            host.paint(&session.webview_id)?;
-            let snapshot = host.snapshot(&session.webview_id)?;
-            let frame = host.last_rendered_frame()?;
-            let paint_ns = elapsed_ns(paint_started_at);
-            let encode_started_at = Instant::now();
-            // `non_white`/`content_pixel_count` come from a CPU
-            // readback of the bound framebuffer. On the software
-            // path that's the source of truth: Servo's compositor
-            // returns a white framebuffer until layout completes, so
-            // the threshold check is how we skip blank loading
-            // frames. On the hardware path the readback goes through
-            // `glReadPixels` on the surfman swap-chain surface, which
-            // can return content that fails the threshold even when
-            // Servo painted real pixels (the IOSurface itself is
-            // valid for GPUI to sample directly). `has_pending_frame`
-            // already encodes "Servo finished painting" — trust it
-            // for the hardware path instead of double-checking via a
-            // readback we know to be unreliable.
-            //
-            // For the software path, the threshold check is only
-            // useful once per URL: after we've confirmed at least one
-            // paint had real content, every subsequent input deserves
-            // an immediate return on the next pending frame instead
-            // of another 250 ms wait. `session.ever_visible_frame`
-            // tracks that, reset on navigate.
-            let has_visible_content = match rendering_context_kind {
-                RenderingContextKind::Software => {
-                    session.ever_visible_frame
-                        || (frame.non_white_pixel_count() > 0 && frame.content_pixel_count() > 0)
-                }
-                #[cfg(feature = "hardware-render")]
-                RenderingContextKind::Hardware => true,
-                #[cfg(not(feature = "hardware-render"))]
-                RenderingContextKind::Hardware => {
-                    frame.non_white_pixel_count() > 0 && frame.content_pixel_count() > 0
-                }
-            };
-            let report = LiveFrameReport::new(&snapshot, &frame);
-            let encode_ns = elapsed_ns(encode_started_at);
-            let timings = PartialFrameTimings { paint_ns, encode_ns };
-            let outcome = LiveOutcome::from_frame(report, frame, timings);
+            let (outcome, has_visible_content) =
+                paint_pending_frame(host, session, rendering_context_kind)?;
             if has_visible_content {
                 session.awaiting_visible_frame = false;
                 session.ever_visible_frame = true;
@@ -415,6 +375,54 @@ fn poll_frame(
 
         thread::sleep(LIVE_FRAME_WAIT_INTERVAL);
     }
+}
+
+fn paint_pending_frame(
+    host: &mut SoftwareServoHost,
+    session: &mut LiveSession,
+    rendering_context_kind: RenderingContextKind,
+) -> Result<(LiveOutcome, bool), LiveSidecarError> {
+    match rendering_context_kind {
+        RenderingContextKind::Software => paint_readback_frame(host, session),
+        #[cfg(all(feature = "hardware-render", target_os = "macos"))]
+        RenderingContextKind::Hardware => paint_hardware_surface_frame(host, session),
+        #[cfg(not(all(feature = "hardware-render", target_os = "macos")))]
+        RenderingContextKind::Hardware => paint_readback_frame(host, session),
+    }
+}
+
+fn paint_readback_frame(
+    host: &mut SoftwareServoHost,
+    session: &LiveSession,
+) -> Result<(LiveOutcome, bool), LiveSidecarError> {
+    let paint_started_at = Instant::now();
+    host.paint(&session.webview_id)?;
+    let snapshot = host.snapshot(&session.webview_id)?;
+    let frame = host.last_rendered_frame()?;
+    let paint_ns = elapsed_ns(paint_started_at);
+    let encode_started_at = Instant::now();
+    let has_visible_content = session.ever_visible_frame
+        || (frame.non_white_pixel_count() > 0 && frame.content_pixel_count() > 0);
+    let report = LiveFrameReport::new(&snapshot, &frame);
+    let encode_ns = elapsed_ns(encode_started_at);
+    let timings = PartialFrameTimings { paint_ns, encode_ns };
+    Ok((LiveOutcome::from_frame(report, frame, timings), has_visible_content))
+}
+
+#[cfg(all(feature = "hardware-render", target_os = "macos"))]
+fn paint_hardware_surface_frame(
+    host: &mut SoftwareServoHost,
+    session: &LiveSession,
+) -> Result<(LiveOutcome, bool), LiveSidecarError> {
+    let paint_started_at = Instant::now();
+    host.paint_without_readback(&session.webview_id)?;
+    let snapshot = host.snapshot(&session.webview_id)?;
+    let paint_ns = elapsed_ns(paint_started_at);
+    let encode_started_at = Instant::now();
+    let report = LiveFrameReport::new_hardware_surface(&snapshot, session.width, session.height);
+    let encode_ns = elapsed_ns(encode_started_at);
+    let timings = PartialFrameTimings { paint_ns, encode_ns };
+    Ok((LiveOutcome::from_report(report, timings), true))
 }
 
 #[derive(Clone)]

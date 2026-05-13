@@ -67,10 +67,10 @@ pub(super) struct PartialFrameTimings {
     pub encode_ns: u64,
 }
 
-/// A handle plus an optional rendered frame and partial stage
-/// timings. We hold the `RenderedFrame` so the write step can stream
-/// its existing rgba slice straight onto the pipe — no extra
-/// `to_vec()`.
+/// A response plus an optional software RGBA payload and partial stage
+/// timings. Software frames carry `RenderedFrame` so the write step
+/// can stream its existing rgba slice straight onto the pipe; hardware
+/// surface frames carry only a `LiveFrameReport`.
 pub(super) struct LiveOutcome {
     pub response: LiveResponse,
     pub frame: Option<RenderedFrame>,
@@ -94,6 +94,15 @@ impl LiveOutcome {
         Self {
             response: LiveResponse::frame(report),
             frame: Some(frame),
+            partial_timings: Some(partial_timings),
+        }
+    }
+
+    #[cfg(any(test, all(feature = "hardware-render", target_os = "macos")))]
+    pub fn from_report(report: LiveFrameReport, partial_timings: PartialFrameTimings) -> Self {
+        Self {
+            response: LiveResponse::frame(report),
+            frame: None,
             partial_timings: Some(partial_timings),
         }
     }
@@ -180,6 +189,23 @@ impl LiveFrameReport {
             non_white_pixel_count: frame.non_white_pixel_count(),
             content_pixel_count: frame.content_pixel_count(),
             sample_hash: frame.sample_hash(),
+        }
+    }
+
+    /// Build a report for the hardware IOSurface path. Pixel metrics
+    /// are unavailable because the path skips framebuffer readback.
+    #[cfg(all(feature = "hardware-render", target_os = "macos"))]
+    pub fn new_hardware_surface(snapshot: &WebViewSnapshot, width: u32, height: u32) -> Self {
+        Self {
+            loaded_url: snapshot.url().map(str::to_string),
+            title: snapshot.title().map(str::to_string),
+            state: state_label(snapshot.state()),
+            width,
+            height,
+            rgba_byte_count: 0,
+            non_white_pixel_count: 0,
+            content_pixel_count: 0,
+            sample_hash: 0,
         }
     }
 }

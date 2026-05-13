@@ -152,7 +152,12 @@ fn wait_for_ready_frame(
 
 fn validate_prd_frame(frame: &WebSurfaceFrame, case: &LiveSiteCase) -> Result<(), String> {
     require(
-        frame.size() == WebSurfaceSize { width: LIVE_SURFACE_WIDTH, height: LIVE_SURFACE_HEIGHT },
+        frame.size()
+            == WebSurfaceSize {
+                width: LIVE_SURFACE_WIDTH,
+                height: LIVE_SURFACE_HEIGHT,
+                device_pixel_ratio_percent: 100,
+            },
         format!("{} size: {:?}", case.url, frame.size()),
     )?;
     require(
@@ -172,6 +177,9 @@ fn validate_prd_frame(frame: &WebSurfaceFrame, case: &LiveSiteCase) -> Result<()
         frame.detail_label() == format!("{} 934x657", frame.render_state()),
         format!("{} detail: {}", case.url, frame.detail_label()),
     )?;
+    if frame.has_hardware_surface() {
+        return Ok(());
+    }
     require(frame.non_white_pixel_count() > 0, case.url.to_string())?;
     require(
         frame.content_pixel_count() >= MINIMUM_CONTENT_PIXELS,

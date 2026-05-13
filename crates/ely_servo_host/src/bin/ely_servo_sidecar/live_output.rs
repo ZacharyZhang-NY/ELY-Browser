@@ -32,7 +32,7 @@ pub(super) fn populate_surface_fields(
     published_surface_ids: &mut HashMap<String, HashSet<u64>>,
     outcome: &mut LiveOutcome,
 ) {
-    if outcome.frame.is_none() {
+    if outcome.response.frame.is_none() {
         return;
     }
     #[cfg(all(feature = "hardware-render", target_os = "macos"))]
@@ -124,7 +124,7 @@ pub(super) fn write_outcome(
 ) -> Result<(), LiveSidecarError> {
     let mut outcome = outcome.unwrap_or_else(|error| LiveOutcome::error(error.to_string()));
     let partial_timings = outcome.partial_timings.take();
-    let frame_present = outcome.frame.is_some();
+    let frame_present = outcome.response.frame.is_some();
     if let Some(summary) = pending_summary.take() {
         outcome.response.perf = Some(summary);
     }
@@ -163,11 +163,19 @@ pub(super) fn write_outcome(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
+    use std::{
+        collections::{HashMap, HashSet},
+        error::Error,
+        time::Instant,
+    };
 
     use ely_servo_host::{IOSurfaceHandle, IOSurfaceIdentity};
 
-    use super::surface_publication_for;
+    use super::super::{
+        live_protocol::{LiveFrameReport, LiveOutcome, PartialFrameTimings},
+        perf::FramePerfAggregator,
+    };
+    use super::{surface_publication_for, write_outcome};
 
     #[test]
     fn unpublished_surface_without_handle_leaves_selector_empty() {
@@ -217,11 +225,54 @@ mod tests {
         assert!(published.is_empty());
     }
 
+    #[test]
+    fn payloadless_surface_report_records_perf_and_writes_no_rgba() -> Result<(), Box<dyn Error>> {
+        let mut outcome = LiveOutcome::from_report(
+            report_with_byte_count(16),
+            PartialFrameTimings { paint_ns: 1_000, encode_ns: 2_000 },
+        );
+        outcome.response.current_surface_id = Some(7);
+        let mut stdout = Vec::new();
+        let mut perf = FramePerfAggregator::new("hardware", 1);
+        let mut pending_summary = None;
+
+        write_outcome(&mut stdout, &mut perf, &mut pending_summary, Ok(outcome), Instant::now())?;
+
+        let Some(newline_index) = stdout.iter().position(|byte| *byte == b'\n') else {
+            return Err("response newline missing".into());
+        };
+        let line = std::str::from_utf8(&stdout[..newline_index])?;
+        let response: serde_json::Value = serde_json::from_str(line)?;
+        let rgba_byte_count = response
+            .get("frame")
+            .and_then(|frame| frame.get("rgba_byte_count"))
+            .and_then(serde_json::Value::as_u64);
+
+        assert_eq!(rgba_byte_count, Some(0));
+        assert!(stdout[newline_index + 1..].is_empty());
+        assert!(pending_summary.is_some());
+        Ok(())
+    }
+
     fn identity(surface_id: u64, width: u32, height: u32) -> IOSurfaceIdentity {
         IOSurfaceIdentity { surface_id, width, height }
     }
 
     fn handle(surface_id: u64, width: u32, height: u32) -> IOSurfaceHandle {
         IOSurfaceHandle { mach_port_name: 42, surface_id, width, height }
+    }
+
+    fn report_with_byte_count(rgba_byte_count: usize) -> LiveFrameReport {
+        LiveFrameReport {
+            loaded_url: Some("https://example.com/".to_string()),
+            title: Some("Example".to_string()),
+            state: "complete",
+            width: 2,
+            height: 2,
+            rgba_byte_count,
+            non_white_pixel_count: 0,
+            content_pixel_count: 0,
+            sample_hash: 0,
+        }
     }
 }
