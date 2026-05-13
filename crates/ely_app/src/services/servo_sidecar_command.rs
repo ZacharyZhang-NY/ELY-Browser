@@ -90,15 +90,20 @@ pub(super) fn default_sidecar_command() -> Result<SidecarCommandTarget, SidecarC
     })?;
     let adjacent_sidecar = exe_dir.join(sidecar_binary_name());
     let workspace_manifest = workspace_manifest_path();
+    let workspace_target_sidecar =
+        workspace_manifest.as_ref().and_then(|path| workspace_target_sidecar_path(path));
+    let adjacent_is_workspace_target =
+        workspace_target_sidecar.as_ref().is_some_and(|path| path == &adjacent_sidecar);
     let prefer_cargo_hardware_sidecar = rendering_context_from_env()
         == SidecarRenderingContext::Hardware
+        && adjacent_is_workspace_target
         && workspace_manifest.as_ref().is_some_and(|path| path.is_file());
     if adjacent_sidecar.is_file() && !prefer_cargo_hardware_sidecar {
         return Ok(SidecarCommandTarget::Binary(adjacent_sidecar));
     }
 
     if let Some(manifest_path) = workspace_manifest {
-        if let Some(target_sidecar) = workspace_target_sidecar_path(&manifest_path)
+        if let Some(target_sidecar) = workspace_target_sidecar
             && target_sidecar.is_file()
             && !prefer_cargo_hardware_sidecar
         {
