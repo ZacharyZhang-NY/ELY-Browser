@@ -31,7 +31,7 @@ pub(crate) fn transient_profile_data_dir(
     )))
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum ProfileDataMode {
     Persistent,
     Transient,

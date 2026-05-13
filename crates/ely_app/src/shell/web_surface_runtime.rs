@@ -16,13 +16,23 @@ use super::{
 };
 
 pub(super) struct WebSurfaceRuntime {
-    state: RuntimeState,
+    clients: BTreeMap<WebSurfaceRuntimeScope, ScopedRuntimeClient>,
     sessions: BTreeMap<TabId, WebSurfaceSession>,
+    client_factory: LiveRuntimeClientFactory,
 }
 
 impl WebSurfaceRuntime {
     pub(super) fn new() -> Self {
-        Self { state: RuntimeState::Empty, sessions: BTreeMap::new() }
+        Self {
+            clients: BTreeMap::new(),
+            sessions: BTreeMap::new(),
+            client_factory: new_servo_live_client,
+        }
+    }
+
+    #[cfg(test)]
+    fn new_with_client_factory(client_factory: LiveRuntimeClientFactory) -> Self {
+        Self { clients: BTreeMap::new(), sessions: BTreeMap::new(), client_factory }
     }
 
     pub(super) fn ensure_tab(
@@ -38,27 +48,25 @@ impl WebSurfaceRuntime {
 
         let requested_url = tab.url().as_str().to_string();
         let zoom_percent = tab.zoom_percent();
-        let (state, sessions) = (&mut self.state, &mut self.sessions);
-        let RuntimeState::Ready { scope: active_scope, client, .. } = state else {
-            return Err("Servo live runtime is unavailable".to_string());
-        };
-        if active_scope != &scope {
-            return Err(active_scope.error_for(&scope));
-        }
         let (scroll_delta_x, scroll_delta_y, scroll_point_x, scroll_point_y) =
             scroll_wire_fields(input.scroll_delta, input.scroll_point)?;
         let user_navigation_input = input_requests_history_navigation(&input);
 
-        let session = sessions.entry(tab.id().clone()).or_insert_with(WebSurfaceSession::default);
         let next_scroll_offset = input.scroll_offset;
-        let started_loading = session.started_loading(&requested_url, size, zoom_percent);
-        if started_loading {
-            session.pending_user_navigation = false;
-        }
-        if user_navigation_input {
-            session.pending_user_navigation = true;
-        }
-        let frame = client
+        let started_loading = {
+            let session = session_for_scope(&mut self.sessions, tab.id(), scope.clone());
+            let started_loading = session.started_loading(&requested_url, size, zoom_percent);
+            if started_loading {
+                session.pending_user_navigation = false;
+            }
+            if user_navigation_input {
+                session.pending_user_navigation = true;
+            }
+            started_loading
+        };
+
+        let frame = self
+            .client_for_scope(&scope)?
             .ensure(ServoLiveEnsureRequest {
                 tab_id: tab.id().as_str().to_string(),
                 profile_id: tab.profile_id().as_str().to_string(),
@@ -77,8 +85,7 @@ impl WebSurfaceRuntime {
                 hover_y: input.hover_point.map(|point| point.y()),
                 typed_text: input.typed_text,
                 site_permissions: permissions.iter().map(ServoLiveSitePermission::from).collect(),
-            })
-            .map_err(|error| error.to_string())?
+            })?
             .map(|frame| {
                 WebSurfaceFrame::from_live_frame(
                     requested_url.clone(),
@@ -89,10 +96,13 @@ impl WebSurfaceRuntime {
                 .map_err(|error| error.to_string())
             })
             .transpose()?;
-        let url_change = frame
-            .as_ref()
-            .and_then(|frame| session.url_change_for(tab.id(), requested_url.as_str(), frame));
+        let url_change = frame.as_ref().and_then(|frame| {
+            self.sessions
+                .get_mut(tab.id())
+                .and_then(|session| session.url_change_for(tab.id(), requested_url.as_str(), frame))
+        });
 
+        let session = session_for_scope(&mut self.sessions, tab.id(), scope);
         session.requested_url = requested_url.clone();
         session.size = size;
         session.zoom_percent = zoom_percent;
@@ -102,43 +112,37 @@ impl WebSurfaceRuntime {
     }
 
     pub(super) fn tick(&mut self, visible_tab_ids: &[TabId]) -> Vec<WebSurfaceRuntimeFrame> {
-        let (state, sessions) = (&mut self.state, &mut self.sessions);
-        let RuntimeState::Ready { client, .. } = state else {
-            return Vec::new();
-        };
-
         let mut frames = Vec::new();
-        for (tab_id, session) in sessions {
-            if !visible_tab_ids.iter().any(|visible_tab_id| visible_tab_id == tab_id) {
-                continue;
-            }
-            match client.poll(tab_id.as_str().to_string()) {
+        for job in visible_poll_jobs(&self.sessions, visible_tab_ids) {
+            let result = match self.clients.get_mut(&job.scope) {
+                Some(client) => client.client.poll(job.tab_id.as_str().to_string()),
+                None => Err(missing_runtime_message(&job.scope)),
+            };
+            match result {
                 Ok(Some(frame)) => match WebSurfaceFrame::from_live_frame(
-                    session.requested_url.clone(),
-                    session.scroll_offset,
-                    session.zoom_percent,
+                    job.requested_url.clone(),
+                    job.scroll_offset,
+                    job.zoom_percent,
                     frame,
                 ) {
                     Ok(frame) => {
-                        let requested_url = session.requested_url.clone();
-                        let url_change =
-                            session.url_change_for(tab_id, requested_url.as_str(), &frame);
+                        let url_change = self.sessions.get_mut(&job.tab_id).and_then(|session| {
+                            session.url_change_for(&job.tab_id, job.requested_url.as_str(), &frame)
+                        });
                         frames.push(WebSurfaceRuntimeFrame::Ready {
-                            tab_id: tab_id.clone(),
+                            tab_id: job.tab_id,
                             frame: Box::new(frame),
                             url_change,
                         })
                     }
                     Err(error) => frames.push(WebSurfaceRuntimeFrame::Failed {
-                        tab_id: tab_id.clone(),
+                        tab_id: job.tab_id,
                         message: error.to_string(),
                     }),
                 },
                 Ok(None) => {}
-                Err(error) => frames.push(WebSurfaceRuntimeFrame::Failed {
-                    tab_id: tab_id.clone(),
-                    message: error.to_string(),
-                }),
+                Err(error) => frames
+                    .push(WebSurfaceRuntimeFrame::Failed { tab_id: job.tab_id, message: error }),
             }
         }
 
@@ -146,38 +150,82 @@ impl WebSurfaceRuntime {
     }
 
     fn ensure_runtime(&mut self, scope: WebSurfaceRuntimeScope) -> Result<(), String> {
-        match &self.state {
-            RuntimeState::Empty => {
-                let (config_dir, transient_profile_data_dir) = config_dir_for_scope(&scope)?;
-                let client = ServoLiveClient::new(config_dir).map_err(|error| error.to_string())?;
-                self.state = RuntimeState::Ready { scope, client, transient_profile_data_dir };
-                Ok(())
-            }
-            RuntimeState::Ready { scope: active_scope, .. } if active_scope == &scope => Ok(()),
-            RuntimeState::Ready { scope: active_scope, .. } => Err(active_scope.error_for(&scope)),
+        if self.clients.contains_key(&scope) {
+            return Ok(());
         }
+        let (config_dir, transient_profile_data_dir) = config_dir_for_scope(&scope)?;
+        let client = (self.client_factory)(config_dir)?;
+        self.clients.insert(scope, ScopedRuntimeClient { client, transient_profile_data_dir });
+        Ok(())
+    }
+
+    fn client_for_scope(
+        &mut self,
+        scope: &WebSurfaceRuntimeScope,
+    ) -> Result<&mut dyn LiveRuntimeClient, String> {
+        match self.clients.get_mut(scope) {
+            Some(client) => Ok(client.client.as_mut()),
+            None => Err(missing_runtime_message(scope)),
+        }
+    }
+
+    #[cfg(test)]
+    fn client_count_for_test(&self) -> usize {
+        self.clients.len()
+    }
+
+    #[cfg(test)]
+    fn session_scope_for_test(&self, tab_id: &TabId) -> Option<&WebSurfaceRuntimeScope> {
+        self.sessions.get(tab_id).map(|session| &session.scope)
     }
 }
 
 impl Drop for WebSurfaceRuntime {
     fn drop(&mut self) {
-        let RuntimeState::Ready { transient_profile_data_dir: Some(path), .. } = &self.state else {
-            return;
-        };
-        let _ = fs::remove_dir_all(path);
+        let transient_profile_data_dirs = self
+            .clients
+            .values()
+            .filter_map(|client| client.transient_profile_data_dir.clone())
+            .collect::<Vec<_>>();
+        self.clients.clear();
+        for path in transient_profile_data_dirs {
+            let _ = fs::remove_dir_all(path);
+        }
     }
 }
 
-enum RuntimeState {
-    Empty,
-    Ready {
-        scope: WebSurfaceRuntimeScope,
-        client: ServoLiveClient,
-        transient_profile_data_dir: Option<PathBuf>,
-    },
+type LiveRuntimeClientFactory = fn(PathBuf) -> Result<Box<dyn LiveRuntimeClient>, String>;
+
+trait LiveRuntimeClient {
+    fn ensure(&mut self, request: ServoLiveEnsureRequest) -> Result<Option<WebLiveFrame>, String>;
+
+    fn poll(&mut self, tab_id: String) -> Result<Option<WebLiveFrame>, String>;
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+type WebLiveFrame = crate::services::servo_live::ServoLiveFrame;
+
+impl LiveRuntimeClient for ServoLiveClient {
+    fn ensure(&mut self, request: ServoLiveEnsureRequest) -> Result<Option<WebLiveFrame>, String> {
+        ServoLiveClient::ensure(self, request).map_err(|error| error.to_string())
+    }
+
+    fn poll(&mut self, tab_id: String) -> Result<Option<WebLiveFrame>, String> {
+        ServoLiveClient::poll(self, tab_id).map_err(|error| error.to_string())
+    }
+}
+
+fn new_servo_live_client(config_dir: PathBuf) -> Result<Box<dyn LiveRuntimeClient>, String> {
+    ServoLiveClient::new(config_dir)
+        .map(|client| Box::new(client) as Box<dyn LiveRuntimeClient>)
+        .map_err(|error| error.to_string())
+}
+
+struct ScopedRuntimeClient {
+    client: Box<dyn LiveRuntimeClient>,
+    transient_profile_data_dir: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct WebSurfaceRuntimeScope {
     profile_id: ProfileId,
     profile_data_mode: ProfileDataMode,
@@ -187,20 +235,11 @@ impl WebSurfaceRuntimeScope {
     fn new(profile_id: ProfileId, profile_data_mode: ProfileDataMode) -> Self {
         Self { profile_id, profile_data_mode }
     }
-
-    fn error_for(&self, requested: &Self) -> String {
-        format!(
-            "Servo live runtime is already attached to profile {} ({:?}); requested profile {} ({:?})",
-            self.profile_id.as_str(),
-            self.profile_data_mode,
-            requested.profile_id.as_str(),
-            requested.profile_data_mode
-        )
-    }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct WebSurfaceSession {
+    scope: WebSurfaceRuntimeScope,
     requested_url: String,
     size: WebSurfaceSize,
     zoom_percent: u16,
@@ -209,6 +248,17 @@ struct WebSurfaceSession {
 }
 
 impl WebSurfaceSession {
+    fn new(scope: WebSurfaceRuntimeScope) -> Self {
+        Self {
+            scope,
+            requested_url: String::new(),
+            size: WebSurfaceSize::default(),
+            zoom_percent: 0,
+            scroll_offset: WebSurfaceScrollOffset::default(),
+            pending_user_navigation: false,
+        }
+    }
+
     fn started_loading(
         &self,
         requested_url: &str,
@@ -243,6 +293,15 @@ impl WebSurfaceSession {
             kind,
         })
     }
+}
+
+#[derive(Clone)]
+struct WebSurfacePollJob {
+    tab_id: TabId,
+    scope: WebSurfaceRuntimeScope,
+    requested_url: String,
+    scroll_offset: WebSurfaceScrollOffset,
+    zoom_percent: u16,
 }
 
 pub(super) struct WebSurfaceEnsureResult {
@@ -290,6 +349,46 @@ fn config_dir_for_scope(
     }
 }
 
+fn session_for_scope<'a>(
+    sessions: &'a mut BTreeMap<TabId, WebSurfaceSession>,
+    tab_id: &TabId,
+    scope: WebSurfaceRuntimeScope,
+) -> &'a mut WebSurfaceSession {
+    let session =
+        sessions.entry(tab_id.clone()).or_insert_with(|| WebSurfaceSession::new(scope.clone()));
+    if session.scope != scope {
+        *session = WebSurfaceSession::new(scope);
+    }
+    session
+}
+
+fn visible_poll_jobs(
+    sessions: &BTreeMap<TabId, WebSurfaceSession>,
+    visible_tab_ids: &[TabId],
+) -> Vec<WebSurfacePollJob> {
+    sessions
+        .iter()
+        .filter(|(tab_id, _)| {
+            visible_tab_ids.iter().any(|visible_tab_id| visible_tab_id == *tab_id)
+        })
+        .map(|(tab_id, session)| WebSurfacePollJob {
+            tab_id: tab_id.clone(),
+            scope: session.scope.clone(),
+            requested_url: session.requested_url.clone(),
+            scroll_offset: session.scroll_offset,
+            zoom_percent: session.zoom_percent,
+        })
+        .collect()
+}
+
+fn missing_runtime_message(scope: &WebSurfaceRuntimeScope) -> String {
+    format!(
+        "Servo live runtime is unavailable for profile {} ({:?})",
+        scope.profile_id.as_str(),
+        scope.profile_data_mode
+    )
+}
+
 fn scroll_wire_fields(
     delta: Option<super::web_surface_geometry::WebSurfaceScrollDelta>,
     point: Option<super::web_surface_geometry::WebSurfaceClickPoint>,
@@ -318,3 +417,7 @@ impl From<&WebSurfaceSitePermission> for ServoLiveSitePermission {
         )
     }
 }
+
+#[cfg(test)]
+#[path = "web_surface_runtime_tests.rs"]
+mod tests;
