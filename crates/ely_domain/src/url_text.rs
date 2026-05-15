@@ -71,6 +71,20 @@ impl UrlText {
 
         url.host_str().map(str::to_string).unwrap_or_else(|| self.value.clone())
     }
+
+    /// Resolve the canonical `/favicon.ico` URL for an HTTP(S) page.
+    /// Returns `None` for non-web schemes (`ely://`, `file://`, etc.)
+    /// or URLs missing an authority — those tabs render the URL-derived
+    /// glyph instead of a fetched icon.
+    #[must_use]
+    pub fn favicon_url(&self) -> Option<String> {
+        let url = Url::parse(&self.value).ok()?;
+        if !matches!(url.scheme(), "http" | "https") {
+            return None;
+        }
+        url.host_str()?;
+        url.join("/favicon.ico").ok().map(|favicon| favicon.to_string())
+    }
 }
 
 impl fmt::Display for UrlText {

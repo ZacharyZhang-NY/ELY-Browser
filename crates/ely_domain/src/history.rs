@@ -91,6 +91,10 @@ impl HistoryEntry {
         self.favicon_key = None;
     }
 
+    pub fn set_title(&mut self, title: impl Into<String>) {
+        self.title = title.into();
+    }
+
     #[must_use]
     pub fn visited_at(&self) -> SystemTime {
         self.visited_at

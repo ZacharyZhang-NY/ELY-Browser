@@ -292,17 +292,43 @@ impl BrowserCore {
         &mut self,
         tab_id: &TabId,
         favicon_key: impl Into<String>,
-    ) -> Result<(), CoreError> {
+    ) -> Result<bool, CoreError> {
         let favicon_key = favicon_key.into();
         let tab_index = self
             .tabs
             .iter()
             .position(|tab| tab.id() == tab_id)
             .ok_or_else(|| CoreError::TabNotFound { id: tab_id.clone() })?;
+        if self.tabs[tab_index].favicon_key() == Some(favicon_key.as_str()) {
+            return Ok(false);
+        }
         self.tabs[tab_index].set_favicon_key(favicon_key.clone())?;
         let tab = self.tabs[tab_index].clone();
         self.set_history_favicon_key_for_tab(&tab, favicon_key);
-        Ok(())
+        Ok(true)
+    }
+
+    /// Replace `tab_id`'s title with the live page title and mirror
+    /// the new title into the history entry that recorded the visit.
+    /// Returns `Ok(true)` only when the title actually changed —
+    /// callers can use this to suppress redundant re-renders.
+    pub fn set_tab_title(
+        &mut self,
+        tab_id: &TabId,
+        title: impl Into<String>,
+    ) -> Result<bool, CoreError> {
+        let title = title.into();
+        let tab_index = self
+            .tabs
+            .iter()
+            .position(|tab| tab.id() == tab_id)
+            .ok_or_else(|| CoreError::TabNotFound { id: tab_id.clone() })?;
+        if !self.tabs[tab_index].set_title(title.clone()) {
+            return Ok(false);
+        }
+        let tab = self.tabs[tab_index].clone();
+        self.set_history_title_for_tab(&tab, tab.title().to_string());
+        Ok(true)
     }
 
     pub fn clear_tab_favicon_key(&mut self, tab_id: &TabId) -> Result<(), CoreError> {

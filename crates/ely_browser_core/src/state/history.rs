@@ -84,6 +84,17 @@ impl BrowserCore {
         }
     }
 
+    pub(super) fn set_history_title_for_tab(&mut self, tab: &BrowserTab, title: impl Into<String>) {
+        let title = title.into();
+        if let Some(entry) = self.history_entries.iter_mut().find(|entry| {
+            entry.profile_id() == tab.profile_id()
+                && entry.space_id() == tab.space_id()
+                && entry.url() == tab.url()
+        }) {
+            entry.set_title(title);
+        }
+    }
+
     pub(super) fn find_history_match(&self, query: &str) -> Option<UrlText> {
         let normalized_query = query.trim().to_lowercase();
         if normalized_query.is_empty() {

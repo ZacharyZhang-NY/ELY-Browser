@@ -293,6 +293,20 @@ impl BrowserTab {
         self.last_active_at = SystemTime::now();
     }
 
+    /// Set the tab title. Trims whitespace; an entirely-blank title
+    /// keeps the previous value so a page that emits an empty
+    /// `<title>` mid-load doesn't clobber the URL-derived label that
+    /// the new-tab path installed.
+    pub fn set_title(&mut self, title: impl Into<String>) -> bool {
+        let title = title.into();
+        let trimmed = title.trim();
+        if trimmed.is_empty() || self.title == trimmed {
+            return false;
+        }
+        self.title = trimmed.to_string();
+        true
+    }
+
     /// Navigate in place and record the previous URL in this tab's
     /// back stack.
     pub fn navigate_to(&mut self, url: UrlText) {

@@ -2,9 +2,9 @@ use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
 use ely_domain::BrowserTab;
 use gpui::{
-    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, div, hsla, linear_color_stop, linear_gradient,
-    prelude::FluentBuilder, px, rgb, rgba,
+    AnyElement, Context, FontWeight, ImageSource, InteractiveElement, IntoElement, ObjectFit,
+    ParentElement, SharedString, StatefulInteractiveElement, Styled, StyledImage, div, hsla, img,
+    linear_color_stop, linear_gradient, prelude::FluentBuilder, px, rgb, rgba,
 };
 use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
 
@@ -314,6 +314,8 @@ impl ElyShell {
         let palette = nav_row_palette(active);
         let group_name = SharedString::from(format!("tab-{}", tab.id().as_str()));
         let close_id = SharedString::from(format!("tab-close-{}", tab.id().as_str()));
+        let title = tab.title().to_string();
+        let initial = title.chars().next().unwrap_or('?').to_string();
 
         div()
             .id(SharedString::from(tab.id().as_str().to_string()))
@@ -332,6 +334,7 @@ impl ElyShell {
             .on_click(cx.listener(move |shell, _, window, cx| {
                 shell.select_tab(&tab_id, window, cx);
             }))
+            .child(render_tab_favicon(tab, &initial))
             .child(
                 div()
                     .flex_1()
@@ -419,3 +422,31 @@ where
         .on_click(on_click)
         .child(IconName::Close)
 }
+
+/// Resolve the favicon glyph for a tab row. Prefers the favicon URL
+/// the Servo runtime derived from the loaded URL; falls back to the
+/// initial-letter chip used everywhere else when the tab has no live
+/// favicon (yet to load, internal page, file URL, etc.).
+fn render_tab_favicon(tab: &BrowserTab, initial: &str) -> AnyElement {
+    if let Some(favicon_url) = tab.favicon_key()
+        && favicon_url.starts_with("http")
+    {
+        return div()
+            .size(px(FAVICON_SIZE))
+            .flex_shrink_0()
+            .rounded(px(FAVICON_RADIUS))
+            .overflow_hidden()
+            .child(
+                img(ImageSource::from(favicon_url.to_string()))
+                    .size(px(FAVICON_SIZE))
+                    .object_fit(ObjectFit::Cover),
+            )
+            .into_any_element();
+    }
+
+    let host = tab.url().host();
+    render_glyph_for(host.as_deref(), initial, FAVICON_SIZE)
+}
+
+const FAVICON_SIZE: f32 = 16.0;
+const FAVICON_RADIUS: f32 = 4.0;

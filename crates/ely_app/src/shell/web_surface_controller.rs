@@ -6,6 +6,7 @@ use crate::services::ProfileDataMode;
 
 use super::{
     ElyShell,
+    web_surface::WebSurfacePageMetadata,
     web_surface_permissions::web_surface_site_permissions_for_tab,
     web_surface_runtime::{WebSurfaceUrlChange, WebSurfaceUrlChangeKind},
     web_surface_state::{WebSurfaceInputOutcome, WebSurfaceState},
@@ -60,7 +61,11 @@ impl ElyShell {
         for url_change in result.url_changes {
             url_changed |= self.apply_web_surface_url_change(url_change);
         }
-        result.changed || url_changed
+        let mut metadata_changed = false;
+        for metadata in result.page_metadata {
+            metadata_changed |= self.apply_web_surface_page_metadata(metadata);
+        }
+        result.changed || url_changed || metadata_changed
     }
 
     pub(super) fn record_external_web_viewport(
@@ -183,6 +188,24 @@ impl ElyShell {
                 core.replace_tab_loaded_url(&change.tab_id, url).is_ok_and(|changed| changed)
             }
         }
+    }
+
+    fn apply_web_surface_page_metadata(&mut self, metadata: WebSurfacePageMetadata) -> bool {
+        let super::ShellState::Ready(core) = &mut self.state else {
+            return false;
+        };
+        let mut changed = false;
+        if let Some(title) = metadata.title
+            && let Ok(true) = core.set_tab_title(&metadata.tab_id, title)
+        {
+            changed = true;
+        }
+        if let Some(favicon_url) = metadata.favicon_url
+            && let Ok(true) = core.set_tab_favicon_key(&metadata.tab_id, favicon_url)
+        {
+            changed = true;
+        }
+        changed
     }
 }
 

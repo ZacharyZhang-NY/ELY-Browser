@@ -228,6 +228,10 @@ impl WebSurfaceFrame {
         self.loaded_url.as_deref()
     }
 
+    pub(super) fn title(&self) -> Option<&str> {
+        self.title.as_deref()
+    }
+
     pub(super) fn has_visible_content_for_initial_display(&self) -> Result<bool, WebSurfaceError> {
         #[cfg(target_os = "macos")]
         if let Some(pixel_buffer) = self.pixel_buffer.as_ref() {

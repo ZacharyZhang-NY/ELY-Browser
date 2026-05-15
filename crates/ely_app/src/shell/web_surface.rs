@@ -17,6 +17,33 @@ use super::{
     },
 };
 
+/// One page's worth of metadata observed in a Ready frame. The
+/// controller applies these to the `BrowserTab` (title / favicon_key)
+/// after the frame has been swapped into the surface state. Title and
+/// favicon are independent — a navigation typically settles the URL
+/// first, then Servo emits a title change a frame or two later, and
+/// the favicon URL is derived from the loaded URL.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct WebSurfacePageMetadata {
+    pub(super) tab_id: TabId,
+    pub(super) title: Option<String>,
+    pub(super) favicon_url: Option<String>,
+}
+
+impl WebSurfacePageMetadata {
+    fn from_frame(tab_id: &TabId, frame: &WebSurfaceFrame) -> Option<Self> {
+        let title = frame.title().map(str::to_string);
+        let favicon_url = frame
+            .loaded_url()
+            .and_then(|loaded| ely_domain::UrlText::parse(loaded).ok())
+            .and_then(|url| url.favicon_url());
+        if title.is_none() && favicon_url.is_none() {
+            return None;
+        }
+        Some(Self { tab_id: tab_id.clone(), title, favicon_url })
+    }
+}
+
 pub(super) struct WebSurfaceStore {
     runtime: WebSurfaceRuntime,
     /// Single owner of every per-tab invariant. See [`PerTabSurface`].
@@ -107,6 +134,9 @@ impl WebSurfaceStore {
                         });
                         result.changed = true;
                         continue;
+                    }
+                    if let Some(metadata) = WebSurfacePageMetadata::from_frame(&tab_id, &frame) {
+                        result.page_metadata.push(metadata);
                     }
                     self.surface_mut(&tab_id).state = Some(WebSurfaceState::Ready(*frame));
                     result.changed = true;
@@ -441,6 +471,7 @@ pub(super) struct WebSurfaceEnsureOutcome {
 pub(super) struct WebSurfaceTickResult {
     pub(super) changed: bool,
     pub(super) url_changes: Vec<WebSurfaceUrlChange>,
+    pub(super) page_metadata: Vec<WebSurfacePageMetadata>,
 }
 
 #[cfg(test)]
