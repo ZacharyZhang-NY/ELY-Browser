@@ -2322,6 +2322,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ely_sync_client"
+version = "0.1.0"
+dependencies = [
+ "ely_domain",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.18",
+ "ureq",
+ "uuid",
+]
+
+[[package]]
 name = "embed-resource"
 version = "3.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11248,6 +11261,8 @@ dependencies = [
  "once_cell",
  "rustls",
  "rustls-pki-types",
+ "serde",
+ "serde_json",
  "url",
  "webpki-roots 0.26.11",
 ]
