@@ -47,7 +47,7 @@ fn render_heading(level: u8, text: String) -> AnyElement {
         .text_size(px(size))
         .font_semibold()
         .truncate()
-        .text_color(rgb(colors::INK))
+        .text_color(rgb(colors::ink()))
         .child(text)
         .into_any_element()
 }
@@ -59,7 +59,7 @@ fn render_bullet(text: String) -> AnyElement {
         .items_start()
         .gap_2()
         .text_xs()
-        .text_color(rgb(colors::MUTED_SOFT))
+        .text_color(rgb(colors::muted_soft()))
         .child(div().flex_none().child("-"))
         .child(div().min_w_0().truncate().child(text))
         .into_any_element()
@@ -69,11 +69,11 @@ fn render_quote(text: String) -> AnyElement {
     div()
         .min_w_0()
         .border_l_2()
-        .border_color(rgb(colors::HAIRLINE_STRONG))
+        .border_color(rgb(colors::hairline_strong()))
         .pl_2()
         .text_xs()
         .truncate()
-        .text_color(rgb(colors::MUTED))
+        .text_color(rgb(colors::muted()))
         .child(text)
         .into_any_element()
 }
@@ -83,18 +83,18 @@ fn render_code(text: String) -> AnyElement {
         .min_w_0()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::HAIRLINE))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .border_color(rgb(colors::hairline()))
+        .bg(rgb(colors::canvas_soft()))
         .px_2()
         .py_1()
         .text_xs()
-        .text_color(rgb(colors::BODY))
+        .text_color(rgb(colors::body()))
         .child(truncate_text(&text, TEXT_LIMIT))
         .into_any_element()
 }
 
 fn render_paragraph(text: String) -> AnyElement {
-    div().text_xs().truncate().text_color(rgb(colors::MUTED_SOFT)).child(text).into_any_element()
+    div().text_xs().truncate().text_color(rgb(colors::muted_soft())).child(text).into_any_element()
 }
 
 fn markdown_preview_blocks(body: &str) -> Vec<MarkdownPreviewBlock> {

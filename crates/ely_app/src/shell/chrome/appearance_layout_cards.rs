@@ -26,13 +26,13 @@ pub(crate) fn render_sidebar_layout_section(
         .flex_col()
         .gap(px(14.0))
         .pt(px(8.0))
-        .child(div().text_size(px(11.0)).text_color(rgb(colors::INK_4)).child("SIDEBAR"))
+        .child(div().text_size(px(11.0)).text_color(rgb(colors::ink_4())).child("SIDEBAR"))
         .child(
             div()
                 .font_family(SERIF_FAMILY)
                 .text_size(px(22.0))
                 .font_weight(FontWeight(400.0))
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child("Layout"),
         )
         .child(
@@ -120,8 +120,8 @@ fn render_layout_card(
         .p(px(14.0))
         .rounded(px(14.0))
         .bg(rgba(LAYOUT_CARD_BG))
-        .when(selected, |el| el.border_2().border_color(rgb(colors::ACCENT)))
-        .when(!selected, |el| el.border_1().border_color(rgba(colors::STROKE)))
+        .when(selected, |el| el.border_2().border_color(rgb(colors::accent())))
+        .when(!selected, |el| el.border_1().border_color(rgba(colors::stroke())))
         .flex()
         .flex_col()
         .gap(px(10.0))
@@ -141,10 +141,10 @@ fn render_layout_card(
                     div()
                         .text_size(px(12.5))
                         .font_weight(FontWeight(500.0))
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child(title),
                 )
-                .child(div().text_size(px(11.0)).text_color(rgb(colors::INK_4)).child(detail)),
+                .child(div().text_size(px(11.0)).text_color(rgb(colors::ink_4())).child(detail)),
         )
         .into_any_element()
 }

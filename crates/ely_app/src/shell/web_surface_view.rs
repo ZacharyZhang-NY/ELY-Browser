@@ -78,10 +78,12 @@ fn error_page(message: &str) -> impl IntoElement {
             div()
                 .text_size(px(22.0))
                 .font_weight(gpui::FontWeight(400.0))
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child("Page unavailable"),
         )
-        .child(div().text_size(px(14.0)).text_color(rgb(colors::INK_3)).child(message.to_string()))
+        .child(
+            div().text_size(px(14.0)).text_color(rgb(colors::ink_3())).child(message.to_string()),
+        )
 }
 
 fn render_web_surface(

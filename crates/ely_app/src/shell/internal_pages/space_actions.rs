@@ -145,7 +145,7 @@ fn render_space_switch_action(
         return div()
             .text_xs()
             .font_semibold()
-            .text_color(rgb(colors::SUCCESS))
+            .text_color(rgb(colors::success()))
             .child("Active")
             .into_any_element();
     }

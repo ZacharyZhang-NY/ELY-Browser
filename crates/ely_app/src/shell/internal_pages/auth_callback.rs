@@ -41,9 +41,9 @@ fn render_auth_callback_header(state: &AuthCallbackState) -> AnyElement {
                 .flex_col()
                 .gap_2()
                 .child(
-                    div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("Auth Callback"),
+                    div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Auth Callback"),
                 )
-                .child(div().text_sm().text_color(rgb(colors::MUTED)).child(SYNC_SERVICE_NAME)),
+                .child(div().text_sm().text_color(rgb(colors::muted())).child(SYNC_SERVICE_NAME)),
         )
         .child(
             div()
@@ -66,7 +66,7 @@ fn render_auth_callback_rows(state: &AuthCallbackState) -> AnyElement {
         .flex()
         .flex_col()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .child(auth_callback_row(
             IconName::Globe,
             "Service",
@@ -97,7 +97,7 @@ fn auth_callback_row(
     div()
         .py_4()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -108,7 +108,7 @@ fn auth_callback_row(
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(div().text_color(rgb(colors::MUTED)).child(icon))
+                .child(div().text_color(rgb(colors::muted())).child(icon))
                 .child(
                     div()
                         .min_w_0()
@@ -119,19 +119,19 @@ fn auth_callback_row(
                             div()
                                 .text_sm()
                                 .font_semibold()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(label),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .truncate()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(detail.into()),
                         ),
                 ),
         )
-        .child(div().text_xs().font_semibold().text_color(rgb(colors::MUTED)).child(value.into()))
+        .child(div().text_xs().font_semibold().text_color(rgb(colors::muted())).child(value.into()))
         .into_any_element()
 }
 
@@ -167,9 +167,9 @@ fn auth_callback_icon(state: &AuthCallbackState) -> IconName {
 
 fn auth_callback_color(state: &AuthCallbackState) -> u32 {
     match state {
-        AuthCallbackState::CodeReceived => colors::SUCCESS,
-        AuthCallbackState::ProviderError(_) => colors::ERROR,
-        AuthCallbackState::MissingCode => colors::MUTED,
+        AuthCallbackState::CodeReceived => colors::success(),
+        AuthCallbackState::ProviderError(_) => colors::error(),
+        AuthCallbackState::MissingCode => colors::muted(),
     }
 }
 

@@ -51,14 +51,14 @@ fn render_site_permissions_header(snapshot: &BrowserSnapshot) -> AnyElement {
                 .child(
                     div()
                         .text_size(px(26.0))
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child("Site Permissions"),
                 )
                 .child(
                     div()
                         .text_sm()
                         .truncate()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("Profile: {}", snapshot.active_profile_name)),
                 ),
         )
@@ -69,7 +69,7 @@ fn render_site_permissions_header(snapshot: &BrowserSnapshot) -> AnyElement {
                 .gap_2()
                 .text_xs()
                 .font_semibold()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child(IconName::Globe)
                 .child("Profile scoped"),
         )
@@ -80,7 +80,7 @@ fn render_site_permissions_summary(snapshot: &BrowserSnapshot) -> AnyElement {
     div()
         .border_t_1()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .py_3()
         .flex()
         .items_center()
@@ -101,9 +101,9 @@ fn site_permission_metric(label: &'static str, value: usize) -> AnyElement {
         .flex()
         .flex_col()
         .gap_1()
-        .child(div().text_xs().text_color(rgb(colors::MUTED)).child(label))
+        .child(div().text_xs().text_color(rgb(colors::muted())).child(label))
         .child(
-            div().text_sm().font_semibold().text_color(rgb(colors::INK)).child(value.to_string()),
+            div().text_sm().font_semibold().text_color(rgb(colors::ink())).child(value.to_string()),
         )
         .into_any_element()
 }
@@ -129,7 +129,7 @@ fn render_site_permissions_controls(
         .child(
             div()
                 .text_sm()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child("Clear all configured permissions for this Profile."),
         )
         .child(
@@ -149,8 +149,8 @@ fn render_clear_confirmation(cx: &mut Context<ElyShell>) -> AnyElement {
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::ERROR))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .border_color(rgb(colors::error()))
+        .bg(rgb(colors::canvas_soft()))
         .px_4()
         .py_3()
         .flex()
@@ -167,13 +167,13 @@ fn render_clear_confirmation(cx: &mut Context<ElyShell>) -> AnyElement {
                     div()
                         .text_sm()
                         .font_semibold()
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child("Confirm permission clearing"),
                 )
                 .child(
                     div()
                         .text_xs()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child("Each cleared permission records a local audit event."),
                 ),
         )
@@ -212,10 +212,10 @@ fn render_site_permissions_list(
         return div()
             .flex_1()
             .border_t_1()
-            .border_color(rgb(colors::HAIRLINE))
+            .border_color(rgb(colors::hairline()))
             .pt_5()
             .text_sm()
-            .text_color(rgb(colors::MUTED))
+            .text_color(rgb(colors::muted()))
             .child("No site permissions are configured for this Profile.")
             .into_any_element();
     }
@@ -227,7 +227,7 @@ fn render_site_permissions_list(
         .flex_col()
         .overflow_y_scrollbar()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .children(
             snapshot
                 .site_permissions
@@ -250,7 +250,7 @@ fn render_site_permission_entry(
     div()
         .py_3()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -277,10 +277,10 @@ fn render_site_permission_entry(
                                 .text_sm()
                                 .font_semibold()
                                 .truncate()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(entry.origin().as_str().to_string()),
                         )
-                        .child(div().text_xs().truncate().text_color(rgb(colors::MUTED)).child(
+                        .child(div().text_xs().truncate().text_color(rgb(colors::muted())).child(
                             format!("{} - {}", entry.feature().label(), entry.decision().label()),
                         )),
                 ),
@@ -325,8 +325,10 @@ fn site_settings_route(origin: &SiteOrigin) -> String {
 
 fn permission_decision_color(decision: SitePermissionDecision) -> u32 {
     match decision {
-        SitePermissionDecision::AllowOnce | SitePermissionDecision::AllowAlways => colors::SUCCESS,
-        SitePermissionDecision::DenyAlways => colors::ERROR,
+        SitePermissionDecision::AllowOnce | SitePermissionDecision::AllowAlways => {
+            colors::success()
+        }
+        SitePermissionDecision::DenyAlways => colors::error(),
     }
 }
 

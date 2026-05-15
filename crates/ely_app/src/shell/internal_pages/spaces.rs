@@ -52,12 +52,12 @@ fn render_spaces_header(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) 
                 .flex()
                 .flex_col()
                 .gap_2()
-                .child(div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("Spaces"))
+                .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Spaces"))
                 .child(
                     div()
                         .text_sm()
                         .truncate()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("Profile: {}", snapshot.active_profile_name)),
                 ),
         )
@@ -103,7 +103,7 @@ fn render_spaces_header(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) 
                         .gap_2()
                         .text_xs()
                         .font_semibold()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(IconName::GalleryVerticalEnd)
                         .child(format!("{} spaces", snapshot.spaces.len())),
                 ),
@@ -113,9 +113,9 @@ fn render_spaces_header(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) 
 
 fn render_space_file_message(notice: Option<&str>, error: Option<&str>) -> AnyElement {
     let (message, color, icon) = if let Some(error) = error {
-        (error, colors::ERROR, IconName::TriangleAlert)
+        (error, colors::error(), IconName::TriangleAlert)
     } else if let Some(notice) = notice {
-        (notice, colors::SUCCESS, IconName::CircleCheck)
+        (notice, colors::success(), IconName::CircleCheck)
     } else {
         return div().into_any_element();
     };
@@ -143,11 +143,11 @@ fn render_active_space_summary(snapshot: &BrowserSnapshot) -> AnyElement {
         return div()
             .rounded_md()
             .border_1()
-            .border_color(rgb(colors::ERROR))
+            .border_color(rgb(colors::error()))
             .px_4()
             .py_3()
             .text_sm()
-            .text_color(rgb(colors::ERROR))
+            .text_color(rgb(colors::error()))
             .child("Active Space is unavailable.")
             .into_any_element();
     };
@@ -155,8 +155,8 @@ fn render_active_space_summary(snapshot: &BrowserSnapshot) -> AnyElement {
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::HAIRLINE))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .border_color(rgb(colors::hairline()))
+        .bg(rgb(colors::canvas_soft()))
         .px_4()
         .py_3()
         .flex()
@@ -174,19 +174,19 @@ fn render_active_space_summary(snapshot: &BrowserSnapshot) -> AnyElement {
                         div()
                             .text_sm()
                             .font_semibold()
-                            .text_color(rgb(colors::INK))
+                            .text_color(rgb(colors::ink()))
                             .child(active_space.name().to_string()),
                     )
                     .child(
                         div()
                             .text_xs()
                             .truncate()
-                            .text_color(rgb(colors::MUTED))
+                            .text_color(rgb(colors::muted()))
                             .child(space_detail_label(active_space, &snapshot.profiles)),
                     ),
             ),
         )
-        .child(div().text_xs().font_semibold().text_color(rgb(colors::SUCCESS)).child("Active"))
+        .child(div().text_xs().font_semibold().text_color(rgb(colors::success())).child("Active"))
         .into_any_element()
 }
 
@@ -202,7 +202,7 @@ fn render_spaces_list(
         .flex_col()
         .overflow_y_scrollbar()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .children(snapshot.spaces.iter().enumerate().map(|(index, space)| {
             render_space_row(
                 index,
@@ -232,7 +232,7 @@ fn render_space_row(
         .id(SharedString::from(format!("settings-space-{}", space.id().as_str())))
         .py_3()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -249,14 +249,14 @@ fn render_space_row(
                             .text_sm()
                             .font_semibold()
                             .truncate()
-                            .text_color(rgb(colors::INK))
+                            .text_color(rgb(colors::ink()))
                             .child(space.name().to_string()),
                     )
                     .child(
                         div()
                             .text_xs()
                             .truncate()
-                            .text_color(rgb(colors::MUTED))
+                            .text_color(rgb(colors::muted()))
                             .child(space_detail_label(space, &snapshot.profiles)),
                     ),
             ),
@@ -282,7 +282,7 @@ fn render_trashed_spaces_list(
         .flex_col()
         .gap_2()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .pt_3()
         .child(render_trashed_spaces_header(expired_count, cx))
         .children(
@@ -298,7 +298,7 @@ fn render_trashed_spaces_header(expired_count: usize, cx: &mut Context<ElyShell>
         div()
             .text_xs()
             .font_semibold()
-            .text_color(rgb(colors::MUTED_SOFT))
+            .text_color(rgb(colors::muted_soft()))
             .child("30 day retention")
             .into_any_element()
     } else {
@@ -323,7 +323,7 @@ fn render_trashed_spaces_header(expired_count: usize, cx: &mut Context<ElyShell>
             div()
                 .text_xs()
                 .font_semibold()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child("Recently Trashed"),
         )
         .child(action)
@@ -361,14 +361,14 @@ fn render_trashed_space_row(
                                 .text_sm()
                                 .font_semibold()
                                 .truncate()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(trashed_space.space().name().to_string()),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .truncate()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(trashed_space_detail_label(trashed_space, now)),
                         ),
                 ),
@@ -393,14 +393,14 @@ fn space_avatar(space: &Space) -> AnyElement {
         .h(px(28.0))
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::HAIRLINE_STRONG))
+        .border_color(rgb(colors::hairline_strong()))
         .bg(rgb(space.accent_hex()))
         .flex()
         .items_center()
         .justify_center()
         .text_xs()
         .font_semibold()
-        .text_color(rgb(colors::CANVAS))
+        .text_color(rgb(colors::canvas()))
         .child(space.icon().to_string())
         .into_any_element()
 }

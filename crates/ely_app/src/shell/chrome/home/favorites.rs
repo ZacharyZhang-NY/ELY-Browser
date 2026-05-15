@@ -70,7 +70,7 @@ fn render_favorite_tile(index: usize, tab: &BrowserTab, cx: &mut Context<ElyShel
         .child(
             div()
                 .text_size(px(11.5))
-                .text_color(rgb(colors::INK_3))
+                .text_color(rgb(colors::ink_3()))
                 .max_w(px(80.0))
                 .truncate()
                 .child(title),
@@ -87,7 +87,7 @@ fn render_add_favorite_tile(cx: &mut Context<ElyShell>) -> AnyElement {
         .flex()
         .items_center()
         .justify_center()
-        .text_color(rgb(colors::INK_4))
+        .text_color(rgb(colors::ink_4()))
         .cursor_pointer()
         .hover(|style| style.bg(rgba(CARD_BG)))
         .on_click(cx.listener(|shell, _, window, cx| {

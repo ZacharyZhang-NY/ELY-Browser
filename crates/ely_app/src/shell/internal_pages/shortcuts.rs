@@ -63,12 +63,12 @@ fn render_shortcuts_header(
                 .flex()
                 .flex_col()
                 .gap_2()
-                .child(div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("Shortcuts"))
+                .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Shortcuts"))
                 .child(
                     div()
                         .text_sm()
                         .truncate()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("Profile: {}", snapshot.active_profile_name)),
                 ),
         )
@@ -116,8 +116,8 @@ fn render_shortcuts_header(
 
 fn render_shortcut_file_message(notice: Option<&str>, error: Option<&str>) -> AnyElement {
     let Some((message, color, icon)) = error
-        .map(|message| (message, colors::ERROR, IconName::TriangleAlert))
-        .or_else(|| notice.map(|message| (message, colors::SUCCESS, IconName::CircleCheck)))
+        .map(|message| (message, colors::error(), IconName::TriangleAlert))
+        .or_else(|| notice.map(|message| (message, colors::success(), IconName::CircleCheck)))
     else {
         return div().hidden().into_any_element();
     };
@@ -126,7 +126,7 @@ fn render_shortcut_file_message(notice: Option<&str>, error: Option<&str>) -> An
         .rounded_md()
         .border_1()
         .border_color(rgb(color))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .bg(rgb(colors::canvas_soft()))
         .px_4()
         .py_2()
         .flex()
@@ -146,22 +146,22 @@ fn render_conflict_panel(conflicts: &[ShortcutConflict]) -> AnyElement {
             IconName::CircleCheck,
             "No shortcut conflicts",
             "Every registered browser shortcut maps to a single action.",
-            colors::SUCCESS,
+            colors::success(),
         )
     } else {
         (
             IconName::TriangleAlert,
             "Shortcut conflicts",
             "Conflicting bindings need a new key before customization is enabled.",
-            colors::ERROR,
+            colors::error(),
         )
     };
 
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::HAIRLINE))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .border_color(rgb(colors::hairline()))
+        .bg(rgb(colors::canvas_soft()))
         .px_4()
         .py_3()
         .flex()
@@ -185,10 +185,10 @@ fn render_conflict_panel(conflicts: &[ShortcutConflict]) -> AnyElement {
                             div()
                                 .text_sm()
                                 .font_semibold()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(title),
                         )
-                        .child(div().text_xs().text_color(rgb(colors::MUTED)).child(detail)),
+                        .child(div().text_xs().text_color(rgb(colors::muted())).child(detail)),
                 ),
         )
         .child(
@@ -212,7 +212,7 @@ fn render_shortcut_categories(
         .flex_col()
         .overflow_y_scrollbar()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .children(
             SHORTCUT_CATEGORIES
                 .iter()
@@ -246,7 +246,7 @@ fn render_category_header(category: &'static str) -> AnyElement {
         .pb_2()
         .text_xs()
         .font_semibold()
-        .text_color(rgb(colors::MUTED))
+        .text_color(rgb(colors::muted()))
         .child(category)
         .into_any_element()
 }
@@ -263,7 +263,7 @@ fn render_shortcut_row(
     div()
         .py_3()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -290,14 +290,14 @@ fn render_shortcut_row(
                                 .text_sm()
                                 .font_semibold()
                                 .truncate()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(action.label()),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .truncate()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(action.command().unwrap_or("Key binding only")),
                         ),
                 ),
@@ -326,11 +326,11 @@ fn shortcut_platform_label(
         .flex()
         .flex_col()
         .gap_1()
-        .child(div().text_xs().text_color(rgb(colors::MUTED_SOFT)).child(platform.label()))
+        .child(div().text_xs().text_color(rgb(colors::muted_soft())).child(platform.label()))
         .child(
             div()
                 .font_semibold()
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child(profile.display_bindings_for_action(action, platform)),
         )
         .into_any_element()
@@ -338,13 +338,13 @@ fn shortcut_platform_label(
 
 fn shortcut_row_status(has_conflict: bool) -> AnyElement {
     let (label, color) =
-        if has_conflict { ("Conflict", colors::ERROR) } else { ("Ready", colors::SUCCESS) };
+        if has_conflict { ("Conflict", colors::error()) } else { ("Ready", colors::success()) };
 
     div().min_w(px(72.0)).font_semibold().text_color(rgb(color)).child(label).into_any_element()
 }
 
 fn shortcut_status_color(conflict_count: usize) -> u32 {
-    if conflict_count == 0 { colors::SUCCESS } else { colors::ERROR }
+    if conflict_count == 0 { colors::success() } else { colors::error() }
 }
 
 fn shortcut_status_icon(conflict_count: usize) -> IconName {
@@ -356,5 +356,5 @@ fn shortcut_row_icon(has_conflict: bool) -> IconName {
 }
 
 fn shortcut_row_icon_color(has_conflict: bool) -> u32 {
-    if has_conflict { colors::ERROR } else { colors::MUTED_SOFT }
+    if has_conflict { colors::error() } else { colors::muted_soft() }
 }

@@ -52,12 +52,12 @@ fn render_updates_header(snapshot: &BrowserSnapshot) -> AnyElement {
                 .flex()
                 .flex_col()
                 .gap_2()
-                .child(div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("Updates"))
+                .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Updates"))
                 .child(
                     div()
                         .text_sm()
                         .truncate()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("Profile: {}", snapshot.active_profile_name)),
                 ),
         )
@@ -68,7 +68,7 @@ fn render_updates_header(snapshot: &BrowserSnapshot) -> AnyElement {
                 .gap_2()
                 .text_xs()
                 .font_semibold()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child(IconName::LoaderCircle)
                 .child(format!("Build {BUILD_REVISION}")),
         )
@@ -82,8 +82,8 @@ fn render_updates_summary(
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::HAIRLINE))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .border_color(rgb(colors::hairline()))
+        .bg(rgb(colors::canvas_soft()))
         .px_4()
         .py_3()
         .flex()
@@ -96,7 +96,7 @@ fn render_updates_summary(
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(div().text_color(rgb(colors::PRIMARY)).child(IconName::LoaderCircle))
+                .child(div().text_color(rgb(colors::primary())).child(IconName::LoaderCircle))
                 .child(
                     div()
                         .min_w_0()
@@ -107,14 +107,14 @@ fn render_updates_summary(
                             div()
                                 .text_sm()
                                 .font_semibold()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child("Release Manifest Contract"),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .truncate()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(update_policy.detail()),
                         ),
                 ),
@@ -128,7 +128,7 @@ fn render_updates_summary(
                     div()
                         .text_xs()
                         .font_semibold()
-                        .text_color(rgb(colors::SUCCESS))
+                        .text_color(rgb(colors::success()))
                         .child(update_policy.name()),
                 )
                 .child(
@@ -154,7 +154,7 @@ fn render_update_policy_rows(
         .flex()
         .flex_col()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .children(
             UpdatePolicy::ALL
                 .iter()
@@ -176,7 +176,7 @@ fn render_update_policy_row(
     div()
         .py_3()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -201,14 +201,14 @@ fn render_update_policy_row(
                                 .text_sm()
                                 .font_semibold()
                                 .truncate()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(policy.name()),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .truncate()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(policy.detail()),
                         ),
                 ),
@@ -235,7 +235,7 @@ fn render_update_contract_rows() -> AnyElement {
         .flex_col()
         .overflow_y_scrollbar()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .child(update_row(IconName::Info, "Current Version", APP_VERSION, "Cargo package version"))
         .child(update_row(IconName::GitHub, "Build Revision", BUILD_REVISION, "Git revision"))
         .child(update_row(
@@ -270,7 +270,7 @@ fn policy_icon(selected: bool) -> IconName {
 }
 
 fn policy_icon_color(selected: bool) -> u32 {
-    if selected { colors::PRIMARY } else { colors::MUTED_SOFT }
+    if selected { colors::primary() } else { colors::muted_soft() }
 }
 
 fn policy_button_label(selected: bool) -> &'static str {
@@ -289,7 +289,7 @@ fn update_row(
     div()
         .py_3()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -300,7 +300,7 @@ fn update_row(
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(div().text_color(rgb(colors::MUTED_SOFT)).child(icon))
+                .child(div().text_color(rgb(colors::muted_soft())).child(icon))
                 .child(
                     div()
                         .min_w_0()
@@ -312,11 +312,15 @@ fn update_row(
                                 .text_sm()
                                 .font_semibold()
                                 .truncate()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(label),
                         )
                         .child(
-                            div().text_xs().truncate().text_color(rgb(colors::MUTED)).child(detail),
+                            div()
+                                .text_xs()
+                                .truncate()
+                                .text_color(rgb(colors::muted()))
+                                .child(detail),
                         ),
                 ),
         )
@@ -326,7 +330,7 @@ fn update_row(
                 .truncate()
                 .text_sm()
                 .font_semibold()
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child(value),
         )
         .into_any_element()

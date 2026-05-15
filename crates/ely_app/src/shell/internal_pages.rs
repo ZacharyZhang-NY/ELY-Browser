@@ -176,20 +176,20 @@ impl ElyShell {
                                 .child(
                                     div()
                                         .text_size(px(26.0))
-                                        .text_color(rgb(colors::INK))
+                                        .text_color(rgb(colors::ink()))
                                         .child("Archived Tabs"),
                                 )
                                 .child(
                                     div()
                                         .text_sm()
-                                        .text_color(rgb(colors::MUTED))
+                                        .text_color(rgb(colors::muted()))
                                         .child("All Spaces"),
                                 ),
                         )
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(format!("{} archived", snapshot.archived_tabs.len())),
                         ),
                 )
@@ -206,10 +206,10 @@ impl ElyShell {
             return div()
                 .flex_1()
                 .border_t_1()
-                .border_color(rgb(colors::HAIRLINE))
+                .border_color(rgb(colors::hairline()))
                 .pt_5()
                 .text_sm()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child("Archive is empty.")
                 .into_any_element();
         }
@@ -220,7 +220,7 @@ impl ElyShell {
             .flex_col()
             .overflow_y_scrollbar()
             .border_t_1()
-            .border_color(rgb(colors::HAIRLINE))
+            .border_color(rgb(colors::hairline()))
             .children(snapshot.archived_tabs.iter().rev().enumerate().map(
                 |(index, archived_tab)| self.render_archive_row(index, archived_tab, snapshot, cx),
             ))
@@ -242,13 +242,13 @@ impl ElyShell {
             .id(SharedString::from(format!("archive-{index}")))
             .py_3()
             .border_b_1()
-            .border_color(rgb(colors::HAIRLINE))
+            .border_color(rgb(colors::hairline()))
             .flex()
             .items_center()
             .justify_between()
             .gap_4()
             .cursor_pointer()
-            .hover(|style| style.bg(rgb(colors::CANVAS_SOFT)))
+            .hover(|style| style.bg(rgb(colors::canvas_soft())))
             .active(|style| style.opacity(0.82))
             .on_click(cx.listener(move |shell, _, window, cx| {
                 shell.restore_archived_tab(&tab_id, window, cx);
@@ -264,12 +264,14 @@ impl ElyShell {
                             .text_sm()
                             .font_semibold()
                             .truncate()
-                            .text_color(rgb(colors::INK))
+                            .text_color(rgb(colors::ink()))
                             .child(tab.title().to_string()),
                     )
-                    .child(div().text_xs().truncate().text_color(rgb(colors::MUTED)).child(detail)),
+                    .child(
+                        div().text_xs().truncate().text_color(rgb(colors::muted())).child(detail),
+                    ),
             )
-            .child(div().text_color(rgb(colors::MUTED_SOFT)).child(IconName::Undo2))
+            .child(div().text_color(rgb(colors::muted_soft())).child(IconName::Undo2))
             .into_any_element()
     }
 }
@@ -285,10 +287,10 @@ fn render_default_page(tab: &BrowserTab) -> AnyElement {
             .child(
                 div()
                     .text_size(px(26.0))
-                    .text_color(rgb(colors::INK))
+                    .text_color(rgb(colors::ink()))
                     .child(tab.title().to_string()),
             )
-            .child(div().text_sm().text_color(rgb(colors::MUTED)).child(render_tab_status(tab))),
+            .child(div().text_sm().text_color(rgb(colors::muted())).child(render_tab_status(tab))),
     )
 }
 

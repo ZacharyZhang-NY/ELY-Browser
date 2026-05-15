@@ -71,7 +71,7 @@ fn render_continue_history(
             div()
                 .text_size(px(13.0))
                 .font_weight(FontWeight(500.0))
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child("Continue where you left off"),
         )
         .child(if entries.is_empty() {
@@ -95,7 +95,7 @@ fn render_continue_history(
 fn render_empty_history_state() -> AnyElement {
     div()
         .text_size(px(12.0))
-        .text_color(rgb(colors::INK_4))
+        .text_color(rgb(colors::ink_4()))
         .child("Your recently visited pages will appear here.")
         .into_any_element()
 }
@@ -136,14 +136,14 @@ fn render_history_row(
                     div()
                         .text_size(px(13.0))
                         .font_weight(FontWeight(500.0))
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .truncate()
                         .child(title),
                 )
                 .child(
                     div()
                         .text_size(px(11.5))
-                        .text_color(rgb(colors::INK_4))
+                        .text_color(rgb(colors::ink_4()))
                         .truncate()
                         .child(format!("{host_label} · {when}")),
                 ),
@@ -254,7 +254,7 @@ fn render_activity_card(
             div()
                 .text_size(px(13.0))
                 .font_weight(FontWeight(500.0))
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child("Recent activity"),
         )
         .child(if entries.is_empty() {
@@ -279,7 +279,7 @@ fn render_activity_card(
 fn render_empty_activity_state() -> AnyElement {
     div()
         .text_size(px(12.0))
-        .text_color(rgb(colors::INK_4))
+        .text_color(rgb(colors::ink_4()))
         .child("Activity from your tabs will land here.")
         .into_any_element()
 }
@@ -316,25 +316,25 @@ fn render_activity_row(
                 .flex_col()
                 .gap_1()
                 .child(
-                    div().text_size(px(11.5)).text_color(rgb(colors::INK_3)).child("You visited"),
+                    div().text_size(px(11.5)).text_color(rgb(colors::ink_3())).child("You visited"),
                 )
                 .child(
                     div()
                         .text_size(px(13.0))
                         .font_weight(FontWeight(500.0))
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .truncate()
                         .child(title),
                 )
                 .child(
                     div()
                         .text_size(px(10.5))
-                        .text_color(rgb(colors::INK_4))
+                        .text_color(rgb(colors::ink_4()))
                         .truncate()
                         .child(display_url),
                 ),
         )
-        .child(div().text_size(px(10.5)).text_color(rgb(colors::INK_4)).child(when))
+        .child(div().text_size(px(10.5)).text_color(rgb(colors::ink_4())).child(when))
         .into_any_element()
 }
 
@@ -343,14 +343,14 @@ fn render_view_all_link(cx: &mut Context<ElyShell>) -> AnyElement {
         .id(SharedString::from("activity-view-all"))
         .pt(px(10.0))
         .border_t_1()
-        .border_color(rgba(colors::DIVIDER))
+        .border_color(rgba(colors::divider()))
         .flex()
         .items_center()
         .gap(px(4.0))
         .text_size(px(11.5))
-        .text_color(rgb(colors::INK_3))
+        .text_color(rgb(colors::ink_3()))
         .cursor_pointer()
-        .hover(|style| style.text_color(rgb(colors::INK)))
+        .hover(|style| style.text_color(rgb(colors::ink())))
         .on_click(cx.listener(|shell, _, window, cx| {
             shell.open_internal_tab("ely://history", window, cx);
         }))

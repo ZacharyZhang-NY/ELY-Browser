@@ -235,8 +235,8 @@ pub(super) fn render_command_bar_identity(
                 div()
                     .size(px(28.0))
                     .rounded(px(spacing::RADIUS_NAV))
-                    .bg(rgb(colors::ACCENT))
-                    .text_color(rgb(colors::SURFACE_CARD))
+                    .bg(rgb(colors::accent()))
+                    .text_color(rgb(colors::surface_card()))
                     .text_size(px(10.0))
                     .font_semibold()
                     .flex()
@@ -255,13 +255,13 @@ pub(super) fn render_command_bar_identity(
             div()
                 .text_size(px(15.0))
                 .font_semibold()
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child("ELY Browser"),
         )
         .child(
             div()
                 .text_size(px(11.0))
-                .text_color(rgb(colors::INK_3))
+                .text_color(rgb(colors::ink_3()))
                 .child(snapshot.active_space_name.clone()),
         )
         .into_any_element()

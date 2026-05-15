@@ -126,7 +126,7 @@ pub(crate) fn brand_accent_color(brand: Brand) -> u32 {
 /// unknown sites still render the design's colored dot instead of looking
 /// stranded.
 pub(crate) fn accent_color_for_host(host: Option<&str>) -> u32 {
-    host.and_then(Brand::from_host).map(brand_accent_color).unwrap_or(colors::ACCENT)
+    host.and_then(Brand::from_host).map(brand_accent_color).unwrap_or(colors::accent())
 }
 
 fn render_notion(size: f32) -> AnyElement {
@@ -253,7 +253,7 @@ fn render_fallback(initial: &str, size: f32) -> AnyElement {
         .justify_center()
         .text_size(px(size * 0.5))
         .font_weight(FontWeight(600.0))
-        .text_color(rgb(colors::INK))
+        .text_color(rgb(colors::ink()))
         .child(glyph)
         .into_any_element()
 }

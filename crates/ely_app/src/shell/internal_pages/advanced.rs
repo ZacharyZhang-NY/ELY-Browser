@@ -34,12 +34,12 @@ fn render_advanced_header(snapshot: &BrowserSnapshot) -> AnyElement {
                 .flex()
                 .flex_col()
                 .gap_2()
-                .child(div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("Advanced"))
+                .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Advanced"))
                 .child(
                     div()
                         .text_sm()
                         .truncate()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("Space: {}", snapshot.active_space_name)),
                 ),
         )
@@ -50,7 +50,7 @@ fn render_advanced_header(snapshot: &BrowserSnapshot) -> AnyElement {
                 .gap_2()
                 .text_xs()
                 .font_semibold()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child(IconName::Inspector)
                 .child(format!("{} policies", advanced_policy_count())),
         )
@@ -61,8 +61,8 @@ fn render_advanced_summary(snapshot: &BrowserSnapshot) -> AnyElement {
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::HAIRLINE))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .border_color(rgb(colors::hairline()))
+        .bg(rgb(colors::canvas_soft()))
         .px_4()
         .py_3()
         .flex()
@@ -75,7 +75,7 @@ fn render_advanced_summary(snapshot: &BrowserSnapshot) -> AnyElement {
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(div().text_color(rgb(colors::PRIMARY)).child(IconName::Inspector))
+                .child(div().text_color(rgb(colors::primary())).child(IconName::Inspector))
                 .child(
                     div()
                         .min_w_0()
@@ -86,10 +86,10 @@ fn render_advanced_summary(snapshot: &BrowserSnapshot) -> AnyElement {
                             div()
                                 .text_sm()
                                 .font_semibold()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child("Local Runtime"),
                         )
-                        .child(div().text_xs().truncate().text_color(rgb(colors::MUTED)).child(
+                        .child(div().text_xs().truncate().text_color(rgb(colors::muted())).child(
                             format!(
                                 "{} space / {} profile",
                                 snapshot.active_space_name, snapshot.active_profile_name
@@ -97,7 +97,7 @@ fn render_advanced_summary(snapshot: &BrowserSnapshot) -> AnyElement {
                         )),
                 ),
         )
-        .child(div().text_xs().font_semibold().text_color(rgb(colors::SUCCESS)).child("Local"))
+        .child(div().text_xs().font_semibold().text_color(rgb(colors::success())).child("Local"))
         .into_any_element()
 }
 
@@ -111,7 +111,7 @@ fn render_advanced_rows(snapshot: &BrowserSnapshot) -> AnyElement {
         .flex_col()
         .overflow_y_scrollbar()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .child(advanced_row(
             IconName::Eye,
             "History Recording",
@@ -179,7 +179,7 @@ fn advanced_row(
     div()
         .py_3()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -190,7 +190,7 @@ fn advanced_row(
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(div().text_color(rgb(colors::MUTED_SOFT)).child(icon))
+                .child(div().text_color(rgb(colors::muted_soft())).child(icon))
                 .child(
                     div()
                         .min_w_0()
@@ -202,11 +202,15 @@ fn advanced_row(
                                 .text_sm()
                                 .font_semibold()
                                 .truncate()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(label),
                         )
                         .child(
-                            div().text_xs().truncate().text_color(rgb(colors::MUTED)).child(detail),
+                            div()
+                                .text_xs()
+                                .truncate()
+                                .text_color(rgb(colors::muted()))
+                                .child(detail),
                         ),
                 ),
         )
@@ -216,7 +220,7 @@ fn advanced_row(
                 .truncate()
                 .text_sm()
                 .font_semibold()
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child(value),
         )
         .into_any_element()

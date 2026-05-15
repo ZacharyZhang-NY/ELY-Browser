@@ -57,8 +57,8 @@ fn render_status_pill(snapshot: &BrowserSnapshot) -> AnyElement {
         .rounded(px(999.0))
         .bg(rgba(PILL_BG))
         .text_size(px(11.0))
-        .text_color(rgb(colors::INK_3))
-        .child(div().text_color(rgb(colors::ACCENT)).child(IconName::Globe))
+        .text_color(rgb(colors::ink_3()))
+        .child(div().text_color(rgb(colors::accent())).child(IconName::Globe))
         .child(format!(
             "{SYNC_SERVICE_NAME} · {}",
             connection_label(snapshot.sync_status.connection())
@@ -71,7 +71,7 @@ fn render_serif_headline() -> AnyElement {
         .font_family(SERIF_FAMILY)
         .text_size(px(46.0))
         .font_weight(FontWeight(400.0))
-        .text_color(rgb(colors::INK))
+        .text_color(rgb(colors::ink()))
         .child("Your tabs, on every device.")
         .into_any_element()
 }
@@ -80,7 +80,7 @@ fn render_intro_paragraph() -> AnyElement {
     div()
         .max_w(px(440.0))
         .text_size(px(14.0))
-        .text_color(rgb(colors::INK_2))
+        .text_color(rgb(colors::ink_2()))
         .child(
             "ELY keeps tabs, workspaces, pinned items, and history mirrored across your \
              devices — encrypted in your hands and replayed at the edge.",
@@ -97,7 +97,7 @@ fn render_metrics_card(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -
         .flex()
         .flex_col()
         .gap(px(16.0))
-        .child(div().text_size(px(12.5)).text_color(rgb(colors::INK_3)).child("Local queue"))
+        .child(div().text_size(px(12.5)).text_color(rgb(colors::ink_3())).child("Local queue"))
         .child(
             div()
                 .grid()
@@ -106,12 +106,12 @@ fn render_metrics_card(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -
                 .child(render_metric(
                     "Pending",
                     snapshot.sync_status.pending_objects(),
-                    colors::INK,
+                    colors::ink(),
                 ))
                 .child(render_metric(
                     "Failed",
                     snapshot.sync_status.failed_objects(),
-                    colors::ERROR,
+                    colors::error(),
                 )),
         )
         .child(render_reset_button(cx))
@@ -123,7 +123,7 @@ fn render_metric(label: &'static str, value: usize, color: u32) -> AnyElement {
         .flex()
         .flex_col()
         .gap_1()
-        .child(div().text_size(px(10.5)).text_color(rgb(colors::INK_4)).child(label))
+        .child(div().text_size(px(10.5)).text_color(rgb(colors::ink_4())).child(label))
         .child(
             div()
                 .text_size(px(20.0))
@@ -144,7 +144,7 @@ fn render_reset_button(cx: &mut Context<ElyShell>) -> AnyElement {
                 .px(px(12.0))
                 .py(px(7.0))
                 .rounded(px(8.0))
-                .bg(rgba(colors::ACCENT))
+                .bg(rgba(colors::accent()))
                 .text_size(px(12.0))
                 .font_weight(FontWeight(500.0))
                 .text_color(rgb(0xfff5e6))
@@ -163,7 +163,7 @@ fn render_reset_button(cx: &mut Context<ElyShell>) -> AnyElement {
                 .bg(rgba(BUTTON_BG))
                 .text_size(px(12.0))
                 .font_weight(FontWeight(500.0))
-                .text_color(rgb(colors::INK_2))
+                .text_color(rgb(colors::ink_2()))
                 .cursor_pointer()
                 .hover(|style| style.bg(rgba(BUTTON_BG_HOVER)))
                 .active(|style| style.opacity(0.85))
@@ -201,13 +201,13 @@ fn render_what_syncs_card(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>
                     div()
                         .text_size(px(13.0))
                         .font_weight(FontWeight(500.0))
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child("What syncs"),
                 )
                 .child(
                     div()
                         .text_size(px(11.0))
-                        .text_color(rgb(colors::INK_3))
+                        .text_color(rgb(colors::ink_3()))
                         .child(format!("{} kinds tracked", snapshot.sync_status.objects().len())),
                 ),
         )
@@ -235,7 +235,7 @@ fn render_sync_object_row(
         .gap(px(10.0))
         .py(px(8.0))
         .border_b_1()
-        .border_color(rgba(colors::DIVIDER))
+        .border_color(rgba(colors::divider()))
         .child(render_state_dot(status.state()))
         .child(
             div()
@@ -248,10 +248,10 @@ fn render_sync_object_row(
                     div()
                         .text_size(px(13.0))
                         .font_weight(FontWeight(500.0))
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child(sync_object_kind_label(status.kind())),
                 )
-                .child(div().text_size(px(11.0)).text_color(rgb(colors::INK_4)).child(format!(
+                .child(div().text_size(px(11.0)).text_color(rgb(colors::ink_4())).child(format!(
                     "{} local · {}",
                     status.local_count(),
                     sync_object_state_label(status.state())
@@ -263,9 +263,9 @@ fn render_sync_object_row(
 
 fn render_state_dot(state: SyncObjectState) -> AnyElement {
     let color = match state {
-        SyncObjectState::LocalOnly => colors::INK_4,
-        SyncObjectState::Paused => colors::INK_5,
-        SyncObjectState::PrivacyControlled => colors::ACCENT,
+        SyncObjectState::LocalOnly => colors::ink_4(),
+        SyncObjectState::Paused => colors::ink_5(),
+        SyncObjectState::PrivacyControlled => colors::accent(),
     };
 
     div().size(px(8.0)).rounded_full().bg(rgb(color)).into_any_element()
@@ -279,7 +279,7 @@ fn render_policy_toggle(
     let enabled = status.policy() == SyncObjectPolicy::Enabled;
     let next_policy = if enabled { SyncObjectPolicy::Paused } else { SyncObjectPolicy::Enabled };
     let kind = status.kind();
-    let track_color = if enabled { colors::ACCENT } else { 0x281e1426 };
+    let track_color = if enabled { colors::accent() } else { 0x281e1426 };
 
     div()
         .id(SharedString::from(format!("sync-policy-{index}")))

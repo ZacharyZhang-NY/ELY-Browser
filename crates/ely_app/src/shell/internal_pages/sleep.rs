@@ -41,7 +41,7 @@ fn render_sleep_content(
             div()
                 .border_t_1()
                 .border_b_1()
-                .border_color(rgb(colors::HAIRLINE))
+                .border_color(rgb(colors::hairline()))
                 .py_4()
                 .flex()
                 .flex_col()
@@ -62,7 +62,7 @@ fn render_sleep_content(
                 .items_center()
                 .gap_3()
                 .text_sm()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child(IconName::CircleCheck)
                 .child("This tab is sleeping. Restore wakes the tab and keeps its saved context."),
         )
@@ -102,7 +102,7 @@ fn render_sleep_header(tab: &BrowserTab, cx: &mut Context<ElyShell>) -> AnyEleme
                         .items_center()
                         .gap_3()
                         .text_size(px(26.0))
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child(IconName::CircleCheck)
                         .child("Sleeping Tab"),
                 )
@@ -110,7 +110,7 @@ fn render_sleep_header(tab: &BrowserTab, cx: &mut Context<ElyShell>) -> AnyEleme
                     div()
                         .text_sm()
                         .truncate()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("Sleeping {}", tab.display_url())),
                 ),
         )

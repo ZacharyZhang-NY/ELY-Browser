@@ -113,7 +113,7 @@ where
         .flex_1()
         .h(px(40.0))
         .rounded(px(10.0))
-        .bg(rgb(colors::INK))
+        .bg(rgb(colors::ink()))
         .flex()
         .items_center()
         .justify_center()
@@ -142,9 +142,9 @@ where
         .flex()
         .items_center()
         .justify_center()
-        .text_color(rgb(colors::INK_3))
+        .text_color(rgb(colors::ink_3()))
         .cursor_pointer()
-        .hover(|style| style.bg(rgba(SECONDARY_BG_HOVER)).text_color(rgb(colors::INK)))
+        .hover(|style| style.bg(rgba(SECONDARY_BG_HOVER)).text_color(rgb(colors::ink())))
         .active(|style| style.opacity(0.82))
         .on_click(cx.listener(move |shell, _, window, cx| handler(shell, window, cx)))
         .child(icon)
@@ -157,11 +157,11 @@ fn render_permissions_block(manifest: &PluginManifest) -> AnyElement {
         .flex_col()
         .gap(px(8.0))
         .pt(px(4.0))
-        .child(div().text_size(px(11.0)).text_color(rgb(colors::INK_3)).child("PERMISSIONS"))
+        .child(div().text_size(px(11.0)).text_color(rgb(colors::ink_3())).child("PERMISSIONS"))
         .child(if manifest.permissions().is_empty() {
             div()
                 .text_size(px(12.0))
-                .text_color(rgb(colors::INK_4))
+                .text_color(rgb(colors::ink_4()))
                 .child("This plugin declares no permissions.")
                 .into_any_element()
         } else {
@@ -198,7 +198,10 @@ fn render_permission_row(permission: &PluginPermission) -> AnyElement {
                 .child(if high_risk { "!" } else { "✓" }),
         )
         .child(
-            div().flex_1().text_color(rgb(colors::INK_2)).child(permission_scope_label(permission)),
+            div()
+                .flex_1()
+                .text_color(rgb(colors::ink_2()))
+                .child(permission_scope_label(permission)),
         )
         .into_any_element()
 }
@@ -214,7 +217,7 @@ fn render_right_column(plugin: &InstalledPlugin) -> AnyElement {
         .child(
             div()
                 .text_size(px(13.5))
-                .text_color(rgb(colors::INK_2))
+                .text_color(rgb(colors::ink_2()))
                 .child(manifest.description().to_string()),
         )
         .child(render_stats_grid(plugin))
@@ -239,7 +242,7 @@ fn render_right_header(plugin: &InstalledPlugin) -> AnyElement {
                 .child(
                     div()
                         .text_size(px(11.0))
-                        .text_color(rgb(colors::INK_4))
+                        .text_color(rgb(colors::ink_4()))
                         .child(category_label(plugin)),
                 )
                 .child(
@@ -247,10 +250,10 @@ fn render_right_header(plugin: &InstalledPlugin) -> AnyElement {
                         .font_family(SERIF_FAMILY)
                         .text_size(px(32.0))
                         .font_weight(FontWeight(400.0))
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child(manifest.name().to_string()),
                 )
-                .child(div().text_size(px(12.5)).text_color(rgb(colors::INK_3)).child(format!(
+                .child(div().text_size(px(12.5)).text_color(rgb(colors::ink_3())).child(format!(
                     "by {} · min ELY {}",
                     manifest.author(),
                     manifest.min_ely_build()
@@ -264,7 +267,7 @@ fn render_status_chip(plugin: &InstalledPlugin) -> AnyElement {
     let enabled = plugin.enabled();
     let label = if enabled { "Enabled" } else { "Disabled" };
     let bg = if enabled { 0xe8f3ee } else { 0x281e140d };
-    let color = if enabled { 0x2f7d68 } else { colors::INK_3 };
+    let color = if enabled { 0x2f7d68 } else { colors::ink_3() };
 
     div()
         .px(px(10.0))
@@ -305,12 +308,12 @@ fn stat_card(label: &'static str, value: String) -> AnyElement {
         .flex()
         .flex_col()
         .gap(px(2.0))
-        .child(div().text_size(px(10.5)).text_color(rgb(colors::INK_4)).child(label))
+        .child(div().text_size(px(10.5)).text_color(rgb(colors::ink_4())).child(label))
         .child(
             div()
                 .text_size(px(13.0))
                 .font_weight(FontWeight(500.0))
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child(value),
         )
         .into_any_element()
@@ -327,13 +330,13 @@ fn render_contributions(manifest: &PluginManifest) -> AnyElement {
             div()
                 .text_size(px(13.0))
                 .font_weight(FontWeight(600.0))
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child("What it adds to ELY"),
         )
         .child(if contributions.is_empty() {
             div()
                 .text_size(px(12.0))
-                .text_color(rgb(colors::INK_4))
+                .text_color(rgb(colors::ink_4()))
                 .child("This plugin does not register any contributions.")
                 .into_any_element()
         } else {
@@ -365,7 +368,7 @@ fn render_contribution_row(contribution: &PluginContributionPoint) -> AnyElement
                 .items_center()
                 .justify_center()
                 .mt(px(1.0))
-                .text_color(rgb(colors::ACCENT))
+                .text_color(rgb(colors::accent()))
                 .text_size(px(11.0))
                 .child(IconName::Check),
         )
@@ -380,13 +383,13 @@ fn render_contribution_row(contribution: &PluginContributionPoint) -> AnyElement
                     div()
                         .text_size(px(12.5))
                         .font_weight(FontWeight(500.0))
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child(contribution_title(contribution)),
                 )
                 .child(
                     div()
                         .text_size(px(11.5))
-                        .text_color(rgb(colors::INK_3))
+                        .text_color(rgb(colors::ink_3()))
                         .child(contribution_detail(contribution)),
                 ),
         )

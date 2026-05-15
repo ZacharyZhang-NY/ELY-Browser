@@ -46,16 +46,16 @@ fn render_header() -> AnyElement {
         .flex()
         .flex_col()
         .gap(px(6.0))
-        .child(div().text_size(px(11.0)).text_color(rgb(colors::INK_4)).child("GENERAL"))
+        .child(div().text_size(px(11.0)).text_color(rgb(colors::ink_4())).child("GENERAL"))
         .child(
             div()
                 .font_family(SERIF_FAMILY)
                 .text_size(px(34.0))
                 .font_weight(FontWeight(400.0))
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child("Appearance"),
         )
-        .child(div().max_w(px(520.0)).text_size(px(13.0)).text_color(rgb(colors::INK_3)).child(
+        .child(div().max_w(px(520.0)).text_size(px(13.0)).text_color(rgb(colors::ink_3())).child(
             "Tune the atmosphere of your browser. ELY's wallpaper sets the ambient \
                      palette of every surface; pick one and let it breathe.",
         ))
@@ -100,8 +100,8 @@ fn render_wallpaper_swatch(
             div()
                 .h(px(96.0))
                 .rounded(px(10.0))
-                .when(selected, |el| el.border_2().border_color(rgb(colors::ACCENT)))
-                .when(!selected, |el| el.border_1().border_color(rgba(colors::STROKE)))
+                .when(selected, |el| el.border_2().border_color(rgb(colors::accent())))
+                .when(!selected, |el| el.border_1().border_color(rgba(colors::stroke())))
                 .relative()
                 .overflow_hidden()
                 .bg(rgb(base))
@@ -126,11 +126,11 @@ fn render_wallpaper_swatch(
                     div()
                         .flex_1()
                         .font_weight(FontWeight(500.0))
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child(label),
                 )
                 .when(selected, |el| {
-                    el.child(div().text_color(rgb(colors::ACCENT)).child(IconName::Check))
+                    el.child(div().text_color(rgb(colors::accent())).child(IconName::Check))
                 }),
         )
         .into_any_element()
@@ -168,7 +168,7 @@ fn render_translucency_row(shell: &mut ElyShell, pct: u8) -> AnyElement {
                 div()
                     .min_w(px(36.0))
                     .text_size(px(11.0))
-                    .text_color(rgb(colors::INK_3))
+                    .text_color(rgb(colors::ink_3()))
                     .child(format!("{pct}%")),
             )
             .into_any_element(),
@@ -181,7 +181,7 @@ fn render_translucency_presets(cx: &mut Context<ElyShell>) -> AnyElement {
         .items_center()
         .gap(px(8.0))
         .pt(px(2.0))
-        .child(div().text_size(px(10.5)).text_color(rgb(colors::INK_4)).child("Presets"))
+        .child(div().text_size(px(10.5)).text_color(rgb(colors::ink_4())).child("Presets"))
         .child(translucency_preset("Solid", 0, cx))
         .child(translucency_preset("Default", 40, cx))
         .child(translucency_preset("Glassy", 75, cx))
@@ -203,7 +203,7 @@ fn translucency_preset(
         .bg(rgba(SEGMENT_BG))
         .text_size(px(11.5))
         .font_weight(FontWeight(500.0))
-        .text_color(rgb(colors::INK_2))
+        .text_color(rgb(colors::ink_2()))
         .cursor_pointer()
         .hover(|style| style.opacity(0.92))
         .active(|style| style.opacity(0.82))
@@ -249,7 +249,7 @@ fn theme_segment(
         .rounded(px(6.0))
         .text_size(px(12.0))
         .font_weight(FontWeight(500.0))
-        .text_color(rgb(colors::INK_2))
+        .text_color(rgb(colors::ink_2()))
         .bg(rgba(bg))
         .cursor_pointer()
         .hover(|style| style.opacity(0.92))
@@ -269,11 +269,11 @@ fn render_accent_row() -> AnyElement {
             .flex()
             .items_center()
             .gap(px(8.0))
-            .child(swatch(colors::ACCENT, true))
+            .child(swatch(colors::accent(), true))
             .child(swatch(0xec6a8e, false))
             .child(swatch(0x7c6cf7, false))
             .child(swatch(0x4fb59a, false))
-            .child(swatch(colors::INK, false))
+            .child(swatch(colors::ink(), false))
             .into_any_element(),
     )
 }
@@ -286,7 +286,7 @@ fn swatch(color: u32, selected: bool) -> AnyElement {
         .border_1()
         .border_color(rgba(0x0000000d));
     if selected {
-        element = element.border_2().border_color(rgb(colors::ACCENT));
+        element = element.border_2().border_color(rgb(colors::accent()));
     }
     element.into_any_element()
 }
@@ -300,7 +300,7 @@ fn render_reduce_motion_row(reduce: bool, cx: &mut Context<ElyShell>) -> AnyElem
             .w(px(34.0))
             .h(px(20.0))
             .rounded_full()
-            .bg(if reduce { rgb(colors::ACCENT) } else { rgba(0x281e1426) })
+            .bg(if reduce { rgb(colors::accent()) } else { rgba(0x281e1426) })
             .p(px(2.0))
             .cursor_pointer()
             .hover(|style| style.opacity(0.9))
@@ -329,7 +329,7 @@ fn render_reset_row(cx: &mut Context<ElyShell>) -> AnyElement {
             .bg(rgba(SEGMENT_BG))
             .text_size(px(12.0))
             .font_weight(FontWeight(500.0))
-            .text_color(rgb(colors::INK_2))
+            .text_color(rgb(colors::ink_2()))
             .cursor_pointer()
             .hover(|style| style.opacity(0.92))
             .active(|style| style.opacity(0.82))
@@ -348,7 +348,7 @@ fn settings_row(title: &'static str, detail: &'static str, control: AnyElement) 
         .gap(px(16.0))
         .py(px(14.0))
         .border_b_1()
-        .border_color(rgba(colors::DIVIDER))
+        .border_color(rgba(colors::divider()))
         .child(
             div()
                 .flex_1()
@@ -360,10 +360,10 @@ fn settings_row(title: &'static str, detail: &'static str, control: AnyElement) 
                     div()
                         .text_size(px(13.0))
                         .font_weight(FontWeight(500.0))
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child(title),
                 )
-                .child(div().text_size(px(11.5)).text_color(rgb(colors::INK_3)).child(detail)),
+                .child(div().text_size(px(11.5)).text_color(rgb(colors::ink_3())).child(detail)),
         )
         .child(control)
         .into_any_element()

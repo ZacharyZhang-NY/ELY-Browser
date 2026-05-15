@@ -46,10 +46,10 @@ fn render_about_header() -> AnyElement {
                 .child(
                     div()
                         .text_size(px(26.0))
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child(format!("About {PRODUCT_NAME}")),
                 )
-                .child(div().text_sm().text_color(rgb(colors::MUTED)).child(FORMAL_PRODUCT_NAME)),
+                .child(div().text_sm().text_color(rgb(colors::muted())).child(FORMAL_PRODUCT_NAME)),
         )
         .child(
             div()
@@ -58,7 +58,7 @@ fn render_about_header() -> AnyElement {
                 .gap_2()
                 .text_xs()
                 .font_semibold()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child(IconName::Info)
                 .child(format!("Build {BUILD_REVISION}")),
         )
@@ -73,7 +73,7 @@ fn render_about_rows(snapshot: &BrowserSnapshot) -> AnyElement {
         .flex_col()
         .overflow_y_scrollbar()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .child(about_row(
             IconName::Building2,
             "Product",
@@ -135,7 +135,7 @@ fn about_row(
     div()
         .py_3()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -147,7 +147,7 @@ fn about_row(
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(div().text_color(rgb(colors::MUTED_SOFT)).child(icon))
+                .child(div().text_color(rgb(colors::muted_soft())).child(icon))
                 .child(
                     div()
                         .min_w_0()
@@ -159,11 +159,15 @@ fn about_row(
                                 .text_sm()
                                 .font_semibold()
                                 .truncate()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(label),
                         )
                         .child(
-                            div().text_xs().truncate().text_color(rgb(colors::MUTED)).child(detail),
+                            div()
+                                .text_xs()
+                                .truncate()
+                                .text_color(rgb(colors::muted()))
+                                .child(detail),
                         ),
                 ),
         )
@@ -173,7 +177,7 @@ fn about_row(
                 .truncate()
                 .text_sm()
                 .font_semibold()
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child(value),
         )
         .into_any_element()

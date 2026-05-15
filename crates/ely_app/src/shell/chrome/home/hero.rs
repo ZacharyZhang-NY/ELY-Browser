@@ -38,7 +38,7 @@ fn render_greeting_row(text: String, phase: DayPhase) -> AnyElement {
         .items_center()
         .gap(px(8.0))
         .text_size(px(13.0))
-        .text_color(rgb(colors::INK_3))
+        .text_color(rgb(colors::ink_3()))
         .child(div().text_color(rgb(color)).child(icon))
         .child(text)
         .into_any_element()
@@ -61,7 +61,7 @@ fn render_serif_headline() -> AnyElement {
         .font_family(SERIF_FAMILY)
         .text_size(px(64.0))
         .font_weight(FontWeight(400.0))
-        .text_color(rgb(colors::INK))
+        .text_color(rgb(colors::ink()))
         .child("Where focus finds flow.")
         .into_any_element()
 }
@@ -74,9 +74,9 @@ fn render_search_bar(shell: &ElyShell, cx: &mut Context<ElyShell>) -> AnyElement
     // so this is a read-only echo, not a parallel input.
     let omnibar_value = shell.command_input.read(cx).value().to_string();
     let (display_text, display_color) = if omnibar_value.is_empty() {
-        ("Search the web or ELY".to_string(), colors::INK_4)
+        ("Search the web or ELY".to_string(), colors::ink_4())
     } else {
-        (omnibar_value, colors::INK)
+        (omnibar_value, colors::ink())
     };
 
     div()
@@ -96,7 +96,7 @@ fn render_search_bar(shell: &ElyShell, cx: &mut Context<ElyShell>) -> AnyElement
         .on_click(cx.listener(|shell, _, window, cx| {
             shell.focus_address_bar(window, cx);
         }))
-        .child(div().text_color(rgb(colors::INK_3)).child(IconName::Search))
+        .child(div().text_color(rgb(colors::ink_3())).child(IconName::Search))
         .child(
             div()
                 .flex_1()
@@ -114,7 +114,7 @@ fn render_search_bar(shell: &ElyShell, cx: &mut Context<ElyShell>) -> AnyElement
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_color(rgb(colors::INK_3))
+                .text_color(rgb(colors::ink_3()))
                 .child(IconName::ArrowRight),
         )
         .into_any_element()
@@ -161,7 +161,7 @@ where
     F: Fn(&mut ElyShell, &mut gpui::Window, &mut Context<ElyShell>) + 'static,
 {
     let leading =
-        div().text_color(rgb(colors::INK_3)).text_size(px(12.0)).child(icon).into_any_element();
+        div().text_color(rgb(colors::ink_3())).text_size(px(12.0)).child(icon).into_any_element();
     render_pill(id, leading, label, cx, handler)
 }
 
@@ -194,7 +194,7 @@ where
             div()
                 .text_size(px(12.0))
                 .font_weight(FontWeight(500.0))
-                .text_color(rgb(colors::INK_2))
+                .text_color(rgb(colors::ink_2()))
                 .child(label),
         )
         .into_any_element()

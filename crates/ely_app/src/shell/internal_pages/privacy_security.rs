@@ -58,14 +58,14 @@ fn render_privacy_header(snapshot: &BrowserSnapshot) -> AnyElement {
                 .child(
                     div()
                         .text_size(px(26.0))
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child("Privacy & Security"),
                 )
                 .child(
                     div()
                         .text_sm()
                         .truncate()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("Profile: {}", snapshot.active_profile_name)),
                 ),
         )
@@ -76,7 +76,7 @@ fn render_privacy_header(snapshot: &BrowserSnapshot) -> AnyElement {
                 .gap_2()
                 .text_xs()
                 .font_semibold()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child(privacy_icon(snapshot.history_recording_policy))
                 .child(snapshot.history_recording_policy.status()),
         )
@@ -87,8 +87,8 @@ fn render_history_summary(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::HAIRLINE))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .border_color(rgb(colors::hairline()))
+        .bg(rgb(colors::canvas_soft()))
         .px_4()
         .py_3()
         .flex()
@@ -116,14 +116,14 @@ fn render_history_summary(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>
                             div()
                                 .text_sm()
                                 .font_semibold()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(snapshot.history_recording_policy.name()),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .truncate()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(snapshot.history_recording_policy.detail()),
                         ),
                 ),
@@ -133,7 +133,7 @@ fn render_history_summary(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>
                 .flex()
                 .items_center()
                 .gap_2()
-                .child(div().text_xs().font_semibold().text_color(rgb(colors::MUTED)).child(
+                .child(div().text_xs().font_semibold().text_color(rgb(colors::muted())).child(
                     format!("{} Profile entries", snapshot.active_profile_history_entry_count),
                 ))
                 .child(
@@ -164,7 +164,7 @@ fn render_history_clear_controls(confirming_clear: bool, cx: &mut Context<ElyShe
         .child(
             div()
                 .text_sm()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child("Clear all history saved for this Profile."),
         )
         .child(
@@ -184,8 +184,8 @@ fn render_clear_history_confirmation(cx: &mut Context<ElyShell>) -> AnyElement {
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::ERROR))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .border_color(rgb(colors::error()))
+        .bg(rgb(colors::canvas_soft()))
         .px_4()
         .py_3()
         .flex()
@@ -202,13 +202,13 @@ fn render_clear_history_confirmation(cx: &mut Context<ElyShell>) -> AnyElement {
                     div()
                         .text_sm()
                         .font_semibold()
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child("Confirm history clearing"),
                 )
                 .child(
                     div()
                         .text_xs()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child("This removes Profile history across every Space."),
                 ),
         )
@@ -244,7 +244,7 @@ fn render_privacy_settings_rows(
         .min_h_0()
         .overflow_y_scrollbar()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .flex_col()
         .child(section_label("History"))
@@ -260,7 +260,7 @@ fn section_label(label: &'static str) -> AnyElement {
         .pb_2()
         .text_xs()
         .font_semibold()
-        .text_color(rgb(colors::MUTED))
+        .text_color(rgb(colors::muted()))
         .child(label)
         .into_any_element()
 }
@@ -308,7 +308,7 @@ fn render_diagnostics_policy_row(
     div()
         .py_3()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -335,14 +335,14 @@ fn render_diagnostics_policy_row(
                                 .text_sm()
                                 .font_semibold()
                                 .truncate()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(policy.name()),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .truncate()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(policy.detail()),
                         ),
                 ),
@@ -372,7 +372,7 @@ fn render_history_policy_row(
     div()
         .py_3()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -399,14 +399,14 @@ fn render_history_policy_row(
                                 .text_sm()
                                 .font_semibold()
                                 .truncate()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(policy.name()),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .truncate()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(policy.detail()),
                         ),
                 ),
@@ -441,15 +441,15 @@ fn diagnostics_icon(policy: DiagnosticsReportingPolicy) -> IconName {
 
 fn policy_color(policy: HistoryRecordingPolicy) -> u32 {
     match policy {
-        HistoryRecordingPolicy::Record => colors::SUCCESS,
-        HistoryRecordingPolicy::Pause => colors::PRIMARY,
+        HistoryRecordingPolicy::Record => colors::success(),
+        HistoryRecordingPolicy::Pause => colors::primary(),
     }
 }
 
 fn diagnostics_policy_color(policy: DiagnosticsReportingPolicy) -> u32 {
     match policy {
-        DiagnosticsReportingPolicy::Minimal => colors::SUCCESS,
-        DiagnosticsReportingPolicy::Paused => colors::PRIMARY,
+        DiagnosticsReportingPolicy::Minimal => colors::success(),
+        DiagnosticsReportingPolicy::Paused => colors::primary(),
     }
 }
 
@@ -462,11 +462,11 @@ fn diagnostics_policy_icon(policy: DiagnosticsReportingPolicy, selected: bool) -
 }
 
 fn history_policy_icon_color(policy: HistoryRecordingPolicy, selected: bool) -> u32 {
-    if selected { policy_color(policy) } else { colors::MUTED_SOFT }
+    if selected { policy_color(policy) } else { colors::muted_soft() }
 }
 
 fn diagnostics_policy_icon_color(policy: DiagnosticsReportingPolicy, selected: bool) -> u32 {
-    if selected { diagnostics_policy_color(policy) } else { colors::MUTED_SOFT }
+    if selected { diagnostics_policy_color(policy) } else { colors::muted_soft() }
 }
 
 fn history_policy_button_label(policy: HistoryRecordingPolicy, selected: bool) -> &'static str {

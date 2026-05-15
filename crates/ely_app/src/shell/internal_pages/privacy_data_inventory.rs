@@ -20,8 +20,8 @@ pub(super) fn render_local_data_inventory(
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::HAIRLINE))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .border_color(rgb(colors::hairline()))
+        .bg(rgb(colors::canvas_soft()))
         .px_4()
         .py_3()
         .flex()
@@ -50,7 +50,7 @@ fn render_inventory_header(
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(div().text_color(rgb(colors::PRIMARY)).child(IconName::Inspector))
+                .child(div().text_color(rgb(colors::primary())).child(IconName::Inspector))
                 .child(
                     div()
                         .min_w_0()
@@ -61,10 +61,10 @@ fn render_inventory_header(
                             div()
                                 .text_sm()
                                 .font_semibold()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child("Local Data"),
                         )
-                        .child(div().text_xs().truncate().text_color(rgb(colors::MUTED)).child(
+                        .child(div().text_xs().truncate().text_color(rgb(colors::muted())).child(
                             format!(
                                 "{} Profile inventory for review, export, and deletion.",
                                 snapshot.active_profile_name
@@ -82,13 +82,13 @@ fn render_inventory_header(
                     div()
                         .rounded_md()
                         .border_1()
-                        .border_color(rgb(colors::HAIRLINE))
-                        .bg(rgb(colors::CANVAS))
+                        .border_color(rgb(colors::hairline()))
+                        .bg(rgb(colors::canvas()))
                         .px_3()
                         .py_2()
                         .text_xs()
                         .font_semibold()
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child(format!("{} items", inventory.total_items())),
                 )
                 .child(
@@ -108,8 +108,8 @@ fn render_inventory_header(
 
 fn file_message(notice: Option<&str>, error: Option<&str>) -> Option<AnyElement> {
     notice
-        .map(|message| render_file_message(message, colors::SUCCESS))
-        .or_else(|| error.map(|message| render_file_message(message, colors::ERROR)))
+        .map(|message| render_file_message(message, colors::success()))
+        .or_else(|| error.map(|message| render_file_message(message, colors::error())))
 }
 
 fn render_file_message(message: &str, color: u32) -> AnyElement {
@@ -150,7 +150,7 @@ fn inventory_row(icon: IconName, label: &'static str, count: usize) -> AnyElemen
     div()
         .py_2()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -161,9 +161,14 @@ fn inventory_row(icon: IconName, label: &'static str, count: usize) -> AnyElemen
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(div().text_color(rgb(colors::MUTED_SOFT)).child(icon))
+                .child(div().text_color(rgb(colors::muted_soft())).child(icon))
                 .child(
-                    div().min_w_0().truncate().text_sm().text_color(rgb(colors::INK)).child(label),
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .text_sm()
+                        .text_color(rgb(colors::ink()))
+                        .child(label),
                 ),
         )
         .child(
@@ -171,7 +176,7 @@ fn inventory_row(icon: IconName, label: &'static str, count: usize) -> AnyElemen
                 .flex_none()
                 .text_sm()
                 .font_semibold()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child(count.to_string()),
         )
         .into_any_element()

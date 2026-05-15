@@ -38,13 +38,13 @@ impl ElyShell {
                                 .child(
                                     div()
                                         .text_size(px(26.0))
-                                        .text_color(rgb(colors::INK))
+                                        .text_color(rgb(colors::ink()))
                                         .child("Plugins"),
                                 )
                                 .child(
                                     div()
                                         .text_sm()
-                                        .text_color(rgb(colors::MUTED))
+                                        .text_color(rgb(colors::muted()))
                                         .child("Browser scope"),
                                 ),
                         )
@@ -54,10 +54,10 @@ impl ElyShell {
                                 .flex_col()
                                 .items_end()
                                 .gap_1()
-                                .child(div().text_xs().text_color(rgb(colors::MUTED)).child(
+                                .child(div().text_xs().text_color(rgb(colors::muted())).child(
                                     format!("{} installed", snapshot.installed_plugins.len()),
                                 ))
-                                .child(div().text_xs().text_color(rgb(colors::MUTED)).child(
+                                .child(div().text_xs().text_color(rgb(colors::muted())).child(
                                     format!("{} audit events", snapshot.plugin_audit_events.len()),
                                 )),
                         ),
@@ -71,7 +71,7 @@ impl ElyShell {
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child("Install signed .rplug packages from local disk."),
                         )
                         .child(
@@ -105,11 +105,11 @@ fn render_plugin_install_error(message: String) -> AnyElement {
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::ERROR))
+        .border_color(rgb(colors::error()))
         .px_3()
         .py_2()
         .text_xs()
-        .text_color(rgb(colors::ERROR))
+        .text_color(rgb(colors::error()))
         .child(message)
         .into_any_element()
 }
@@ -121,7 +121,7 @@ fn render_plugin_install_confirmation(
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::ERROR))
+        .border_color(rgb(colors::error()))
         .px_3()
         .py_2()
         .flex()
@@ -138,14 +138,14 @@ fn render_plugin_install_confirmation(
                     div()
                         .text_xs()
                         .font_semibold()
-                        .text_color(rgb(colors::ERROR))
+                        .text_color(rgb(colors::error()))
                         .child(format!("Confirm install for {}", pending.manifest().name())),
                 )
                 .child(
                     div()
                         .text_xs()
                         .truncate()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(plugin_install_confirmation_label(pending)),
                 ),
         )
@@ -181,7 +181,7 @@ fn render_plugin_uninstall_confirmation(
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::ERROR))
+        .border_color(rgb(colors::error()))
         .px_3()
         .py_2()
         .flex()
@@ -198,14 +198,14 @@ fn render_plugin_uninstall_confirmation(
                     div()
                         .text_xs()
                         .font_semibold()
-                        .text_color(rgb(colors::ERROR))
+                        .text_color(rgb(colors::error()))
                         .child(format!("Confirm uninstall for {}", pending.plugin_name())),
                 )
                 .child(
                     div()
                         .text_xs()
                         .truncate()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(pending.plugin_id().as_str().to_string()),
                 ),
         )
@@ -240,10 +240,10 @@ fn render_plugin_list(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) ->
     if snapshot.installed_plugins.is_empty() {
         return div()
             .border_t_1()
-            .border_color(rgb(colors::HAIRLINE))
+            .border_color(rgb(colors::hairline()))
             .pt_5()
             .text_sm()
-            .text_color(rgb(colors::MUTED))
+            .text_color(rgb(colors::muted()))
             .child("No plugins installed.")
             .into_any_element();
     }
@@ -259,7 +259,7 @@ fn render_plugin_list(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) ->
         .flex()
         .flex_col()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .children(rows)
         .into_any_element()
 }
@@ -272,7 +272,7 @@ fn render_plugin_row(
 ) -> AnyElement {
     let high_risk_count = plugin.manifest().high_risk_permissions().count();
     let status_color =
-        if plugin.enabled_for_profile(profile_kind) { colors::SUCCESS } else { colors::MUTED };
+        if plugin.enabled_for_profile(profile_kind) { colors::success() } else { colors::muted() };
     let status_label = plugin_status_label(plugin, profile_kind);
     let plugin_id = plugin.id().clone();
     let plugin_name = plugin.manifest().name().to_string();
@@ -281,7 +281,7 @@ fn render_plugin_row(
     div()
         .py_3()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -297,14 +297,14 @@ fn render_plugin_row(
                         .text_sm()
                         .font_semibold()
                         .truncate()
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child(plugin.manifest().name().to_string()),
                 )
                 .child(
                     div()
                         .text_xs()
                         .truncate()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(plugin.id().as_str().to_string()),
                 ),
         )
@@ -314,7 +314,7 @@ fn render_plugin_row(
                 .items_center()
                 .gap_3()
                 .text_xs()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child(format!("{} permissions", plugin.manifest().permissions().len()))
                 .child(format!("{high_risk_count} high risk"))
                 .child(div().text_color(rgb(status_color)).child(status_label))
@@ -419,7 +419,7 @@ fn render_plugin_audit_list(snapshot: &BrowserSnapshot) -> AnyElement {
         .flex_col()
         .min_h_0()
         .gap_3()
-        .child(div().text_xs().font_semibold().text_color(rgb(colors::MUTED)).child("Audit"))
+        .child(div().text_xs().font_semibold().text_color(rgb(colors::muted())).child("Audit"))
         .child(
             div()
                 .flex_1()
@@ -435,7 +435,7 @@ fn render_plugin_audit_row(event: &PluginAuditEvent) -> AnyElement {
     div()
         .py_2()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -445,11 +445,11 @@ fn render_plugin_audit_row(event: &PluginAuditEvent) -> AnyElement {
             div()
                 .min_w_0()
                 .truncate()
-                .text_color(rgb(colors::BODY))
+                .text_color(rgb(colors::body()))
                 .child(event.plugin_id().as_str().to_string()),
         )
         .child(
-            div().text_color(rgb(colors::MUTED)).child(plugin_audit_action_label(event.action())),
+            div().text_color(rgb(colors::muted())).child(plugin_audit_action_label(event.action())),
         )
         .into_any_element()
 }

@@ -40,8 +40,10 @@ fn render_task_manager_header(snapshot: &BrowserSnapshot) -> AnyElement {
                 .flex()
                 .flex_col()
                 .gap_2()
-                .child(div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("Task Manager"))
-                .child(div().text_sm().text_color(rgb(colors::MUTED)).child(format!(
+                .child(
+                    div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Task Manager"),
+                )
+                .child(div().text_sm().text_color(rgb(colors::muted())).child(format!(
                     "{} / {}",
                     snapshot.active_profile_name, snapshot.active_space_name
                 ))),
@@ -53,7 +55,7 @@ fn render_task_manager_header(snapshot: &BrowserSnapshot) -> AnyElement {
                 .gap_2()
                 .text_xs()
                 .font_semibold()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child(IconName::LayoutDashboard)
                 .child(format!("{} local tasks", task_count(snapshot))),
         )
@@ -64,7 +66,7 @@ fn render_task_summary(snapshot: &BrowserSnapshot) -> AnyElement {
     div()
         .border_t_1()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .py_3()
         .flex()
         .items_center()
@@ -85,9 +87,9 @@ fn task_metric(label: &'static str, value: usize) -> AnyElement {
         .flex()
         .flex_col()
         .gap_1()
-        .child(div().text_xs().text_color(rgb(colors::MUTED)).child(label))
+        .child(div().text_xs().text_color(rgb(colors::muted())).child(label))
         .child(
-            div().text_sm().font_semibold().text_color(rgb(colors::INK)).child(value.to_string()),
+            div().text_sm().font_semibold().text_color(rgb(colors::ink())).child(value.to_string()),
         )
         .into_any_element()
 }
@@ -133,7 +135,7 @@ fn render_section_header(label: &'static str) -> AnyElement {
         .pb_2()
         .text_xs()
         .font_semibold()
-        .text_color(rgb(colors::MUTED))
+        .text_color(rgb(colors::muted()))
         .child(label)
         .into_any_element()
 }
@@ -174,7 +176,7 @@ fn render_plugin_task_row(
 ) -> AnyElement {
     let status = if plugin.enabled_for_profile(profile_kind) { "Enabled" } else { "Disabled" };
     let status_color =
-        if plugin.enabled_for_profile(profile_kind) { colors::SUCCESS } else { colors::MUTED };
+        if plugin.enabled_for_profile(profile_kind) { colors::success() } else { colors::muted() };
     let detail = format!(
         "{} permissions - {} contributions",
         plugin.manifest().permissions().len(),
@@ -205,7 +207,7 @@ fn render_task_row(
         .id(SharedString::from(id))
         .py_3()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -216,7 +218,7 @@ fn render_task_row(
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(div().text_color(rgb(colors::MUTED_SOFT)).child(icon))
+                .child(div().text_color(rgb(colors::muted_soft())).child(icon))
                 .child(
                     div()
                         .min_w_0()
@@ -228,11 +230,15 @@ fn render_task_row(
                                 .text_sm()
                                 .font_semibold()
                                 .truncate()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(title),
                         )
                         .child(
-                            div().text_xs().truncate().text_color(rgb(colors::MUTED)).child(detail),
+                            div()
+                                .text_xs()
+                                .truncate()
+                                .text_color(rgb(colors::muted()))
+                                .child(detail),
                         ),
                 ),
         )
@@ -243,7 +249,7 @@ fn render_task_row(
                 .justify_end()
                 .gap_3()
                 .text_xs()
-                .child(div().min_w(px(86.0)).text_color(rgb(colors::MUTED)).child(scope))
+                .child(div().min_w(px(86.0)).text_color(rgb(colors::muted())).child(scope))
                 .child(
                     div()
                         .min_w(px(76.0))
@@ -271,18 +277,18 @@ fn tab_state_label(state: &TabState) -> &'static str {
 
 fn tab_state_color(state: &TabState) -> u32 {
     match state {
-        TabState::Loading => colors::PRIMARY,
-        TabState::Ready => colors::SUCCESS,
-        TabState::Crashed => colors::ERROR,
-        TabState::Discarded | TabState::Archived => colors::MUTED,
+        TabState::Loading => colors::primary(),
+        TabState::Ready => colors::success(),
+        TabState::Crashed => colors::error(),
+        TabState::Discarded | TabState::Archived => colors::muted(),
     }
 }
 
 fn download_state_color(state: &DownloadState) -> u32 {
     match state {
-        DownloadState::InProgress => colors::PRIMARY,
-        DownloadState::Completed => colors::SUCCESS,
-        DownloadState::Paused => colors::MUTED,
-        DownloadState::Cancelled | DownloadState::Failed => colors::ERROR,
+        DownloadState::InProgress => colors::primary(),
+        DownloadState::Completed => colors::success(),
+        DownloadState::Paused => colors::muted(),
+        DownloadState::Cancelled | DownloadState::Failed => colors::error(),
     }
 }

@@ -27,7 +27,7 @@ pub(crate) fn render_topbar(
         .items_center()
         .flex_shrink_0()
         .border_b_1()
-        .border_color(rgba(colors::DIVIDER))
+        .border_color(rgba(colors::divider()))
         .when(sidebar_collapsed, |el| el.child(render_command_bar_identity(snapshot, 56.0, true)))
         .child(render_nav_arrow(
             "nav-back",
@@ -138,14 +138,14 @@ fn render_styled_url(active_tab: &BrowserTab) -> AnyElement {
         .items_center()
         .gap(px(2.0))
         .text_size(px(13.0))
-        .child(div().font_weight(FontWeight(500.0)).text_color(rgb(colors::INK)).child(host))
-        .child(div().min_w_0().truncate().text_color(rgb(colors::INK_3)).child(path))
+        .child(div().font_weight(FontWeight(500.0)).text_color(rgb(colors::ink())).child(host))
+        .child(div().min_w_0().truncate().text_color(rgb(colors::ink_3())).child(path))
         .into_any_element()
 }
 
 fn render_lock_or_search(secure: bool, show_styled: bool) -> AnyElement {
     let icon = if show_styled && !secure { IconName::Globe } else { IconName::Search };
-    div().text_color(rgb(colors::INK_3)).child(icon).into_any_element()
+    div().text_color(rgb(colors::ink_3())).child(icon).into_any_element()
 }
 
 fn render_omnibar_chip<F>(
@@ -158,7 +158,7 @@ fn render_omnibar_chip<F>(
 where
     F: Fn(&mut ElyShell, &mut gpui::Window, &mut Context<ElyShell>) + 'static,
 {
-    let color = if active { colors::ACCENT } else { colors::INK_4 };
+    let color = if active { colors::accent() } else { colors::ink_4() };
     div()
         .id(SharedString::from(id))
         .size(px(22.0))
@@ -168,7 +168,7 @@ where
         .justify_center()
         .text_color(rgb(color))
         .cursor_pointer()
-        .hover(|style| style.bg(rgba(CHIP_HOVER_BG)).text_color(rgb(colors::INK)))
+        .hover(|style| style.bg(rgba(CHIP_HOVER_BG)).text_color(rgb(colors::ink())))
         .active(|style| style.opacity(0.7))
         .on_click(cx.listener(move |shell, _, window, cx| handler(shell, window, cx)))
         .child(icon)
@@ -185,7 +185,7 @@ fn render_nav_arrow<F>(
 where
     F: Fn(&mut ElyShell, &mut gpui::Window, &mut Context<ElyShell>) + 'static,
 {
-    let color = if enabled { colors::INK_3 } else { colors::INK_5 };
+    let color = if enabled { colors::ink_3() } else { colors::ink_5() };
     div()
         .id(SharedString::from(id))
         .size(px(30.0))
@@ -196,7 +196,7 @@ where
         .text_color(rgb(color))
         .when(enabled, |el| {
             el.cursor_pointer()
-                .hover(|style| style.bg(rgba(OMNIBAR_BG)).text_color(rgb(colors::INK)))
+                .hover(|style| style.bg(rgba(OMNIBAR_BG)).text_color(rgb(colors::ink())))
                 .active(|style| style.opacity(0.82))
                 .on_click(cx.listener(move |shell, _, window, cx| handler(shell, window, cx)))
         })
@@ -221,8 +221,8 @@ where
         .items_center()
         .justify_center()
         .cursor_pointer()
-        .text_color(rgb(colors::INK_3))
-        .hover(|style| style.bg(rgba(OMNIBAR_BG)).text_color(rgb(colors::INK)))
+        .text_color(rgb(colors::ink_3()))
+        .hover(|style| style.bg(rgba(OMNIBAR_BG)).text_color(rgb(colors::ink())))
         .active(|style| style.opacity(0.82))
         .on_click(cx.listener(move |shell, _, window, cx| handler(shell, window, cx)))
         .child(icon)

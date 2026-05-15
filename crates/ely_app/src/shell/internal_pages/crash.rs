@@ -58,7 +58,7 @@ fn render_crash_content(
             div()
                 .border_t_1()
                 .border_b_1()
-                .border_color(rgb(colors::HAIRLINE))
+                .border_color(rgb(colors::hairline()))
                 .py_4()
                 .flex()
                 .flex_col()
@@ -79,7 +79,7 @@ fn render_crash_content(
                 .items_center()
                 .gap_3()
                 .text_sm()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child(IconName::TriangleAlert)
                 .child("The renderer stopped for this tab. Restore reloads the saved tab state."),
         )
@@ -119,7 +119,7 @@ fn render_crash_header(tab: &BrowserTab, cx: &mut Context<ElyShell>) -> AnyEleme
                         .items_center()
                         .gap_3()
                         .text_size(px(26.0))
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child(IconName::TriangleAlert)
                         .child("Tab Recovery"),
                 )
@@ -127,7 +127,7 @@ fn render_crash_header(tab: &BrowserTab, cx: &mut Context<ElyShell>) -> AnyEleme
                     div()
                         .text_sm()
                         .truncate()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("Recovering {}", tab.display_url())),
                 ),
         )
@@ -153,8 +153,8 @@ fn render_missing_crash_route(message: &'static str) -> AnyElement {
             .flex()
             .flex_col()
             .gap_4()
-            .child(div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("Tab Recovery"))
-            .child(div().text_sm().text_color(rgb(colors::MUTED)).child(message)),
+            .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Tab Recovery"))
+            .child(div().text_sm().text_color(rgb(colors::muted())).child(message)),
     )
 }
 

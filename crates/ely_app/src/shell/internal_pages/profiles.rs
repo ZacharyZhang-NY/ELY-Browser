@@ -46,11 +46,11 @@ fn render_profiles_header(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>
                 .flex()
                 .flex_col()
                 .gap_2()
-                .child(div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("Profiles"))
+                .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Profiles"))
                 .child(
                     div()
                         .text_sm()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("Active Space: {}", snapshot.active_space_name)),
                 ),
         )
@@ -62,7 +62,7 @@ fn render_profiles_header(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>
                 .child(
                     div()
                         .text_xs()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("{} profiles", snapshot.profiles.len())),
                 )
                 .child(
@@ -90,7 +90,7 @@ fn render_profile_list(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -
         .flex_col()
         .overflow_y_scrollbar()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .children(snapshot.profiles.iter().enumerate().map(|(index, profile)| {
             render_profile_row(
                 index,
@@ -119,7 +119,7 @@ fn render_profile_row(
         .id(SharedString::from(format!("profile-{}", profile.id().as_str())))
         .py_3()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -142,14 +142,14 @@ fn render_profile_row(
                                 .text_sm()
                                 .font_semibold()
                                 .truncate()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(profile.name().to_string()),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .truncate()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(profile_detail_label(profile)),
                         ),
                 ),
@@ -184,7 +184,7 @@ fn profile_color_swatch(color_hex: u32) -> AnyElement {
         .h(px(14.0))
         .rounded_full()
         .border_1()
-        .border_color(rgb(colors::HAIRLINE_STRONG))
+        .border_color(rgb(colors::hairline_strong()))
         .bg(rgb(color_hex))
         .into_any_element()
 }
@@ -200,7 +200,7 @@ fn render_profile_default_action(
         return div()
             .text_xs()
             .font_semibold()
-            .text_color(rgb(colors::SUCCESS))
+            .text_color(rgb(colors::success()))
             .child("Default")
             .into_any_element();
     }
@@ -237,7 +237,7 @@ fn render_profile_action(
         return div()
             .text_xs()
             .font_semibold()
-            .text_color(rgb(colors::SUCCESS))
+            .text_color(rgb(colors::success()))
             .child("Active")
             .into_any_element();
     }

@@ -65,7 +65,7 @@ pub(crate) fn render_unread_badge(count: u32) -> impl IntoElement {
         .bg(rgba(UNREAD_BADGE_BG))
         .text_size(px(10.0))
         .font_weight(FontWeight(500.0))
-        .text_color(rgb(colors::INK_3))
+        .text_color(rgb(colors::ink_3()))
         .child(label)
 }
 
@@ -77,12 +77,12 @@ pub(crate) fn section_tabs_label(count: usize) -> impl IntoElement {
         .flex()
         .items_center()
         .gap(px(6.0))
-        .child(div().text_color(rgb(colors::INK_4)).child(IconName::Frame))
+        .child(div().text_color(rgb(colors::ink_4())).child(IconName::Frame))
         .child(
             div()
                 .text_size(px(10.5))
                 .font_weight(FontWeight(500.0))
-                .text_color(rgb(colors::INK_4))
+                .text_color(rgb(colors::ink_4()))
                 .child(format!("TABS · {count}")),
         )
 }
@@ -94,7 +94,7 @@ pub(crate) fn section_label(label: &'static str) -> impl IntoElement {
         .px(px(10.0))
         .text_size(px(10.5))
         .font_weight(FontWeight(500.0))
-        .text_color(rgb(colors::INK_4))
+        .text_color(rgb(colors::ink_4()))
         .child(label)
 }
 
@@ -138,16 +138,20 @@ pub(crate) fn panel_bg(snapshot: &BrowserSnapshot) -> u32 {
     let max_alpha: u32 = 0xff;
     let min_alpha: u32 = 0xb3;
     let alpha = max_alpha - (pct * (max_alpha - min_alpha)) / 100;
-    let rgb = wallpaper_panel_rgb(snapshot.appearance.wallpaper());
+    let rgb = wallpaper_panel_rgb(snapshot.appearance.wallpaper(), colors::mode());
     (rgb << 8) | alpha
 }
 
-fn wallpaper_panel_rgb(theme: ely_domain::WallpaperTheme) -> u32 {
-    match theme {
-        ely_domain::WallpaperTheme::Dawn => 0xfaf6f0,
-        ely_domain::WallpaperTheme::Violet => 0xf6f3f8,
-        ely_domain::WallpaperTheme::Mint => 0xf3f6f1,
-        ely_domain::WallpaperTheme::Slate => 0xeff1f4,
+fn wallpaper_panel_rgb(theme: ely_domain::WallpaperTheme, mode: colors::Mode) -> u32 {
+    match (theme, mode) {
+        (ely_domain::WallpaperTheme::Dawn, colors::Mode::Light) => 0xfaf6f0,
+        (ely_domain::WallpaperTheme::Violet, colors::Mode::Light) => 0xf6f3f8,
+        (ely_domain::WallpaperTheme::Mint, colors::Mode::Light) => 0xf3f6f1,
+        (ely_domain::WallpaperTheme::Slate, colors::Mode::Light) => 0xeff1f4,
+        (ely_domain::WallpaperTheme::Dawn, colors::Mode::Dark) => 0x24211f,
+        (ely_domain::WallpaperTheme::Violet, colors::Mode::Dark) => 0x232029,
+        (ely_domain::WallpaperTheme::Mint, colors::Mode::Dark) => 0x1f2421,
+        (ely_domain::WallpaperTheme::Slate, colors::Mode::Dark) => 0x22262e,
     }
 }
 

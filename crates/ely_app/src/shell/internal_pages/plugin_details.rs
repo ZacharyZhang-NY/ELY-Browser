@@ -60,15 +60,15 @@ fn render_missing_plugin_detail(
                     div()
                         .font_family(SERIF_FAMILY)
                         .text_size(px(28.0))
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child("Plugin Details"),
                 )
-                .child(div().text_sm().text_color(rgb(colors::MUTED)).child(detail)),
+                .child(div().text_sm().text_color(rgb(colors::muted())).child(detail)),
         )
         .child(
             div()
                 .border_t_1()
-                .border_color(rgb(colors::HAIRLINE))
+                .border_color(rgb(colors::hairline()))
                 .pt(px(20.0))
                 .flex()
                 .items_center()
@@ -77,7 +77,7 @@ fn render_missing_plugin_detail(
                 .child(
                     div()
                         .text_sm()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child("Plugin details are available for installed plugins."),
                 )
                 .child(

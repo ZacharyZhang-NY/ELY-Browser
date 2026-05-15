@@ -42,19 +42,19 @@ fn render_missing_tab() -> AnyElement {
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::HAIRLINE))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .border_color(rgb(colors::hairline()))
+        .bg(rgb(colors::canvas_soft()))
         .px_4()
         .py_3()
         .flex()
         .items_center()
         .gap_3()
-        .child(div().text_color(rgb(colors::ERROR)).child(IconName::TriangleAlert))
+        .child(div().text_color(rgb(colors::error())).child(IconName::TriangleAlert))
         .child(
             div()
                 .text_sm()
                 .font_semibold()
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child("Active tab is unavailable."),
         )
         .into_any_element()
@@ -79,10 +79,10 @@ fn render_compatibility_header(
                 .child(
                     div()
                         .text_size(px(26.0))
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child("Site Compatibility"),
                 )
-                .child(div().text_sm().truncate().text_color(rgb(colors::MUTED)).child(format!(
+                .child(div().text_sm().truncate().text_color(rgb(colors::muted())).child(format!(
                     "{} / {}",
                     snapshot.active_profile_name,
                     diagnostic_url_scope(active_tab)
@@ -100,7 +100,7 @@ fn render_compatibility_header(
                         .gap_2()
                         .text_xs()
                         .font_semibold()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(IconName::Inspector)
                         .child("Diagnostics"),
                 )
@@ -119,39 +119,39 @@ fn render_compatibility_summary(
             "Current page is ready",
             "Diagnostics omit URL path and query before copying.",
             IconName::CircleCheck,
-            colors::SUCCESS,
+            colors::success(),
         ),
         TabState::Loading => (
             "Current page is loading",
             "Capture diagnostics after the page reaches a stable state.",
             IconName::LoaderCircle,
-            colors::PRIMARY,
+            colors::primary(),
         ),
         TabState::Crashed => (
             "Current page crashed",
             "The copied report includes tab state and profile-scoped permissions.",
             IconName::TriangleAlert,
-            colors::ERROR,
+            colors::error(),
         ),
         TabState::Discarded => (
             "Current page is sleeping",
             "Wake the tab to refresh Servo rendering details.",
             IconName::EyeOff,
-            colors::MUTED,
+            colors::muted(),
         ),
         TabState::Archived => (
             "Current page is archived",
             "Restore the tab to refresh Servo rendering details.",
             IconName::Folder,
-            colors::MUTED,
+            colors::muted(),
         ),
     };
 
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::HAIRLINE))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .border_color(rgb(colors::hairline()))
+        .bg(rgb(colors::canvas_soft()))
         .px_4()
         .py_3()
         .flex()
@@ -175,11 +175,15 @@ fn render_compatibility_summary(
                             div()
                                 .text_sm()
                                 .font_semibold()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(title),
                         )
                         .child(
-                            div().text_xs().truncate().text_color(rgb(colors::MUTED)).child(detail),
+                            div()
+                                .text_xs()
+                                .truncate()
+                                .text_color(rgb(colors::muted()))
+                                .child(detail),
                         ),
                 ),
         )
@@ -192,12 +196,12 @@ fn render_compatibility_summary(
                 .font_semibold()
                 .child(
                     div()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("{} permissions", site_permission_count(snapshot, origin))),
                 )
                 .child(
                     div()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("{} audits", site_permission_audit_count(snapshot, origin))),
                 ),
         )
@@ -216,7 +220,7 @@ fn render_compatibility_rows(
         .flex_col()
         .overflow_y_scrollbar()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .child(compatibility_row(
             IconName::Globe,
             "URL Scope",
@@ -281,7 +285,7 @@ fn compatibility_row(
     div()
         .py_3()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -292,7 +296,7 @@ fn compatibility_row(
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(div().text_color(rgb(colors::MUTED_SOFT)).child(icon))
+                .child(div().text_color(rgb(colors::muted_soft())).child(icon))
                 .child(
                     div()
                         .min_w_0()
@@ -304,11 +308,15 @@ fn compatibility_row(
                                 .text_sm()
                                 .font_semibold()
                                 .truncate()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(label),
                         )
                         .child(
-                            div().text_xs().truncate().text_color(rgb(colors::MUTED)).child(detail),
+                            div()
+                                .text_xs()
+                                .truncate()
+                                .text_color(rgb(colors::muted()))
+                                .child(detail),
                         ),
                 ),
         )
@@ -318,7 +326,7 @@ fn compatibility_row(
                 .truncate()
                 .text_sm()
                 .font_semibold()
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child(value),
         )
         .into_any_element()

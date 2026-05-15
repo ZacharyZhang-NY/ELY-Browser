@@ -24,7 +24,7 @@ pub(super) fn render_editors_pick(
         .flex()
         .flex_col()
         .gap(px(14.0))
-        .child(div().text_size(px(11.0)).text_color(rgb(colors::INK_3)).child("EDITOR'S PICK"))
+        .child(div().text_size(px(11.0)).text_color(rgb(colors::ink_3())).child("EDITOR'S PICK"))
         .child(render_featured_body(featured))
         .child(render_featured_actions(featured, cx))
         .into_any_element()
@@ -72,10 +72,10 @@ fn render_featured_body(featured: Option<&InstalledPlugin>) -> AnyElement {
                     div()
                         .text_size(px(15.0))
                         .font_weight(FontWeight(600.0))
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child(name),
                 )
-                .child(div().text_size(px(12.5)).text_color(rgb(colors::INK_3)).child(desc)),
+                .child(div().text_size(px(12.5)).text_color(rgb(colors::ink_3())).child(desc)),
         )
         .into_any_element()
 }
@@ -98,7 +98,7 @@ fn render_featured_actions(
                 div()
                     .ml_auto()
                     .text_size(px(11.5))
-                    .text_color(rgb(colors::INK_3))
+                    .text_color(rgb(colors::ink_3()))
                     .child(format!("{} permissions", plugin.manifest().permissions().len())),
             )
             .into_any_element()
@@ -128,7 +128,7 @@ where
         .px(px(14.0))
         .py(px(7.0))
         .rounded(px(8.0))
-        .bg(rgb(colors::INK))
+        .bg(rgb(colors::ink()))
         .text_size(px(12.0))
         .font_weight(FontWeight(500.0))
         .text_color(rgb(0xffffff))

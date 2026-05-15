@@ -189,7 +189,7 @@ impl ElyShell {
         let active = tab.id() == &snapshot.active_tab_id;
         let tab_id = tab.id().clone();
         let close_tab_id = tab.id().clone();
-        let border = if active { colors::ACCENT } else { colors::HAIRLINE_STRONG };
+        let border = if active { colors::accent() } else { colors::hairline_strong() };
         let host = pane_host_label(tab);
         let title = tab.title().to_string();
         let secure = pane_url_is_secure(tab);
@@ -235,12 +235,12 @@ impl ElyShell {
             .items_center()
             .justify_center()
             .rounded(px(10.0))
-            .bg(rgba(colors::GLASS_2))
+            .bg(rgba(colors::glass_2()))
             .child(
                 div()
                     .text_xs()
                     .font_semibold()
-                    .text_color(rgb(colors::MUTED))
+                    .text_color(rgb(colors::muted()))
                     .child("Split Controls"),
             )
             .child(
@@ -252,7 +252,7 @@ impl ElyShell {
                         div()
                             .text_xs()
                             .font_semibold()
-                            .text_color(rgb(colors::MUTED))
+                            .text_color(rgb(colors::muted()))
                             .child("Layout"),
                     )
                     .child(self.render_split_axis_button(
@@ -368,7 +368,7 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let first_tab_id = layout.panes().first()?.tab_id().clone();
-        let bg = if active { colors::GLASS_3 } else { 0x00000000 };
+        let bg = if active { colors::glass_3() } else { 0x00000000 };
 
         Some(
             div()
@@ -381,12 +381,12 @@ impl ElyShell {
                 .flex()
                 .items_center()
                 .cursor_pointer()
-                .hover(|style| style.bg(rgba(colors::GLASS_3)))
+                .hover(|style| style.bg(rgba(colors::glass_3())))
                 .active(|style| style.opacity(0.82))
                 .on_click(cx.listener(move |shell, _, window, cx| {
                     shell.select_tab(&first_tab_id, window, cx);
                 }))
-                .child(div().text_color(rgb(colors::ACCENT)).child(IconName::Frame))
+                .child(div().text_color(rgb(colors::accent())).child(IconName::Frame))
                 .child(
                     div()
                         .min_w_0()
@@ -398,13 +398,13 @@ impl ElyShell {
                                 .text_size(px(13.0))
                                 .font_weight(gpui::FontWeight(500.0))
                                 .truncate()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(layout.title().to_string()),
                         )
                         .child(
                             div()
                                 .text_size(px(11.0))
-                                .text_color(rgb(colors::INK_4))
+                                .text_color(rgb(colors::ink_4()))
                                 .child(format!("{} panes", layout.pane_count())),
                         ),
                 )

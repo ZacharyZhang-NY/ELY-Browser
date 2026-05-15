@@ -18,6 +18,19 @@ use super::{ElyShell, ShellState};
 
 impl Render for ElyShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Resolve the active palette before anything else so every
+        // `colors::ink()` etc. call lower in the tree reads the right
+        // shade. `ThemeMode::System` defers to the OS preference via
+        // GPUI's `Window::appearance`; explicit Light / Dark wins.
+        let appearance = window.appearance();
+        let theme_mode = match &self.state {
+            ShellState::Ready(core) => {
+                core.snapshot().map(|s| s.appearance.theme_mode()).unwrap_or_default()
+            }
+            ShellState::StartupError(_) => ely_domain::ThemeMode::default(),
+        };
+        colors::set_mode(resolve_color_mode(theme_mode, appearance));
+
         match &self.state {
             ShellState::Ready(core) => match (core.snapshot(), core.active_tab().cloned()) {
                 (Ok(snapshot), Ok(active_tab)) => {
@@ -27,6 +40,24 @@ impl Render for ElyShell {
             },
             ShellState::StartupError(message) => render_error(message.clone()),
         }
+    }
+}
+
+fn resolve_color_mode(
+    theme_mode: ely_domain::ThemeMode,
+    window_appearance: gpui::WindowAppearance,
+) -> colors::Mode {
+    match theme_mode {
+        ely_domain::ThemeMode::Light => colors::Mode::Light,
+        ely_domain::ThemeMode::Dark => colors::Mode::Dark,
+        ely_domain::ThemeMode::System => match window_appearance {
+            gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark => {
+                colors::Mode::Dark
+            }
+            gpui::WindowAppearance::Light | gpui::WindowAppearance::VibrantLight => {
+                colors::Mode::Light
+            }
+        },
     }
 }
 
@@ -75,7 +106,7 @@ impl ElyShell {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_window_mouse_up))
             .capture_key_down(cx.listener(Self::on_command_overlay_key_down))
             .font_family(SANS_FAMILY)
-            .text_color(rgb(colors::INK))
+            .text_color(rgb(colors::ink()))
             .child(render_wallpaper(snapshot.appearance.wallpaper()))
             .child(
                 div()
@@ -333,8 +364,8 @@ const COLLAPSE_THRESHOLD_PX: f32 = spacing::SHELL_INSET + DEFAULT_SIDEBAR_WIDTH_
 fn render_error(message: String) -> AnyElement {
     div()
         .size_full()
-        .bg(rgb(colors::CANVAS))
-        .text_color(rgb(colors::ERROR))
+        .bg(rgb(colors::canvas()))
+        .text_color(rgb(colors::error()))
         .flex()
         .items_center()
         .justify_center()

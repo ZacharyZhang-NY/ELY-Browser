@@ -61,8 +61,8 @@ fn render_history_header(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>)
                 .flex()
                 .flex_col()
                 .gap_2()
-                .child(div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("History"))
-                .child(div().text_sm().text_color(rgb(colors::MUTED)).child(format!(
+                .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("History"))
+                .child(div().text_sm().text_color(rgb(colors::muted())).child(format!(
                     "{} / {}",
                     snapshot.active_profile_name, snapshot.active_space_name
                 ))),
@@ -75,7 +75,7 @@ fn render_history_header(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>)
                 .child(
                     div()
                         .text_xs()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("{} entries", snapshot.history_entries.len())),
                 )
                 .when(!snapshot.history_entries.is_empty(), |this| {
@@ -101,8 +101,8 @@ fn render_time_clear_confirmation(
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::ERROR))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .border_color(rgb(colors::error()))
+        .bg(rgb(colors::canvas_soft()))
         .px_4()
         .py_3()
         .flex()
@@ -119,13 +119,13 @@ fn render_time_clear_confirmation(
                     div()
                         .text_sm()
                         .font_semibold()
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child(format!("Confirm clearing {}", pending.label())),
                 )
                 .child(
                     div()
                         .text_xs()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child("This removes recent history in the current Space."),
                 ),
         )
@@ -163,8 +163,8 @@ fn render_domain_clear_confirmation(
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::ERROR))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .border_color(rgb(colors::error()))
+        .bg(rgb(colors::canvas_soft()))
         .px_4()
         .py_3()
         .flex()
@@ -181,13 +181,13 @@ fn render_domain_clear_confirmation(
                     div()
                         .text_sm()
                         .font_semibold()
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child(format!("Confirm clearing {}", pending.host())),
                 )
                 .child(
                     div()
                         .text_xs()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child("This removes matching history in the current Space."),
                 ),
         )
@@ -223,10 +223,10 @@ fn render_history_list(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -
         return div()
             .flex_1()
             .border_t_1()
-            .border_color(rgb(colors::HAIRLINE))
+            .border_color(rgb(colors::hairline()))
             .pt_5()
             .text_sm()
-            .text_color(rgb(colors::MUTED))
+            .text_color(rgb(colors::muted()))
             .child("History is empty for this Space and Profile.")
             .into_any_element();
     }
@@ -238,7 +238,7 @@ fn render_history_list(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -
         .flex_col()
         .overflow_y_scrollbar()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .children(
             snapshot
                 .history_entries
@@ -264,7 +264,7 @@ fn render_history_row(
         .id(SharedString::from(format!("history-{index}")))
         .py_3()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -280,7 +280,7 @@ fn render_history_row(
                         .text_sm()
                         .font_semibold()
                         .truncate()
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .child(entry.title().to_string()),
                 )
                 .child(
@@ -289,28 +289,29 @@ fn render_history_row(
                         .items_center()
                         .gap_2()
                         .text_xs()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(div().min_w_0().truncate().child(entry.url().display_url()))
-                        .child(div().text_color(rgb(colors::MUTED_SOFT)).child("-"))
+                        .child(div().text_color(rgb(colors::muted_soft())).child("-"))
                         .child(
                             div()
-                                .text_color(rgb(colors::MUTED_SOFT))
+                                .text_color(rgb(colors::muted_soft()))
                                 .child(visit_count_label(entry.visit_count())),
                         )
-                        .child(div().text_color(rgb(colors::MUTED_SOFT)).child("-"))
+                        .child(div().text_color(rgb(colors::muted_soft())).child("-"))
                         .child(
                             div()
-                                .text_color(rgb(colors::MUTED_SOFT))
+                                .text_color(rgb(colors::muted_soft()))
                                 .child(visited_at_label(entry.visited_at())),
                         )
                         .when_some(source_tab_label, |this, source_tab_label| {
-                            this.child(div().text_color(rgb(colors::MUTED_SOFT)).child("-")).child(
-                                div()
-                                    .max_w(px(180.0))
-                                    .truncate()
-                                    .text_color(rgb(colors::MUTED_SOFT))
-                                    .child(format!("Source: {source_tab_label}")),
-                            )
+                            this.child(div().text_color(rgb(colors::muted_soft())).child("-"))
+                                .child(
+                                    div()
+                                        .max_w(px(180.0))
+                                        .truncate()
+                                        .text_color(rgb(colors::muted_soft()))
+                                        .child(format!("Source: {source_tab_label}")),
+                                )
                         }),
                 ),
         )

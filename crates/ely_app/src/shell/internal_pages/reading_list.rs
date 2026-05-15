@@ -43,10 +43,10 @@ impl ElyShell {
             return div()
                 .flex_1()
                 .border_t_1()
-                .border_color(rgb(colors::HAIRLINE))
+                .border_color(rgb(colors::hairline()))
                 .pt_5()
                 .text_sm()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child("Reading List is empty for this Profile.")
                 .into_any_element();
         }
@@ -58,7 +58,7 @@ impl ElyShell {
             .flex_col()
             .overflow_y_scrollbar()
             .border_t_1()
-            .border_color(rgb(colors::HAIRLINE))
+            .border_color(rgb(colors::hairline()))
             .children(
                 snapshot
                     .reading_list
@@ -86,7 +86,7 @@ impl ElyShell {
             .id(SharedString::from(format!("reading-{}", entry.id().as_str())))
             .py_3()
             .border_b_1()
-            .border_color(rgb(colors::HAIRLINE))
+            .border_color(rgb(colors::hairline()))
             .flex()
             .items_center()
             .justify_between()
@@ -100,12 +100,12 @@ impl ElyShell {
                     .items_center()
                     .gap_3()
                     .cursor_pointer()
-                    .hover(|style| style.bg(rgb(colors::CANVAS_SOFT)))
+                    .hover(|style| style.bg(rgb(colors::canvas_soft())))
                     .active(|style| style.opacity(0.82))
                     .on_click(cx.listener(move |shell, _, window, cx| {
                         shell.open_url(url.clone(), window, cx);
                     }))
-                    .child(div().text_color(rgb(colors::MUTED_SOFT)).child(IconName::Inbox))
+                    .child(div().text_color(rgb(colors::muted_soft())).child(IconName::Inbox))
                     .child(
                         div()
                             .min_w_0()
@@ -117,21 +117,21 @@ impl ElyShell {
                                     .text_sm()
                                     .font_semibold()
                                     .truncate()
-                                    .text_color(rgb(colors::INK))
+                                    .text_color(rgb(colors::ink()))
                                     .child(entry.title().to_string()),
                             )
                             .child(
                                 div()
                                     .text_xs()
                                     .truncate()
-                                    .text_color(rgb(colors::MUTED))
+                                    .text_color(rgb(colors::muted()))
                                     .child(entry.display_url()),
                             )
                             .child(
                                 div()
                                     .text_xs()
                                     .truncate()
-                                    .text_color(rgb(colors::MUTED_SOFT))
+                                    .text_color(rgb(colors::muted_soft()))
                                     .child(added_at_label(entry.added_at())),
                             ),
                     ),
@@ -145,7 +145,7 @@ impl ElyShell {
                     .gap_2()
                     .text_xs()
                     .font_semibold()
-                    .text_color(rgb(colors::MUTED))
+                    .text_color(rgb(colors::muted()))
                     .when_some(space_name, |this, space_name| {
                         this.child(div().max_w(px(140.0)).truncate().child(space_name))
                     })
@@ -167,18 +167,20 @@ fn render_reading_list_header(snapshot: &BrowserSnapshot) -> AnyElement {
                 .flex()
                 .flex_col()
                 .gap_2()
-                .child(div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("Reading List"))
+                .child(
+                    div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Reading List"),
+                )
                 .child(
                     div()
                         .text_sm()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("Profile: {}", snapshot.active_profile_name)),
                 ),
         )
         .child(
             div()
                 .text_xs()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child(reading_list_count_label(snapshot.reading_list.len())),
         )
         .into_any_element()

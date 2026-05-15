@@ -29,10 +29,10 @@ impl ElyShell {
                 .gap_5()
                 .child(self.render_bookmarks_header(snapshot, cx))
                 .when_some(self.bookmark_file_error.clone(), |this, message| {
-                    this.child(render_bookmark_file_message(message, colors::ERROR))
+                    this.child(render_bookmark_file_message(message, colors::error()))
                 })
                 .when_some(self.bookmark_file_notice.clone(), |this, message| {
-                    this.child(render_bookmark_file_message(message, colors::SUCCESS))
+                    this.child(render_bookmark_file_message(message, colors::success()))
                 })
                 .child(self.render_bookmark_list(snapshot, cx)),
         )
@@ -47,10 +47,10 @@ impl ElyShell {
             return div()
                 .flex_1()
                 .border_t_1()
-                .border_color(rgb(colors::HAIRLINE))
+                .border_color(rgb(colors::hairline()))
                 .pt_5()
                 .text_sm()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child("No bookmarks in this Profile.")
                 .into_any_element();
         }
@@ -62,7 +62,7 @@ impl ElyShell {
             .flex_col()
             .overflow_y_scrollbar()
             .border_t_1()
-            .border_color(rgb(colors::HAIRLINE))
+            .border_color(rgb(colors::hairline()))
             .children(
                 snapshot
                     .bookmarks
@@ -94,7 +94,7 @@ impl ElyShell {
             .id(SharedString::from(format!("bookmark-{}", bookmark.id().as_str())))
             .py_3()
             .border_b_1()
-            .border_color(rgb(colors::HAIRLINE))
+            .border_color(rgb(colors::hairline()))
             .flex()
             .flex_col()
             .gap_3()
@@ -116,12 +116,14 @@ impl ElyShell {
                             .items_center()
                             .gap_3()
                             .cursor_pointer()
-                            .hover(|style| style.bg(rgb(colors::CANVAS_SOFT)))
+                            .hover(|style| style.bg(rgb(colors::canvas_soft())))
                             .on_click(cx.listener(move |shell, _, window, cx| {
                                 shell.open_url(url.clone(), window, cx);
                             }))
                             .child(
-                                div().text_color(rgb(colors::MUTED_SOFT)).child(IconName::BookOpen),
+                                div()
+                                    .text_color(rgb(colors::muted_soft()))
+                                    .child(IconName::BookOpen),
                             )
                             .child(render_bookmark_summary(bookmark)),
                     )
@@ -171,17 +173,21 @@ fn render_bookmark_summary(bookmark: &BookmarkEntry) -> AnyElement {
                 .text_sm()
                 .font_semibold()
                 .truncate()
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child(bookmark.title().to_string()),
-        )
-        .child(
-            div().text_xs().truncate().text_color(rgb(colors::MUTED)).child(bookmark.display_url()),
         )
         .child(
             div()
                 .text_xs()
                 .truncate()
-                .text_color(rgb(colors::MUTED_SOFT))
+                .text_color(rgb(colors::muted()))
+                .child(bookmark.display_url()),
+        )
+        .child(
+            div()
+                .text_xs()
+                .truncate()
+                .text_color(rgb(colors::muted_soft()))
                 .child(bookmark_metadata_label(bookmark)),
         )
         .into_any_element()
@@ -196,8 +202,8 @@ fn render_bookmark_editor(
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::HAIRLINE_STRONG))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .border_color(rgb(colors::hairline_strong()))
+        .bg(rgb(colors::canvas_soft()))
         .p_3()
         .flex()
         .flex_col()
@@ -211,7 +217,7 @@ fn render_bookmark_editor(
         )
         .child(render_bookmark_edit_field("Note", pending_edit.note_input()))
         .when_some(edit_error.map(ToOwned::to_owned), |this, message| {
-            this.child(div().text_xs().text_color(rgb(colors::ERROR)).child(message))
+            this.child(div().text_xs().text_color(rgb(colors::error())).child(message))
         })
         .child(
             div()
@@ -252,7 +258,7 @@ fn render_bookmark_edit_field(label: &'static str, input: &Entity<InputState>) -
         .flex()
         .flex_col()
         .gap_1()
-        .child(div().text_xs().font_semibold().text_color(rgb(colors::MUTED)).child(label))
+        .child(div().text_xs().font_semibold().text_color(rgb(colors::muted())).child(label))
         .child(Input::new(input).small())
         .into_any_element()
 }
@@ -274,12 +280,12 @@ impl ElyShell {
                     .flex_col()
                     .gap_2()
                     .child(
-                        div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("Bookmarks"),
+                        div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Bookmarks"),
                     )
                     .child(
                         div()
                             .text_sm()
-                            .text_color(rgb(colors::MUTED))
+                            .text_color(rgb(colors::muted()))
                             .child(format!("Profile: {}", snapshot.active_profile_name)),
                     ),
             )
@@ -291,7 +297,7 @@ impl ElyShell {
                     .child(
                         div()
                             .text_xs()
-                            .text_color(rgb(colors::MUTED))
+                            .text_color(rgb(colors::muted()))
                             .child(bookmark_count_label(snapshot.bookmarks.len())),
                     )
                     .child(

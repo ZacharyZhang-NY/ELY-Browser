@@ -10,9 +10,9 @@ pub(crate) fn render_command_footer() -> AnyElement {
         .px(px(16.0))
         .py(px(10.0))
         .border_t_1()
-        .border_color(rgba(colors::DIVIDER))
+        .border_color(rgba(colors::divider()))
         .text_size(px(10.5))
-        .text_color(rgb(colors::INK_3))
+        .text_color(rgb(colors::ink_3()))
         .bg(rgba(FOOTER_BG))
         // Only the shortcuts that actually do something today.
         // `⌘↵` (split-on-open) and `⇥` (filter) are real product
@@ -26,7 +26,7 @@ pub(crate) fn render_command_footer() -> AnyElement {
                 .flex()
                 .items_center()
                 .gap(px(6.0))
-                .child(div().text_color(rgb(colors::ACCENT)).child(IconName::Asterisk))
+                .child(div().text_color(rgb(colors::accent())).child(IconName::Asterisk))
                 .child("Powered by ELY"),
         )
         .into_any_element()
@@ -43,7 +43,7 @@ pub(crate) fn render_kbd(label: &'static str) -> AnyElement {
         .rounded(px(4.0))
         .bg(rgba(KBD_BG))
         .text_size(px(10.0))
-        .text_color(rgb(colors::INK_3))
+        .text_color(rgb(colors::ink_3()))
         .child(label)
         .into_any_element()
 }

@@ -108,8 +108,8 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let group_id = group.id().clone();
-        let background = if active { colors::SURFACE_CARD } else { colors::CANVAS };
-        let border = if active { colors::PRIMARY } else { colors::HAIRLINE };
+        let background = if active { colors::surface_card() } else { colors::canvas() };
+        let border = if active { colors::primary() } else { colors::hairline() };
         let icon = if group.collapsed() { IconName::Folder } else { IconName::FolderOpen };
         let state_label = if group.collapsed() { "Collapsed" } else { "Expanded" };
 
@@ -125,7 +125,7 @@ impl ElyShell {
             .flex()
             .items_center()
             .cursor_pointer()
-            .hover(|style| style.bg(rgb(colors::SURFACE_CARD)))
+            .hover(|style| style.bg(rgb(colors::surface_card())))
             .active(|style| style.opacity(0.82))
             .on_click(cx.listener(move |shell, _, _, cx| {
                 shell.toggle_tab_group(&group_id, cx);
@@ -142,13 +142,13 @@ impl ElyShell {
                             .text_sm()
                             .font_semibold()
                             .truncate()
-                            .text_color(rgb(colors::INK))
+                            .text_color(rgb(colors::ink()))
                             .child(group.name().to_string()),
                     )
                     .child(
                         div()
                             .text_xs()
-                            .text_color(rgb(colors::MUTED))
+                            .text_color(rgb(colors::muted()))
                             .child(format!("{tab_count} tabs - {state_label}")),
                     ),
             )

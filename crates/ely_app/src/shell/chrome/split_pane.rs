@@ -32,15 +32,15 @@ pub(crate) fn render_split_pane_header(
         .items_center()
         .flex_shrink_0()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .bg(rgb(0xf6f4ef))
         .child(div().size(px(8.0)).rounded_full().bg(rgb(accent)))
-        .child(div().text_color(rgb(colors::INK_3)).text_size(px(11.0)).child(lock_or_globe))
+        .child(div().text_color(rgb(colors::ink_3())).text_size(px(11.0)).child(lock_or_globe))
         .child(
             div()
                 .text_size(px(11.0))
                 .font_weight(FontWeight(500.0))
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child(host),
         )
         .child(
@@ -49,7 +49,7 @@ pub(crate) fn render_split_pane_header(
                 .min_w_0()
                 .truncate()
                 .text_size(px(11.0))
-                .text_color(rgb(colors::INK_4))
+                .text_color(rgb(colors::ink_4()))
                 .child(title),
         )
         .child(render_reload_glyph(close_tab_id.clone(), cx))
@@ -65,7 +65,7 @@ pub(crate) fn render_split_pane_header(
 /// reload action when one lands.
 fn render_reload_glyph(_tab_id: TabId, _cx: &mut Context<ElyShell>) -> AnyElement {
     div()
-        .text_color(rgb(colors::INK_5))
+        .text_color(rgb(colors::ink_5()))
         .text_size(px(11.0))
         .child(IconName::Redo2)
         .into_any_element()
@@ -75,10 +75,10 @@ fn render_close_glyph(close_tab_id: TabId, cx: &mut Context<ElyShell>) -> AnyEle
     let id = format!("split-pane-close-{}", close_tab_id.as_str());
     div()
         .id(SharedString::from(id))
-        .text_color(rgb(colors::INK_4))
+        .text_color(rgb(colors::ink_4()))
         .text_size(px(11.0))
         .cursor_pointer()
-        .hover(|style| style.text_color(rgb(colors::INK)))
+        .hover(|style| style.text_color(rgb(colors::ink())))
         .on_click(cx.listener(move |shell, _, window, cx| {
             // The split pane itself has an on_click that selects the
             // tab. Stop propagation here so closing the pane doesn't
@@ -114,13 +114,13 @@ pub(crate) fn render_compact_split_canvas(tab: &BrowserTab) -> AnyElement {
                 .size_full()
                 .min_h_0()
                 .rounded(px(10.0))
-                .bg(rgba(colors::GLASS_2))
+                .bg(rgba(colors::glass_2()))
                 .px(px(10.0))
                 .py(px(8.0))
                 .gap(px(8.0))
                 .flex()
                 .items_center()
-                .child(div().text_color(rgb(colors::INK_4)).child(IconName::Globe))
+                .child(div().text_color(rgb(colors::ink_4())).child(IconName::Globe))
                 .child(
                     div()
                         .min_w_0()
@@ -137,7 +137,7 @@ pub(crate) fn render_compact_split_canvas(tab: &BrowserTab) -> AnyElement {
                             div()
                                 .truncate()
                                 .text_size(px(11.0))
-                                .text_color(rgb(colors::INK_4))
+                                .text_color(rgb(colors::ink_4()))
                                 .child(split_canvas_status(tab)),
                         ),
                 ),

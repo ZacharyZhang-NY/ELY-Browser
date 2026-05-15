@@ -61,9 +61,9 @@ fn render_site_settings_header(snapshot: &BrowserSnapshot, origin: &SiteOrigin) 
                 .flex_col()
                 .gap_2()
                 .child(
-                    div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("Site Settings"),
+                    div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Site Settings"),
                 )
-                .child(div().text_sm().truncate().text_color(rgb(colors::MUTED)).child(format!(
+                .child(div().text_sm().truncate().text_color(rgb(colors::muted())).child(format!(
                     "{} / {}",
                     snapshot.active_profile_name,
                     origin.as_str()
@@ -76,7 +76,7 @@ fn render_site_settings_header(snapshot: &BrowserSnapshot, origin: &SiteOrigin) 
                 .gap_2()
                 .text_xs()
                 .font_semibold()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child(IconName::Globe)
                 .child("Profile scoped"),
         )
@@ -87,7 +87,7 @@ fn render_site_permission_summary(snapshot: &BrowserSnapshot, origin: &SiteOrigi
     div()
         .border_t_1()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .py_3()
         .flex()
         .items_center()
@@ -108,9 +108,9 @@ fn site_metric(label: &'static str, value: usize) -> AnyElement {
         .flex()
         .flex_col()
         .gap_1()
-        .child(div().text_xs().text_color(rgb(colors::MUTED)).child(label))
+        .child(div().text_xs().text_color(rgb(colors::muted())).child(label))
         .child(
-            div().text_sm().font_semibold().text_color(rgb(colors::INK)).child(value.to_string()),
+            div().text_sm().font_semibold().text_color(rgb(colors::ink())).child(value.to_string()),
         )
         .into_any_element()
 }
@@ -126,7 +126,9 @@ fn render_site_permission_rows(
         .flex()
         .flex_col()
         .gap_3()
-        .child(div().text_xs().font_semibold().text_color(rgb(colors::MUTED)).child("Permissions"))
+        .child(
+            div().text_xs().font_semibold().text_color(rgb(colors::muted())).child("Permissions"),
+        )
         .child(div().flex_1().min_h_0().flex().flex_col().overflow_y_scrollbar().children(
             SitePermissionFeature::all().iter().copied().enumerate().map(|(index, feature)| {
                 render_site_permission_row(snapshot, origin, index, feature, cx)
@@ -144,13 +146,13 @@ fn render_site_permission_row(
 ) -> AnyElement {
     let decision = decision_for(snapshot, origin, feature);
     let status = decision.map_or("Ask", |decision| decision.label());
-    let status_color = decision.map_or(colors::MUTED, decision_color);
+    let status_color = decision.map_or(colors::muted(), decision_color);
     let button_base = index * 4;
 
     div()
         .py_3()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -173,13 +175,13 @@ fn render_site_permission_row(
                                 .text_sm()
                                 .font_semibold()
                                 .truncate()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(feature.label()),
                         )
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(feature_scope_label(feature)),
                         ),
                 ),
@@ -295,7 +297,7 @@ fn render_site_permission_audit(snapshot: &BrowserSnapshot, origin: &SiteOrigin)
         .flex()
         .flex_col()
         .gap_2()
-        .child(div().text_xs().font_semibold().text_color(rgb(colors::MUTED)).child("Audit"))
+        .child(div().text_xs().font_semibold().text_color(rgb(colors::muted())).child("Audit"))
         .children(events.into_iter().map(render_audit_row))
         .into_any_element()
 }
@@ -304,18 +306,18 @@ fn render_audit_row(event: &SitePermissionAuditEvent) -> AnyElement {
     div()
         .py_2()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
         .gap_3()
         .text_xs()
-        .child(div().min_w_0().truncate().text_color(rgb(colors::BODY)).child(format!(
+        .child(div().min_w_0().truncate().text_color(rgb(colors::body())).child(format!(
             "{} - {}",
             event.feature().label(),
             audit_action_label(event.action())
         )))
-        .child(div().text_color(rgb(colors::MUTED)).child("Local audit"))
+        .child(div().text_color(rgb(colors::muted())).child("Local audit"))
         .into_any_element()
 }
 
@@ -331,12 +333,12 @@ fn render_invalid_site_route() -> AnyElement {
                 .flex_col()
                 .gap_2()
                 .child(
-                    div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("Site Settings"),
+                    div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Site Settings"),
                 )
                 .child(
                     div()
                         .text_sm()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child("Site settings require an http or https origin."),
                 ),
         )
@@ -389,8 +391,10 @@ fn audit_count(snapshot: &BrowserSnapshot, origin: &SiteOrigin) -> usize {
 
 fn decision_color(decision: SitePermissionDecision) -> u32 {
     match decision {
-        SitePermissionDecision::AllowOnce | SitePermissionDecision::AllowAlways => colors::SUCCESS,
-        SitePermissionDecision::DenyAlways => colors::ERROR,
+        SitePermissionDecision::AllowOnce | SitePermissionDecision::AllowAlways => {
+            colors::success()
+        }
+        SitePermissionDecision::DenyAlways => colors::error(),
     }
 }
 

@@ -58,7 +58,7 @@ impl ElyShell {
             .child(
                 div()
                     .text_size(px(11.0))
-                    .text_color(rgb(colors::INK_4))
+                    .text_color(rgb(colors::ink_4()))
                     .child("PLUGINS · NATIVE TO ELY"),
             )
             .child(
@@ -66,13 +66,15 @@ impl ElyShell {
                     .font_family(SERIF_FAMILY)
                     .text_size(px(48.0))
                     .font_weight(FontWeight(400.0))
-                    .text_color(rgb(colors::INK))
+                    .text_color(rgb(colors::ink()))
                     .child("Quiet tools. Everyday magic."),
             )
-            .child(div().max_w(px(520.0)).text_size(px(13.5)).text_color(rgb(colors::INK_2)).child(
-                "ELY plugins are sandboxed, theme-aware, and ship with their own \
+            .child(
+                div().max_w(px(520.0)).text_size(px(13.5)).text_color(rgb(colors::ink_2())).child(
+                    "ELY plugins are sandboxed, theme-aware, and ship with their own \
                          controls in your sidebar — no Chrome extension framework required.",
-            ))
+                ),
+            )
             .child(self.render_search_row(cx))
             .into_any_element()
     }
@@ -93,7 +95,7 @@ impl ElyShell {
                     .flex()
                     .items_center()
                     .gap(px(10.0))
-                    .child(div().text_color(rgb(colors::INK_3)).child(IconName::Search))
+                    .child(div().text_color(rgb(colors::ink_3())).child(IconName::Search))
                     .child(div().flex_1().child(
                         Input::new(&self.plugin_search_input).appearance(false).cleanable(true),
                     )),
@@ -132,7 +134,7 @@ fn render_summary(snapshot: &BrowserSnapshot) -> AnyElement {
         .child(category_chip("All", true))
         .child(category_chip("Installed", false))
         .child(category_chip(sandbox_chip_label(snapshot), false))
-        .child(div().ml_auto().text_size(px(11.5)).text_color(rgb(colors::INK_3)).child(format!(
+        .child(div().ml_auto().text_size(px(11.5)).text_color(rgb(colors::ink_3())).child(format!(
             "{} signed · {} high-risk",
             snapshot.installed_plugins.len(),
             high_risk_plugin_count(snapshot)
@@ -142,7 +144,7 @@ fn render_summary(snapshot: &BrowserSnapshot) -> AnyElement {
 
 fn category_chip(label: &'static str, active: bool) -> AnyElement {
     let bg = if active { 0x1d1c1aff } else { 0xffffffb3 };
-    let text_color = if active { 0xffffff } else { colors::INK_2 };
+    let text_color = if active { 0xffffff } else { colors::ink_2() };
 
     div()
         .px(px(12.0))
@@ -201,13 +203,13 @@ fn render_no_match_state(needle: &str) -> AnyElement {
         .child(
             div()
                 .text_size(px(13.0))
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child(format!("No plugins match \"{needle}\".")),
         )
         .child(
             div()
                 .text_size(px(11.5))
-                .text_color(rgb(colors::INK_3))
+                .text_color(rgb(colors::ink_3()))
                 .child("Try a different keyword."),
         )
         .into_any_element()
@@ -224,10 +226,10 @@ fn render_empty_state(cx: &mut Context<ElyShell>) -> AnyElement {
             div()
                 .text_size(px(15.0))
                 .font_weight(FontWeight(500.0))
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child("No plugins yet."),
         )
-        .child(div().max_w(px(420.0)).text_size(px(13.0)).text_color(rgb(colors::INK_3)).child(
+        .child(div().max_w(px(420.0)).text_size(px(13.0)).text_color(rgb(colors::ink_3())).child(
             "Drop a signed .rplug package on ELY to extend the browser with sandboxed \
                      tools. Plugins ship with their own sidebar controls.",
         ))
@@ -246,7 +248,7 @@ fn render_plugin_card(
     let detail_route = format!("ely://plugin/{}", plugin.id().as_str());
     let enabled = plugin.enabled_for_profile(profile_kind);
     let status = if enabled { "Enabled" } else { "Disabled" };
-    let status_color = if enabled { colors::SUCCESS } else { colors::INK_4 };
+    let status_color = if enabled { colors::success() } else { colors::ink_4() };
     let high_risk = plugin.manifest().high_risk_permissions().count();
     let glyph = plugin.manifest().name().chars().next().unwrap_or('◇').to_string();
     let initial = glyph.to_uppercase().to_string();
@@ -298,14 +300,14 @@ fn render_plugin_card(
                             div()
                                 .text_size(px(13.5))
                                 .font_weight(FontWeight(600.0))
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .truncate()
                                 .child(plugin.manifest().name().to_string()),
                         )
                         .child(
                             div()
                                 .text_size(px(11.0))
-                                .text_color(rgb(colors::INK_4))
+                                .text_color(rgb(colors::ink_4()))
                                 .truncate()
                                 .child(plugin.manifest().author().to_string()),
                         ),
@@ -325,7 +327,7 @@ fn render_plugin_card(
         .child(
             div()
                 .text_size(px(12.0))
-                .text_color(rgb(colors::INK_3))
+                .text_color(rgb(colors::ink_3()))
                 .max_h(px(48.0))
                 .overflow_hidden()
                 .child(plugin.manifest().description().to_string()),
@@ -337,9 +339,9 @@ fn render_plugin_card(
                 .gap(px(8.0))
                 .pt(px(8.0))
                 .border_t_1()
-                .border_color(rgba(colors::DIVIDER))
+                .border_color(rgba(colors::divider()))
                 .text_size(px(10.5))
-                .text_color(rgb(colors::INK_4))
+                .text_color(rgb(colors::ink_4()))
                 .child(format!("{} permissions", plugin.manifest().permissions().len()))
                 .child("·")
                 .child(format!("{high_risk} high risk"))
@@ -349,7 +351,7 @@ fn render_plugin_card(
                         .flex()
                         .items_center()
                         .gap(px(3.0))
-                        .text_color(rgb(colors::SUCCESS))
+                        .text_color(rgb(colors::success()))
                         .child("Sandboxed"),
                 ),
         )

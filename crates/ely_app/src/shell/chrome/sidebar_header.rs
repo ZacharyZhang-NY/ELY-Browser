@@ -70,10 +70,10 @@ fn render_title_row() -> AnyElement {
             div()
                 .text_size(px(12.5))
                 .font_weight(gpui::FontWeight(500.0))
-                .text_color(rgb(colors::INK_2))
+                .text_color(rgb(colors::ink_2()))
                 .child("ELY Browser"),
         )
-        .child(div().text_color(rgb(colors::INK_3)).opacity(0.6).child(IconName::ChevronDown))
+        .child(div().text_color(rgb(colors::ink_3())).opacity(0.6).child(IconName::ChevronDown))
         .into_any_element()
 }
 
@@ -117,7 +117,7 @@ fn render_workspaces_tile(cx: &mut Context<ElyShell>) -> AnyElement {
         .flex()
         .items_center()
         .justify_center()
-        .text_color(rgb(colors::ACCENT))
+        .text_color(rgb(colors::accent()))
         .cursor_pointer()
         .hover(|style| style.opacity(0.92))
         .active(|style| style.opacity(0.82))
@@ -164,10 +164,10 @@ fn render_picker_pill(
                 .truncate()
                 .text_size(px(13.0))
                 .font_weight(gpui::FontWeight(500.0))
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child(space_name),
         )
-        .child(div().text_color(rgb(colors::INK_3)).child(chevron))
+        .child(div().text_color(rgb(colors::ink_3())).child(chevron))
         .into_any_element()
 }
 
@@ -305,10 +305,10 @@ fn render_disclosure_row(
                 .truncate()
                 .text_size(px(13.0))
                 .font_weight(gpui::FontWeight(500.0))
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child(space.name().to_string()),
         )
-        .when(active, |el| el.child(div().text_color(rgb(colors::ACCENT)).child(IconName::Check)))
+        .when(active, |el| el.child(div().text_color(rgb(colors::accent())).child(IconName::Check)))
         .into_any_element()
 }
 
@@ -323,17 +323,17 @@ fn render_disclosure_footer(cx: &mut Context<ElyShell>) -> AnyElement {
         .mt(px(2.0))
         .rounded(px(8.0))
         .border_t_1()
-        .border_color(rgba(colors::DIVIDER))
+        .border_color(rgba(colors::divider()))
         .text_size(px(12.0))
-        .text_color(rgb(colors::INK_3))
+        .text_color(rgb(colors::ink_3()))
         .cursor_pointer()
-        .hover(|style| style.bg(rgba(DISCLOSURE_ROW_HOVER_BG)).text_color(rgb(colors::INK)))
+        .hover(|style| style.bg(rgba(DISCLOSURE_ROW_HOVER_BG)).text_color(rgb(colors::ink())))
         .active(|style| style.opacity(0.85))
         .on_click(cx.listener(|shell, _, window, cx| {
             shell.close_workspace_picker(cx);
             shell.open_internal_tab("ely://settings/spaces", window, cx);
         }))
-        .child(div().text_color(rgb(colors::INK_4)).child(IconName::Settings))
+        .child(div().text_color(rgb(colors::ink_4())).child(IconName::Settings))
         .child("Manage spaces")
         .into_any_element()
 }
@@ -366,9 +366,9 @@ fn render_add_workspace_button(cx: &mut Context<ElyShell>) -> AnyElement {
         .flex()
         .items_center()
         .justify_center()
-        .text_color(rgb(colors::INK_3))
+        .text_color(rgb(colors::ink_3()))
         .cursor_pointer()
-        .hover(|style| style.bg(rgba(PICKER_BG)).text_color(rgb(colors::INK)))
+        .hover(|style| style.bg(rgba(PICKER_BG)).text_color(rgb(colors::ink())))
         .active(|style| style.opacity(0.82))
         .on_click(cx.listener(|shell, _, window, cx| {
             shell.open_internal_tab("ely://settings/spaces", window, cx);

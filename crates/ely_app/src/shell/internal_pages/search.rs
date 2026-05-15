@@ -42,12 +42,12 @@ fn render_search_header(snapshot: &BrowserSnapshot) -> AnyElement {
                 .flex()
                 .flex_col()
                 .gap_2()
-                .child(div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("Search"))
+                .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Search"))
                 .child(
                     div()
                         .text_sm()
                         .truncate()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("Profile: {}", snapshot.active_profile_name)),
                 ),
         )
@@ -58,7 +58,7 @@ fn render_search_header(snapshot: &BrowserSnapshot) -> AnyElement {
                 .gap_2()
                 .text_xs()
                 .font_semibold()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child(IconName::Search)
                 .child(snapshot.search_engine.name()),
         )
@@ -69,8 +69,8 @@ fn render_search_summary(search_engine: SearchEngine, cx: &mut Context<ElyShell>
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::HAIRLINE))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .border_color(rgb(colors::hairline()))
+        .bg(rgb(colors::canvas_soft()))
         .px_4()
         .py_3()
         .flex()
@@ -83,7 +83,7 @@ fn render_search_summary(search_engine: SearchEngine, cx: &mut Context<ElyShell>
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(div().text_color(rgb(colors::PRIMARY)).child(IconName::Search))
+                .child(div().text_color(rgb(colors::primary())).child(IconName::Search))
                 .child(
                     div()
                         .min_w_0()
@@ -94,14 +94,14 @@ fn render_search_summary(search_engine: SearchEngine, cx: &mut Context<ElyShell>
                             div()
                                 .text_sm()
                                 .font_semibold()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(search_engine.name()),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .truncate()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(search_engine.host()),
                         ),
                 ),
@@ -115,7 +115,7 @@ fn render_search_summary(search_engine: SearchEngine, cx: &mut Context<ElyShell>
                     div()
                         .text_xs()
                         .font_semibold()
-                        .text_color(rgb(colors::SUCCESS))
+                        .text_color(rgb(colors::success()))
                         .child("Saved locally"),
                 )
                 .child(
@@ -141,7 +141,7 @@ fn render_search_engines(active_engine: SearchEngine, cx: &mut Context<ElyShell>
         .flex_col()
         .overflow_y_scrollbar()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .children(SearchEngine::ALL.iter().copied().enumerate().map(|(index, search_engine)| {
             render_search_engine_row(index, search_engine, active_engine, cx)
         }))
@@ -159,7 +159,7 @@ fn render_search_engine_row(
     div()
         .py_3()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -186,14 +186,14 @@ fn render_search_engine_row(
                                 .text_sm()
                                 .font_semibold()
                                 .truncate()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(search_engine.name()),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .truncate()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(search_engine.host()),
                         ),
                 ),
@@ -217,7 +217,7 @@ fn search_engine_icon(selected: bool) -> IconName {
 }
 
 fn search_engine_icon_color(selected: bool) -> u32 {
-    if selected { colors::PRIMARY } else { colors::MUTED_SOFT }
+    if selected { colors::primary() } else { colors::muted_soft() }
 }
 
 fn search_engine_button_label(selected: bool) -> &'static str {

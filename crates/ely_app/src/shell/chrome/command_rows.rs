@@ -179,7 +179,7 @@ where
         .flex()
         .items_center()
         .justify_center()
-        .text_color(rgb(colors::INK_2))
+        .text_color(rgb(colors::ink_2()))
         .child(icon)
         .into_any_element();
     render_row_inner(content, leading, cx, handler)
@@ -233,7 +233,7 @@ where
                     .bottom(px(6.0))
                     .w(px(2.0))
                     .rounded(px(2.0))
-                    .bg(rgb(colors::ACCENT)),
+                    .bg(rgb(colors::accent())),
             )
         })
         .child(leading)
@@ -248,16 +248,20 @@ where
                     div()
                         .text_size(px(13.0))
                         .font_weight(FontWeight(500.0))
-                        .text_color(rgb(colors::INK))
+                        .text_color(rgb(colors::ink()))
                         .truncate()
                         .child(title),
                 )
                 .children(hint.map(|hint| {
-                    div().text_size(px(11.0)).text_color(rgb(colors::INK_4)).truncate().child(hint)
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(rgb(colors::ink_4()))
+                        .truncate()
+                        .child(hint)
                 })),
         )
         .children(keys.map(|key_label| {
-            div().text_size(px(10.5)).text_color(rgb(colors::INK_3)).child(key_label)
+            div().text_size(px(10.5)).text_color(rgb(colors::ink_3())).child(key_label)
         }))
         .into_any_element()
 }

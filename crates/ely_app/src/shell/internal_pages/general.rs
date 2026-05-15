@@ -42,12 +42,12 @@ fn render_general_header(snapshot: &BrowserSnapshot) -> AnyElement {
                 .flex()
                 .flex_col()
                 .gap_2()
-                .child(div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("General"))
+                .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("General"))
                 .child(
                     div()
                         .text_sm()
                         .truncate()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("Profile: {}", snapshot.active_profile_name)),
                 ),
         )
@@ -58,7 +58,7 @@ fn render_general_header(snapshot: &BrowserSnapshot) -> AnyElement {
                 .gap_2()
                 .text_xs()
                 .font_semibold()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child(IconName::Settings2)
                 .child(snapshot.new_tab_destination.name()),
         )
@@ -72,8 +72,8 @@ fn render_general_summary(
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::HAIRLINE))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .border_color(rgb(colors::hairline()))
+        .bg(rgb(colors::canvas_soft()))
         .px_4()
         .py_3()
         .flex()
@@ -86,7 +86,9 @@ fn render_general_summary(
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(div().text_color(rgb(colors::PRIMARY)).child(destination_icon(destination)))
+                .child(
+                    div().text_color(rgb(colors::primary())).child(destination_icon(destination)),
+                )
                 .child(
                     div()
                         .min_w_0()
@@ -97,14 +99,14 @@ fn render_general_summary(
                             div()
                                 .text_sm()
                                 .font_semibold()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(format!("New Tab opens {}", destination.name())),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .truncate()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(destination.detail()),
                         ),
                 ),
@@ -118,7 +120,7 @@ fn render_general_summary(
                     div()
                         .text_xs()
                         .font_semibold()
-                        .text_color(rgb(colors::SUCCESS))
+                        .text_color(rgb(colors::success()))
                         .child("Saved locally"),
                 )
                 .child(
@@ -147,7 +149,7 @@ fn render_new_tab_destinations(
         .flex_col()
         .overflow_y_scrollbar()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .children(NewTabDestination::ALL.iter().copied().enumerate().map(|(index, destination)| {
             render_new_tab_destination_row(index, destination, active_destination, cx)
         }))
@@ -165,7 +167,7 @@ fn render_new_tab_destination_row(
     div()
         .py_3()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -192,14 +194,14 @@ fn render_new_tab_destination_row(
                                 .text_sm()
                                 .font_semibold()
                                 .truncate()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(destination.name()),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .truncate()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(destination.detail()),
                         ),
                 ),
@@ -231,7 +233,7 @@ fn destination_status_icon(destination: NewTabDestination, selected: bool) -> Ic
 }
 
 fn destination_icon_color(selected: bool) -> u32 {
-    if selected { colors::PRIMARY } else { colors::MUTED_SOFT }
+    if selected { colors::primary() } else { colors::muted_soft() }
 }
 
 fn destination_button_label(selected: bool) -> &'static str {

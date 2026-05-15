@@ -52,7 +52,7 @@ impl ElyShell {
                 div()
                     .size_full()
                     .p_8()
-                    .text_color(rgb(colors::ERROR))
+                    .text_color(rgb(colors::error()))
                     .child("Active Space is unavailable."),
             );
         };
@@ -87,13 +87,16 @@ fn render_sidebar_tabs_header(
                 .flex_col()
                 .gap_2()
                 .child(
-                    div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("Sidebar & Tabs"),
+                    div()
+                        .text_size(px(26.0))
+                        .text_color(rgb(colors::ink()))
+                        .child("Sidebar & Tabs"),
                 )
                 .child(
                     div()
                         .text_sm()
                         .truncate()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("Space: {}", snapshot.active_space_name)),
                 ),
         )
@@ -109,7 +112,7 @@ fn render_sidebar_tabs_header(
                         .gap_2()
                         .text_xs()
                         .font_semibold()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(IconName::LayoutDashboard)
                         .child(format!(
                             "{} / {} / {}",
@@ -143,7 +146,7 @@ fn render_sidebar_tabs_settings(
         .min_h_0()
         .overflow_y_scrollbar()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .pt_5()
         .flex()
         .flex_col()
@@ -176,13 +179,13 @@ fn render_sidebar_width_section(active_space: &Space) -> AnyElement {
                             div()
                                 .text_sm()
                                 .font_semibold()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child("Sidebar Width"),
                         )
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child("Current Space sidebar width."),
                         ),
                 )
@@ -190,7 +193,7 @@ fn render_sidebar_width_section(active_space: &Space) -> AnyElement {
                     div()
                         .text_xs()
                         .font_semibold()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(sidebar_width_label(active_space)),
                 ),
         )
@@ -218,13 +221,13 @@ fn render_archive_policy_section(active_space: &Space, cx: &mut Context<ElyShell
                             div()
                                 .text_sm()
                                 .font_semibold()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child("Auto Archive"),
                         )
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child("Current Space policy for idle unpinned tabs."),
                         ),
                 )
@@ -273,13 +276,13 @@ fn render_favorite_limit_section(
                             div()
                                 .text_sm()
                                 .font_semibold()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child("Favorite Limit"),
                         )
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child("Maximum cross-space Favorites visible in the sidebar."),
                         ),
                 )
@@ -287,7 +290,7 @@ fn render_favorite_limit_section(
                     div()
                         .text_xs()
                         .font_semibold()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(favorite_limit.label()),
                 ),
         )
@@ -311,13 +314,13 @@ fn render_archive_policy_option(
 ) -> AnyElement {
     let selected = active_space.archive_policy() == &option.policy;
     let policy = option.policy.clone();
-    let border = if selected { colors::PRIMARY } else { colors::HAIRLINE };
+    let border = if selected { colors::primary() } else { colors::hairline() };
 
     div()
         .rounded_md()
         .border_1()
         .border_color(rgb(border))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .bg(rgb(colors::canvas_soft()))
         .px_4()
         .py_3()
         .flex()
@@ -343,14 +346,14 @@ fn render_archive_policy_option(
                             div()
                                 .text_sm()
                                 .font_semibold()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(option.label),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .truncate()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(option.detail),
                         ),
                 ),
@@ -376,13 +379,13 @@ fn render_favorite_limit_option(
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let selected = limit == active_limit;
-    let border = if selected { colors::PRIMARY } else { colors::HAIRLINE };
+    let border = if selected { colors::primary() } else { colors::hairline() };
 
     div()
         .rounded_md()
         .border_1()
         .border_color(rgb(border))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .bg(rgb(colors::canvas_soft()))
         .px_4()
         .py_3()
         .flex()
@@ -408,14 +411,14 @@ fn render_favorite_limit_option(
                             div()
                                 .text_sm()
                                 .font_semibold()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(limit.label()),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .truncate()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(limit.detail()),
                         ),
                 ),
@@ -449,5 +452,5 @@ fn policy_icon(selected: bool) -> IconName {
 }
 
 fn policy_icon_color(selected: bool) -> u32 {
-    if selected { colors::PRIMARY } else { colors::MUTED }
+    if selected { colors::primary() } else { colors::muted() }
 }

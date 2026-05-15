@@ -94,7 +94,7 @@ impl ElyShell {
             .gap(px(2.0))
             .flex_shrink_0()
             .border_t_1()
-            .border_color(rgba(colors::DIVIDER))
+            .border_color(rgba(colors::divider()))
             .child(self.render_settings_row(cx))
             .child(self.render_profile_row(snapshot, cx))
             .into_any_element()
@@ -114,14 +114,14 @@ impl ElyShell {
             .flex()
             .items_center()
             .text_size(px(13.0))
-            .text_color(rgb(colors::INK_2))
+            .text_color(rgb(colors::ink_2()))
             .cursor_pointer()
-            .hover(|style| style.bg(rgba(HOVER_NAV_BG)).text_color(rgb(colors::INK)))
+            .hover(|style| style.bg(rgba(HOVER_NAV_BG)).text_color(rgb(colors::ink())))
             .active(|style| style.opacity(0.82))
             .on_click(cx.listener(|shell, _, window, cx| {
                 shell.open_internal_tab("ely://settings", window, cx);
             }))
-            .child(div().text_color(rgb(colors::INK_3)).child(IconName::Settings))
+            .child(div().text_color(rgb(colors::ink_3())).child(IconName::Settings))
             .child("Settings")
             .into_any_element()
     }
@@ -174,7 +174,7 @@ impl ElyShell {
                     .truncate()
                     .text_size(px(13.0))
                     .font_weight(FontWeight(500.0))
-                    .text_color(rgb(colors::INK_2))
+                    .text_color(rgb(colors::ink_2()))
                     .child(profile_name),
             )
             .child(
@@ -182,7 +182,7 @@ impl ElyShell {
                 // it's not a popover. Use a right-chevron so the icon
                 // promises "this opens a page" instead of the down
                 // chevron that promises "this opens a menu inline".
-                div().text_color(rgb(colors::INK_4)).child(IconName::ChevronRight),
+                div().text_color(rgb(colors::ink_4())).child(IconName::ChevronRight),
             )
             .into_any_element()
     }
@@ -212,7 +212,7 @@ impl ElyShell {
             .on_click(cx.listener(|shell, _, window, cx| {
                 shell.open_internal_tab("ely://new-tab", window, cx);
             }))
-            .child(div().text_color(rgb(colors::INK_3)).child(IconName::Frame))
+            .child(div().text_color(rgb(colors::ink_3())).child(IconName::Frame))
             .child(
                 div()
                     .flex_1()
@@ -290,15 +290,15 @@ impl ElyShell {
             .gap(px(10.0))
             .flex()
             .items_center()
-            .text_color(rgb(colors::INK_3))
+            .text_color(rgb(colors::ink_3()))
             .text_size(px(13.0))
             .cursor_pointer()
-            .hover(|style| style.bg(rgba(HOVER_NAV_BG)).text_color(rgb(colors::INK)))
+            .hover(|style| style.bg(rgba(HOVER_NAV_BG)).text_color(rgb(colors::ink())))
             .active(|style| style.opacity(0.82))
             .on_click(cx.listener(|shell, _, window, cx| {
                 shell.open_new_tab(window, cx);
             }))
-            .child(div().text_color(rgb(colors::INK_4)).child(IconName::Plus))
+            .child(div().text_color(rgb(colors::ink_4())).child(IconName::Plus))
             .child("New Tab")
             .into_any_element()
     }
@@ -353,7 +353,7 @@ impl ElyShell {
                     .child(
                         div()
                             .text_size(px(11.0))
-                            .text_color(rgb(colors::INK_4))
+                            .text_color(rgb(colors::ink_4()))
                             .truncate()
                             .child(tab.display_url()),
                     ),
@@ -377,9 +377,9 @@ impl ElyShell {
 /// place rather than three transparent-sentinel triples.
 fn nav_row_palette(active: bool) -> NavRowPalette {
     if active {
-        NavRowPalette { bg: ACTIVE_NAV_BG, hover_bg: ACTIVE_NAV_BG_HOVER, text: colors::INK }
+        NavRowPalette { bg: ACTIVE_NAV_BG, hover_bg: ACTIVE_NAV_BG_HOVER, text: colors::ink() }
     } else {
-        NavRowPalette { bg: 0x00000000, hover_bg: HOVER_NAV_BG, text: colors::INK_2 }
+        NavRowPalette { bg: 0x00000000, hover_bg: HOVER_NAV_BG, text: colors::ink_2() }
     }
 }
 
@@ -414,10 +414,10 @@ where
         .flex()
         .items_center()
         .justify_center()
-        .text_color(rgb(colors::INK_4))
+        .text_color(rgb(colors::ink_4()))
         .opacity(0.0)
         .group_hover(group_name, |style| style.opacity(1.0))
-        .hover(|style| style.bg(rgba(CLOSE_HOVER_BG)).text_color(rgb(colors::INK)))
+        .hover(|style| style.bg(rgba(CLOSE_HOVER_BG)).text_color(rgb(colors::ink())))
         .cursor_pointer()
         .on_click(on_click)
         .child(IconName::Close)

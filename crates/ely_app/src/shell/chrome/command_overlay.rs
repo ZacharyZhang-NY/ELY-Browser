@@ -81,7 +81,7 @@ fn render_panel(
 }
 
 fn render_header(query_label: String, is_empty: bool) -> AnyElement {
-    let label_color = if is_empty { colors::INK_4 } else { colors::INK };
+    let label_color = if is_empty { colors::ink_4() } else { colors::ink() };
 
     div()
         .flex()
@@ -90,8 +90,8 @@ fn render_header(query_label: String, is_empty: bool) -> AnyElement {
         .px(px(18.0))
         .py(px(16.0))
         .border_b_1()
-        .border_color(rgba(colors::DIVIDER))
-        .child(div().text_color(rgb(colors::INK_3)).child(IconName::Search))
+        .border_color(rgba(colors::divider()))
+        .child(div().text_color(rgb(colors::ink_3())).child(IconName::Search))
         .child(
             div()
                 .flex_1()
@@ -103,7 +103,7 @@ fn render_header(query_label: String, is_empty: bool) -> AnyElement {
                 .child(query_label)
                 .child(blink(
                     "command-overlay-caret",
-                    div().w(px(1.0)).h(px(18.0)).bg(rgb(colors::ACCENT)),
+                    div().w(px(1.0)).h(px(18.0)).bg(rgb(colors::accent())),
                 )),
         )
         .child(
@@ -113,7 +113,7 @@ fn render_header(query_label: String, is_empty: bool) -> AnyElement {
                 .rounded(px(6.0))
                 .bg(rgba(BADGE_BG))
                 .text_size(px(10.5))
-                .text_color(rgb(colors::INK_3))
+                .text_color(rgb(colors::ink_3()))
                 .child("Switcher"),
         )
         .child(render_kbd("esc"))
@@ -182,7 +182,7 @@ fn render_section(label: &'static str, body: AnyElement) -> AnyElement {
                 .pt(px(6.0))
                 .text_size(px(10.0))
                 .font_weight(FontWeight(500.0))
-                .text_color(rgb(colors::INK_4))
+                .text_color(rgb(colors::ink_4()))
                 .child(label),
         )
         .child(body)
@@ -194,7 +194,7 @@ fn render_empty_state() -> AnyElement {
         .px(px(18.0))
         .py(px(20.0))
         .text_size(px(12.5))
-        .text_color(rgb(colors::INK_4))
+        .text_color(rgb(colors::ink_4()))
         .child("No matches yet — keep typing.")
         .into_any_element()
 }

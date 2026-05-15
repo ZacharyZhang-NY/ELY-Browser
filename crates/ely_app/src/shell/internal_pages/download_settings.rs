@@ -55,12 +55,12 @@ fn render_download_settings_header(snapshot: &BrowserSnapshot) -> AnyElement {
                 .flex()
                 .flex_col()
                 .gap_2()
-                .child(div().text_size(px(26.0)).text_color(rgb(colors::INK)).child("Downloads"))
+                .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Downloads"))
                 .child(
                     div()
                         .text_sm()
                         .truncate()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("Profile: {}", snapshot.active_profile_name)),
                 ),
         )
@@ -71,7 +71,7 @@ fn render_download_settings_header(snapshot: &BrowserSnapshot) -> AnyElement {
                 .gap_2()
                 .text_xs()
                 .font_semibold()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child(IconName::Folder)
                 .child(download_destination_short_label(&snapshot.active_download_policy)),
         )
@@ -85,8 +85,8 @@ fn render_download_policy_summary(
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::HAIRLINE))
-        .bg(rgb(colors::CANVAS_SOFT))
+        .border_color(rgb(colors::hairline()))
+        .bg(rgb(colors::canvas_soft()))
         .px_4()
         .py_3()
         .flex()
@@ -99,7 +99,7 @@ fn render_download_policy_summary(
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(div().text_color(rgb(colors::PRIMARY)).child(IconName::Folder))
+                .child(div().text_color(rgb(colors::primary())).child(IconName::Folder))
                 .child(
                     div()
                         .min_w_0()
@@ -110,14 +110,14 @@ fn render_download_policy_summary(
                             div()
                                 .text_sm()
                                 .font_semibold()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child("Download location"),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .truncate()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(download_policy_label(&snapshot.active_download_policy)),
                         ),
                 ),
@@ -131,7 +131,7 @@ fn render_download_policy_summary(
                     div()
                         .text_xs()
                         .font_semibold()
-                        .text_color(rgb(colors::MUTED))
+                        .text_color(rgb(colors::muted()))
                         .child(format!("{} entries", snapshot.download_entries.len())),
                 )
                 .child(
@@ -161,7 +161,7 @@ fn render_download_policy_rows(
         .flex_col()
         .overflow_y_scrollbar()
         .border_t_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .children(
             options.iter().enumerate().map(|(index, option)| {
                 render_download_policy_row(index, option, active_policy, cx)
@@ -182,7 +182,7 @@ fn render_download_policy_row(
     div()
         .py_3()
         .border_b_1()
-        .border_color(rgb(colors::HAIRLINE))
+        .border_color(rgb(colors::hairline()))
         .flex()
         .items_center()
         .justify_between()
@@ -209,14 +209,14 @@ fn render_download_policy_row(
                                 .text_sm()
                                 .font_semibold()
                                 .truncate()
-                                .text_color(rgb(colors::INK))
+                                .text_color(rgb(colors::ink()))
                                 .child(option.title),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .truncate()
-                                .text_color(rgb(colors::MUTED))
+                                .text_color(rgb(colors::muted()))
                                 .child(option.detail.clone()),
                         ),
                 ),
@@ -273,7 +273,7 @@ fn download_policy_icon(option: &DownloadPolicyOption, selected: bool) -> IconNa
 }
 
 fn download_policy_icon_color(selected: bool) -> u32 {
-    if selected { colors::PRIMARY } else { colors::MUTED_SOFT }
+    if selected { colors::primary() } else { colors::muted_soft() }
 }
 
 fn download_policy_button_label(selected: bool) -> &'static str {

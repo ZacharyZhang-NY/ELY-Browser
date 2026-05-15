@@ -124,7 +124,7 @@ fn render_nav_column(
         .h_full()
         .flex_shrink_0()
         .border_r_1()
-        .border_color(rgba(colors::DIVIDER))
+        .border_color(rgba(colors::divider()))
         .px(px(10.0))
         .pt(px(16.0))
         .pb(px(12.0))
@@ -153,13 +153,13 @@ fn render_nav_brand(snapshot: &BrowserSnapshot) -> AnyElement {
             div()
                 .text_size(px(18.0))
                 .font_weight(FontWeight(500.0))
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child("Settings"),
         )
         .child(
             div()
                 .text_size(px(11.5))
-                .text_color(rgb(colors::INK_4))
+                .text_color(rgb(colors::ink_4()))
                 .child(format!("ELY 0.42 · Profile: {}", snapshot.active_profile_name)),
         )
         .into_any_element()
@@ -189,7 +189,7 @@ fn render_nav_label(label: &'static str) -> AnyElement {
         .px(px(12.0))
         .text_size(px(10.0))
         .font_weight(FontWeight(500.0))
-        .text_color(rgb(colors::INK_4))
+        .text_color(rgb(colors::ink_4()))
         .child(label)
         .into_any_element()
 }
@@ -203,7 +203,7 @@ fn render_nav_item(
 ) -> AnyElement {
     let active = item.route == active_route;
     let bg = if active { ACTIVE_BG } else { 0x00000000 };
-    let text_color = if active { colors::INK } else { colors::INK_2 };
+    let text_color = if active { colors::ink() } else { colors::ink_2() };
     let route = item.route;
     let icon = item.icon.clone();
 
@@ -224,7 +224,7 @@ fn render_nav_item(
         .on_click(cx.listener(move |shell, _, window, cx| {
             shell.open_internal_tab(route, window, cx);
         }))
-        .child(div().text_color(rgb(colors::INK_3)).child(icon))
+        .child(div().text_color(rgb(colors::ink_3())).child(icon))
         .child(div().flex_1().truncate().child(item.label))
         .into_any_element()
 }

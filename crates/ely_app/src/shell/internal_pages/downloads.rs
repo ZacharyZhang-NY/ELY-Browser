@@ -48,13 +48,13 @@ impl ElyShell {
                                 .child(
                                     div()
                                         .text_size(px(26.0))
-                                        .text_color(rgb(colors::INK))
+                                        .text_color(rgb(colors::ink()))
                                         .child("Downloads"),
                                 )
                                 .child(
                                     div()
                                         .text_sm()
-                                        .text_color(rgb(colors::MUTED))
+                                        .text_color(rgb(colors::muted()))
                                         .child(snapshot.active_profile_name.clone()),
                                 ),
                         )
@@ -70,7 +70,7 @@ impl ElyShell {
                                         .items_center()
                                         .gap_2()
                                         .child(
-                                            div().text_xs().text_color(rgb(colors::MUTED)).child(
+                                            div().text_xs().text_color(rgb(colors::muted())).child(
                                                 format!(
                                                     "{} downloads",
                                                     snapshot.download_entries.len()
@@ -99,7 +99,7 @@ impl ElyShell {
                                         .items_center()
                                         .gap_1()
                                         .text_xs()
-                                        .text_color(rgb(colors::MUTED))
+                                        .text_color(rgb(colors::muted()))
                                         .child(IconName::Folder)
                                         .child(div().max_w(px(360.0)).truncate().child(
                                             download_policy_label(&snapshot.active_download_policy),
@@ -129,14 +129,14 @@ impl ElyShell {
         div()
             .rounded_md()
             .border_1()
-            .border_color(rgb(colors::HAIRLINE))
+            .border_color(rgb(colors::hairline()))
             .px_3()
             .py_2()
             .flex()
             .items_center()
             .justify_between()
             .gap_3()
-            .child(div().min_w_0().text_xs().text_color(rgb(colors::BODY)).truncate().child(
+            .child(div().min_w_0().text_xs().text_color(rgb(colors::body())).truncate().child(
                 format!(
                     "Clear {} downloads for {}?",
                     snapshot.download_entries.len(),
@@ -178,7 +178,7 @@ impl ElyShell {
         div()
             .rounded_md()
             .border_1()
-            .border_color(rgb(colors::ERROR))
+            .border_color(rgb(colors::error()))
             .px_3()
             .py_2()
             .flex()
@@ -192,7 +192,7 @@ impl ElyShell {
                     .items_center()
                     .gap_2()
                     .text_xs()
-                    .text_color(rgb(colors::ERROR))
+                    .text_color(rgb(colors::error()))
                     .child(IconName::TriangleAlert)
                     .child(div().truncate().child(format!(
                         "Confirm {} for {}",
@@ -236,10 +236,10 @@ impl ElyShell {
             return div()
                 .flex_1()
                 .border_t_1()
-                .border_color(rgb(colors::HAIRLINE))
+                .border_color(rgb(colors::hairline()))
                 .pt_5()
                 .text_sm()
-                .text_color(rgb(colors::MUTED))
+                .text_color(rgb(colors::muted()))
                 .child("Downloads are empty for this Profile.")
                 .into_any_element();
         }
@@ -250,7 +250,7 @@ impl ElyShell {
             .flex_col()
             .overflow_y_scrollbar()
             .border_t_1()
-            .border_color(rgb(colors::HAIRLINE))
+            .border_color(rgb(colors::hairline()))
             .children(
                 snapshot
                     .download_entries
@@ -272,7 +272,7 @@ impl ElyShell {
             .id(SharedString::from(format!("download-{index}")))
             .py_3()
             .border_b_1()
-            .border_color(rgb(colors::HAIRLINE))
+            .border_color(rgb(colors::hairline()))
             .flex()
             .items_center()
             .justify_between()
@@ -283,7 +283,7 @@ impl ElyShell {
                     .flex()
                     .items_center()
                     .gap_3()
-                    .child(div().text_color(rgb(colors::MUTED)).child(IconName::File))
+                    .child(div().text_color(rgb(colors::muted())).child(IconName::File))
                     .child(
                         div()
                             .min_w_0()
@@ -295,14 +295,14 @@ impl ElyShell {
                                     .text_sm()
                                     .font_semibold()
                                     .truncate()
-                                    .text_color(rgb(colors::INK))
+                                    .text_color(rgb(colors::ink()))
                                     .child(entry.file_name().to_string()),
                             )
                             .child(
                                 div()
                                     .text_xs()
                                     .truncate()
-                                    .text_color(rgb(colors::MUTED))
+                                    .text_color(rgb(colors::muted()))
                                     .child(entry.source_url().display_url()),
                             )
                             .child(
@@ -311,7 +311,7 @@ impl ElyShell {
                                     .items_center()
                                     .gap_2()
                                     .text_xs()
-                                    .text_color(rgb(colors::MUTED))
+                                    .text_color(rgb(colors::muted()))
                                     .child(
                                         div()
                                             .min_w_0()
@@ -344,13 +344,13 @@ impl ElyShell {
                                 div()
                                     .text_xs()
                                     .font_semibold()
-                                    .text_color(rgb(colors::BODY))
+                                    .text_color(rgb(colors::body()))
                                     .child(download_state_label(entry.state())),
                             )
                             .child(
                                 div()
                                     .text_xs()
-                                    .text_color(rgb(colors::MUTED))
+                                    .text_color(rgb(colors::muted()))
                                     .child(download_size_label(entry)),
                             ),
                     )
@@ -364,14 +364,14 @@ fn render_download_action_error(message: String) -> AnyElement {
     div()
         .rounded_md()
         .border_1()
-        .border_color(rgb(colors::ERROR))
+        .border_color(rgb(colors::error()))
         .px_3()
         .py_2()
         .flex()
         .items_center()
         .gap_2()
         .text_xs()
-        .text_color(rgb(colors::ERROR))
+        .text_color(rgb(colors::error()))
         .child(IconName::TriangleAlert)
         .child(message)
         .into_any_element()
@@ -379,7 +379,7 @@ fn render_download_action_error(message: String) -> AnyElement {
 
 fn render_security_prompt(entry: &DownloadEntry) -> AnyElement {
     let prompt_color =
-        if entry.requires_security_confirmation() { colors::ERROR } else { colors::SUCCESS };
+        if entry.requires_security_confirmation() { colors::error() } else { colors::success() };
     let prompt_icon = if entry.requires_security_confirmation() {
         IconName::TriangleAlert
     } else {
@@ -401,7 +401,7 @@ fn render_checksum_label(checksum: &DownloadChecksum) -> AnyElement {
         .flex()
         .items_center()
         .gap_1()
-        .text_color(rgb(colors::SUCCESS))
+        .text_color(rgb(colors::success()))
         .child(IconName::CircleCheck)
         .child(format!("SHA-256 {}", short_checksum(checksum.value())))
         .into_any_element()

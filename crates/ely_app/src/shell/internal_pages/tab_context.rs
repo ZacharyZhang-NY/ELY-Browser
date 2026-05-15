@@ -10,14 +10,14 @@ pub(super) fn tab_context_row(label: &'static str, value: String) -> AnyElement 
         .items_center()
         .justify_between()
         .gap_4()
-        .child(div().min_w(px(128.0)).text_xs().text_color(rgb(colors::MUTED)).child(label))
+        .child(div().min_w(px(128.0)).text_xs().text_color(rgb(colors::muted())).child(label))
         .child(
             div()
                 .min_w_0()
                 .text_sm()
                 .font_semibold()
                 .truncate()
-                .text_color(rgb(colors::INK))
+                .text_color(rgb(colors::ink()))
                 .child(value),
         )
         .into_any_element()
