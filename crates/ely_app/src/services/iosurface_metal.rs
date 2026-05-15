@@ -40,6 +40,15 @@ pub(crate) struct IOSurfaceCache {
     pixel_buffers: HashMap<u64, CachedPixelBuffer>,
 }
 
+// SAFETY: CVPixelBuffer wraps CVPixelBufferRef, a CoreFoundation type
+// Apple documents as safe to share across threads. The cache is owned
+// by ServoLiveClient which now lives on the LiveRuntimeWorker thread,
+// so the auto-Send check (rightly) rejects the raw pointer inside the
+// crate's `CVPixelBuffer`. The pointer is atomically refcounted CFTypeRef
+// and only mutated via Mach IPC, which is itself thread-safe.
+#[expect(unsafe_code)]
+unsafe impl Send for IOSurfaceCache {}
+
 struct CachedPixelBuffer {
     pixel_buffer: CVPixelBuffer,
     width: u32,

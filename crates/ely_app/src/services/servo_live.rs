@@ -289,6 +289,9 @@ pub(crate) struct ServoLiveFrame {
     render_state: String,
     width: u32,
     height: u32,
+    device_pixel_ratio: f32,
+    css_viewport_width: u32,
+    css_viewport_height: u32,
     #[cfg(all(test, feature = "live-site-smoke"))]
     non_white_pixel_count: u64,
     #[cfg(all(test, feature = "live-site-smoke"))]
@@ -302,14 +305,26 @@ pub(crate) struct ServoLiveFrame {
     pixel_buffer: Option<CVPixelBuffer>,
 }
 
+// SAFETY: CVPixelBuffer wraps CVPixelBufferRef, a CoreFoundation type
+// Apple documents as safe to share across threads. The Rust core-video
+// crate does not mark it Send, so the worker thread needs this opt-in
+// to ship hardware frames back to the UI thread via mpsc::Sender.
+#[cfg(target_os = "macos")]
+#[expect(unsafe_code)]
+unsafe impl Send for ServoLiveFrame {}
+
 impl ServoLiveFrame {
     fn from_parts(report: LiveFrameReport, rgba_bytes: Vec<u8>) -> Self {
+        let (css_viewport_width, css_viewport_height) = css_viewport_size_from_report(&report);
         Self {
             loaded_url: report.loaded_url,
             title: report.title,
             render_state: report.state,
             width: report.width,
             height: report.height,
+            device_pixel_ratio: report.device_pixel_ratio,
+            css_viewport_width,
+            css_viewport_height,
             #[cfg(all(test, feature = "live-site-smoke"))]
             non_white_pixel_count: report.non_white_pixel_count,
             #[cfg(all(test, feature = "live-site-smoke"))]
@@ -355,6 +370,21 @@ impl ServoLiveFrame {
         self.height
     }
 
+    #[must_use]
+    pub fn device_pixel_ratio(&self) -> f32 {
+        self.device_pixel_ratio
+    }
+
+    #[must_use]
+    pub fn css_viewport_width(&self) -> u32 {
+        self.css_viewport_width
+    }
+
+    #[must_use]
+    pub fn css_viewport_height(&self) -> u32 {
+        self.css_viewport_height
+    }
+
     #[cfg(all(test, feature = "live-site-smoke"))]
     #[must_use]
     pub fn non_white_pixel_count(&self) -> u64 {
@@ -386,6 +416,9 @@ impl ServoLiveFrame {
             render_state: "complete".to_string(),
             width,
             height,
+            device_pixel_ratio: 1.0,
+            css_viewport_width: width,
+            css_viewport_height: height,
             #[cfg(all(test, feature = "live-site-smoke"))]
             non_white_pixel_count: 0,
             #[cfg(all(test, feature = "live-site-smoke"))]
@@ -410,6 +443,9 @@ impl ServoLiveFrame {
             render_state: "complete".to_string(),
             width,
             height,
+            device_pixel_ratio: 1.0,
+            css_viewport_width: width,
+            css_viewport_height: height,
             #[cfg(all(test, feature = "live-site-smoke"))]
             non_white_pixel_count: 0,
             #[cfg(all(test, feature = "live-site-smoke"))]
@@ -420,6 +456,20 @@ impl ServoLiveFrame {
             pixel_buffer: Some(pixel_buffer),
         }
     }
+}
+
+fn css_viewport_size_from_report(report: &LiveFrameReport) -> (u32, u32) {
+    let dpr = if report.device_pixel_ratio.is_finite() && report.device_pixel_ratio > 0.0 {
+        report.device_pixel_ratio
+    } else {
+        1.0
+    };
+    let fallback_width = ((report.width as f32) / dpr).round().max(1.0) as u32;
+    let fallback_height = ((report.height as f32) / dpr).round().max(1.0) as u32;
+    (
+        if report.css_viewport_width > 0 { report.css_viewport_width } else { fallback_width },
+        if report.css_viewport_height > 0 { report.css_viewport_height } else { fallback_height },
+    )
 }
 
 #[derive(Debug, Error)]
@@ -468,4 +518,20 @@ pub(crate) enum ServoLiveError {
 
     #[error(transparent)]
     SidecarCommand(#[from] SidecarCommandError),
+}
+
+impl ServoLiveError {
+    pub(crate) fn is_sidecar_process_unusable(&self) -> bool {
+        match self {
+            Self::SidecarExited => true,
+            Self::Command(error) | Self::FrameRead(error) => matches!(
+                error.kind(),
+                io::ErrorKind::BrokenPipe
+                    | io::ErrorKind::ConnectionAborted
+                    | io::ErrorKind::ConnectionReset
+                    | io::ErrorKind::UnexpectedEof
+            ),
+            _ => false,
+        }
+    }
 }

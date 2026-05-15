@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use ely_domain::TabId;
 use gpui::{Bounds, Pixels};
 
@@ -6,6 +8,7 @@ use super::{
     web_surface_geometry::{
         WebSurfaceClickPoint, WebSurfaceScrollDelta, WebSurfaceScrollOffset, WebSurfaceSize,
     },
+    web_surface_permissions::WebSurfaceSitePermission,
 };
 
 pub(super) struct WebSurfaceScrollState {
@@ -43,6 +46,7 @@ pub(super) struct WebSurfaceTextInputState {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct WebSurfacePendingInput {
+    pub(super) enqueued_at: Option<Instant>,
     pub(super) scroll_offset: WebSurfaceScrollOffset,
     pub(super) scroll_delta: Option<WebSurfaceScrollDelta>,
     pub(super) scroll_point: Option<WebSurfaceClickPoint>,
@@ -68,9 +72,6 @@ pub(super) enum WebSurfaceInputOutcome {
     Applied,
     /// Same value as currently recorded — nothing to flush downstream.
     NoChange,
-    /// First sighting of a new value; held back until a second
-    /// matching measurement confirms it (viewport-resize debounce).
-    Buffered,
     /// Geometry constructor rejected the input (zero/NaN/negative
     /// bounds). The viewport never measured cleanly.
     DroppedInvalidBounds,
@@ -113,11 +114,12 @@ pub(super) enum WebSurfaceState {
 pub(super) struct PerTabSurface {
     pub(super) viewport_bounds: Option<Bounds<Pixels>>,
     pub(super) viewport_size: Option<WebSurfaceSize>,
-    pub(super) pending_viewport_size: Option<WebSurfaceSize>,
+    pub(super) last_ensure_key: Option<WebSurfaceEnsureKey>,
     pub(super) hover_point: Option<WebSurfaceClickPoint>,
     pub(super) click_point: Option<WebSurfaceClickState>,
     pub(super) pending_scroll_delta: Option<WebSurfaceScrollDelta>,
     pub(super) pending_scroll_point: Option<WebSurfaceClickPoint>,
+    pub(super) pending_input_started_at: Option<Instant>,
     pub(super) scroll_offset: Option<WebSurfaceScrollState>,
     pub(super) typed_text: Option<WebSurfaceTextInputState>,
     pub(super) state: Option<WebSurfaceState>,
@@ -128,15 +130,36 @@ impl PerTabSurface {
         Self {
             viewport_bounds: None,
             viewport_size: None,
-            pending_viewport_size: None,
+            last_ensure_key: None,
             hover_point: None,
             click_point: None,
             pending_scroll_delta: None,
             pending_scroll_point: None,
+            pending_input_started_at: None,
             scroll_offset: None,
             typed_text: None,
             state: None,
         }
+    }
+
+    pub(super) fn mark_pending_input_started(&mut self) {
+        self.pending_input_started_at.get_or_insert_with(Instant::now);
+    }
+
+    pub(super) fn should_ensure(&self, key: &WebSurfaceEnsureKey) -> bool {
+        self.last_ensure_key.as_ref() != Some(key) || self.has_pending_input()
+    }
+
+    pub(super) fn mark_ensured(&mut self, key: WebSurfaceEnsureKey) {
+        self.last_ensure_key = Some(key);
+    }
+
+    fn has_pending_input(&self) -> bool {
+        self.hover_point.is_some()
+            || self.click_point.is_some()
+            || self.pending_scroll_delta.is_some()
+            || self.pending_scroll_point.is_some()
+            || self.typed_text.is_some()
     }
 
     pub(super) fn scroll_offset_for(&self, requested_url: &str) -> WebSurfaceScrollOffset {
@@ -145,5 +168,73 @@ impl PerTabSurface {
             .filter(|state| state.requested_url == requested_url)
             .map(|state| state.offset)
             .unwrap_or_default()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct WebSurfaceEnsureKey {
+    requested_url: String,
+    size: WebSurfaceSize,
+    zoom_percent: u16,
+    permissions: Vec<WebSurfaceSitePermission>,
+}
+
+impl WebSurfaceEnsureKey {
+    pub(super) fn new(
+        requested_url: String,
+        size: WebSurfaceSize,
+        zoom_percent: u16,
+        permissions: &[WebSurfaceSitePermission],
+    ) -> Self {
+        Self { requested_url, size, zoom_percent, permissions: permissions.to_vec() }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui::{point, px};
+
+    use super::*;
+
+    #[test]
+    fn unchanged_surface_without_input_skips_ensure() {
+        let key = ensure_key("https://example.com/", 800, 600);
+        let mut surface = PerTabSurface::new();
+
+        assert!(surface.should_ensure(&key));
+
+        surface.mark_ensured(key.clone());
+
+        assert!(!surface.should_ensure(&key));
+    }
+
+    #[test]
+    fn pending_input_forces_ensure_even_when_key_matches() {
+        let key = ensure_key("https://example.com/", 800, 600);
+        let mut surface = PerTabSurface::new();
+        surface.mark_ensured(key.clone());
+        surface.pending_scroll_delta =
+            WebSurfaceScrollDelta::from_point(point(px(0.0), px(120.0)), 1.0);
+
+        assert!(surface.should_ensure(&key));
+    }
+
+    #[test]
+    fn viewport_change_forces_ensure() {
+        let old_key = ensure_key("https://example.com/", 800, 600);
+        let new_key = ensure_key("https://example.com/", 1024, 768);
+        let mut surface = PerTabSurface::new();
+        surface.mark_ensured(old_key);
+
+        assert!(surface.should_ensure(&new_key));
+    }
+
+    fn ensure_key(url: &str, width: u32, height: u32) -> WebSurfaceEnsureKey {
+        WebSurfaceEnsureKey::new(
+            url.to_string(),
+            WebSurfaceSize { width, height, device_pixel_ratio_percent: 100 },
+            100,
+            &[],
+        )
     }
 }

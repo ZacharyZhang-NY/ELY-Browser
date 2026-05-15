@@ -62,16 +62,11 @@ fn scroll_delta_enters_pending_input_after_wheel() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn viewport_size_changes_after_stable_second_measurement() -> Result<(), Box<dyn Error>> {
+fn viewport_size_changes_on_first_clean_measurement() -> Result<(), Box<dyn Error>> {
     let mut store = WebSurfaceStore::new();
     let tab = web_tab("https://example.com/resize")?;
 
     assert_applied(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
-    assert_eq!(
-        store.record_viewport_size(tab.id(), resized_once_bounds(), 1.0),
-        WebSurfaceInputOutcome::Buffered,
-        "first sighting of a new size must wait for a confirming second measurement",
-    );
     assert_applied(store.record_viewport_size(tab.id(), resized_once_bounds(), 1.0));
     Ok(())
 }
@@ -327,11 +322,7 @@ fn click_survives_viewport_bounds_change_before_drain() -> Result<(), Box<dyn Er
     assert_applied(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
     assert_applied(store.record_click_point(tab.id(), url, point(px(160.0), px(120.0)), 1.0));
 
-    // Resize: first measurement is buffered (requires confirmation).
-    assert_eq!(
-        store.record_viewport_size(tab.id(), resized_once_bounds(), 1.0),
-        WebSurfaceInputOutcome::Buffered,
-    );
+    assert_applied(store.record_viewport_size(tab.id(), resized_once_bounds(), 1.0));
 
     let input = store.take_pending_input(tab.id(), url);
     assert_eq!(
@@ -487,6 +478,54 @@ fn hardware_live_frame_rejects_unsupported_surface_format() -> Result<(), String
         error.to_string(),
         "servo hardware surface pixel format 0x34323066 is unsupported; expected 32BGRA",
     );
+    Ok(())
+}
+
+#[cfg(all(target_os = "macos", feature = "live-site-smoke"))]
+#[test]
+fn hardware_live_frame_samples_bgra_surface_pixels() -> Result<(), String> {
+    use core_video::{
+        pixel_buffer::{CVPixelBuffer, kCVPixelFormatType_32BGRA},
+        r#return::kCVReturnSuccess,
+    };
+
+    use crate::services::servo_live::ServoLiveFrame;
+    use crate::shell::web_surface_frame::WebSurfaceFrame;
+    use crate::shell::web_surface_geometry::WebSurfaceScrollOffset;
+
+    let pixel_buffer = CVPixelBuffer::new(kCVPixelFormatType_32BGRA, 2, 1, None)
+        .map_err(|status| format!("CVPixelBufferCreate returned status {status}"))?;
+    let lock_status = pixel_buffer.lock_base_address(0);
+    if lock_status != kCVReturnSuccess {
+        return Err(format!("CVPixelBufferLockBaseAddress returned status {lock_status}"));
+    }
+    let bytes_per_row = pixel_buffer.get_bytes_per_row();
+    #[expect(unsafe_code)]
+    unsafe {
+        let base_address = pixel_buffer.get_base_address().cast::<u8>();
+        let bytes = std::slice::from_raw_parts_mut(base_address, bytes_per_row);
+        bytes[0..8].copy_from_slice(&[
+            0, 0, 255, 255, // red in BGRA memory order
+            255, 255, 255, 255,
+        ]);
+    }
+    let unlock_status = pixel_buffer.unlock_base_address(0);
+    if unlock_status != kCVReturnSuccess {
+        return Err(format!("CVPixelBufferUnlockBaseAddress returned status {unlock_status}"));
+    }
+
+    let live = ServoLiveFrame::for_test_with_pixel_buffer(2, 1, pixel_buffer);
+    let frame = WebSurfaceFrame::from_live_frame(
+        "https://example.com/".to_string(),
+        WebSurfaceScrollOffset::default(),
+        100,
+        live,
+    )
+    .map_err(|error| error.to_string())?;
+
+    assert_eq!(frame.non_white_pixel_count(), 1);
+    assert_eq!(frame.content_pixel_count(), 1);
+    assert_ne!(frame.sample_hash(), 0);
     Ok(())
 }
 

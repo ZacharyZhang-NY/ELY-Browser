@@ -3178,18 +3178,25 @@ impl Window {
     ///
     /// This method should only be called as part of the paint phase of element drawing.
     #[cfg(target_os = "macos")]
-    pub fn paint_surface(&mut self, bounds: Bounds<Pixels>, image_buffer: CVPixelBuffer) {
+    pub fn paint_surface(
+        &mut self,
+        bounds: Bounds<Pixels>,
+        corner_radii: Corners<Pixels>,
+        image_buffer: CVPixelBuffer,
+    ) {
         use crate::PaintSurface;
 
         self.invalidator.debug_assert_paint();
 
         let scale_factor = self.scale_factor();
         let bounds = bounds.scale(scale_factor);
+        let corner_radii = corner_radii.scale(scale_factor);
         let content_mask = self.content_mask().scale(scale_factor);
         self.next_frame.scene.insert_primitive(PaintSurface {
             order: 0,
             bounds,
             content_mask,
+            corner_radii,
             image_buffer,
         });
     }

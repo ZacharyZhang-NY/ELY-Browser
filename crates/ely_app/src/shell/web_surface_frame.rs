@@ -4,7 +4,10 @@ use std::sync::Arc;
 
 use ahash::AHasher;
 #[cfg(target_os = "macos")]
-use core_video::pixel_buffer::{CVPixelBuffer, kCVPixelFormatType_32BGRA};
+use core_video::{
+    pixel_buffer::{CVPixelBuffer, kCVPixelBufferLock_ReadOnly, kCVPixelFormatType_32BGRA},
+    r#return::kCVReturnSuccess,
+};
 use gpui::RenderImage;
 use image::{ImageBuffer, Rgba};
 use thiserror::Error;
@@ -47,6 +50,9 @@ pub(super) struct WebSurfaceFrame {
     render_state: String,
     width: u32,
     height: u32,
+    device_pixel_ratio: f32,
+    css_viewport_width: u32,
+    css_viewport_height: u32,
     scroll_offset: WebSurfaceScrollOffset,
     zoom_percent: u16,
     click_point: Option<WebSurfaceClickPoint>,
@@ -83,6 +89,9 @@ impl WebSurfaceFrame {
             render_state: frame.render_state().to_string(),
             width: frame.width(),
             height: frame.height(),
+            device_pixel_ratio: frame.device_pixel_ratio(),
+            css_viewport_width: frame.css_viewport_width(),
+            css_viewport_height: frame.css_viewport_height(),
             scroll_offset,
             zoom_percent,
             click_point: None,
@@ -114,6 +123,9 @@ impl WebSurfaceFrame {
             validate_hardware_pixel_buffer(pixel_buffer, parts.width, parts.height)?;
         }
 
+        #[cfg(all(test, feature = "live-site-smoke"))]
+        let pixel_sample = pixel_sample_for_parts(&parts)?;
+
         let image = if parts.rgba_bytes.is_empty() {
             None
         } else {
@@ -139,16 +151,19 @@ impl WebSurfaceFrame {
             render_state: parts.render_state,
             width: parts.width,
             height: parts.height,
+            device_pixel_ratio: parts.device_pixel_ratio,
+            css_viewport_width: parts.css_viewport_width,
+            css_viewport_height: parts.css_viewport_height,
             scroll_offset: parts.scroll_offset,
             zoom_percent: parts.zoom_percent,
             click_point: parts.click_point,
             typed_text: parts.typed_text,
             #[cfg(all(test, feature = "live-site-smoke"))]
-            non_white_pixel_count: parts.non_white_pixel_count,
+            non_white_pixel_count: pixel_sample.non_white_pixel_count,
             #[cfg(all(test, feature = "live-site-smoke"))]
-            content_pixel_count: parts.content_pixel_count,
+            content_pixel_count: pixel_sample.content_pixel_count,
             #[cfg(all(test, feature = "live-site-smoke"))]
-            sample_hash: parts.sample_hash,
+            sample_hash: pixel_sample.sample_hash,
             image,
             #[cfg(target_os = "macos")]
             pixel_buffer: parts.pixel_buffer,
@@ -183,7 +198,16 @@ impl WebSurfaceFrame {
 
     #[cfg(all(test, feature = "live-site-smoke"))]
     pub(super) fn size(&self) -> WebSurfaceSize {
-        WebSurfaceSize { width: self.width, height: self.height, device_pixel_ratio_percent: 100 }
+        WebSurfaceSize {
+            width: self.width,
+            height: self.height,
+            device_pixel_ratio_percent: (self.device_pixel_ratio * 100.0).round() as u16,
+        }
+    }
+
+    #[cfg(all(test, feature = "live-site-smoke"))]
+    pub(super) fn css_viewport_size(&self) -> (u32, u32) {
+        (self.css_viewport_width, self.css_viewport_height)
     }
 
     #[cfg(all(test, feature = "live-site-smoke"))]
@@ -202,6 +226,16 @@ impl WebSurfaceFrame {
 
     pub(super) fn loaded_url(&self) -> Option<&str> {
         self.loaded_url.as_deref()
+    }
+
+    pub(super) fn has_visible_content_for_initial_display(&self) -> Result<bool, WebSurfaceError> {
+        #[cfg(target_os = "macos")]
+        if let Some(pixel_buffer) = self.pixel_buffer.as_ref() {
+            return sample_hardware_pixel_buffer(pixel_buffer)
+                .map(|sample| sample.has_visible_content());
+        }
+
+        Ok(true)
     }
 
     #[cfg(all(test, feature = "live-site-smoke"))]
@@ -239,6 +273,9 @@ struct WebSurfaceFrameParts {
     render_state: String,
     width: u32,
     height: u32,
+    device_pixel_ratio: f32,
+    css_viewport_width: u32,
+    css_viewport_height: u32,
     scroll_offset: WebSurfaceScrollOffset,
     zoom_percent: u16,
     click_point: Option<WebSurfaceClickPoint>,
@@ -273,6 +310,18 @@ pub(super) enum WebSurfaceError {
     #[cfg(target_os = "macos")]
     #[error("servo hardware surface pixel format 0x{actual:x} is unsupported; expected 32BGRA")]
     UnsupportedHardwareSurfaceFormat { actual: u32 },
+    #[cfg(target_os = "macos")]
+    #[error("servo hardware surface lock failed with status {status}")]
+    HardwareSurfaceLockFailed { status: i32 },
+    #[cfg(target_os = "macos")]
+    #[error("servo hardware surface unlock failed with status {status}")]
+    HardwareSurfaceUnlockFailed { status: i32 },
+    #[cfg(target_os = "macos")]
+    #[error("servo hardware surface base address is unavailable")]
+    HardwareSurfaceBaseAddressUnavailable,
+    #[cfg(target_os = "macos")]
+    #[error("servo hardware surface row stride {bytes_per_row} is too small for width {width}")]
+    HardwareSurfaceRowStrideTooSmall { width: usize, bytes_per_row: usize },
 }
 
 #[cfg(target_os = "macos")]
@@ -313,6 +362,113 @@ fn rgba_hash(bytes: &[u8]) -> u64 {
     let mut hasher = AHasher::default();
     hasher.write(bytes);
     hasher.finish()
+}
+
+#[cfg(any(all(test, feature = "live-site-smoke"), target_os = "macos"))]
+struct WebSurfacePixelSample {
+    non_white_pixel_count: u64,
+    content_pixel_count: u64,
+    #[cfg_attr(not(all(test, feature = "live-site-smoke")), allow(dead_code))]
+    sample_hash: u64,
+}
+
+#[cfg(any(all(test, feature = "live-site-smoke"), target_os = "macos"))]
+impl WebSurfacePixelSample {
+    fn has_visible_content(&self) -> bool {
+        self.non_white_pixel_count > 0 && self.content_pixel_count > 0
+    }
+}
+
+#[cfg(all(test, feature = "live-site-smoke"))]
+fn pixel_sample_for_parts(
+    parts: &WebSurfaceFrameParts,
+) -> Result<WebSurfacePixelSample, WebSurfaceError> {
+    #[cfg(target_os = "macos")]
+    if let Some(pixel_buffer) = parts.pixel_buffer.as_ref() {
+        return sample_hardware_pixel_buffer(pixel_buffer);
+    }
+
+    Ok(WebSurfacePixelSample {
+        non_white_pixel_count: parts.non_white_pixel_count,
+        content_pixel_count: parts.content_pixel_count,
+        sample_hash: parts.sample_hash,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn sample_hardware_pixel_buffer(
+    pixel_buffer: &CVPixelBuffer,
+) -> Result<WebSurfacePixelSample, WebSurfaceError> {
+    let lock_status = pixel_buffer.lock_base_address(kCVPixelBufferLock_ReadOnly);
+    if lock_status != kCVReturnSuccess {
+        return Err(WebSurfaceError::HardwareSurfaceLockFailed { status: lock_status });
+    }
+
+    let sample = sample_locked_hardware_pixel_buffer(pixel_buffer);
+    let unlock_status = pixel_buffer.unlock_base_address(kCVPixelBufferLock_ReadOnly);
+    if unlock_status != kCVReturnSuccess {
+        return Err(WebSurfaceError::HardwareSurfaceUnlockFailed { status: unlock_status });
+    }
+
+    sample
+}
+
+#[cfg(target_os = "macos")]
+fn sample_locked_hardware_pixel_buffer(
+    pixel_buffer: &CVPixelBuffer,
+) -> Result<WebSurfacePixelSample, WebSurfaceError> {
+    let width = pixel_buffer.get_width();
+    let height = pixel_buffer.get_height();
+    let bytes_per_row = pixel_buffer.get_bytes_per_row();
+    let row_width = width.saturating_mul(4);
+    if bytes_per_row < row_width {
+        return Err(WebSurfaceError::HardwareSurfaceRowStrideTooSmall { width, bytes_per_row });
+    }
+
+    #[expect(unsafe_code)]
+    let base_address = unsafe { pixel_buffer.get_base_address() };
+    if base_address.is_null() {
+        return Err(WebSurfaceError::HardwareSurfaceBaseAddressUnavailable);
+    }
+
+    let byte_len = bytes_per_row.saturating_mul(height);
+    #[expect(unsafe_code)]
+    let bytes = unsafe { std::slice::from_raw_parts(base_address.cast::<u8>(), byte_len) };
+    Ok(sample_bgra_rows(bytes, width, height, bytes_per_row))
+}
+
+#[cfg(target_os = "macos")]
+fn sample_bgra_rows(
+    bytes: &[u8],
+    width: usize,
+    height: usize,
+    bytes_per_row: usize,
+) -> WebSurfacePixelSample {
+    let mut non_white_pixel_count = 0;
+    let mut content_pixel_count = 0;
+    let mut sample_hash = 0xcbf29ce484222325_u64;
+
+    for y in 0..height {
+        let row_start = y * bytes_per_row;
+        let row = &bytes[row_start..row_start + width * 4];
+        for (x, pixel) in row.chunks_exact(4).enumerate() {
+            let [blue, green, red, alpha] = [pixel[0], pixel[1], pixel[2], pixel[3]];
+            if alpha > 0 && (red < 245 || green < 245 || blue < 245) {
+                non_white_pixel_count += 1;
+            }
+            if alpha > 0 && (red < 220 || green < 220 || blue < 220) {
+                content_pixel_count += 1;
+            }
+            if (y * width + x).is_multiple_of(97) {
+                for byte in [red, green, blue, alpha] {
+                    sample_hash ^= u64::from(byte);
+                    sample_hash = sample_hash.wrapping_mul(0x100000001b3);
+                }
+            }
+        }
+    }
+
+    WebSurfacePixelSample { non_white_pixel_count, content_pixel_count, sample_hash }
 }
 
 fn resolve_render_image(

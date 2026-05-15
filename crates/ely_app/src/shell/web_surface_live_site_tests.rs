@@ -39,6 +39,7 @@ const LIVE_SITE_SCROLL_DOWN_Y: i32 = 360;
 const LIVE_SITE_SCROLL_UP_Y: i32 = -240;
 const LIVE_SITE_SCROLL_POINT_X: f32 = 320.0;
 const LIVE_SITE_SCROLL_POINT_Y: f32 = 320.0;
+const RETINA_SCALE_FACTOR: f32 = 2.0;
 
 #[test]
 fn web_surface_cases_cover_prd_reference_urls() -> Result<(), Box<dyn Error>> {
@@ -70,6 +71,13 @@ fn web_surface_scrolls_prd_site_down_and_up() -> Result<(), Box<dyn Error>> {
 fn web_surface_resizes_prd_site_without_failed_state() -> Result<(), Box<dyn Error>> {
     run_isolated_live_site_test("web_surface_resizes_prd_site_without_failed_state", || {
         assert_web_surface_resizes_prd_site()
+    })
+}
+
+#[test]
+fn web_surface_reports_css_viewport_at_retina_scale() -> Result<(), Box<dyn Error>> {
+    run_isolated_live_site_test("web_surface_reports_css_viewport_at_retina_scale", || {
+        assert_web_surface_reports_retina_css_viewport()
     })
 }
 
@@ -201,12 +209,6 @@ fn assert_web_surface_resizes_prd_site() -> Result<(), Box<dyn Error>> {
 
     assert_eq!(
         store.record_viewport_size(tab.id(), resized_live_surface_bounds(), 1.0),
-        WebSurfaceInputOutcome::Buffered,
-        "{}",
-        case.url,
-    );
-    assert_eq!(
-        store.record_viewport_size(tab.id(), resized_live_surface_bounds(), 1.0),
         WebSurfaceInputOutcome::Applied,
         "{}",
         case.url,
@@ -218,6 +220,38 @@ fn assert_web_surface_resizes_prd_site() -> Result<(), Box<dyn Error>> {
         case,
         RESIZED_LIVE_SURFACE_WIDTH,
         RESIZED_LIVE_SURFACE_HEIGHT,
+    )?;
+    store.close_surface(tab.id());
+    Ok(())
+}
+
+fn assert_web_surface_reports_retina_css_viewport() -> Result<(), Box<dyn Error>> {
+    let mut store = WebSurfaceStore::new();
+    let profile_id = ProfileId::new();
+    let case = PRD_TOP_SITE_CASES
+        .iter()
+        .find(|case| case.url == "https://servo.org/")
+        .ok_or("missing servo.org live-site case")?;
+    let tab = web_tab(profile_id, case.url)?;
+
+    assert_eq!(
+        store.record_viewport_size(tab.id(), live_surface_bounds(), RETINA_SCALE_FACTOR),
+        WebSurfaceInputOutcome::Applied,
+        "{}",
+        case.url,
+    );
+    store.ensure_surface(&tab, ProfileDataMode::Transient, &[]);
+    wait_for_ready_frame_at_css_size(
+        &mut store,
+        tab.id(),
+        case,
+        ExpectedCssViewport {
+            physical_width: LIVE_SURFACE_WIDTH * RETINA_SCALE_FACTOR as u32,
+            physical_height: LIVE_SURFACE_HEIGHT * RETINA_SCALE_FACTOR as u32,
+            css_width: LIVE_SURFACE_WIDTH,
+            css_height: LIVE_SURFACE_HEIGHT,
+            dpr_percent: (RETINA_SCALE_FACTOR * 100.0).round() as u16,
+        },
     )?;
     store.close_surface(tab.id());
     Ok(())
@@ -383,6 +417,62 @@ fn wait_for_ready_frame_at_size(
     }
 }
 
+fn wait_for_ready_frame_at_css_size(
+    store: &mut WebSurfaceStore,
+    tab_id: &TabId,
+    case: &LiveSiteCase,
+    expected: ExpectedCssViewport,
+) -> Result<WebSurfaceFrame, String> {
+    let started_at = Instant::now();
+    let mut last_error = None;
+
+    loop {
+        if started_at.elapsed() >= LIVE_SITE_WAIT_TIMEOUT {
+            return Err(last_error.unwrap_or_else(|| {
+                format!(
+                    "timed out rendering {} at {}x{} css {}x{}",
+                    case.url,
+                    expected.physical_width,
+                    expected.physical_height,
+                    expected.css_width,
+                    expected.css_height,
+                )
+            }));
+        }
+
+        store.tick(std::slice::from_ref(tab_id));
+        match store.state(tab_id) {
+            Some(WebSurfaceState::Ready(frame))
+                if frame.size().width == expected.physical_width
+                    && frame.size().height == expected.physical_height =>
+            {
+                if let Err(error) = validate_prd_frame_at_css_size(frame, case, expected) {
+                    last_error = Some(error);
+                    thread::sleep(LIVE_SITE_WAIT_INTERVAL);
+                    continue;
+                }
+                return Ok(frame.clone());
+            }
+            Some(WebSurfaceState::Ready(_)) => {}
+            Some(WebSurfaceState::Failed { message, .. }) => {
+                return Err(format!("{} failed: {message}", case.url));
+            }
+            Some(WebSurfaceState::Loading { .. }) | None => {}
+        }
+
+        thread::sleep(LIVE_SITE_WAIT_INTERVAL);
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ExpectedCssViewport {
+    physical_width: u32,
+    physical_height: u32,
+    css_width: u32,
+    css_height: u32,
+    dpr_percent: u16,
+}
+
 fn validate_prd_frame(
     frame: &WebSurfaceFrame,
     case: &LiveSiteCase,
@@ -401,6 +491,10 @@ fn validate_prd_frame(
         frame.scroll_offset().y() == expected_scroll_y,
         format!("{} scroll: {:?}", case.url, frame.scroll_offset()),
     )?;
+    require(
+        frame.css_viewport_size() == (LIVE_SURFACE_WIDTH, LIVE_SURFACE_HEIGHT),
+        format!("{} CSS viewport: {:?}", case.url, frame.css_viewport_size()),
+    )?;
     require_render_state_is_open(frame.render_state(), case.url)?;
     require(
         frame.url_label().contains(normalized_url(case.url)),
@@ -411,23 +505,28 @@ fn validate_prd_frame(
         format!("title: {}", frame.title_label()),
     )?;
     let expected_detail = if expected_scroll_y == 0 {
-        format!("{} 934x657", frame.render_state())
+        format!("{} {}x{}", frame.render_state(), LIVE_SURFACE_WIDTH, LIVE_SURFACE_HEIGHT)
     } else {
-        format!("{} 934x657 y={expected_scroll_y}", frame.render_state())
+        format!(
+            "{} {}x{} y={expected_scroll_y}",
+            frame.render_state(),
+            LIVE_SURFACE_WIDTH,
+            LIVE_SURFACE_HEIGHT,
+        )
     };
     require(
         frame.detail_label() == expected_detail,
         format!("{} detail: {}", case.url, frame.detail_label()),
     )?;
-    if frame.has_hardware_surface() {
-        return Ok(());
-    }
-    require(frame.non_white_pixel_count() > 0, case.url.to_string())?;
+    require(
+        frame.non_white_pixel_count() > 0,
+        format!("{} non-white pixels: {}", case.url, frame.non_white_pixel_count()),
+    )?;
     require(
         frame.content_pixel_count() >= MINIMUM_CONTENT_PIXELS,
         format!("{} content pixels: {}", case.url, frame.content_pixel_count()),
     )?;
-    require(frame.sample_hash() > 0, case.url.to_string())
+    require(frame.sample_hash() > 0, format!("{} sample hash: {}", case.url, frame.sample_hash()))
 }
 
 fn validate_prd_frame_at_size(
@@ -447,6 +546,10 @@ fn validate_prd_frame_at_size(
     )?;
     require_render_state_is_open(frame.render_state(), case.url)?;
     require(
+        frame.css_viewport_size() == (expected_width, expected_height),
+        format!("{} CSS viewport: {:?}", case.url, frame.css_viewport_size()),
+    )?;
+    require(
         frame.url_label().contains(normalized_url(case.url)),
         format!("url: {}", frame.url_label()),
     )?;
@@ -454,15 +557,45 @@ fn validate_prd_frame_at_size(
         frame.title_label().contains(case.title_fragment),
         format!("title: {}", frame.title_label()),
     )?;
-    if frame.has_hardware_surface() {
-        return Ok(());
-    }
-    require(frame.non_white_pixel_count() > 0, case.url.to_string())?;
+    require(
+        frame.non_white_pixel_count() > 0,
+        format!("{} non-white pixels: {}", case.url, frame.non_white_pixel_count()),
+    )?;
     require(
         frame.content_pixel_count() >= MINIMUM_CONTENT_PIXELS,
         format!("{} content pixels: {}", case.url, frame.content_pixel_count()),
     )?;
-    require(frame.sample_hash() > 0, case.url.to_string())
+    require(frame.sample_hash() > 0, format!("{} sample hash: {}", case.url, frame.sample_hash()))
+}
+
+fn validate_prd_frame_at_css_size(
+    frame: &WebSurfaceFrame,
+    case: &LiveSiteCase,
+    expected: ExpectedCssViewport,
+) -> Result<(), String> {
+    require(
+        frame.size()
+            == WebSurfaceSize {
+                width: expected.physical_width,
+                height: expected.physical_height,
+                device_pixel_ratio_percent: expected.dpr_percent,
+            },
+        format!("{} size: {:?}", case.url, frame.size()),
+    )?;
+    require_render_state_is_open(frame.render_state(), case.url)?;
+    require(
+        frame.css_viewport_size() == (expected.css_width, expected.css_height),
+        format!("{} CSS viewport: {:?}", case.url, frame.css_viewport_size()),
+    )?;
+    require(
+        frame.url_label().contains(normalized_url(case.url)),
+        format!("url: {}", frame.url_label()),
+    )?;
+    require(
+        frame.title_label().contains(case.title_fragment),
+        format!("title: {}", frame.title_label()),
+    )?;
+    Ok(())
 }
 
 fn log_prd_frame(label: &str, frame: &WebSurfaceFrame, case: &LiveSiteCase) {

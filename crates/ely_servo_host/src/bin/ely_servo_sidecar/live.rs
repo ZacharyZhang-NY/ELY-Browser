@@ -2,8 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     io::{self, BufRead},
-    thread,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use ely_domain::{DEFAULT_ZOOM_PERCENT, ProfileId, TabId, UrlText};
@@ -11,7 +10,7 @@ use ely_servo_host::{
     IOSurfaceIdentity, KeyboardTextRequest, MouseClickRequest, MouseHoverRequest,
     NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest,
     RenderingContextKind, ResizeRequest, ScrollRequest, ServoHost, ServoSurfaceSize,
-    SoftwareServoHost,
+    SoftwareServoHost, WebViewState,
 };
 
 use super::args::LiveArgs;
@@ -23,12 +22,6 @@ use super::live_protocol::{
     LiveFrameReport, LiveOutcome, LiveRequest, LiveSitePermission, PartialFrameTimings,
 };
 use super::perf::{FramePerfAggregator, FramePerfSummary, elapsed_ns};
-
-/// Per-`Ensure` budget for Servo to paint after input dispatch.
-/// 250 ms catches the common click + paint round trip within the
-/// same `Ensure` instead of waiting for the next 16 ms `Poll`.
-const LIVE_FRAME_WAIT_TIMEOUT: Duration = Duration::from_millis(250);
-const LIVE_FRAME_WAIT_INTERVAL: Duration = Duration::from_millis(2);
 
 pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
     let LiveArgs { profile_data_dir, iosurface_mach_service, rendering_context_kind } = args;
@@ -64,7 +57,7 @@ pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
         // matching stop is the `stdout.flush()` inside
         // `write_outcome`.
         let frame_started_at = Instant::now();
-        let mut outcome = match serde_json::from_str::<LiveRequest>(&line) {
+        let outcome = match serde_json::from_str::<LiveRequest>(&line) {
             Ok(request) => handle_request(
                 &mut host,
                 &mut sessions,
@@ -75,7 +68,11 @@ pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
             Err(error) => Err(LiveSidecarError::Json(error)),
         };
         #[cfg(all(feature = "hardware-render", target_os = "macos"))]
-        send_surface_port_if_needed(iosurface_mach_sender.as_mut(), &mut outcome);
+        let outcome = {
+            let mut outcome = outcome;
+            send_surface_port_if_needed(iosurface_mach_sender.as_mut(), &mut outcome);
+            outcome
+        };
         write_outcome(&mut stdout, &mut perf, &mut pending_summary, outcome, frame_started_at)?;
     }
 
@@ -153,12 +150,11 @@ fn handle_request(
                 typed_text,
             };
             if apply_input(host, session, input)? {
-                // Tell poll_frame to actually wait for Servo to paint
-                // a response to this input. The visible-content gate
-                // is bypassed on the hardware path inside poll_frame,
-                // so we return on the first `has_pending_frame=true`
-                // (~3 ms in practice) rather than burning the full
-                // LIVE_FRAME_WAIT_TIMEOUT.
+                // The app tick calls this sidecar synchronously from
+                // GPUI's update path. Mark that a fresh frame is
+                // desired, then let poll_frame take one event-loop
+                // step; a later 16 ms app tick will poll again if
+                // Servo has not painted yet.
                 session.awaiting_visible_frame = true;
             }
             let webview_id = session.webview_id.clone();
@@ -363,33 +359,24 @@ fn poll_frame(
     session: &mut LiveSession,
     rendering_context_kind: RenderingContextKind,
 ) -> Result<LiveOutcome, LiveSidecarError> {
-    let started_at = Instant::now();
-
-    loop {
-        host.tick();
-        let snapshot = host.snapshot(&session.webview_id)?;
-        if snapshot.has_pending_frame() {
-            let (outcome, has_visible_content) =
-                paint_pending_frame(host, session, rendering_context_kind)?;
-            if has_visible_content {
-                session.awaiting_visible_frame = false;
-                session.ever_visible_frame = true;
-                return Ok(outcome);
-            }
-            if !session.awaiting_visible_frame {
-                return Ok(outcome);
-            }
-        }
-
-        if !session.awaiting_visible_frame {
-            return Ok(LiveOutcome::empty());
-        }
-        if started_at.elapsed() >= LIVE_FRAME_WAIT_TIMEOUT {
-            return Ok(LiveOutcome::empty());
-        }
-
-        thread::sleep(LIVE_FRAME_WAIT_INTERVAL);
+    host.tick();
+    let snapshot = host.snapshot(&session.webview_id)?;
+    if !snapshot.has_pending_frame() {
+        return Ok(LiveOutcome::empty());
     }
+
+    let (outcome, has_visible_content) =
+        paint_pending_frame(host, session, rendering_context_kind)?;
+    if has_visible_content {
+        session.awaiting_visible_frame = false;
+        session.ever_visible_frame = true;
+        return Ok(outcome);
+    }
+    if !session.awaiting_visible_frame {
+        return Ok(outcome);
+    }
+
+    Ok(LiveOutcome::empty())
 }
 
 fn paint_pending_frame(
@@ -418,7 +405,7 @@ fn paint_readback_frame(
     let encode_started_at = Instant::now();
     let has_visible_content = session.ever_visible_frame
         || (frame.non_white_pixel_count() > 0 && frame.content_pixel_count() > 0);
-    let report = LiveFrameReport::new(&snapshot, &frame);
+    let report = LiveFrameReport::new(&snapshot, &frame, session.device_pixel_ratio());
     let encode_ns = elapsed_ns(encode_started_at);
     let timings = PartialFrameTimings { paint_ns, encode_ns };
     Ok((LiveOutcome::from_frame(report, frame, timings), has_visible_content))
@@ -429,15 +416,49 @@ fn paint_hardware_surface_frame(
     host: &mut SoftwareServoHost,
     session: &LiveSession,
 ) -> Result<(LiveOutcome, bool), LiveSidecarError> {
+    if !session.ever_visible_frame {
+        return paint_initial_hardware_surface_frame(host, session);
+    }
+
     let paint_started_at = Instant::now();
     host.paint_without_readback(&session.webview_id)?;
     let snapshot = host.snapshot(&session.webview_id)?;
     let paint_ns = elapsed_ns(paint_started_at);
     let encode_started_at = Instant::now();
-    let report = LiveFrameReport::new_hardware_surface(&snapshot, session.width, session.height);
+    let report = LiveFrameReport::new_hardware_surface(
+        &snapshot,
+        session.width,
+        session.height,
+        session.device_pixel_ratio(),
+    );
     let encode_ns = elapsed_ns(encode_started_at);
     let timings = PartialFrameTimings { paint_ns, encode_ns };
     Ok((LiveOutcome::from_report(report, timings), true))
+}
+
+#[cfg(all(feature = "hardware-render", target_os = "macos"))]
+fn paint_initial_hardware_surface_frame(
+    host: &mut SoftwareServoHost,
+    session: &LiveSession,
+) -> Result<(LiveOutcome, bool), LiveSidecarError> {
+    let paint_started_at = Instant::now();
+    host.paint(&session.webview_id)?;
+    let snapshot = host.snapshot(&session.webview_id)?;
+    let frame = host.last_rendered_frame()?;
+    let paint_ns = elapsed_ns(paint_started_at);
+    let encode_started_at = Instant::now();
+    let report = LiveFrameReport::new(&snapshot, &frame, session.device_pixel_ratio());
+    let has_visible_content = frame.non_white_pixel_count() > 0
+        && frame.content_pixel_count() > 0
+        && hardware_snapshot_has_visible_document(&snapshot);
+    let encode_ns = elapsed_ns(encode_started_at);
+    let timings = PartialFrameTimings { paint_ns, encode_ns };
+    Ok((LiveOutcome::from_frame(report, frame, timings), has_visible_content))
+}
+
+#[cfg(all(feature = "hardware-render", target_os = "macos"))]
+fn hardware_snapshot_has_visible_document(snapshot: &ely_servo_host::WebViewSnapshot) -> bool {
+    snapshot.title().is_some() || matches!(snapshot.state(), WebViewState::Complete)
 }
 
 #[derive(Clone)]
@@ -468,12 +489,12 @@ struct LiveSession {
 }
 
 impl LiveSession {
-    fn new(webview_id: ely_domain::WebViewId, width: u32, height: u32) -> Self {
+    fn new(webview_id: ely_domain::WebViewId, _width: u32, _height: u32) -> Self {
         Self {
             webview_id,
             requested_url: String::new(),
-            width: width.max(1),
-            height: height.max(1),
+            width: 0,
+            height: 0,
             page_zoom_percent: DEFAULT_ZOOM_PERCENT,
             hidpi_scale_milli: 0,
             scroll_x: 0,
@@ -482,9 +503,32 @@ impl LiveSession {
             ever_visible_frame: false,
         }
     }
+
+    fn device_pixel_ratio(&self) -> f32 {
+        hidpi_scale_milli_to_f32(self.hidpi_scale_milli)
+    }
 }
 
 fn positive_scroll_component(current: i32, delta: i32) -> i32 {
     let value = i64::from(current) + i64::from(delta);
     value.clamp(0, i64::from(i32::MAX)) as i32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_live_session_forces_first_resize_after_hidpi() {
+        let session = LiveSession::new(ely_domain::WebViewId::new(), 1280, 720);
+
+        assert_ne!(
+            session.width, 1280,
+            "first apply_layout must resize after hidpi has been pushed",
+        );
+        assert_ne!(
+            session.height, 720,
+            "first apply_layout must resize after hidpi has been pushed",
+        );
+    }
 }

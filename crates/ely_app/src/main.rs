@@ -11,6 +11,7 @@ use std::{
     time::Duration,
 };
 
+use ely_design_system::spacing;
 use ely_domain::UrlText;
 use gpui::{
     AnyWindowHandle, App, AppContext, Application, Bounds, Entity, Focusable, Menu, MenuItem,
@@ -51,6 +52,11 @@ actions!(
     ]
 );
 
+// Measured from the window's top-left to the close button origin.
+// Places the macOS traffic lights inside the calm part of the corner curve.
+const TRAFFIC_LIGHT_ORIGIN_X: f32 = spacing::SHELL_INSET + 34.0;
+const TRAFFIC_LIGHT_ORIGIN_Y: f32 = spacing::SHELL_INSET + 22.0;
+
 fn main() {
     init_tracing();
     let pending_deep_links = PendingDeepLinks::default();
@@ -73,8 +79,7 @@ fn main() {
         // exactly the "fonts still wrong" the screenshot showed.
         // Override the theme so every gpui-component sub-element uses
         // Geist too.
-        gpui_component::Theme::global_mut(cx).font_family =
-            shell::chrome::SANS_FAMILY.into();
+        gpui_component::Theme::global_mut(cx).font_family = shell::chrome::SANS_FAMILY.into();
         cx.on_action(quit);
         bind_shortcuts(cx);
         cx.on_action(open_private_window);
@@ -185,7 +190,10 @@ fn open_browser_window(cx: &mut App, mode: BrowserWindowMode) -> Option<BrowserW
             titlebar: Some(TitlebarOptions {
                 title: Some(mode.title().into()),
                 appears_transparent: true,
-                traffic_light_position: Some(point(px(18.0), px(24.0))),
+                traffic_light_position: Some(point(
+                    px(TRAFFIC_LIGHT_ORIGIN_X),
+                    px(TRAFFIC_LIGHT_ORIGIN_Y),
+                )),
             }),
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             ..WindowOptions::default()

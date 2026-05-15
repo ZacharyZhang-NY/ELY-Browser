@@ -50,7 +50,9 @@ use euclid::Size2D;
 use gleam::gl::{self, Gl};
 use image::RgbaImage;
 use servo::{DeviceIntRect, RenderingContext};
-use surfman::chains::{PreserveBuffer, SwapChain};
+use surfman::chains::{PreserveBuffer, SwapChain, SwapChainAPI};
+#[cfg(target_os = "macos")]
+use surfman::platform::macos::cgl::surface::NativeSurface;
 use surfman::{
     Connection, Context, ContextAttributeFlags, ContextAttributes, Device, Error as SurfmanError,
     GLApi, NativeWidget, Surface, SurfaceAccess, SurfaceType,
@@ -64,6 +66,10 @@ pub struct HardwareOffscreenContext {
     size: Cell<PhysicalSize<u32>>,
     inner: SurfmanInner,
     swap_chain: SwapChain<Device>,
+    #[cfg(target_os = "macos")]
+    held_presented_surface: RefCell<Option<Surface>>,
+    #[cfg(target_os = "macos")]
+    last_presented_iosurface: RefCell<Option<PresentedIOSurface>>,
 }
 
 impl HardwareOffscreenContext {
@@ -86,7 +92,15 @@ impl HardwareOffscreenContext {
         inner.bind_surface(surface)?;
         inner.make_current()?;
         let swap_chain = inner.create_attached_swap_chain()?;
-        Ok(Self { size: Cell::new(size), inner, swap_chain })
+        Ok(Self {
+            size: Cell::new(size),
+            inner,
+            swap_chain,
+            #[cfg(target_os = "macos")]
+            held_presented_surface: RefCell::new(None),
+            #[cfg(target_os = "macos")]
+            last_presented_iosurface: RefCell::new(None),
+        })
     }
 }
 
@@ -94,6 +108,8 @@ impl Drop for HardwareOffscreenContext {
     fn drop(&mut self) {
         let device = &mut self.inner.device.borrow_mut();
         let context = &mut self.inner.context.borrow_mut();
+        #[cfg(target_os = "macos")]
+        self.destroy_held_presented_surface(device, context);
         let _ = self.swap_chain.destroy(device, context);
     }
 }
@@ -120,6 +136,8 @@ impl RenderingContext for HardwareOffscreenContext {
 
         let device = &mut self.inner.device.borrow_mut();
         let context = &mut self.inner.context.borrow_mut();
+        #[cfg(target_os = "macos")]
+        self.destroy_held_presented_surface(device, context);
         let size = Size2D::new(size.width as i32, size.height as i32);
         let _ = self.swap_chain.resize(device, context, size);
     }
@@ -127,7 +145,11 @@ impl RenderingContext for HardwareOffscreenContext {
     fn present(&self) {
         let device = &mut self.inner.device.borrow_mut();
         let context = &mut self.inner.context.borrow_mut();
+        #[cfg(target_os = "macos")]
+        self.recycle_held_presented_surface();
         let _ = self.swap_chain.swap_buffers(device, context, PreserveBuffer::No);
+        #[cfg(target_os = "macos")]
+        self.capture_presented_iosurface(device);
     }
 
     fn make_current(&self) -> Result<(), SurfmanError> {
@@ -152,54 +174,64 @@ use crate::iosurface_handle::{IOSurfaceHandle, IOSurfaceIdentity};
 
 #[cfg(target_os = "macos")]
 impl HardwareOffscreenContext {
-    /// Cheap, non-mutating identity probe of the currently bound
-    /// surface. Reads `Device::context_surface_info` (no unbind, no
-    /// mach port creation) so callers can dedup before paying the
-    /// price of `current_iosurface_mach_port`.
-    pub fn peek_iosurface_identity(&self) -> Result<IOSurfaceIdentity, SurfmanError> {
-        let device = self.inner.device.borrow();
-        let context = self.inner.context.borrow();
-        let info = device.context_surface_info(&context)?.ok_or(SurfmanError::Failed)?;
-        Ok(IOSurfaceIdentity {
-            surface_id: info.id.0 as u64,
-            width: u32::try_from(info.size.width).unwrap_or(0),
-            height: u32::try_from(info.size.height).unwrap_or(0),
-        })
+    /// Cheap, non-mutating identity probe of the IOSurface that was
+    /// just presented. Used by the sidecar to dedup mach port creation.
+    pub fn peek_iosurface_identity(&self) -> Result<Option<IOSurfaceIdentity>, SurfmanError> {
+        Ok(self.last_presented_iosurface.borrow().as_ref().map(|surface| surface.identity))
     }
 
-    /// Snapshot the IOSurface currently bound to the context and
-    /// return its mach port name plus dimensions and stable surface
-    /// id. Increments the IOSurface's mach-port use count; the
+    /// Snapshot the just-presented IOSurface and return its mach port
+    /// name plus dimensions and stable surface id. Increments the
+    /// IOSurface's mach-port use count; the
     /// receiving process holds it via `IOSurfaceLookupFromMachPort` and
     /// is responsible for `mach_port_deallocate` once the import is
     /// finished.
-    ///
-    /// Implementation note: surfman's CGL backend keeps the bound
-    /// surface inside the GL context. To inspect it we temporarily
-    /// `unbind_surface_from_context`, call `device.native_surface()`
-    /// (which retains the `IOSurfaceRef`), then `bind_surface_to_context`
-    /// again. The unbind path calls `glFlush` so the IOSurface contents
-    /// are consistent for any reader importing it after this returns.
     pub fn current_iosurface_mach_port(&self) -> Result<IOSurfaceHandle, SurfmanError> {
-        let device = &mut self.inner.device.borrow_mut();
-        let context = &mut self.inner.context.borrow_mut();
-        // `new` always binds a surface and `current_iosurface_mach_port`
-        // is the only method that unbinds; the `None` branch only fires
-        // if the invariant has been broken from outside.
-        let surface =
-            device.unbind_surface_from_context(context)?.ok_or(SurfmanError::Failed)?;
-        let native = device.native_surface(&surface);
-        let mach_port = native.0.create_mach_port();
-        let info = device.surface_info(&surface);
-        let handle = IOSurfaceHandle {
+        let presented = self.last_presented_iosurface.borrow();
+        let presented = presented.as_ref().ok_or(SurfmanError::Failed)?;
+        let mach_port = presented.native.0.create_mach_port();
+        Ok(IOSurfaceHandle {
             mach_port_name: mach_port,
+            surface_id: presented.identity.surface_id,
+            width: presented.identity.width,
+            height: presented.identity.height,
+        })
+    }
+
+    fn capture_presented_iosurface(&self, device: &mut Device) {
+        let Some(surface) = self.swap_chain.take_pending_surface() else {
+            self.last_presented_iosurface.borrow_mut().take();
+            return;
+        };
+        let info = device.surface_info(&surface);
+        let native = device.native_surface(&surface);
+        let identity = IOSurfaceIdentity {
             surface_id: info.id.0 as u64,
             width: u32::try_from(info.size.width).unwrap_or(0),
             height: u32::try_from(info.size.height).unwrap_or(0),
         };
-        device.bind_surface_to_context(context, surface).map_err(|(error, _)| error)?;
-        Ok(handle)
+        self.held_presented_surface.replace(Some(surface));
+        self.last_presented_iosurface.replace(Some(PresentedIOSurface { identity, native }));
     }
+
+    fn recycle_held_presented_surface(&self) {
+        if let Some(surface) = self.held_presented_surface.borrow_mut().take() {
+            self.swap_chain.recycle_surface(surface);
+        }
+    }
+
+    fn destroy_held_presented_surface(&self, device: &mut Device, context: &mut Context) {
+        self.last_presented_iosurface.borrow_mut().take();
+        if let Some(mut surface) = self.held_presented_surface.borrow_mut().take() {
+            let _ = device.destroy_surface(context, &mut surface);
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+struct PresentedIOSurface {
+    identity: IOSurfaceIdentity,
+    native: NativeSurface,
 }
 
 /// Trimmed mirror of `paint_api::rendering_context::SurfmanRenderingContext`.
@@ -281,12 +313,10 @@ impl SurfmanInner {
     fn bind_surface(&self, surface: Surface) -> Result<(), SurfmanError> {
         let device = &self.device.borrow();
         let context = &mut self.context.borrow_mut();
-        device
-            .bind_surface_to_context(context, surface)
-            .map_err(|(err, mut surface)| {
-                let _ = device.destroy_surface(context, &mut surface);
-                err
-            })?;
+        device.bind_surface_to_context(context, surface).map_err(|(err, mut surface)| {
+            let _ = device.destroy_surface(context, &mut surface);
+            err
+        })?;
         Ok(())
     }
 

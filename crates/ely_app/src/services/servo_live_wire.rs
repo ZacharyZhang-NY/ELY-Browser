@@ -96,6 +96,12 @@ pub(super) struct LiveFrameReport {
     pub(super) state: String,
     pub(super) width: u32,
     pub(super) height: u32,
+    #[serde(default = "default_device_pixel_ratio")]
+    pub(super) device_pixel_ratio: f32,
+    #[serde(default)]
+    pub(super) css_viewport_width: u32,
+    #[serde(default)]
+    pub(super) css_viewport_height: u32,
     pub(super) rgba_byte_count: usize,
     #[cfg(all(test, feature = "live-site-smoke"))]
     pub(super) non_white_pixel_count: u64,
@@ -103,6 +109,10 @@ pub(super) struct LiveFrameReport {
     pub(super) content_pixel_count: u64,
     #[cfg(all(test, feature = "live-site-smoke"))]
     pub(super) sample_hash: u64,
+}
+
+fn default_device_pixel_ratio() -> f32 {
+    1.0
 }
 
 /// Per-frame tag that tells the renderer which already-imported

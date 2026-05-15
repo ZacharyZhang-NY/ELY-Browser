@@ -32,6 +32,7 @@ mod web_surface_permissions;
 mod web_surface_runtime;
 mod web_surface_state;
 mod web_surface_view;
+mod web_surface_worker;
 
 #[cfg(test)]
 mod gpui_harness_tests;
@@ -116,9 +117,8 @@ impl ElyShell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let command_input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Search ELY or type a command…")
-        });
+        let command_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Search ELY or type a command…"));
         let plugin_search_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Search plugins…"));
         let translucency_slider = cx.new(|_cx| {
@@ -129,14 +129,16 @@ impl ElyShell {
                 .default_value(f32::from(DEFAULT_TRANSLUCENCY_PCT))
         });
 
-        let translucency_subscription =
-            cx.subscribe(&translucency_slider, |shell: &mut Self, _state, event: &SliderEvent, cx| {
+        let translucency_subscription = cx.subscribe(
+            &translucency_slider,
+            |shell: &mut Self, _state, event: &SliderEvent, cx| {
                 let SliderEvent::Change(SliderValue::Single(value)) = event else {
                     return;
                 };
                 let pct = value.clamp(0.0, 100.0).round() as u8;
                 shell.set_translucency_pct(pct, cx);
-            });
+            },
+        );
 
         let command_subscription = cx.subscribe_in(
             &command_input,

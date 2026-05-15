@@ -176,6 +176,9 @@ pub(super) struct LiveFrameReport {
     pub state: &'static str,
     pub width: u32,
     pub height: u32,
+    pub device_pixel_ratio: f32,
+    pub css_viewport_width: u32,
+    pub css_viewport_height: u32,
     pub rgba_byte_count: usize,
     pub non_white_pixel_count: u64,
     pub content_pixel_count: u64,
@@ -183,13 +186,18 @@ pub(super) struct LiveFrameReport {
 }
 
 impl LiveFrameReport {
-    pub fn new(snapshot: &WebViewSnapshot, frame: &RenderedFrame) -> Self {
+    pub fn new(snapshot: &WebViewSnapshot, frame: &RenderedFrame, device_pixel_ratio: f32) -> Self {
+        let (css_viewport_width, css_viewport_height) =
+            css_viewport_size(frame.width(), frame.height(), device_pixel_ratio);
         Self {
             loaded_url: snapshot.url().map(str::to_string),
             title: snapshot.title().map(str::to_string),
             state: state_label(snapshot.state()),
             width: frame.width(),
             height: frame.height(),
+            device_pixel_ratio,
+            css_viewport_width,
+            css_viewport_height,
             rgba_byte_count: frame.rgba_bytes().len(),
             non_white_pixel_count: frame.non_white_pixel_count(),
             content_pixel_count: frame.content_pixel_count(),
@@ -200,19 +208,41 @@ impl LiveFrameReport {
     /// Build a report for the hardware IOSurface path. Pixel metrics
     /// are unavailable because the path skips framebuffer readback.
     #[cfg(all(feature = "hardware-render", target_os = "macos"))]
-    pub fn new_hardware_surface(snapshot: &WebViewSnapshot, width: u32, height: u32) -> Self {
+    pub fn new_hardware_surface(
+        snapshot: &WebViewSnapshot,
+        width: u32,
+        height: u32,
+        device_pixel_ratio: f32,
+    ) -> Self {
+        let (css_viewport_width, css_viewport_height) =
+            css_viewport_size(width, height, device_pixel_ratio);
         Self {
             loaded_url: snapshot.url().map(str::to_string),
             title: snapshot.title().map(str::to_string),
             state: state_label(snapshot.state()),
             width,
             height,
+            device_pixel_ratio,
+            css_viewport_width,
+            css_viewport_height,
             rgba_byte_count: 0,
             non_white_pixel_count: 0,
             content_pixel_count: 0,
             sample_hash: 0,
         }
     }
+}
+
+fn css_viewport_size(width: u32, height: u32, device_pixel_ratio: f32) -> (u32, u32) {
+    let dpr = if device_pixel_ratio.is_finite() && device_pixel_ratio > 0.0 {
+        device_pixel_ratio
+    } else {
+        1.0
+    };
+    (
+        ((width as f32) / dpr).round().max(1.0) as u32,
+        ((height as f32) / dpr).round().max(1.0) as u32,
+    )
 }
 
 fn state_label(state: &WebViewState) -> &'static str {

@@ -89,14 +89,19 @@ pub(super) fn default_sidecar_command() -> Result<SidecarCommandTarget, SidecarC
         SidecarCommandError::CurrentExecutableDirectoryUnavailable { path: current_exe.clone() }
     })?;
     let adjacent_sidecar = exe_dir.join(sidecar_binary_name());
+    if adjacent_sidecar.is_file() && is_macos_app_bundle_exe_dir(exe_dir) {
+        return Ok(SidecarCommandTarget::Binary(adjacent_sidecar));
+    }
     let workspace_manifest = workspace_manifest_path();
     let workspace_target_sidecar =
         workspace_manifest.as_ref().and_then(|path| workspace_target_sidecar_path(path));
     let adjacent_is_workspace_target =
         workspace_target_sidecar.as_ref().is_some_and(|path| path == &adjacent_sidecar);
+    let workspace_target_sidecar_exists =
+        workspace_target_sidecar.as_ref().is_some_and(|path| path.is_file());
     let prefer_cargo_hardware_sidecar = rendering_context_from_env()
         == SidecarRenderingContext::Hardware
-        && adjacent_is_workspace_target
+        && (adjacent_is_workspace_target || workspace_target_sidecar_exists)
         && workspace_manifest.as_ref().is_some_and(|path| path.is_file());
     if adjacent_sidecar.is_file() && !prefer_cargo_hardware_sidecar {
         return Ok(SidecarCommandTarget::Binary(adjacent_sidecar));
@@ -155,11 +160,22 @@ fn sidecar_binary_name() -> String {
     format!("ely_servo_sidecar{}", env::consts::EXE_SUFFIX)
 }
 
+fn is_macos_app_bundle_exe_dir(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == "MacOS")
+        && path
+            .parent()
+            .is_some_and(|contents| contents.file_name().is_some_and(|name| name == "Contents"))
+        && path
+            .parent()
+            .and_then(Path::parent)
+            .is_some_and(|bundle| bundle.extension().is_some_and(|extension| extension == "app"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         HARDWARE_SIDECAR_FEATURES, SOFTWARE_SIDECAR_FEATURES, SidecarRenderingContext,
-        rendering_context_selection,
+        is_macos_app_bundle_exe_dir, rendering_context_selection,
     };
 
     #[test]
@@ -178,6 +194,14 @@ mod tests {
         let context = rendering_context_selection(Some("software"));
         assert_eq!(context, SidecarRenderingContext::Software);
         assert_eq!(context.sidecar_features(), SOFTWARE_SIDECAR_FEATURES);
+    }
+
+    #[test]
+    fn recognizes_macos_app_bundle_executable_directory() {
+        assert!(is_macos_app_bundle_exe_dir(std::path::Path::new(
+            "/tmp/ELY Browser.app/Contents/MacOS"
+        )));
+        assert!(!is_macos_app_bundle_exe_dir(std::path::Path::new("/tmp/target/debug")));
     }
 
     #[cfg(target_os = "macos")]

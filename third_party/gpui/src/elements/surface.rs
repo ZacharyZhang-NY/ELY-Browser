@@ -1,6 +1,6 @@
 use crate::{
-    App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement, LayoutId,
-    ObjectFit, Pixels, Style, StyleRefinement, Styled, Window,
+    App, Bounds, Corners, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement,
+    LayoutId, ObjectFit, Pixels, Style, StyleRefinement, Styled, Window,
 };
 #[cfg(target_os = "macos")]
 use core_video::pixel_buffer::CVPixelBuffer;
@@ -25,6 +25,7 @@ impl From<CVPixelBuffer> for SurfaceSource {
 pub struct Surface {
     source: SurfaceSource,
     object_fit: ObjectFit,
+    corner_radii: Option<Corners<Pixels>>,
     style: StyleRefinement,
 }
 
@@ -33,6 +34,7 @@ pub fn surface(source: impl Into<SurfaceSource>) -> Surface {
     Surface {
         source: source.into(),
         object_fit: ObjectFit::Contain,
+        corner_radii: None,
         style: Default::default(),
     }
 }
@@ -41,6 +43,12 @@ impl Surface {
     /// Set the object fit for the image.
     pub fn object_fit(mut self, object_fit: ObjectFit) -> Self {
         self.object_fit = object_fit;
+        self
+    }
+
+    /// Set rounded clipping for the rendered surface.
+    pub fn corner_radii(mut self, corner_radii: impl Into<Corners<Pixels>>) -> Self {
+        self.corner_radii = Some(corner_radii.into());
         self
     }
 }
@@ -96,8 +104,13 @@ impl Element for Surface {
             SurfaceSource::Surface(surface) => {
                 let size = crate::size(surface.get_width().into(), surface.get_height().into());
                 let new_bounds = self.object_fit.get_bounds(bounds, size);
-                // TODO: Add support for corner_radii
-                window.paint_surface(new_bounds, surface.clone());
+                let mut style = Style::default();
+                style.refine(&self.style);
+                let corner_radii = self
+                    .corner_radii
+                    .unwrap_or_else(|| style.corner_radii.to_pixels(window.rem_size()))
+                    .clamp_radii_for_quad_size(new_bounds.size);
+                window.paint_surface(new_bounds, corner_radii, surface.clone());
             }
             #[allow(unreachable_patterns)]
             _ => {}

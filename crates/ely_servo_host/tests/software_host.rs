@@ -10,9 +10,10 @@ use std::{
 
 use ely_domain::{ProfileId, SiteOrigin, SitePermissionFeature, TabId, UrlText};
 use ely_servo_host::{
-    KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest, PageZoomRequest,
-    PermissionDecision, PermissionRequest, ResizeRequest, ScreenshotRequest, ScrollRequest,
-    ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, TouchTapRequest, WebViewState,
+    HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest,
+    PageZoomRequest, PermissionDecision, PermissionRequest, ResizeRequest, ScreenshotRequest,
+    ScrollRequest, ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, TouchTapRequest,
+    WebViewState,
 };
 
 const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
@@ -25,6 +26,7 @@ const PRD_SITE_COMPATIBILITY_CASES: &[PrdSiteCompatibilityCase] = &[
     PrdSiteCompatibilityCase { url: "https://servo.org/", title_fragment: "Servo" },
 ];
 const SOFTWARE_HOST_CHILD_ENV: &str = "ELY_SERVO_SOFTWARE_HOST_CHILD";
+const DPR_VIEWPORT_CHILD_ENV: &str = "ELY_SERVO_DPR_VIEWPORT_CHILD";
 const CLICK_PROBE_URL: &str = "data:text/html,%3C!doctype%20html%3E%3Ctitle%3EClick%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23f7f7f7%3B%7Dbutton%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A220px%3Bheight%3A90px%3Bfont%3A28px%20sans-serif%3Bbackground%3A%23ffffff%3Bcolor%3A%23111111%3B%7D%3C%2Fstyle%3E%3Cbutton%20onclick%3D%22document.body.style.background%3D%27%230039ff%27%3Bdocument.title%3D%27Clicked%27%3Bthis.textContent%3D%27Clicked%27%3B%22%3ETap%3C%2Fbutton%3E";
 const DRAG_PROBE_URL: &str = "data:text/html,%3C%21doctype%20html%3E%3Ctitle%3EDrag%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23f7f7f7%3B%7Dbutton%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A220px%3Bheight%3A90px%3Bfont%3A28px%20sans-serif%3Bbackground%3A%23ffffff%3Bcolor%3A%23111111%3B%7D%3C%2Fstyle%3E%3Cbutton%20id%3Dbox%3EDrag%3C%2Fbutton%3E%3Cscript%3Elet%20dragging%3Dfalse%3Bconst%20box%3Ddocument.getElementById%28%27box%27%29%3BaddEventListener%28%27mousedown%27%2Cevent%3D%3E%7Bif%28event.target%3D%3D%3Dbox%29%7Bdragging%3Dtrue%3B%7D%7D%29%3BaddEventListener%28%27mousemove%27%2Cevent%3D%3E%7Bif%28dragging%26%26event.clientX%3E280%29%7Bdocument.body.style.background%3D%27%230039ff%27%3Bdocument.title%3D%27Dragged%27%3Bbox.textContent%3D%27Dragged%27%3B%7D%7D%29%3BaddEventListener%28%27mouseup%27%2C%28%29%3D%3E%7Bdragging%3Dfalse%3B%7D%29%3B%3C%2Fscript%3E";
 const TOUCH_PROBE_URL: &str = "data:text/html,%3C%21doctype%20html%3E%3Ctitle%3ETouch%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23f7f7f7%3B%7Dbutton%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A220px%3Bheight%3A90px%3Bfont%3A28px%20sans-serif%3Bbackground%3A%23ffffff%3Bcolor%3A%23111111%3Btouch-action%3Amanipulation%3B%7D%3C%2Fstyle%3E%3Cbutton%20ontouchstart%3D%22document.body.dataset.touch%3D%27start%27%3B%22%20onclick%3D%22document.body.style.background%3D%27%230039ff%27%3Bdocument.title%3D%27Touched%27%3Bthis.textContent%3D%27Touched%27%3B%22%3ETap%3C%2Fbutton%3E";
@@ -34,6 +36,13 @@ const TEXT_PROBE_VALUE: &str = "ely42";
 struct PrdSiteCompatibilityCase {
     url: &'static str,
     title_fragment: &'static str,
+}
+
+struct DprViewportCase {
+    physical_width: u32,
+    physical_height: u32,
+    dpr: f32,
+    expected_css_width: u32,
 }
 
 #[test]
@@ -65,6 +74,122 @@ fn run_isolated_software_host_lifecycle() -> Result<(), Box<dyn Error>> {
         String::from_utf8_lossy(&output.stderr)
     )
     .into())
+}
+
+#[test]
+fn first_navigation_preserves_dpr_for_css_viewport() -> Result<(), Box<dyn Error>> {
+    if env::var_os(DPR_VIEWPORT_CHILD_ENV).is_none() {
+        return run_isolated_dpr_viewport_test();
+    }
+
+    exercise_dpr_viewport_cases()
+}
+
+fn run_isolated_dpr_viewport_test() -> Result<(), Box<dyn Error>> {
+    let output = Command::new(env::current_exe()?)
+        .arg("--exact")
+        .arg("first_navigation_preserves_dpr_for_css_viewport")
+        .env(DPR_VIEWPORT_CHILD_ENV, "1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "isolated DPR viewport test failed\nstatus: {}\nstdout: {}\nstderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+    .into())
+}
+
+fn exercise_dpr_viewport_cases() -> Result<(), Box<dyn Error>> {
+    let mut host = SoftwareServoHost::new(ServoSurfaceSize::new(1, 1))?;
+    let profile_id = ProfileId::new();
+    let cases = [
+        DprViewportCase {
+            physical_width: 800,
+            physical_height: 600,
+            dpr: 1.0,
+            expected_css_width: 800,
+        },
+        DprViewportCase {
+            physical_width: 960,
+            physical_height: 640,
+            dpr: 2.0,
+            expected_css_width: 480,
+        },
+        DprViewportCase {
+            physical_width: 1250,
+            physical_height: 800,
+            dpr: 1.25,
+            expected_css_width: 1000,
+        },
+        DprViewportCase {
+            physical_width: 1440,
+            physical_height: 900,
+            dpr: 1.5,
+            expected_css_width: 960,
+        },
+        DprViewportCase {
+            physical_width: 1750,
+            physical_height: 1000,
+            dpr: 1.75,
+            expected_css_width: 1000,
+        },
+        DprViewportCase {
+            physical_width: 1500,
+            physical_height: 900,
+            dpr: 2.5,
+            expected_css_width: 600,
+        },
+        DprViewportCase {
+            physical_width: 2160,
+            physical_height: 1440,
+            dpr: 3.0,
+            expected_css_width: 720,
+        },
+    ];
+
+    for case in cases {
+        let tab_id = TabId::new();
+        let webview_id = host.create_webview_with_size(
+            tab_id.clone(),
+            profile_id.clone(),
+            ServoSurfaceSize::new(case.physical_width, case.physical_height),
+        )?;
+
+        host.set_hidpi_scale(HidpiScaleRequest {
+            webview_id: webview_id.clone(),
+            scale_factor: case.dpr,
+        })?;
+        host.navigate(NavigationRequest {
+            webview_id: webview_id.clone(),
+            tab_id,
+            url: UrlText::parse(viewport_probe_url(case.expected_css_width + 1))?,
+        })?;
+
+        let snapshot = wait_for_rendered_webview(&mut host, &webview_id, None)?;
+        assert_eq!(snapshot.state(), &WebViewState::Complete, "snapshot: {snapshot:?}");
+
+        let frame = host.last_rendered_frame()?;
+        assert_eq!(frame.width(), case.physical_width, "DPR case frame width");
+        assert_eq!(frame.height(), case.physical_height, "DPR case frame height");
+        assert_eq!(
+            center_pixel_rgb(&frame),
+            [238, 32, 77],
+            "CSS viewport must equal physical width divided by DPR: physical={} dpr={} expected_css={}",
+            case.physical_width,
+            case.dpr,
+            case.expected_css_width,
+        );
+        host.close_webview(&webview_id);
+    }
+    Ok(())
 }
 
 fn exercise_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
@@ -339,4 +464,34 @@ fn assert_frame_has_dimensions_and_content(
     assert!(frame.non_white_pixel_count() > 0, "{label}: {frame:?}");
     assert!(frame.content_pixel_count() >= minimum_content_pixels, "{label}: {frame:?}");
     assert_ne!(frame.sample_hash(), 0, "{label}: {frame:?}");
+}
+
+fn center_pixel_rgb(frame: &ely_servo_host::RenderedFrame) -> [u8; 3] {
+    let x = frame.width() / 2;
+    let y = frame.height() / 2;
+    let index = ((y * frame.width() + x) * 4) as usize;
+    let rgba = &frame.rgba_bytes()[index..index + 4];
+    [rgba[0], rgba[1], rgba[2]]
+}
+
+fn viewport_probe_url(min_width_threshold: u32) -> String {
+    let html = format!(
+        "<!doctype html><title>DPR Probe</title><style>\
+         html,body{{margin:0;width:100%;height:100%;background:rgb(238,32,77);}}\
+         @media (min-width:{min_width_threshold}px){{html,body{{background:rgb(0,57,255);}}}}\
+         </style>",
+    );
+    format!("data:text/html,{}", percent_encode_for_data_url(&html))
+}
+
+fn percent_encode_for_data_url(value: &str) -> String {
+    value
+        .bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (byte as char).to_string()
+            }
+            _ => format!("%{byte:02X}"),
+        })
+        .collect()
 }

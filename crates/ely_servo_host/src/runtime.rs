@@ -108,8 +108,8 @@ impl SoftwareServoHost {
 
     /// Paint and present the webview's current surface while leaving
     /// framebuffer readback to callers that explicitly need RGBA
-    /// bytes. The live hardware path uses this before publishing the
-    /// IOSurface handle to the renderer process.
+    /// bytes. The live hardware path exports the just-presented
+    /// IOSurface from the rendering context.
     pub fn paint_without_readback(&mut self, webview_id: &WebViewId) -> Result<(), ServoHostError> {
         self.paint_webview(webview_id, false).map(|_| ())
     }
@@ -204,9 +204,13 @@ impl ServoHost for SoftwareServoHost {
 
         webview.delegate.set_state(WebViewState::Loading);
         if should_create_initial_document {
+            let hidpi_scale_factor = webview.webview.hidpi_scale_factor();
             webview.webview = WebViewBuilder::new(&servo, webview.rendering_context.clone())
                 .delegate(webview.delegate.clone())
                 .url(url)
+                // The live path pushes DPR before first navigation. Preserve that scale when
+                // replacing the about:blank WebView so CSS viewport = physical surface / DPR.
+                .hidpi_scale_factor(hidpi_scale_factor)
                 .build();
             // Cosmetic: makes the freshly built WebView paint its
             // first frame. The input-accepting invariant lives in
@@ -444,10 +448,7 @@ impl SoftwareServoHost {
         let Some(hardware) = webview.hardware_context.as_ref() else {
             return Ok(None);
         };
-        hardware
-            .peek_iosurface_identity()
-            .map(Some)
-            .map_err(|_| ServoHostError::RenderingContextUnavailable)
+        hardware.peek_iosurface_identity().map_err(|_| ServoHostError::RenderingContextUnavailable)
     }
 
     /// Mint a fresh mach port for the IOSurface bound to this

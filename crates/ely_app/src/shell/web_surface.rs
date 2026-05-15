@@ -11,8 +11,9 @@ use super::{
     web_surface_permissions::WebSurfaceSitePermission,
     web_surface_runtime::{WebSurfaceRuntime, WebSurfaceRuntimeFrame, WebSurfaceUrlChange},
     web_surface_state::{
-        PerTabSurface, WebSurfaceClickState, WebSurfaceInputOutcome, WebSurfaceKeyboardFocusState,
-        WebSurfacePendingInput, WebSurfaceScrollState, WebSurfaceState, WebSurfaceTextInputState,
+        PerTabSurface, WebSurfaceClickState, WebSurfaceEnsureKey, WebSurfaceInputOutcome,
+        WebSurfaceKeyboardFocusState, WebSurfacePendingInput, WebSurfaceScrollState,
+        WebSurfaceState, WebSurfaceTextInputState,
     },
 };
 
@@ -30,6 +31,11 @@ impl WebSurfaceStore {
         Self { runtime: WebSurfaceRuntime::new(), surfaces: BTreeMap::new(), keyboard_focus: None }
     }
 
+    #[cfg(test)]
+    pub(super) fn new_with_runtime(runtime: WebSurfaceRuntime) -> Self {
+        Self { runtime, surfaces: BTreeMap::new(), keyboard_focus: None }
+    }
+
     pub(super) fn state(&self, tab_id: &TabId) -> Option<&WebSurfaceState> {
         self.surfaces.get(tab_id).and_then(|surface| surface.state.as_ref())
     }
@@ -39,37 +45,41 @@ impl WebSurfaceStore {
         tab: &BrowserTab,
         profile_data_mode: ProfileDataMode,
         permissions: &[WebSurfaceSitePermission],
-    ) -> Option<WebSurfaceUrlChange> {
+    ) -> WebSurfaceEnsureOutcome {
         if !is_external_web_url(tab.url().as_str()) {
-            return None;
+            return WebSurfaceEnsureOutcome::default();
         }
 
         let requested_url = tab.url().as_str().to_string();
-        let size = self.surfaces.get(tab.id()).and_then(|surface| surface.viewport_size)?;
+        let Some(size) = self.surfaces.get(tab.id()).and_then(|surface| surface.viewport_size)
+        else {
+            return WebSurfaceEnsureOutcome::default();
+        };
+        let ensure_key =
+            WebSurfaceEnsureKey::new(requested_url.clone(), size, tab.zoom_percent(), permissions);
+        if self.surfaces.get(tab.id()).is_some_and(|surface| !surface.should_ensure(&ensure_key)) {
+            return WebSurfaceEnsureOutcome::default();
+        }
         let input = self.take_pending_input(tab.id(), requested_url.as_str());
         let previous_frame =
             self.previous_ready_frame(tab.id(), requested_url.as_str(), tab.zoom_percent());
 
         match self.runtime.ensure_tab(tab, size, profile_data_mode, permissions, input) {
-            Ok(result) if result.frame.is_some() => {
-                let url_change = result.url_change;
-                let Some(frame) = result.frame else {
-                    return url_change;
-                };
-                self.surface_mut(tab.id()).state = Some(WebSurfaceState::Ready(frame));
-                url_change
+            Ok(result) => {
+                self.surface_mut(tab.id()).mark_ensured(ensure_key);
+                if result.started_loading {
+                    self.surface_mut(tab.id()).state = Some(WebSurfaceState::Loading {
+                        requested_url: result.requested_url,
+                        previous_frame,
+                    });
+                    return WebSurfaceEnsureOutcome { changed: true, url_change: None };
+                }
+                WebSurfaceEnsureOutcome::default()
             }
-            Ok(result) if result.started_loading => {
-                self.surface_mut(tab.id()).state = Some(WebSurfaceState::Loading {
-                    requested_url: result.requested_url,
-                    previous_frame,
-                });
-                result.url_change
-            }
-            Ok(result) => result.url_change,
             Err(message) => {
+                self.surface_mut(tab.id()).mark_ensured(ensure_key);
                 self.surface_mut(tab.id()).state = Some(WebSurfaceState::Failed { message });
-                None
+                WebSurfaceEnsureOutcome { changed: true, url_change: None }
             }
         }
     }
@@ -81,6 +91,23 @@ impl WebSurfaceStore {
         for frame in frames {
             match frame {
                 WebSurfaceRuntimeFrame::Ready { tab_id, frame, url_change } => {
+                    match self.initial_display_gate_message(&tab_id, &frame, false) {
+                        Ok(()) => {}
+                        Err(message) => {
+                            self.surface_mut(&tab_id).state =
+                                Some(WebSurfaceState::Failed { message });
+                            result.changed = true;
+                            continue;
+                        }
+                    }
+                    if self.should_hold_initial_frame(&tab_id, &frame, false) {
+                        self.surface_mut(&tab_id).state = Some(WebSurfaceState::Loading {
+                            requested_url: frame.requested_url.clone(),
+                            previous_frame: None,
+                        });
+                        result.changed = true;
+                        continue;
+                    }
                     self.surface_mut(&tab_id).state = Some(WebSurfaceState::Ready(*frame));
                     result.changed = true;
                     if let Some(url_change) = url_change {
@@ -148,6 +175,7 @@ impl WebSurfaceStore {
             None => delta,
         });
         surface.pending_scroll_point = Some(point);
+        surface.mark_pending_input_started();
         // Drop any buffered click — its viewport coordinates were
         // captured against the pre-scroll page, so applying it after
         // the scroll would land on the wrong DOM element. Keep
@@ -172,21 +200,13 @@ impl WebSurfaceStore {
 
         let Some(current_size) = surface.viewport_size else {
             surface.viewport_size = Some(size);
-            surface.pending_viewport_size = None;
             return WebSurfaceInputOutcome::Applied;
         };
 
         if current_size == size {
-            surface.pending_viewport_size = None;
             return WebSurfaceInputOutcome::NoChange;
         }
 
-        if surface.pending_viewport_size != Some(size) {
-            surface.pending_viewport_size = Some(size);
-            return WebSurfaceInputOutcome::Buffered;
-        }
-
-        surface.pending_viewport_size = None;
         surface.viewport_size = Some(size);
         WebSurfaceInputOutcome::Applied
     }
@@ -246,6 +266,7 @@ impl WebSurfaceStore {
         let surface = self.surface_mut(tab_id);
         surface.typed_text = None;
         surface.click_point = Some(state);
+        surface.mark_pending_input_started();
         WebSurfaceInputOutcome::Applied
     }
 
@@ -288,6 +309,7 @@ impl WebSurfaceStore {
         }
 
         entry.text.push_str(text);
+        surface.mark_pending_input_started();
         WebSurfaceInputOutcome::Applied
     }
 
@@ -313,8 +335,10 @@ impl WebSurfaceStore {
             .filter(|state| state.requested_url == requested_url)
             .map(|state| state.text);
         let hover_point = surface.hover_point.take();
+        let enqueued_at = surface.pending_input_started_at.take();
 
         WebSurfacePendingInput {
+            enqueued_at,
             scroll_offset,
             scroll_delta,
             scroll_point,
@@ -346,6 +370,40 @@ impl WebSurfaceStore {
         }
     }
 
+    fn should_hold_initial_frame(
+        &self,
+        tab_id: &TabId,
+        frame: &WebSurfaceFrame,
+        has_previous_frame: bool,
+    ) -> bool {
+        !has_previous_frame
+            && self
+                .previous_ready_frame(tab_id, frame.requested_url.as_str(), frame.zoom_percent())
+                .is_none()
+            && matches!(frame.has_visible_content_for_initial_display(), Ok(false))
+    }
+
+    fn initial_display_gate_message(
+        &self,
+        tab_id: &TabId,
+        frame: &WebSurfaceFrame,
+        has_previous_frame: bool,
+    ) -> Result<(), String> {
+        if has_previous_frame
+            || self
+                .previous_ready_frame(tab_id, frame.requested_url.as_str(), frame.zoom_percent())
+                .is_some()
+        {
+            return Ok(());
+        }
+        frame.has_visible_content_for_initial_display().map(|_| ()).map_err(|error| {
+            format!(
+                "Servo hardware surface initial content check failed for {}: {error}",
+                frame.requested_url
+            )
+        })
+    }
+
     fn surface_mut(&mut self, tab_id: &TabId) -> &mut PerTabSurface {
         self.surfaces.entry(tab_id.clone()).or_insert_with(PerTabSurface::new)
     }
@@ -362,10 +420,21 @@ impl WebSurfaceStore {
     pub(super) fn surface_for_test(&self, tab_id: &TabId) -> Option<&PerTabSurface> {
         self.surfaces.get(tab_id)
     }
+
+    #[cfg(test)]
+    pub(super) fn flush_runtime_for_test(&self) {
+        self.runtime.flush_for_test();
+    }
 }
 
 pub(super) fn is_external_web_url(url: &str) -> bool {
     url.starts_with("https://") || url.starts_with("http://")
+}
+
+#[derive(Default)]
+pub(super) struct WebSurfaceEnsureOutcome {
+    pub(super) changed: bool,
+    pub(super) url_change: Option<WebSurfaceUrlChange>,
 }
 
 #[derive(Default)]

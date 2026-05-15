@@ -1,14 +1,14 @@
 use ely_domain::{BrowserTab, TabId};
 use gpui::{
-    AnyElement, App, Entity, ImageSource, InteractiveElement, IntoElement, MouseButton, ObjectFit,
-    ParentElement, Styled, StyledImage, Window, canvas, div, img, px, rgb, surface,
+    AnyElement, App, Corners, Entity, ImageSource, InteractiveElement, IntoElement, MouseButton,
+    ObjectFit, ParentElement, Styled, StyledImage, Window, canvas, div, img, px, rgb, surface,
 };
 
 use super::{
     ElyShell, web_surface_frame::WebSurfaceFrame,
     web_surface_geometry::servo_scroll_delta_from_wheel_delta,
 };
-use ely_design_system::colors;
+use ely_design_system::{colors, spacing};
 
 pub(super) fn render_ready_web_surface(
     frame: &WebSurfaceFrame,
@@ -20,7 +20,10 @@ pub(super) fn render_ready_web_surface(
         return render_web_surface(
             tab,
             state_entity,
-            surface(pixel_buffer.clone()).size_full().object_fit(ObjectFit::Fill),
+            surface(pixel_buffer.clone())
+                .size_full()
+                .corner_radii(web_surface_corner_radii())
+                .object_fit(ObjectFit::Fill),
         );
     }
 
@@ -51,6 +54,15 @@ pub(super) fn render_failed_web_surface(
     state_entity: Entity<ElyShell>,
 ) -> AnyElement {
     render_web_surface(tab, state_entity, error_page(message))
+}
+
+fn web_surface_corner_radii() -> Corners<gpui::Pixels> {
+    Corners {
+        top_left: px(0.0),
+        top_right: px(0.0),
+        bottom_right: px(spacing::RADIUS_CARD),
+        bottom_left: px(spacing::RADIUS_CARD),
+    }
 }
 
 fn error_page(message: &str) -> impl IntoElement {

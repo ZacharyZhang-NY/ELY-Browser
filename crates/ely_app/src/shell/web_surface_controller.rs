@@ -22,16 +22,8 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let state_entity = cx.entity().clone();
-        let Some(profile_data_mode) = profile_data_mode_for(tab, snapshot) else {
+        if profile_data_mode_for(tab, snapshot).is_none() {
             return render_failed_web_surface(tab, "Profile context is unavailable.", state_entity);
-        };
-
-        let permissions = web_surface_site_permissions_for_tab(tab, snapshot);
-        if let Some(url_change) =
-            self.web_surfaces.ensure_surface(tab, profile_data_mode, &permissions)
-            && self.apply_web_surface_url_change(url_change)
-        {
-            cx.notify();
         }
 
         match self.web_surfaces.state(tab.id()) {
@@ -51,15 +43,20 @@ impl ElyShell {
     }
 
     pub(super) fn tick_external_web_surfaces(&mut self) -> bool {
-        let (visible_tab_ids, open_tab_ids) = match &self.state {
-            super::ShellState::Ready(core) => {
-                (core.visible_content_tab_ids().unwrap_or_else(|_| Vec::new()), core.open_tab_ids())
-            }
-            super::ShellState::StartupError(_) => (Vec::new(), Vec::new()),
+        let (visible_tab_ids, open_tab_ids, snapshot) = match &self.state {
+            super::ShellState::Ready(core) => (
+                core.visible_content_tab_ids().unwrap_or_else(|_| Vec::new()),
+                core.open_tab_ids(),
+                core.snapshot().ok(),
+            ),
+            super::ShellState::StartupError(_) => (Vec::new(), Vec::new(), None),
         };
         self.web_surfaces.retain_tabs(&open_tab_ids);
+        let mut url_changed = snapshot
+            .as_ref()
+            .map(|snapshot| self.ensure_visible_web_surfaces(snapshot, &visible_tab_ids))
+            .unwrap_or(false);
         let result = self.web_surfaces.tick(&visible_tab_ids);
-        let mut url_changed = false;
         for url_change in result.url_changes {
             url_changed |= self.apply_web_surface_url_change(url_change);
         }
@@ -71,13 +68,9 @@ impl ElyShell {
         tab_id: TabId,
         bounds: Bounds<Pixels>,
         scale_factor: f32,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) {
-        if self.web_surfaces.record_viewport_size(&tab_id, bounds, scale_factor)
-            == WebSurfaceInputOutcome::Applied
-        {
-            cx.notify();
-        }
+        let _ = self.web_surfaces.record_viewport_size(&tab_id, bounds, scale_factor);
     }
 
     pub(super) fn scroll_external_web_viewport(
@@ -87,18 +80,15 @@ impl ElyShell {
         delta: Point<Pixels>,
         position: Point<Pixels>,
         scale_factor: f32,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) {
-        if self.web_surfaces.record_scroll_delta(
+        let _ = self.web_surfaces.record_scroll_delta(
             &tab_id,
             requested_url.as_str(),
             delta,
             position,
             scale_factor,
-        ) == WebSurfaceInputOutcome::Applied
-        {
-            cx.notify();
-        }
+        );
     }
 
     pub(super) fn hover_external_web_viewport(
@@ -106,13 +96,9 @@ impl ElyShell {
         tab_id: TabId,
         position: Point<Pixels>,
         scale_factor: f32,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) {
-        if self.web_surfaces.record_hover_point(&tab_id, position, scale_factor)
-            == WebSurfaceInputOutcome::Applied
-        {
-            cx.notify();
-        }
+        let _ = self.web_surfaces.record_hover_point(&tab_id, position, scale_factor);
     }
 
     pub(super) fn click_external_web_viewport(
@@ -121,19 +107,16 @@ impl ElyShell {
         requested_url: String,
         position: Point<Pixels>,
         window: &mut gpui::Window,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) {
         self.focus_handle.focus(window);
         let scale_factor = window.scale_factor();
-        if self.web_surfaces.record_click_point(
+        let _ = self.web_surfaces.record_click_point(
             &tab_id,
             requested_url.as_str(),
             position,
             scale_factor,
-        ) == WebSurfaceInputOutcome::Applied
-        {
-            cx.notify();
-        }
+        );
     }
 
     /// Hand focus to the shell's root focus handle so subsequent
@@ -149,12 +132,11 @@ impl ElyShell {
         tab_id: TabId,
         requested_url: String,
         text: &str,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) -> bool {
         if self.web_surfaces.record_typed_text(&tab_id, requested_url.as_str(), text)
             == WebSurfaceInputOutcome::Applied
         {
-            cx.notify();
             return true;
         }
 
@@ -163,6 +145,28 @@ impl ElyShell {
 }
 
 impl ElyShell {
+    fn ensure_visible_web_surfaces(
+        &mut self,
+        snapshot: &BrowserSnapshot,
+        visible_tab_ids: &[TabId],
+    ) -> bool {
+        let mut url_changed = false;
+        let mut changed = false;
+        let visible_tabs = visible_external_web_tabs(&snapshot.tabs, visible_tab_ids);
+        for tab in visible_tabs {
+            let Some(profile_data_mode) = profile_data_mode_for(tab, snapshot) else {
+                continue;
+            };
+            let permissions = web_surface_site_permissions_for_tab(tab, snapshot);
+            let outcome = self.web_surfaces.ensure_surface(tab, profile_data_mode, &permissions);
+            changed |= outcome.changed;
+            if let Some(url_change) = outcome.url_change {
+                url_changed |= self.apply_web_surface_url_change(url_change);
+            }
+        }
+        changed || url_changed
+    }
+
     fn apply_web_surface_url_change(&mut self, change: WebSurfaceUrlChange) -> bool {
         let Ok(url) = UrlText::parse(change.loaded_url) else {
             return false;
@@ -182,6 +186,17 @@ impl ElyShell {
     }
 }
 
+fn visible_external_web_tabs<'a>(
+    tabs: &'a [BrowserTab],
+    visible_tab_ids: &[TabId],
+) -> Vec<&'a BrowserTab> {
+    visible_tab_ids
+        .iter()
+        .filter_map(|tab_id| tabs.iter().find(|tab| tab.id() == tab_id))
+        .filter(|tab| super::web_surface::is_external_web_url(tab.url().as_str()))
+        .collect()
+}
+
 fn profile_data_mode_for(tab: &BrowserTab, snapshot: &BrowserSnapshot) -> Option<ProfileDataMode> {
     snapshot.profiles.iter().find(|profile| profile.id() == tab.profile_id()).map(|profile| {
         match profile.kind() {
@@ -189,4 +204,37 @@ fn profile_data_mode_for(tab: &BrowserTab, snapshot: &BrowserSnapshot) -> Option
             ProfileKind::Private => ProfileDataMode::Transient,
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use ely_domain::{BrowserTab, ProfileId, SpaceId, TabId, UrlText};
+
+    use super::visible_external_web_tabs;
+
+    #[test]
+    fn visible_external_web_tabs_follow_visible_order() -> Result<(), String> {
+        let first_id = TabId::new();
+        let second_id = TabId::new();
+        let internal_id = TabId::new();
+        let tabs = vec![
+            web_tab(first_id.clone(), "https://example.com/first")?,
+            web_tab(internal_id.clone(), "ely://settings")?,
+            web_tab(second_id.clone(), "http://example.com/second")?,
+        ];
+
+        let visible =
+            visible_external_web_tabs(&tabs, &[internal_id, second_id.clone(), first_id.clone()])
+                .into_iter()
+                .map(|tab| tab.id().clone())
+                .collect::<Vec<_>>();
+
+        assert_eq!(visible, vec![second_id, first_id]);
+        Ok(())
+    }
+
+    fn web_tab(tab_id: TabId, url: &str) -> Result<BrowserTab, String> {
+        let url = UrlText::parse(url).map_err(|error| error.to_string())?;
+        Ok(BrowserTab::new(tab_id, SpaceId::new(), ProfileId::new(), "Web", url))
+    }
 }

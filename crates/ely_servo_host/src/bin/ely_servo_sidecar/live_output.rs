@@ -4,9 +4,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ely_servo_host::SoftwareServoHost;
 #[cfg(any(test, all(feature = "hardware-render", target_os = "macos")))]
-use ely_servo_host::{IOSurfaceHandle, IOSurfaceIdentity};
+use ely_servo_host::IOSurfaceHandle;
+use ely_servo_host::{IOSurfaceIdentity, SoftwareServoHost};
 
 use super::live_protocol::{LiveOutcome, LiveSidecarError, PartialFrameTimings};
 use super::perf::{FramePerfAggregator, FramePerfSummary, FrameStageTimings, elapsed_ns};
@@ -35,12 +35,18 @@ pub(super) fn populate_surface_fields(
     if outcome.response.frame.is_none() {
         return;
     }
+    if outcome.frame.is_some() {
+        return;
+    }
     #[cfg(all(feature = "hardware-render", target_os = "macos"))]
     {
         let Ok(Some(identity)) = host.peek_iosurface_identity(webview_id) else {
             return;
         };
-        align_report_to_surface_identity(outcome, identity);
+        if let Err(message) = require_report_matches_surface_identity(outcome, identity) {
+            *outcome = LiveOutcome::error(message);
+            return;
+        }
         let handle = if surface_has_been_published(published_surface_ids, tab_id, identity) {
             None
         } else {
@@ -105,11 +111,21 @@ fn handle_matches_identity(handle: IOSurfaceHandle, identity: IOSurfaceIdentity)
 }
 
 #[cfg(any(test, all(feature = "hardware-render", target_os = "macos")))]
-fn align_report_to_surface_identity(outcome: &mut LiveOutcome, identity: IOSurfaceIdentity) {
-    if let Some(frame) = outcome.response.frame.as_mut() {
-        frame.width = identity.width;
-        frame.height = identity.height;
+fn require_report_matches_surface_identity(
+    outcome: &LiveOutcome,
+    identity: IOSurfaceIdentity,
+) -> Result<(), String> {
+    let Some(frame) = outcome.response.frame.as_ref() else {
+        return Ok(());
+    };
+    if frame.width == identity.width && frame.height == identity.height {
+        return Ok(());
     }
+
+    Err(format!(
+        "servo hardware surface size {}x{} did not match frame report {}x{}",
+        identity.width, identity.height, frame.width, frame.height,
+    ))
 }
 
 /// Serialise the response then stream the optional raw RGBA frame on
@@ -181,7 +197,7 @@ mod tests {
         live_protocol::{LiveFrameReport, LiveOutcome, PartialFrameTimings},
         perf::FramePerfAggregator,
     };
-    use super::{align_report_to_surface_identity, surface_publication_for, write_outcome};
+    use super::{require_report_matches_surface_identity, surface_publication_for, write_outcome};
 
     #[test]
     fn unpublished_surface_without_handle_leaves_selector_empty() {
@@ -235,17 +251,22 @@ mod tests {
     }
 
     #[test]
-    fn hardware_report_uses_surface_identity_dimensions() -> Result<(), Box<dyn Error>> {
-        let mut outcome = LiveOutcome::from_report(
+    fn hardware_report_mismatch_is_reported() -> Result<(), Box<dyn Error>> {
+        let outcome = LiveOutcome::from_report(
             report_with_size(2180, 1586),
             PartialFrameTimings { paint_ns: 1_000, encode_ns: 2_000 },
         );
 
-        align_report_to_surface_identity(&mut outcome, identity(7, 2168, 1566));
+        let error = match require_report_matches_surface_identity(&outcome, identity(7, 2168, 1566))
+        {
+            Ok(()) => return Err("mismatched IOSurface dimensions must be reported".into()),
+            Err(error) => error,
+        };
 
-        let report = outcome.response.frame.ok_or("report must remain present")?;
-        assert_eq!(report.width, 2168);
-        assert_eq!(report.height, 1566);
+        assert_eq!(
+            error,
+            "servo hardware surface size 2168x1566 did not match frame report 2180x1586",
+        );
         Ok(())
     }
 
@@ -314,6 +335,9 @@ mod tests {
             state: "complete",
             width,
             height,
+            device_pixel_ratio: 1.0,
+            css_viewport_width: width,
+            css_viewport_height: height,
             rgba_byte_count: 0,
             non_white_pixel_count: 0,
             content_pixel_count: 0,

@@ -82,6 +82,12 @@ struct LiveFrameReport {
     width: u32,
     #[serde(default)]
     height: u32,
+    #[serde(default)]
+    device_pixel_ratio: f32,
+    #[serde(default)]
+    css_viewport_width: u32,
+    #[serde(default)]
+    css_viewport_height: u32,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -127,16 +133,16 @@ fn run_live_bench() -> Result<(), Box<dyn Error>> {
     let stdout = child.stdout.take().ok_or("sidecar stdout missing")?;
     let mut reader = BufReader::new(stdout);
 
-    let outcome =
-        match drive_bench(&mut stdin, &mut reader, &kind, &tab, &profile_id, &url, frames) {
-            Ok(outcome) => outcome,
-            Err(error) => {
-                drop(stdin);
-                let _ = child.kill();
-                cleanup(&profile_data_dir)?;
-                return Err(error);
-            }
-        };
+    let outcome = match drive_bench(&mut stdin, &mut reader, &kind, &tab, &profile_id, &url, frames)
+    {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            drop(stdin);
+            let _ = child.kill();
+            cleanup(&profile_data_dir)?;
+            return Err(error);
+        }
+    };
 
     drop(stdin);
     let _ = child.wait();
@@ -146,8 +152,8 @@ fn run_live_bench() -> Result<(), Box<dyn Error>> {
     print_surface_handles(&kind, &outcome.surface_handles);
     print_current_surface_summary(&kind, &outcome.current_surface_ids);
     eprintln!(
-        "\n=== ELY_PERF_KIND={kind} rgba_bytes_received={} ===",
-        outcome.rgba_bytes_received
+        "\n=== ELY_PERF_KIND={kind} bootstrap_rgba_bytes={} steady_state_rgba_bytes={} ===",
+        outcome.bootstrap_rgba_bytes, outcome.steady_state_rgba_bytes,
     );
     assert!(
         !outcome.summaries.is_empty(),
@@ -174,17 +180,10 @@ fn run_live_bench() -> Result<(), Box<dyn Error>> {
             !outcome.current_surface_ids.is_empty(),
             "hardware path must report current_surface_id on every frame"
         );
-        // T10.6: once the receiver samples the IOSurface directly,
-        // the sidecar drops the RGBA payload. The initial navigate
-        // response may still carry bytes (no current_surface_id yet
-        // because surfman hasn't bound the painted surface), but the
-        // steady-state per-frame cost must be zero.
-        assert!(
-            outcome.rgba_bytes_received < (frames as u64) * 1_024,
-            "hardware path leaked {} RGBA bytes across {} frames \
-             (expected ~0 — the wire-drop optimisation regressed)",
-            outcome.rgba_bytes_received,
-            frames + 1,
+        assert_eq!(
+            outcome.steady_state_rgba_bytes, 0,
+            "hardware path leaked {} RGBA bytes while scrolling",
+            outcome.steady_state_rgba_bytes,
         );
     } else {
         assert!(
@@ -198,10 +197,11 @@ fn run_live_bench() -> Result<(), Box<dyn Error>> {
         // Software path keeps streaming pixels — every frame must
         // carry a full RGBA payload.
         let viewport_bytes = (1024u64) * (768u64) * 4;
+        let total_rgba_bytes = outcome.bootstrap_rgba_bytes + outcome.steady_state_rgba_bytes;
         assert!(
-            outcome.rgba_bytes_received >= viewport_bytes,
+            total_rgba_bytes >= viewport_bytes,
             "software path delivered only {} bytes — expected at least one full frame ({})",
-            outcome.rgba_bytes_received,
+            total_rgba_bytes,
             viewport_bytes,
         );
     }
@@ -212,7 +212,8 @@ struct BenchOutcome {
     summaries: Vec<FramePerfSummary>,
     surface_handles: Vec<BenchSurfaceHandle>,
     current_surface_ids: Vec<u64>,
-    rgba_bytes_received: u64,
+    bootstrap_rgba_bytes: u64,
+    steady_state_rgba_bytes: u64,
 }
 
 fn spawn_sidecar(kind: &str, profile_data_dir: &PathBuf) -> Result<Child, Box<dyn Error>> {
@@ -241,23 +242,22 @@ fn drive_bench(
     let mut summaries = Vec::new();
     let mut surface_handles = Vec::new();
     let mut current_surface_ids = Vec::new();
-    let mut rgba_bytes_received: u64 = 0;
+    let mut bootstrap_rgba_bytes: u64 = 0;
+    let mut steady_state_rgba_bytes: u64 = 0;
 
     let navigate = build_ensure(tab, profile_id, url, 0, 0, false);
     write_request(stdin, &navigate)?;
     let response = read_response(reader, RESPONSE_TIMEOUT)?;
+    assert_frame_viewport_report(&response);
     record_summary(&response, kind, &mut summaries);
     record_surface_handle(&response, kind, &mut surface_handles);
     record_current_surface_id(&response, &mut current_surface_ids);
-    rgba_bytes_received += response.frame.as_ref().map_or(0, |f| f.rgba_byte_count as u64);
+    record_rgba_bytes(&response, &mut bootstrap_rgba_bytes, &mut steady_state_rgba_bytes);
 
     let mut accumulated_scroll = 0;
     for frame_index in 0..frames {
-        let scroll_delta_y = if frame_index % 80 == 79 {
-            -SCROLL_STEP_PX * 60
-        } else {
-            SCROLL_STEP_PX
-        };
+        let scroll_delta_y =
+            if frame_index % 80 == 79 { -SCROLL_STEP_PX * 60 } else { SCROLL_STEP_PX };
         accumulated_scroll += scroll_delta_y;
         let request = build_ensure(tab, profile_id, url, 0, scroll_delta_y, true);
         write_request(stdin, &request)?;
@@ -265,14 +265,56 @@ fn drive_bench(
         if let Some(error) = response.error.as_ref() {
             return Err(format!("sidecar error at frame {frame_index}: {error}").into());
         }
+        assert_frame_viewport_report(&response);
         record_summary(&response, kind, &mut summaries);
         record_surface_handle(&response, kind, &mut surface_handles);
         record_current_surface_id(&response, &mut current_surface_ids);
-        rgba_bytes_received += response.frame.as_ref().map_or(0, |f| f.rgba_byte_count as u64);
+        record_rgba_bytes(&response, &mut bootstrap_rgba_bytes, &mut steady_state_rgba_bytes);
     }
     let _ = accumulated_scroll;
 
-    Ok(BenchOutcome { summaries, surface_handles, current_surface_ids, rgba_bytes_received })
+    Ok(BenchOutcome {
+        summaries,
+        surface_handles,
+        current_surface_ids,
+        bootstrap_rgba_bytes,
+        steady_state_rgba_bytes,
+    })
+}
+
+fn record_rgba_bytes(
+    response: &LiveResponse,
+    bootstrap_rgba_bytes: &mut u64,
+    steady_state_rgba_bytes: &mut u64,
+) {
+    let rgba_byte_count = response.frame.as_ref().map_or(0, |frame| frame.rgba_byte_count as u64);
+    if response.current_surface_id.is_some() {
+        *steady_state_rgba_bytes += rgba_byte_count;
+    } else {
+        *bootstrap_rgba_bytes += rgba_byte_count;
+    }
+}
+
+fn assert_frame_viewport_report(response: &LiveResponse) {
+    let Some(frame) = response.frame.as_ref() else {
+        return;
+    };
+    let dpr = if frame.device_pixel_ratio.is_finite() && frame.device_pixel_ratio > 0.0 {
+        frame.device_pixel_ratio
+    } else {
+        1.0
+    };
+    let expected_width = ((frame.width as f32) / dpr).round().max(1.0) as u32;
+    let expected_height = ((frame.height as f32) / dpr).round().max(1.0) as u32;
+
+    assert_eq!(
+        frame.css_viewport_width, expected_width,
+        "CSS viewport width must match physical width divided by DPR",
+    );
+    assert_eq!(
+        frame.css_viewport_height, expected_height,
+        "CSS viewport height must match physical height divided by DPR",
+    );
 }
 
 fn record_surface_handle(
@@ -314,9 +356,7 @@ fn print_current_surface_summary(kind: &str, current_surface_ids: &[u64]) {
     for id in current_surface_ids {
         *counts.entry(*id).or_default() += 1;
     }
-    eprintln!(
-        "\n=== ELY_PERF_KIND={kind} current_surface_id histogram (per-frame selector) ===",
-    );
+    eprintln!("\n=== ELY_PERF_KIND={kind} current_surface_id histogram (per-frame selector) ===",);
     for (surface_id, count) in counts.iter() {
         eprintln!("surface_id=0x{:x} frames={}", surface_id, count);
     }
@@ -332,11 +372,7 @@ fn build_ensure(
 ) -> String {
     let hover_x = if include_hover { Some(256u32) } else { None };
     let hover_y = if include_hover { Some(256u32) } else { None };
-    let scroll_point = if scroll_dx != 0 || scroll_dy != 0 {
-        Some((256u32, 256u32))
-    } else {
-        None
-    };
+    let scroll_point = if scroll_dx != 0 || scroll_dy != 0 { Some((256u32, 256u32)) } else { None };
     let hover_x_json = match hover_x {
         Some(value) => format!("{value}"),
         None => "null".to_string(),
@@ -417,17 +453,22 @@ fn read_response_with_bytes(
 
 fn record_summary(response: &LiveResponse, kind: &str, summaries: &mut Vec<FramePerfSummary>) {
     if let Some(perf) = response.perf.as_ref() {
-        assert_eq!(
-            perf.context, kind,
-            "sidecar context label must match requested kind"
-        );
+        assert_eq!(perf.context, kind, "sidecar context label must match requested kind");
         eprintln!(
             "[perf {kind}] window={} paint p50/p95/p99={}/{}/{} encode {}/{}/{} write {}/{}/{} total {}/{}/{} (µs)",
             perf.window,
-            perf.paint_p50_us, perf.paint_p95_us, perf.paint_p99_us,
-            perf.encode_p50_us, perf.encode_p95_us, perf.encode_p99_us,
-            perf.write_p50_us, perf.write_p95_us, perf.write_p99_us,
-            perf.total_p50_us, perf.total_p95_us, perf.total_p99_us,
+            perf.paint_p50_us,
+            perf.paint_p95_us,
+            perf.paint_p99_us,
+            perf.encode_p50_us,
+            perf.encode_p95_us,
+            perf.encode_p99_us,
+            perf.write_p50_us,
+            perf.write_p95_us,
+            perf.write_p99_us,
+            perf.total_p50_us,
+            perf.total_p95_us,
+            perf.total_p99_us,
         );
         summaries.push(perf.clone());
     }
@@ -438,19 +479,35 @@ fn print_summaries(kind: &str, frames: u32, summaries: &[FramePerfSummary]) {
     eprintln!(
         "{:<8} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
         "win",
-        "paint50", "paint95", "paint99",
-        "enc50", "enc95", "enc99",
-        "wr50", "wr95", "wr99",
-        "tot50", "tot95", "tot99",
+        "paint50",
+        "paint95",
+        "paint99",
+        "enc50",
+        "enc95",
+        "enc99",
+        "wr50",
+        "wr95",
+        "wr99",
+        "tot50",
+        "tot95",
+        "tot99",
     );
     for summary in summaries {
         eprintln!(
             "{:<8} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
             summary.window,
-            summary.paint_p50_us, summary.paint_p95_us, summary.paint_p99_us,
-            summary.encode_p50_us, summary.encode_p95_us, summary.encode_p99_us,
-            summary.write_p50_us, summary.write_p95_us, summary.write_p99_us,
-            summary.total_p50_us, summary.total_p95_us, summary.total_p99_us,
+            summary.paint_p50_us,
+            summary.paint_p95_us,
+            summary.paint_p99_us,
+            summary.encode_p50_us,
+            summary.encode_p95_us,
+            summary.encode_p99_us,
+            summary.write_p50_us,
+            summary.write_p95_us,
+            summary.write_p99_us,
+            summary.total_p50_us,
+            summary.total_p95_us,
+            summary.total_p99_us,
         );
     }
 }
@@ -586,11 +643,7 @@ fn drive_solid_color_render(
     let report = report.ok_or("never received a frame with bytes")?;
     let width = report.width as usize;
     let height = report.height as usize;
-    assert_eq!(
-        bytes.len(),
-        width * height * 4,
-        "rgba byte count must match width × height × 4",
-    );
+    assert_eq!(bytes.len(), width * height * 4, "rgba byte count must match width × height × 4",);
 
     // Sample 9 evenly-spaced points in the inner quartile of the
     // viewport. Solid backgrounds should pass every sample; if Servo

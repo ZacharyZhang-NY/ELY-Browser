@@ -1,8 +1,8 @@
 use super::metal_atlas::MetalAtlas;
 use crate::{
-    AtlasTextureId, Background, Bounds, ContentMask, DevicePixels, MonochromeSprite, PaintSurface,
-    Path, Point, PolychromeSprite, PrimitiveBatch, Quad, ScaledPixels, Scene, Shadow, Size,
-    Surface, Underline, point, size,
+    AtlasTextureId, Background, Bounds, ContentMask, Corners, DevicePixels, MonochromeSprite,
+    PaintSurface, Path, Point, PolychromeSprite, PrimitiveBatch, Quad, ScaledPixels, Scene, Shadow,
+    Size, Surface, Underline, point, size,
 };
 use anyhow::Result;
 use block::ConcreteBlock;
@@ -1112,6 +1112,11 @@ impl MetalRenderer {
                 Some(&instance_buffer.metal_buffer),
                 *instance_offset as u64,
             );
+            command_encoder.set_fragment_buffer(
+                SurfaceInputIndex::Surfaces as u64,
+                Some(&instance_buffer.metal_buffer),
+                *instance_offset as u64,
+            );
             command_encoder.set_vertex_bytes(
                 SurfaceInputIndex::TextureSize as u64,
                 mem::size_of_val(&texture_size) as u64,
@@ -1180,6 +1185,7 @@ impl MetalRenderer {
                     SurfaceBounds {
                         bounds: surface.bounds,
                         content_mask: surface.content_mask.clone(),
+                        corner_radii: surface.corner_radii,
                     },
                 );
             }
@@ -1387,4 +1393,5 @@ pub struct PathSprite {
 pub struct SurfaceBounds {
     pub bounds: Bounds<ScaledPixels>,
     pub content_mask: ContentMask<ScaledPixels>,
+    pub corner_radii: Corners<ScaledPixels>,
 }

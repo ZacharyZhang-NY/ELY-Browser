@@ -835,12 +835,14 @@ fragment float4 path_sprite_fragment(
 }
 
 struct SurfaceVertexOutput {
+  uint surface_id [[flat]];
   float4 position [[position]];
   float2 texture_position;
   float clip_distance [[clip_distance]][4];
 };
 
 struct SurfaceFragmentInput {
+  uint surface_id [[flat]];
   float4 position [[position]];
   float2 texture_position;
 };
@@ -863,12 +865,28 @@ vertex SurfaceVertexOutput surface_vertex(
   // to the current vertex of the unit triangle.
   float2 texture_position = unit_vertex;
   return SurfaceVertexOutput{
+      surface_id,
       device_position,
       texture_position,
       {clip_distance.x, clip_distance.y, clip_distance.z, clip_distance.w}};
 }
 
+float surface_corner_alpha(float2 position, SurfaceBounds surface) {
+  bool unrounded = surface.corner_radii.top_left == 0.0 &&
+    surface.corner_radii.bottom_left == 0.0 &&
+    surface.corner_radii.top_right == 0.0 &&
+    surface.corner_radii.bottom_right == 0.0;
+  if (unrounded) {
+    return 1.0;
+  }
+
+  float distance = quad_sdf(position, surface.bounds, surface.corner_radii);
+  return 1.0 - smoothstep(-0.5, 0.5, distance);
+}
+
 fragment float4 surface_fragment(SurfaceFragmentInput input [[stage_in]],
+                                 constant SurfaceBounds *surfaces
+                                 [[buffer(SurfaceInputIndex_Surfaces)]],
                                  texture2d<float> y_texture
                                  [[texture(SurfaceInputIndex_YTexture)]],
                                  texture2d<float> cb_cr_texture
@@ -883,10 +901,19 @@ fragment float4 surface_fragment(SurfaceFragmentInput input [[stage_in]],
       y_texture.sample(texture_sampler, input.texture_position).r,
       cb_cr_texture.sample(texture_sampler, input.texture_position).rg, 1.0);
 
-  return ycbcrToRGBTransform * ycbcr;
+  SurfaceBounds surface = surfaces[input.surface_id];
+  float4 color = ycbcrToRGBTransform * ycbcr;
+  float alpha = surface_corner_alpha(input.position.xy, surface);
+  if (alpha <= 0.0) {
+    discard_fragment();
+  }
+  color.a *= alpha;
+  return color;
 }
 
 fragment float4 surface_bgra_fragment(SurfaceFragmentInput input [[stage_in]],
+                                      constant SurfaceBounds *surfaces
+                                      [[buffer(SurfaceInputIndex_Surfaces)]],
                                       texture2d<float> bgra_texture
                                       [[texture(SurfaceInputIndex_YTexture)]]) {
   constexpr sampler texture_sampler(mag_filter::linear, min_filter::linear);
@@ -894,7 +921,14 @@ fragment float4 surface_bgra_fragment(SurfaceFragmentInput input [[stage_in]],
   // from GPUI's surface quad, matching the software readback path.
   float2 texture_position =
       float2(input.texture_position.x, 1.0 - input.texture_position.y);
-  return bgra_texture.sample(texture_sampler, texture_position);
+  SurfaceBounds surface = surfaces[input.surface_id];
+  float4 color = bgra_texture.sample(texture_sampler, texture_position);
+  float alpha = surface_corner_alpha(input.position.xy, surface);
+  if (alpha <= 0.0) {
+    discard_fragment();
+  }
+  color.a *= alpha;
+  return color;
 }
 
 float4 hsla_to_rgba(Hsla hsla) {
