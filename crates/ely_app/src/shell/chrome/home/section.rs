@@ -11,10 +11,6 @@ pub(crate) fn render_section_chevron_label(label: &'static str) -> AnyElement {
         .text_size(px(12.5))
         .font_weight(FontWeight(500.0))
         .child(label)
-        .child(
-            div()
-                .text_color(rgb(colors::INK_4))
-                .child(IconName::ChevronDown),
-        )
+        .child(div().text_color(rgb(colors::INK_4)).child(IconName::ChevronDown))
         .into_any_element()
 }

@@ -82,9 +82,7 @@ pub(crate) fn visible_command_rows(
             .map(|bookmark| CommandSelection::OpenUrl(bookmark.url().clone())),
     );
     rows.extend(
-        matching_actions(needle)
-            .iter()
-            .map(|action| CommandSelection::OpenRoute(action.route)),
+        matching_actions(needle).iter().map(|action| CommandSelection::OpenRoute(action.route)),
     );
     rows
 }
@@ -97,12 +95,7 @@ pub(crate) fn matching_tabs<'a>(
         return snapshot.tabs.iter().take(RESULT_LIMIT).collect();
     }
 
-    snapshot
-        .tabs
-        .iter()
-        .filter(|tab| matches_tab(tab, needle))
-        .take(RESULT_LIMIT)
-        .collect()
+    snapshot.tabs.iter().filter(|tab| matches_tab(tab, needle)).take(RESULT_LIMIT).collect()
 }
 
 fn matches_tab(tab: &BrowserTab, needle: &str) -> bool {

@@ -34,18 +34,8 @@ pub(crate) fn render_split_pane_header(
         .border_b_1()
         .border_color(rgb(colors::HAIRLINE))
         .bg(rgb(0xf6f4ef))
-        .child(
-            div()
-                .size(px(8.0))
-                .rounded_full()
-                .bg(rgb(accent)),
-        )
-        .child(
-            div()
-                .text_color(rgb(colors::INK_3))
-                .text_size(px(11.0))
-                .child(lock_or_globe),
-        )
+        .child(div().size(px(8.0)).rounded_full().bg(rgb(accent)))
+        .child(div().text_color(rgb(colors::INK_3)).text_size(px(11.0)).child(lock_or_globe))
         .child(
             div()
                 .text_size(px(11.0))
@@ -102,10 +92,7 @@ fn render_close_glyph(close_tab_id: TabId, cx: &mut Context<ElyShell>) -> AnyEle
 }
 
 pub(crate) fn pane_host_label(tab: &BrowserTab) -> String {
-    tab.url()
-        .host()
-        .map(|host| host.to_string())
-        .unwrap_or_else(|| tab.title().to_string())
+    tab.url().host().map(|host| host.to_string()).unwrap_or_else(|| tab.title().to_string())
 }
 
 pub(crate) fn pane_url_is_secure(tab: &BrowserTab) -> bool {
@@ -114,11 +101,7 @@ pub(crate) fn pane_url_is_secure(tab: &BrowserTab) -> bool {
 }
 
 pub(crate) fn split_canvas_status(tab: &BrowserTab) -> String {
-    if tab.url().as_str() == "ely://new-tab" {
-        "Ready".to_string()
-    } else {
-        tab.display_url()
-    }
+    if tab.url().as_str() == "ely://new-tab" { "Ready".to_string() } else { tab.display_url() }
 }
 
 pub(crate) fn render_compact_split_canvas(tab: &BrowserTab) -> AnyElement {

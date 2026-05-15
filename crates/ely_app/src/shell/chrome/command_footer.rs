@@ -1,7 +1,5 @@
 use ely_design_system::colors;
-use gpui::{
-    AnyElement, IntoElement, ParentElement, Styled, div, px, rgb, rgba,
-};
+use gpui::{AnyElement, IntoElement, ParentElement, Styled, div, px, rgb, rgba};
 use gpui_component::IconName;
 
 pub(crate) fn render_command_footer() -> AnyElement {
@@ -28,24 +26,14 @@ pub(crate) fn render_command_footer() -> AnyElement {
                 .flex()
                 .items_center()
                 .gap(px(6.0))
-                .child(
-                    div()
-                        .text_color(rgb(colors::ACCENT))
-                        .child(IconName::Asterisk),
-                )
+                .child(div().text_color(rgb(colors::ACCENT)).child(IconName::Asterisk))
                 .child("Powered by ELY"),
         )
         .into_any_element()
 }
 
 fn footer_chunk(keys: &'static str, label: &'static str) -> AnyElement {
-    div()
-        .flex()
-        .items_center()
-        .gap(px(4.0))
-        .child(render_kbd(keys))
-        .child(label)
-        .into_any_element()
+    div().flex().items_center().gap(px(4.0)).child(render_kbd(keys)).child(label).into_any_element()
 }
 
 pub(crate) fn render_kbd(label: &'static str) -> AnyElement {

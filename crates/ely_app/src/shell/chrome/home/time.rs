@@ -39,13 +39,8 @@ pub(crate) fn day_phase_from_hour(hour_utc: u32) -> DayPhase {
 pub(crate) fn greeting_for_now(now: SystemTime, name: &str) -> String {
     let phase = day_phase_for(now).as_str();
 
-    if name.is_empty() {
-        format!("Good {phase}")
-    } else {
-        format!("Good {phase}, {name}")
-    }
+    if name.is_empty() { format!("Good {phase}") } else { format!("Good {phase}, {name}") }
 }
-
 
 pub(crate) fn relative_time_label(now: SystemTime, then: SystemTime) -> String {
     let elapsed = match now.duration_since(then) {

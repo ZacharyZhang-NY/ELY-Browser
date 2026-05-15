@@ -1,8 +1,6 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::{
-    COLLAPSED_SIDEBAR_WIDTH_PX, DEFAULT_SIDEBAR_WIDTH_PX, HIDDEN_SIDEBAR_WIDTH_PX,
-};
+use ely_domain::{COLLAPSED_SIDEBAR_WIDTH_PX, DEFAULT_SIDEBAR_WIDTH_PX, HIDDEN_SIDEBAR_WIDTH_PX};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, div, prelude::FluentBuilder, px, rgb, rgba,
@@ -28,12 +26,7 @@ pub(crate) fn render_sidebar_layout_section(
         .flex_col()
         .gap(px(14.0))
         .pt(px(8.0))
-        .child(
-            div()
-                .text_size(px(11.0))
-                .text_color(rgb(colors::INK_4))
-                .child("SIDEBAR"),
-        )
+        .child(div().text_size(px(11.0)).text_color(rgb(colors::INK_4)).child("SIDEBAR"))
         .child(
             div()
                 .font_family(SERIF_FAMILY)
@@ -151,12 +144,7 @@ fn render_layout_card(
                         .text_color(rgb(colors::INK))
                         .child(title),
                 )
-                .child(
-                    div()
-                        .text_size(px(11.0))
-                        .text_color(rgb(colors::INK_4))
-                        .child(detail),
-                ),
+                .child(div().text_size(px(11.0)).text_color(rgb(colors::INK_4)).child(detail)),
         )
         .into_any_element()
 }

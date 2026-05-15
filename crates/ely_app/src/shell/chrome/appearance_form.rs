@@ -46,12 +46,7 @@ fn render_header() -> AnyElement {
         .flex()
         .flex_col()
         .gap(px(6.0))
-        .child(
-            div()
-                .text_size(px(11.0))
-                .text_color(rgb(colors::INK_4))
-                .child("GENERAL"),
-        )
+        .child(div().text_size(px(11.0)).text_color(rgb(colors::INK_4)).child("GENERAL"))
         .child(
             div()
                 .font_family(SERIF_FAMILY)
@@ -60,23 +55,14 @@ fn render_header() -> AnyElement {
                 .text_color(rgb(colors::INK))
                 .child("Appearance"),
         )
-        .child(
-            div()
-                .max_w(px(520.0))
-                .text_size(px(13.0))
-                .text_color(rgb(colors::INK_3))
-                .child(
-                    "Tune the atmosphere of your browser. ELY's wallpaper sets the ambient \
+        .child(div().max_w(px(520.0)).text_size(px(13.0)).text_color(rgb(colors::INK_3)).child(
+            "Tune the atmosphere of your browser. ELY's wallpaper sets the ambient \
                      palette of every surface; pick one and let it breathe.",
-                ),
-        )
+        ))
         .into_any_element()
 }
 
-fn render_wallpaper_grid(
-    snapshot: &BrowserSnapshot,
-    cx: &mut Context<ElyShell>,
-) -> AnyElement {
+fn render_wallpaper_grid(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
     let active = snapshot.appearance.wallpaper();
     div()
         .grid()
@@ -114,35 +100,21 @@ fn render_wallpaper_swatch(
             div()
                 .h(px(96.0))
                 .rounded(px(10.0))
-                .when(selected, |el| {
-                    el.border_2().border_color(rgb(colors::ACCENT))
-                })
-                .when(!selected, |el| {
-                    el.border_1().border_color(rgba(colors::STROKE))
-                })
+                .when(selected, |el| el.border_2().border_color(rgb(colors::ACCENT)))
+                .when(!selected, |el| el.border_1().border_color(rgba(colors::STROKE)))
                 .relative()
                 .overflow_hidden()
                 .bg(rgb(base))
-                .child(
-                    div()
-                        .absolute()
-                        .inset_0()
-                        .bg(linear_gradient(
-                            225.0,
-                            linear_color_stop(upper, 0.0),
-                            linear_color_stop(transparent_like(upper), 0.6),
-                        )),
-                )
-                .child(
-                    div()
-                        .absolute()
-                        .inset_0()
-                        .bg(linear_gradient(
-                            45.0,
-                            linear_color_stop(lower, 0.0),
-                            linear_color_stop(transparent_like(lower), 0.6),
-                        )),
-                ),
+                .child(div().absolute().inset_0().bg(linear_gradient(
+                    225.0,
+                    linear_color_stop(upper, 0.0),
+                    linear_color_stop(transparent_like(upper), 0.6),
+                )))
+                .child(div().absolute().inset_0().bg(linear_gradient(
+                    45.0,
+                    linear_color_stop(lower, 0.0),
+                    linear_color_stop(transparent_like(lower), 0.6),
+                ))),
         )
         .child(
             div()
@@ -158,11 +130,7 @@ fn render_wallpaper_swatch(
                         .child(label),
                 )
                 .when(selected, |el| {
-                    el.child(
-                        div()
-                            .text_color(rgb(colors::ACCENT))
-                            .child(IconName::Check),
-                    )
+                    el.child(div().text_color(rgb(colors::ACCENT)).child(IconName::Check))
                 }),
         )
         .into_any_element()
@@ -186,10 +154,7 @@ fn render_appearance_rows(
         .into_any_element()
 }
 
-fn render_translucency_row(
-    shell: &mut ElyShell,
-    pct: u8,
-) -> AnyElement {
+fn render_translucency_row(shell: &mut ElyShell, pct: u8) -> AnyElement {
     let slider_state = shell.translucency_slider.clone();
     settings_row(
         "Translucency",
@@ -216,12 +181,7 @@ fn render_translucency_presets(cx: &mut Context<ElyShell>) -> AnyElement {
         .items_center()
         .gap(px(8.0))
         .pt(px(2.0))
-        .child(
-            div()
-                .text_size(px(10.5))
-                .text_color(rgb(colors::INK_4))
-                .child("Presets"),
-        )
+        .child(div().text_size(px(10.5)).text_color(rgb(colors::INK_4)).child("Presets"))
         .child(translucency_preset("Solid", 0, cx))
         .child(translucency_preset("Default", 40, cx))
         .child(translucency_preset("Glassy", 75, cx))
@@ -254,10 +214,7 @@ fn translucency_preset(
         .into_any_element()
 }
 
-fn render_theme_mode_row(
-    active: ThemeMode,
-    cx: &mut Context<ElyShell>,
-) -> AnyElement {
+fn render_theme_mode_row(active: ThemeMode, cx: &mut Context<ElyShell>) -> AnyElement {
     settings_row(
         "Theme mode",
         "Match system appearance, or pick one to lock.",
@@ -329,9 +286,7 @@ fn swatch(color: u32, selected: bool) -> AnyElement {
         .border_1()
         .border_color(rgba(0x0000000d));
     if selected {
-        element = element
-            .border_2()
-            .border_color(rgb(colors::ACCENT));
+        element = element.border_2().border_color(rgb(colors::ACCENT));
     }
     element.into_any_element()
 }
@@ -408,12 +363,7 @@ fn settings_row(title: &'static str, detail: &'static str, control: AnyElement) 
                         .text_color(rgb(colors::INK))
                         .child(title),
                 )
-                .child(
-                    div()
-                        .text_size(px(11.5))
-                        .text_color(rgb(colors::INK_3))
-                        .child(detail),
-                ),
+                .child(div().text_size(px(11.5)).text_color(rgb(colors::INK_3)).child(detail)),
         )
         .child(control)
         .into_any_element()
@@ -430,26 +380,18 @@ fn wallpaper_label(theme: WallpaperTheme) -> &'static str {
 
 fn swatch_colors(theme: WallpaperTheme) -> (Hsla, Hsla, u32) {
     match theme {
-        WallpaperTheme::Dawn => (
-            hsla(351.0 / 360.0, 1.0, 0.91, 0.95),
-            hsla(228.0 / 360.0, 1.0, 0.86, 0.85),
-            0xefe8e1,
-        ),
-        WallpaperTheme::Violet => (
-            hsla(263.0 / 360.0, 1.0, 0.88, 0.95),
-            hsla(33.0 / 360.0, 1.0, 0.87, 0.85),
-            0xe9e2ee,
-        ),
-        WallpaperTheme::Mint => (
-            hsla(146.0 / 360.0, 0.69, 0.85, 0.95),
-            hsla(40.0 / 360.0, 1.0, 0.86, 0.85),
-            0xe6ece2,
-        ),
-        WallpaperTheme::Slate => (
-            hsla(218.0 / 360.0, 0.20, 0.85, 0.95),
-            hsla(20.0 / 360.0, 0.0, 0.10, 0.40),
-            0xd6dae3,
-        ),
+        WallpaperTheme::Dawn => {
+            (hsla(351.0 / 360.0, 1.0, 0.91, 0.95), hsla(228.0 / 360.0, 1.0, 0.86, 0.85), 0xefe8e1)
+        }
+        WallpaperTheme::Violet => {
+            (hsla(263.0 / 360.0, 1.0, 0.88, 0.95), hsla(33.0 / 360.0, 1.0, 0.87, 0.85), 0xe9e2ee)
+        }
+        WallpaperTheme::Mint => {
+            (hsla(146.0 / 360.0, 0.69, 0.85, 0.95), hsla(40.0 / 360.0, 1.0, 0.86, 0.85), 0xe6ece2)
+        }
+        WallpaperTheme::Slate => {
+            (hsla(218.0 / 360.0, 0.20, 0.85, 0.95), hsla(20.0 / 360.0, 0.0, 0.10, 0.40), 0xd6dae3)
+        }
     }
 }
 

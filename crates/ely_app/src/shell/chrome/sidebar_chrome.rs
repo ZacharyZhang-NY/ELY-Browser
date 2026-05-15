@@ -1,8 +1,8 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
 use gpui::{
-    AnyElement, BoxShadow, Context, FontWeight, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, SharedString, Styled, div, hsla, point, px, rgb, rgba,
+    AnyElement, BoxShadow, Context, FontWeight, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, SharedString, Styled, div, hsla, point, px, rgb, rgba,
 };
 use gpui_component::IconName;
 
@@ -52,19 +52,11 @@ pub(crate) const RESIZE_HANDLE_HOVER_BG: u32 = 0xffaa7733;
 pub(crate) const ROW_CLOSE_SIZE: f32 = 18.0;
 
 pub(crate) fn profile_initial(name: &str) -> String {
-    name.chars()
-        .next()
-        .unwrap_or('P')
-        .to_uppercase()
-        .to_string()
+    name.chars().next().unwrap_or('P').to_uppercase().to_string()
 }
 
 pub(crate) fn render_unread_badge(count: u32) -> impl IntoElement {
-    let label = if count > 99 {
-        "99+".to_string()
-    } else {
-        count.to_string()
-    };
+    let label = if count > 99 { "99+".to_string() } else { count.to_string() };
 
     div()
         .px(px(6.0))
@@ -85,11 +77,7 @@ pub(crate) fn section_tabs_label(count: usize) -> impl IntoElement {
         .flex()
         .items_center()
         .gap(px(6.0))
-        .child(
-            div()
-                .text_color(rgb(colors::INK_4))
-                .child(IconName::Frame),
-        )
+        .child(div().text_color(rgb(colors::INK_4)).child(IconName::Frame))
         .child(
             div()
                 .text_size(px(10.5))

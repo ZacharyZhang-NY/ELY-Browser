@@ -36,16 +36,8 @@ pub(crate) fn render_plugin_detail_view(
                 .grid()
                 .grid_cols(8)
                 .gap(px(24.0))
-                .child(
-                    div()
-                        .col_span(3)
-                        .child(render_left_column(plugin, profile_kind, cx)),
-                )
-                .child(
-                    div()
-                        .col_span(5)
-                        .child(render_right_column(plugin)),
-                ),
+                .child(div().col_span(3).child(render_left_column(plugin, profile_kind, cx)))
+                .child(div().col_span(5).child(render_right_column(plugin))),
         )
         .into_any_element()
 }
@@ -66,14 +58,7 @@ fn render_left_column(
 }
 
 fn render_cover(plugin: &InstalledPlugin) -> AnyElement {
-    let initial = plugin
-        .manifest()
-        .name()
-        .chars()
-        .next()
-        .unwrap_or('◇')
-        .to_string()
-        .to_uppercase();
+    let initial = plugin.manifest().name().chars().next().unwrap_or('◇').to_string().to_uppercase();
 
     div()
         .h(px(220.0))
@@ -140,20 +125,12 @@ where
         .hover(|style| style.opacity(0.92))
         .active(|style| style.opacity(0.78))
         .on_click(cx.listener(move |shell, _, window, cx| handler(shell, window, cx)))
-        .child(
-            div()
-                .text_color(rgb(0xffffff))
-                .child(IconName::Check),
-        )
+        .child(div().text_color(rgb(0xffffff)).child(IconName::Check))
         .child(label)
         .into_any_element()
 }
 
-fn render_secondary_button<F>(
-    icon: IconName,
-    cx: &mut Context<ElyShell>,
-    handler: F,
-) -> AnyElement
+fn render_secondary_button<F>(icon: IconName, cx: &mut Context<ElyShell>, handler: F) -> AnyElement
 where
     F: Fn(&mut ElyShell, &mut gpui::Window, &mut Context<ElyShell>) + 'static,
 {
@@ -180,12 +157,7 @@ fn render_permissions_block(manifest: &PluginManifest) -> AnyElement {
         .flex_col()
         .gap(px(8.0))
         .pt(px(4.0))
-        .child(
-            div()
-                .text_size(px(11.0))
-                .text_color(rgb(colors::INK_3))
-                .child("PERMISSIONS"),
-        )
+        .child(div().text_size(px(11.0)).text_color(rgb(colors::INK_3)).child("PERMISSIONS"))
         .child(if manifest.permissions().is_empty() {
             div()
                 .text_size(px(12.0))
@@ -226,10 +198,7 @@ fn render_permission_row(permission: &PluginPermission) -> AnyElement {
                 .child(if high_risk { "!" } else { "✓" }),
         )
         .child(
-            div()
-                .flex_1()
-                .text_color(rgb(colors::INK_2))
-                .child(permission_scope_label(permission)),
+            div().flex_1().text_color(rgb(colors::INK_2)).child(permission_scope_label(permission)),
         )
         .into_any_element()
 }
@@ -281,16 +250,11 @@ fn render_right_header(plugin: &InstalledPlugin) -> AnyElement {
                         .text_color(rgb(colors::INK))
                         .child(manifest.name().to_string()),
                 )
-                .child(
-                    div()
-                        .text_size(px(12.5))
-                        .text_color(rgb(colors::INK_3))
-                        .child(format!(
-                            "by {} · min ELY {}",
-                            manifest.author(),
-                            manifest.min_ely_build()
-                        )),
-                ),
+                .child(div().text_size(px(12.5)).text_color(rgb(colors::INK_3)).child(format!(
+                    "by {} · min ELY {}",
+                    manifest.author(),
+                    manifest.min_ely_build()
+                ))),
         )
         .child(render_status_chip(plugin))
         .into_any_element()
@@ -341,12 +305,7 @@ fn stat_card(label: &'static str, value: String) -> AnyElement {
         .flex()
         .flex_col()
         .gap(px(2.0))
-        .child(
-            div()
-                .text_size(px(10.5))
-                .text_color(rgb(colors::INK_4))
-                .child(label),
-        )
+        .child(div().text_size(px(10.5)).text_color(rgb(colors::INK_4)).child(label))
         .child(
             div()
                 .text_size(px(13.0))
@@ -436,13 +395,8 @@ fn render_contribution_row(contribution: &PluginContributionPoint) -> AnyElement
 
 fn category_label(plugin: &InstalledPlugin) -> &'static str {
     let high_risk = plugin.manifest().high_risk_permissions().next().is_some();
-    if high_risk {
-        "ELY · AUDIT NEEDED"
-    } else {
-        "ELY · SANDBOXED"
-    }
+    if high_risk { "ELY · AUDIT NEEDED" } else { "ELY · SANDBOXED" }
 }
-
 
 const CARD_BG: u32 = 0xffffffd9;
 const SECONDARY_BG: u32 = 0xffffffd9;

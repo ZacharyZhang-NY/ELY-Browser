@@ -2,9 +2,9 @@ use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
 use ely_domain::BrowserTab;
 use gpui::{
-    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, div, hsla, linear_color_stop,
-    linear_gradient, prelude::FluentBuilder, px, rgb, rgba,
+    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, div, hsla, linear_color_stop, linear_gradient,
+    prelude::FluentBuilder, px, rgb, rgba,
 };
 use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
 
@@ -121,11 +121,7 @@ impl ElyShell {
             .on_click(cx.listener(|shell, _, window, cx| {
                 shell.open_internal_tab("ely://settings", window, cx);
             }))
-            .child(
-                div()
-                    .text_color(rgb(colors::INK_3))
-                    .child(IconName::Settings),
-            )
+            .child(div().text_color(rgb(colors::INK_3)).child(IconName::Settings))
             .child("Settings")
             .into_any_element()
     }
@@ -186,9 +182,7 @@ impl ElyShell {
                 // it's not a popover. Use a right-chevron so the icon
                 // promises "this opens a page" instead of the down
                 // chevron that promises "this opens a menu inline".
-                div()
-                    .text_color(rgb(colors::INK_4))
-                    .child(IconName::ChevronRight),
+                div().text_color(rgb(colors::INK_4)).child(IconName::ChevronRight),
             )
             .into_any_element()
     }
@@ -198,13 +192,8 @@ impl ElyShell {
         snapshot: &BrowserSnapshot,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let active_tab = snapshot
-            .tabs
-            .iter()
-            .find(|tab| tab.id() == &snapshot.active_tab_id);
-        let active = active_tab
-            .map(|tab| tab.url().as_str() == "ely://new-tab")
-            .unwrap_or(false);
+        let active_tab = snapshot.tabs.iter().find(|tab| tab.id() == &snapshot.active_tab_id);
+        let active = active_tab.map(|tab| tab.url().as_str() == "ely://new-tab").unwrap_or(false);
         let palette = nav_row_palette(active);
 
         div()
@@ -309,11 +298,7 @@ impl ElyShell {
             .on_click(cx.listener(|shell, _, window, cx| {
                 shell.open_new_tab(window, cx);
             }))
-            .child(
-                div()
-                    .text_color(rgb(colors::INK_4))
-                    .child(IconName::Plus),
-            )
+            .child(div().text_color(rgb(colors::INK_4)).child(IconName::Plus))
             .child("New Tab")
             .into_any_element()
     }
@@ -389,17 +374,9 @@ impl ElyShell {
 /// place rather than three transparent-sentinel triples.
 fn nav_row_palette(active: bool) -> NavRowPalette {
     if active {
-        NavRowPalette {
-            bg: ACTIVE_NAV_BG,
-            hover_bg: ACTIVE_NAV_BG_HOVER,
-            text: colors::INK,
-        }
+        NavRowPalette { bg: ACTIVE_NAV_BG, hover_bg: ACTIVE_NAV_BG_HOVER, text: colors::INK }
     } else {
-        NavRowPalette {
-            bg: 0x00000000,
-            hover_bg: HOVER_NAV_BG,
-            text: colors::INK_2,
-        }
+        NavRowPalette { bg: 0x00000000, hover_bg: HOVER_NAV_BG, text: colors::INK_2 }
     }
 }
 

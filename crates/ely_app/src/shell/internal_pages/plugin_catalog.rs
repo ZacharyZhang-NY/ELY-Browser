@@ -36,11 +36,7 @@ impl ElyShell {
         )
     }
 
-    fn render_hero(
-        &mut self,
-        snapshot: &BrowserSnapshot,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    fn render_hero(&mut self, snapshot: &BrowserSnapshot, cx: &mut Context<Self>) -> AnyElement {
         div()
             .grid()
             .grid_cols(2)
@@ -73,16 +69,10 @@ impl ElyShell {
                     .text_color(rgb(colors::INK))
                     .child("Quiet tools. Everyday magic."),
             )
-            .child(
-                div()
-                    .max_w(px(520.0))
-                    .text_size(px(13.5))
-                    .text_color(rgb(colors::INK_2))
-                    .child(
-                        "ELY plugins are sandboxed, theme-aware, and ship with their own \
+            .child(div().max_w(px(520.0)).text_size(px(13.5)).text_color(rgb(colors::INK_2)).child(
+                "ELY plugins are sandboxed, theme-aware, and ship with their own \
                          controls in your sidebar — no Chrome extension framework required.",
-                    ),
-            )
+            ))
             .child(self.render_search_row(cx))
             .into_any_element()
     }
@@ -103,18 +93,10 @@ impl ElyShell {
                     .flex()
                     .items_center()
                     .gap(px(10.0))
-                    .child(
-                        div()
-                            .text_color(rgb(colors::INK_3))
-                            .child(IconName::Search),
-                    )
-                    .child(
-                        div().flex_1().child(
-                            Input::new(&self.plugin_search_input)
-                                .appearance(false)
-                                .cleanable(true),
-                        ),
-                    ),
+                    .child(div().text_color(rgb(colors::INK_3)).child(IconName::Search))
+                    .child(div().flex_1().child(
+                        Input::new(&self.plugin_search_input).appearance(false).cleanable(true),
+                    )),
             )
             .child(
                 div()
@@ -135,17 +117,12 @@ impl ElyShell {
                     .on_click(cx.listener(|shell, _, window, cx| {
                         shell.choose_plugin_package(window, cx);
                     }))
-                    .child(
-                        div()
-                            .text_color(rgb(0xffffff))
-                            .child(IconName::Plus),
-                    )
+                    .child(div().text_color(rgb(0xffffff)).child(IconName::Plus))
                     .child("Install"),
             )
             .into_any_element()
     }
 }
-
 
 fn render_summary(snapshot: &BrowserSnapshot) -> AnyElement {
     div()
@@ -154,21 +131,12 @@ fn render_summary(snapshot: &BrowserSnapshot) -> AnyElement {
         .gap(px(6.0))
         .child(category_chip("All", true))
         .child(category_chip("Installed", false))
-        .child(category_chip(
-            sandbox_chip_label(snapshot),
-            false,
-        ))
-        .child(
-            div()
-                .ml_auto()
-                .text_size(px(11.5))
-                .text_color(rgb(colors::INK_3))
-                .child(format!(
-                    "{} signed · {} high-risk",
-                    snapshot.installed_plugins.len(),
-                    high_risk_plugin_count(snapshot)
-                )),
-        )
+        .child(category_chip(sandbox_chip_label(snapshot), false))
+        .child(div().ml_auto().text_size(px(11.5)).text_color(rgb(colors::INK_3)).child(format!(
+            "{} signed · {} high-risk",
+            snapshot.installed_plugins.len(),
+            high_risk_plugin_count(snapshot)
+        )))
         .into_any_element()
 }
 
@@ -188,20 +156,13 @@ fn category_chip(label: &'static str, active: bool) -> AnyElement {
         .into_any_element()
 }
 
-fn render_grid(
-    snapshot: &BrowserSnapshot,
-    needle: &str,
-    cx: &mut Context<ElyShell>,
-) -> AnyElement {
+fn render_grid(snapshot: &BrowserSnapshot, needle: &str, cx: &mut Context<ElyShell>) -> AnyElement {
     if snapshot.installed_plugins.is_empty() {
         return render_empty_state(cx);
     }
 
-    let matches: Vec<&InstalledPlugin> = snapshot
-        .installed_plugins
-        .iter()
-        .filter(|plugin| matches_plugin(plugin, needle))
-        .collect();
+    let matches: Vec<&InstalledPlugin> =
+        snapshot.installed_plugins.iter().filter(|plugin| matches_plugin(plugin, needle)).collect();
 
     if matches.is_empty() {
         return render_no_match_state(needle);
@@ -214,14 +175,9 @@ fn render_grid(
         .grid()
         .grid_cols(4)
         .gap(px(14.0))
-        .children(
-            matches
-                .into_iter()
-                .enumerate()
-                .map(|(index, plugin)| {
-                    render_plugin_card(index, plugin, &snapshot.active_profile_kind, cx)
-                }),
-        )
+        .children(matches.into_iter().enumerate().map(|(index, plugin)| {
+            render_plugin_card(index, plugin, &snapshot.active_profile_kind, cx)
+        }))
         .into_any_element()
 }
 
@@ -271,22 +227,13 @@ fn render_empty_state(cx: &mut Context<ElyShell>) -> AnyElement {
                 .text_color(rgb(colors::INK))
                 .child("No plugins yet."),
         )
-        .child(
-            div()
-                .max_w(px(420.0))
-                .text_size(px(13.0))
-                .text_color(rgb(colors::INK_3))
-                .child(
-                    "Drop a signed .rplug package on ELY to extend the browser with sandboxed \
+        .child(div().max_w(px(420.0)).text_size(px(13.0)).text_color(rgb(colors::INK_3)).child(
+            "Drop a signed .rplug package on ELY to extend the browser with sandboxed \
                      tools. Plugins ship with their own sidebar controls.",
-                ),
-        )
-        .child(action_button(
-            "empty-install",
-            "Install plugin",
-            cx,
-            |shell, window, cx| shell.choose_plugin_package(window, cx),
         ))
+        .child(action_button("empty-install", "Install plugin", cx, |shell, window, cx| {
+            shell.choose_plugin_package(window, cx)
+        }))
         .into_any_element()
 }
 
@@ -393,10 +340,7 @@ fn render_plugin_card(
                 .border_color(rgba(colors::DIVIDER))
                 .text_size(px(10.5))
                 .text_color(rgb(colors::INK_4))
-                .child(format!(
-                    "{} permissions",
-                    plugin.manifest().permissions().len()
-                ))
+                .child(format!("{} permissions", plugin.manifest().permissions().len()))
                 .child("·")
                 .child(format!("{high_risk} high risk"))
                 .child(
@@ -454,12 +398,8 @@ fn plugin_cover_gradient(name: &str) -> (gpui::Hsla, gpui::Hsla) {
         (343.0, 0.78, 0.67, 251.0, 0.85, 0.71),
     ];
 
-    let bucket = name.bytes().fold(0u32, |acc, b| acc.wrapping_add(b as u32))
-        as usize
-        % PALETTE.len();
+    let bucket =
+        name.bytes().fold(0u32, |acc, b| acc.wrapping_add(b as u32)) as usize % PALETTE.len();
     let (h1, s1, l1, h2, s2, l2) = PALETTE[bucket];
-    (
-        hsla(h1 / 360.0, s1, l1, 1.0),
-        hsla(h2 / 360.0, s2, l2, 1.0),
-    )
+    (hsla(h1 / 360.0, s1, l1, 1.0), hsla(h2 / 360.0, s2, l2, 1.0))
 }

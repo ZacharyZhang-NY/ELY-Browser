@@ -43,11 +43,7 @@ pub(crate) fn render_favorites_grid(
         .into_any_element()
 }
 
-fn render_favorite_tile(
-    index: usize,
-    tab: &BrowserTab,
-    cx: &mut Context<ElyShell>,
-) -> AnyElement {
+fn render_favorite_tile(index: usize, tab: &BrowserTab, cx: &mut Context<ElyShell>) -> AnyElement {
     let tab_id = tab.id().clone();
     let host = tab.url().host().map(|host| host.to_string());
     let title = tab.title().to_string();

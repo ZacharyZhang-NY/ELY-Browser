@@ -24,12 +24,7 @@ pub(super) fn render_editors_pick(
         .flex()
         .flex_col()
         .gap(px(14.0))
-        .child(
-            div()
-                .text_size(px(11.0))
-                .text_color(rgb(colors::INK_3))
-                .child("EDITOR'S PICK"),
-        )
+        .child(div().text_size(px(11.0)).text_color(rgb(colors::INK_3)).child("EDITOR'S PICK"))
         .child(render_featured_body(featured))
         .child(render_featured_actions(featured, cx))
         .into_any_element()
@@ -37,10 +32,9 @@ pub(super) fn render_editors_pick(
 
 fn render_featured_body(featured: Option<&InstalledPlugin>) -> AnyElement {
     let (name, desc) = match featured {
-        Some(plugin) => (
-            plugin.manifest().name().to_string(),
-            plugin.manifest().description().to_string(),
-        ),
+        Some(plugin) => {
+            (plugin.manifest().name().to_string(), plugin.manifest().description().to_string())
+        }
         None => (
             "Install your first plugin".to_string(),
             "Drop a signed .rplug package onto ELY to extend the browser with sandboxed tools."
@@ -81,12 +75,7 @@ fn render_featured_body(featured: Option<&InstalledPlugin>) -> AnyElement {
                         .text_color(rgb(colors::INK))
                         .child(name),
                 )
-                .child(
-                    div()
-                        .text_size(px(12.5))
-                        .text_color(rgb(colors::INK_3))
-                        .child(desc),
-                ),
+                .child(div().text_size(px(12.5)).text_color(rgb(colors::INK_3)).child(desc)),
         )
         .into_any_element()
 }
@@ -102,23 +91,15 @@ fn render_featured_actions(
             .flex()
             .items_center()
             .gap(px(8.0))
-            .child(action_button(
-                "featured-open",
-                "Open detail",
-                cx,
-                move |shell, window, cx| {
-                    shell.open_internal_tab(&detail_route, window, cx);
-                },
-            ))
+            .child(action_button("featured-open", "Open detail", cx, move |shell, window, cx| {
+                shell.open_internal_tab(&detail_route, window, cx);
+            }))
             .child(
                 div()
                     .ml_auto()
                     .text_size(px(11.5))
                     .text_color(rgb(colors::INK_3))
-                    .child(format!(
-                        "{} permissions",
-                        plugin.manifest().permissions().len()
-                    )),
+                    .child(format!("{} permissions", plugin.manifest().permissions().len())),
             )
             .into_any_element()
     } else {
@@ -126,12 +107,9 @@ fn render_featured_actions(
             .flex()
             .items_center()
             .gap(px(8.0))
-            .child(action_button(
-                "featured-install",
-                "Install",
-                cx,
-                |shell, window, cx| shell.choose_plugin_package(window, cx),
-            ))
+            .child(action_button("featured-install", "Install", cx, |shell, window, cx| {
+                shell.choose_plugin_package(window, cx)
+            }))
             .into_any_element()
     }
 }

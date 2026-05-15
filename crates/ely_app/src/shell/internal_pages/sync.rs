@@ -21,22 +21,15 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         render_canvas_surface(
-            div()
-                .size_full()
-                .pt(px(40.0))
-                .px(px(56.0))
-                .pb(px(32.0))
-                .flex()
-                .justify_center()
-                .child(
-                    div()
-                        .max_w(px(960.0))
-                        .grid()
-                        .grid_cols(2)
-                        .gap(px(32.0))
-                        .child(render_left_column(snapshot, cx))
-                        .child(render_right_column(snapshot, cx)),
-                ),
+            div().size_full().pt(px(40.0)).px(px(56.0)).pb(px(32.0)).flex().justify_center().child(
+                div()
+                    .max_w(px(960.0))
+                    .grid()
+                    .grid_cols(2)
+                    .gap(px(32.0))
+                    .child(render_left_column(snapshot, cx))
+                    .child(render_right_column(snapshot, cx)),
+            ),
         )
     }
 }
@@ -65,11 +58,7 @@ fn render_status_pill(snapshot: &BrowserSnapshot) -> AnyElement {
         .bg(rgba(PILL_BG))
         .text_size(px(11.0))
         .text_color(rgb(colors::INK_3))
-        .child(
-            div()
-                .text_color(rgb(colors::ACCENT))
-                .child(IconName::Globe),
-        )
+        .child(div().text_color(rgb(colors::ACCENT)).child(IconName::Globe))
         .child(format!(
             "{SYNC_SERVICE_NAME} · {}",
             connection_label(snapshot.sync_status.connection())
@@ -99,10 +88,7 @@ fn render_intro_paragraph() -> AnyElement {
         .into_any_element()
 }
 
-fn render_metrics_card(
-    snapshot: &BrowserSnapshot,
-    cx: &mut Context<ElyShell>,
-) -> AnyElement {
+fn render_metrics_card(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
     div()
         .max_w(px(380.0))
         .p(px(20.0))
@@ -111,12 +97,7 @@ fn render_metrics_card(
         .flex()
         .flex_col()
         .gap(px(16.0))
-        .child(
-            div()
-                .text_size(px(12.5))
-                .text_color(rgb(colors::INK_3))
-                .child("Local queue"),
-        )
+        .child(div().text_size(px(12.5)).text_color(rgb(colors::INK_3)).child("Local queue"))
         .child(
             div()
                 .grid()
@@ -142,12 +123,7 @@ fn render_metric(label: &'static str, value: usize, color: u32) -> AnyElement {
         .flex()
         .flex_col()
         .gap_1()
-        .child(
-            div()
-                .text_size(px(10.5))
-                .text_color(rgb(colors::INK_4))
-                .child(label),
-        )
+        .child(div().text_size(px(10.5)).text_color(rgb(colors::INK_4)).child(label))
         .child(
             div()
                 .text_size(px(20.0))
@@ -185,10 +161,7 @@ fn render_right_column(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -
         .into_any_element()
 }
 
-fn render_what_syncs_card(
-    snapshot: &BrowserSnapshot,
-    cx: &mut Context<ElyShell>,
-) -> AnyElement {
+fn render_what_syncs_card(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
     div()
         .p(px(18.0))
         .rounded(px(16.0))
@@ -214,25 +187,18 @@ fn render_what_syncs_card(
                     div()
                         .text_size(px(11.0))
                         .text_color(rgb(colors::INK_3))
-                        .child(format!(
-                            "{} kinds tracked",
-                            snapshot.sync_status.objects().len()
-                        )),
+                        .child(format!("{} kinds tracked", snapshot.sync_status.objects().len())),
                 ),
         )
         .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(2.0))
-                .children(
-                    snapshot
-                        .sync_status
-                        .objects()
-                        .iter()
-                        .enumerate()
-                        .map(|(index, status)| render_sync_object_row(index, status, cx)),
-                ),
+            div().flex().flex_col().gap(px(2.0)).children(
+                snapshot
+                    .sync_status
+                    .objects()
+                    .iter()
+                    .enumerate()
+                    .map(|(index, status)| render_sync_object_row(index, status, cx)),
+            ),
         )
         .into_any_element()
 }
@@ -264,16 +230,11 @@ fn render_sync_object_row(
                         .text_color(rgb(colors::INK))
                         .child(sync_object_kind_label(status.kind())),
                 )
-                .child(
-                    div()
-                        .text_size(px(11.0))
-                        .text_color(rgb(colors::INK_4))
-                        .child(format!(
-                            "{} local · {}",
-                            status.local_count(),
-                            sync_object_state_label(status.state())
-                        )),
-                ),
+                .child(div().text_size(px(11.0)).text_color(rgb(colors::INK_4)).child(format!(
+                    "{} local · {}",
+                    status.local_count(),
+                    sync_object_state_label(status.state())
+                ))),
         )
         .child(render_policy_toggle(index, status, cx))
         .into_any_element()
@@ -286,11 +247,7 @@ fn render_state_dot(state: SyncObjectState) -> AnyElement {
         SyncObjectState::PrivacyControlled => colors::ACCENT,
     };
 
-    div()
-        .size(px(8.0))
-        .rounded_full()
-        .bg(rgb(color))
-        .into_any_element()
+    div().size(px(8.0)).rounded_full().bg(rgb(color)).into_any_element()
 }
 
 fn render_policy_toggle(
@@ -299,17 +256,9 @@ fn render_policy_toggle(
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let enabled = status.policy() == SyncObjectPolicy::Enabled;
-    let next_policy = if enabled {
-        SyncObjectPolicy::Paused
-    } else {
-        SyncObjectPolicy::Enabled
-    };
+    let next_policy = if enabled { SyncObjectPolicy::Paused } else { SyncObjectPolicy::Enabled };
     let kind = status.kind();
-    let track_color = if enabled {
-        colors::ACCENT
-    } else {
-        0x281e1426
-    };
+    let track_color = if enabled { colors::ACCENT } else { 0x281e1426 };
 
     div()
         .id(SharedString::from(format!("sync-policy-{index}")))

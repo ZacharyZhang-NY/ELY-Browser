@@ -9,9 +9,7 @@ use crate::shell::ElyShell;
 
 use crate::shell::chrome::{SERIF_FAMILY, render_glyph_for};
 
-use super::style::{
-    ARROW_CHIP_BG, PILL_BG, PILL_BG_HOVER, SEARCH_BG, card_shadow, soft_shadow,
-};
+use super::style::{ARROW_CHIP_BG, PILL_BG, PILL_BG_HOVER, SEARCH_BG, card_shadow, soft_shadow};
 use super::time::DayPhase;
 
 pub(crate) fn render_hero(
@@ -41,11 +39,7 @@ fn render_greeting_row(text: String, phase: DayPhase) -> AnyElement {
         .gap(px(8.0))
         .text_size(px(13.0))
         .text_color(rgb(colors::INK_3))
-        .child(
-            div()
-                .text_color(rgb(color))
-                .child(icon),
-        )
+        .child(div().text_color(rgb(color)).child(icon))
         .child(text)
         .into_any_element()
 }
@@ -102,11 +96,7 @@ fn render_search_bar(shell: &ElyShell, cx: &mut Context<ElyShell>) -> AnyElement
         .on_click(cx.listener(|shell, _, window, cx| {
             shell.focus_address_bar(window, cx);
         }))
-        .child(
-            div()
-                .text_color(rgb(colors::INK_3))
-                .child(IconName::Search),
-        )
+        .child(div().text_color(rgb(colors::INK_3)).child(IconName::Search))
         .child(
             div()
                 .flex_1()
@@ -170,11 +160,8 @@ fn render_pill_icon<F>(
 where
     F: Fn(&mut ElyShell, &mut gpui::Window, &mut Context<ElyShell>) + 'static,
 {
-    let leading = div()
-        .text_color(rgb(colors::INK_3))
-        .text_size(px(12.0))
-        .child(icon)
-        .into_any_element();
+    let leading =
+        div().text_color(rgb(colors::INK_3)).text_size(px(12.0)).child(icon).into_any_element();
     render_pill(id, leading, label, cx, handler)
 }
 

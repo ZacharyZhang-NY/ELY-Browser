@@ -3,8 +3,8 @@ use ely_design_system::{colors, spacing};
 use ely_domain::Space;
 use gpui::{
     AnyElement, BoxShadow, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, div, hsla, linear_color_stop, linear_gradient,
-    prelude::FluentBuilder, point, px, rgb, rgba,
+    StatefulInteractiveElement, Styled, div, hsla, linear_color_stop, linear_gradient, point,
+    prelude::FluentBuilder, px, rgb, rgba,
 };
 use gpui_component::IconName;
 
@@ -42,10 +42,7 @@ pub(crate) fn render_sidebar_header(
     snapshot: &BrowserSnapshot,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
-    let active_space = snapshot
-        .spaces
-        .iter()
-        .find(|space| space.id() == &snapshot.active_space_id);
+    let active_space = snapshot.spaces.iter().find(|space| space.id() == &snapshot.active_space_id);
     let picker_open = shell.workspace_picker_open;
 
     div()
@@ -67,10 +64,7 @@ fn render_title_row() -> AnyElement {
         .flex()
         .items_center()
         .gap(px(4.0))
-        // macOS draws the traffic lights at window (12, 14) — roughly the
-        // first 70 px of any sidebar that touches the window's left edge.
-        // Pad the title past that span so "ELY Browser ⌄" sits inline with
-        // the dots instead of stranded on a row of its own.
+        // Reserve the macOS traffic-light group plus a calm title gap.
         .pl(px(TRAFFIC_LIGHT_RESERVE))
         .child(
             div()
@@ -79,20 +73,13 @@ fn render_title_row() -> AnyElement {
                 .text_color(rgb(colors::INK_2))
                 .child("ELY Browser"),
         )
-        .child(
-            div()
-                .text_color(rgb(colors::INK_3))
-                .opacity(0.6)
-                .child(IconName::ChevronDown),
-        )
+        .child(div().text_color(rgb(colors::INK_3)).opacity(0.6).child(IconName::ChevronDown))
         .into_any_element()
 }
 
 /// Width reserved at the start of the sidebar's top row for the macOS
-/// traffic lights. Three 12 px dots with 8 px gaps, plus 12 px from the
-/// window left edge minus our 16 px shell inset, lands at ~62; we add
-/// breathing room and call it 68.
-const TRAFFIC_LIGHT_RESERVE: f32 = 68.0;
+/// traffic lights plus visual breathing room.
+const TRAFFIC_LIGHT_RESERVE: f32 = 90.0;
 
 fn render_workspace_picker(
     _snapshot: &BrowserSnapshot,
@@ -146,17 +133,9 @@ fn render_picker_pill(
     picker_open: bool,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
-    let space_name = active_space
-        .map(|space| space.name().to_string())
-        .unwrap_or_default();
-    let space_glyph = active_space
-        .map(|space| space.icon().to_string())
-        .unwrap_or_default();
-    let chevron = if picker_open {
-        IconName::ChevronUp
-    } else {
-        IconName::ChevronDown
-    };
+    let space_name = active_space.map(|space| space.name().to_string()).unwrap_or_default();
+    let space_glyph = active_space.map(|space| space.icon().to_string()).unwrap_or_default();
+    let chevron = if picker_open { IconName::ChevronUp } else { IconName::ChevronDown };
     let bg = if picker_open { PICKER_BG_HOVER } else { PICKER_BG };
 
     div()
@@ -188,11 +167,7 @@ fn render_picker_pill(
                 .text_color(rgb(colors::INK))
                 .child(space_name),
         )
-        .child(
-            div()
-                .text_color(rgb(colors::INK_3))
-                .child(chevron),
-        )
+        .child(div().text_color(rgb(colors::INK_3)).child(chevron))
         .into_any_element()
 }
 
@@ -215,11 +190,8 @@ impl WorkspaceDisclosureAnchor {
     /// upstream, so changing one of those constants moves the popover
     /// with it.
     pub(crate) fn solve(sidebar_width_px: f32) -> Self {
-        let left_px = spacing::SHELL_INSET
-            + HEADER_PX
-            + PICKER_ROW_PX
-            + PICKER_BUTTON_SIZE
-            + PICKER_ROW_GAP;
+        let left_px =
+            spacing::SHELL_INSET + HEADER_PX + PICKER_ROW_PX + PICKER_BUTTON_SIZE + PICKER_ROW_GAP;
 
         let top_px = spacing::SHELL_INSET
             + HEADER_PT
@@ -236,9 +208,8 @@ impl WorkspaceDisclosureAnchor {
         //          - 2 * (HEADER_PX + PICKER_ROW_PX)   (row insets)
         //          - 2 * PICKER_BUTTON_SIZE            (tile + add)
         //          - 2 * PICKER_ROW_GAP                (two gaps)
-        let chrome = 2.0 * (HEADER_PX + PICKER_ROW_PX)
-            + 2.0 * PICKER_BUTTON_SIZE
-            + 2.0 * PICKER_ROW_GAP;
+        let chrome =
+            2.0 * (HEADER_PX + PICKER_ROW_PX) + 2.0 * PICKER_BUTTON_SIZE + 2.0 * PICKER_ROW_GAP;
         let width_px = (sidebar_width_px - chrome).max(0.0);
 
         Self { top_px, left_px, width_px }
@@ -275,9 +246,7 @@ pub(crate) fn render_workspace_disclosure(
                 .spaces
                 .iter()
                 .enumerate()
-                .map(|(index, space)| {
-                    render_disclosure_row(index, space, &active_id, cx)
-                }),
+                .map(|(index, space)| render_disclosure_row(index, space, &active_id, cx)),
         )
         .child(render_disclosure_footer(cx));
 
@@ -288,9 +257,7 @@ pub(crate) fn render_workspace_disclosure(
 /// and the disclosure. Press on it closes the picker AND consumes
 /// the event so the dismiss-click doesn't ricochet into a button
 /// underneath the cursor.
-pub(crate) fn render_workspace_disclosure_backdrop(
-    cx: &mut Context<ElyShell>,
-) -> AnyElement {
+pub(crate) fn render_workspace_disclosure_backdrop(cx: &mut Context<ElyShell>) -> AnyElement {
     div()
         .id(SharedString::from("workspace-picker-backdrop"))
         .absolute()
@@ -341,13 +308,7 @@ fn render_disclosure_row(
                 .text_color(rgb(colors::INK))
                 .child(space.name().to_string()),
         )
-        .when(active, |el| {
-            el.child(
-                div()
-                    .text_color(rgb(colors::ACCENT))
-                    .child(IconName::Check),
-            )
-        })
+        .when(active, |el| el.child(div().text_color(rgb(colors::ACCENT)).child(IconName::Check)))
         .into_any_element()
 }
 
@@ -372,11 +333,7 @@ fn render_disclosure_footer(cx: &mut Context<ElyShell>) -> AnyElement {
             shell.close_workspace_picker(cx);
             shell.open_internal_tab("ely://settings/spaces", window, cx);
         }))
-        .child(
-            div()
-                .text_color(rgb(colors::INK_4))
-                .child(IconName::Settings),
-        )
+        .child(div().text_color(rgb(colors::INK_4)).child(IconName::Settings))
         .child("Manage spaces")
         .into_any_element()
 }

@@ -16,10 +16,7 @@ use crate::shell::chrome::{SERIF_FAMILY, render_glyph_for};
 use super::style::{CARD_BG, card_shadow};
 use super::time::relative_time_label;
 
-pub(crate) fn render_recap(
-    snapshot: &BrowserSnapshot,
-    cx: &mut Context<ElyShell>,
-) -> AnyElement {
+pub(crate) fn render_recap(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
     if snapshot.history_entries.is_empty() && snapshot.reading_list.is_empty() {
         return div().into_any_element();
     }
@@ -30,16 +27,8 @@ pub(crate) fn render_recap(
         .grid()
         .grid_cols(8)
         .gap(px(12.0))
-        .child(
-            div()
-                .col_span(5)
-                .child(render_continue_card(snapshot, now, cx)),
-        )
-        .child(
-            div()
-                .col_span(3)
-                .child(render_activity_card(snapshot, now, cx)),
-        )
+        .child(div().col_span(5).child(render_continue_card(snapshot, now, cx)))
+        .child(div().col_span(3).child(render_activity_card(snapshot, now, cx)))
         .into_any_element()
 }
 
@@ -48,7 +37,8 @@ fn render_continue_card(
     now: SystemTime,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
-    let recent_history: Vec<&HistoryEntry> = snapshot.history_entries.iter().rev().take(3).collect();
+    let recent_history: Vec<&HistoryEntry> =
+        snapshot.history_entries.iter().rev().take(3).collect();
     let featured = snapshot.reading_list.first();
     let reading_total = snapshot.reading_list.len();
 
@@ -59,18 +49,12 @@ fn render_continue_card(
         .p(px(16.0))
         .flex()
         .gap(px(16.0))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .child(render_continue_history(recent_history, now, cx)),
-        )
-        .child(
-            div()
-                .w(px(240.0))
-                .flex_shrink_0()
-                .child(render_reading_list_cover(featured, reading_total, cx)),
-        )
+        .child(div().flex_1().min_w_0().child(render_continue_history(recent_history, now, cx)))
+        .child(div().w(px(240.0)).flex_shrink_0().child(render_reading_list_cover(
+            featured,
+            reading_total,
+            cx,
+        )))
         .into_any_element()
 }
 
@@ -175,9 +159,8 @@ fn render_reading_list_cover(
     let title = featured
         .map(|entry| entry.title().to_string())
         .unwrap_or_else(|| "Add an article to your reading list".to_string());
-    let subtitle = featured
-        .map(|entry| entry.display_url())
-        .unwrap_or_else(|| "Reading List".to_string());
+    let subtitle =
+        featured.map(|entry| entry.display_url()).unwrap_or_else(|| "Reading List".to_string());
     let url = featured.map(|entry| entry.source_url().clone());
 
     let mut cover = div()
@@ -194,26 +177,16 @@ fn render_reading_list_cover(
         .cursor_pointer()
         .hover(|style| style.opacity(0.96))
         .active(|style| style.opacity(0.88))
-        .child(
-            div()
-                .absolute()
-                .inset_0()
-                .bg(linear_gradient(
-                    225.0,
-                    linear_color_stop(hsla(345.0 / 360.0, 1.0, 0.85, 0.55), 0.0),
-                    linear_color_stop(hsla(345.0 / 360.0, 1.0, 0.85, 0.0), 0.6),
-                )),
-        )
-        .child(
-            div()
-                .absolute()
-                .inset_0()
-                .bg(linear_gradient(
-                    45.0,
-                    linear_color_stop(hsla(228.0 / 360.0, 0.52, 0.62, 0.55), 0.0),
-                    linear_color_stop(hsla(228.0 / 360.0, 0.52, 0.62, 0.0), 0.7),
-                )),
-        );
+        .child(div().absolute().inset_0().bg(linear_gradient(
+            225.0,
+            linear_color_stop(hsla(345.0 / 360.0, 1.0, 0.85, 0.55), 0.0),
+            linear_color_stop(hsla(345.0 / 360.0, 1.0, 0.85, 0.0), 0.6),
+        )))
+        .child(div().absolute().inset_0().bg(linear_gradient(
+            45.0,
+            linear_color_stop(hsla(228.0 / 360.0, 0.52, 0.62, 0.55), 0.0),
+            linear_color_stop(hsla(228.0 / 360.0, 0.52, 0.62, 0.0), 0.7),
+        )));
 
     if let Some(target) = url {
         cover = cover.on_click(cx.listener(move |shell, _, window, cx| {
@@ -257,12 +230,7 @@ fn render_reading_list_cover(
                         .text_color(rgb(0xffffff))
                         .child(title),
                 )
-                .child(
-                    div()
-                        .text_size(px(11.0))
-                        .text_color(rgb(0xe6e3de))
-                        .child(subtitle),
-                ),
+                .child(div().text_size(px(11.0)).text_color(rgb(0xe6e3de)).child(subtitle)),
         )
         .into_any_element()
 }
@@ -296,9 +264,12 @@ fn render_activity_card(
                 .flex()
                 .flex_col()
                 .gap(px(12.0))
-                .children(entries.into_iter().enumerate().map(|(index, entry)| {
-                    render_activity_row(index, entry, now, cx)
-                }))
+                .children(
+                    entries
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, entry)| render_activity_row(index, entry, now, cx)),
+                )
                 .into_any_element()
         })
         .child(render_view_all_link(cx))
@@ -345,10 +316,7 @@ fn render_activity_row(
                 .flex_col()
                 .gap_1()
                 .child(
-                    div()
-                        .text_size(px(11.5))
-                        .text_color(rgb(colors::INK_3))
-                        .child("You visited"),
+                    div().text_size(px(11.5)).text_color(rgb(colors::INK_3)).child("You visited"),
                 )
                 .child(
                     div()
@@ -366,12 +334,7 @@ fn render_activity_row(
                         .child(display_url),
                 ),
         )
-        .child(
-            div()
-                .text_size(px(10.5))
-                .text_color(rgb(colors::INK_4))
-                .child(when),
-        )
+        .child(div().text_size(px(10.5)).text_color(rgb(colors::INK_4)).child(when))
         .into_any_element()
 }
 

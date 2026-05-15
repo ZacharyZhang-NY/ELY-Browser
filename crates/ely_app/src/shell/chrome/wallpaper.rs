@@ -10,26 +10,16 @@ pub(crate) fn render_wallpaper(theme: WallpaperTheme) -> impl IntoElement {
         .absolute()
         .inset_0()
         .bg(rgb(palette.base))
-        .child(
-            div()
-                .absolute()
-                .inset_0()
-                .bg(linear_gradient(
-                    225.0,
-                    linear_color_stop(palette.upper, 0.0),
-                    linear_color_stop(transparent_like(palette.upper), 0.55),
-                )),
-        )
-        .child(
-            div()
-                .absolute()
-                .inset_0()
-                .bg(linear_gradient(
-                    45.0,
-                    linear_color_stop(palette.lower, 0.0),
-                    linear_color_stop(transparent_like(palette.lower), 0.62),
-                )),
-        )
+        .child(div().absolute().inset_0().bg(linear_gradient(
+            225.0,
+            linear_color_stop(palette.upper, 0.0),
+            linear_color_stop(transparent_like(palette.upper), 0.55),
+        )))
+        .child(div().absolute().inset_0().bg(linear_gradient(
+            45.0,
+            linear_color_stop(palette.lower, 0.0),
+            linear_color_stop(transparent_like(palette.lower), 0.62),
+        )))
 }
 
 struct WallpaperPalette {

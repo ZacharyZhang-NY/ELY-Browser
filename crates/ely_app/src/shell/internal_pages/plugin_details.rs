@@ -24,9 +24,11 @@ impl ElyShell {
 
         match plugin {
             Some(plugin) => render_canvas_surface(
-                div().size_full().overflow_y_scrollbar().child(
-                    render_plugin_detail_view(plugin, &snapshot.active_profile_kind, cx),
-                ),
+                div().size_full().overflow_y_scrollbar().child(render_plugin_detail_view(
+                    plugin,
+                    &snapshot.active_profile_kind,
+                    cx,
+                )),
             ),
             None => render_canvas_surface(render_missing_plugin_detail(plugin_id.as_ref(), cx)),
         }

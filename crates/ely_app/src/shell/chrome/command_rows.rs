@@ -68,9 +68,7 @@ pub(crate) fn render_history_rows(
             let url = entry.url().clone();
             let title = entry.title().to_string();
             let host = entry.url().host().map(|host| host.to_string());
-            let display = host
-                .clone()
-                .unwrap_or_else(|| entry.url().as_str().to_string());
+            let display = host.clone().unwrap_or_else(|| entry.url().as_str().to_string());
             let initial = title.chars().next().unwrap_or('?').to_string();
             let is_selected = offset + index == selected_index;
 
@@ -107,9 +105,7 @@ pub(crate) fn render_bookmark_rows(
             let url = bookmark.url().clone();
             let title = bookmark.title().to_string();
             let host = bookmark.url().host().map(|host| host.to_string());
-            let display = host
-                .clone()
-                .unwrap_or_else(|| bookmark.url().as_str().to_string());
+            let display = host.clone().unwrap_or_else(|| bookmark.url().as_str().to_string());
             let initial = title.chars().next().unwrap_or('?').to_string();
             let is_selected = offset + index == selected_index;
 
@@ -144,11 +140,7 @@ pub(crate) fn render_action_rows(
         .flex_col()
         .children(actions.into_iter().enumerate().map(|(index, action)| {
             let route = action.route;
-            let keys = if action.keys.is_empty() {
-                None
-            } else {
-                Some(action.keys.to_string())
-            };
+            let keys = if action.keys.is_empty() { None } else { Some(action.keys.to_string()) };
             let icon = action.icon.clone();
             let is_selected = offset + index == selected_index;
 
@@ -261,18 +253,11 @@ where
                         .child(title),
                 )
                 .children(hint.map(|hint| {
-                    div()
-                        .text_size(px(11.0))
-                        .text_color(rgb(colors::INK_4))
-                        .truncate()
-                        .child(hint)
+                    div().text_size(px(11.0)).text_color(rgb(colors::INK_4)).truncate().child(hint)
                 })),
         )
         .children(keys.map(|key_label| {
-            div()
-                .text_size(px(10.5))
-                .text_color(rgb(colors::INK_3))
-                .child(key_label)
+            div().text_size(px(10.5)).text_color(rgb(colors::INK_3)).child(key_label)
         }))
         .into_any_element()
 }

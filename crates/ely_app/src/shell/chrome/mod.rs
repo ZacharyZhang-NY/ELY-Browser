@@ -30,8 +30,7 @@ pub(crate) use sidebar_header::{
     render_workspace_disclosure_backdrop,
 };
 pub(crate) use split_pane::{
-    pane_host_label, pane_url_is_secure, render_compact_split_canvas,
-    render_split_pane_header,
+    pane_host_label, pane_url_is_secure, render_compact_split_canvas, render_split_pane_header,
 };
 pub(crate) use topbar::render_topbar;
 pub(crate) use typography::{SANS_FAMILY, SERIF_FAMILY, register_serif_fonts};

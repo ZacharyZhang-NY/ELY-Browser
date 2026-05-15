@@ -11,8 +11,7 @@ use gpui_component::{
 };
 
 use super::chrome::{
-    pane_host_label, pane_url_is_secure, render_compact_split_canvas,
-    render_split_pane_header,
+    pane_host_label, pane_url_is_secure, render_compact_split_canvas, render_split_pane_header,
 };
 use super::{ElyShell, ShellState};
 use crate::SplitRight;
@@ -167,16 +166,16 @@ impl ElyShell {
         snapshot: &BrowserSnapshot,
         cx: &mut Context<Self>,
     ) -> gpui::Div {
-        body.flex().flex_col().gap(px(10.0)).children(
-            panes.chunks(2).enumerate().map(|(row_index, row)| {
+        body.flex().flex_col().gap(px(10.0)).children(panes.chunks(2).enumerate().map(
+            |(row_index, row)| {
                 div().flex().flex_1().min_h(px(180.0)).gap(px(10.0)).children(
                     row.iter().enumerate().map(|(column_index, tab)| {
                         let pane_index = row_index * 2 + column_index;
                         self.render_split_pane(pane_index, tab, snapshot, false, cx)
                     }),
                 )
-            }),
-        )
+            },
+        ))
     }
 
     fn render_split_pane(
@@ -443,4 +442,3 @@ fn split_pane_shadow() -> Vec<BoxShadow> {
         },
     ]
 }
-

@@ -61,11 +61,7 @@ impl ElyShell {
         }
     }
 
-    pub(super) fn set_theme_mode(
-        &mut self,
-        theme_mode: ThemeMode,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn set_theme_mode(&mut self, theme_mode: ThemeMode, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state {
             core.set_theme_mode(theme_mode);
             cx.notify();
@@ -117,22 +113,14 @@ impl ElyShell {
         });
     }
 
-    pub(super) fn reset_appearance(
-        &mut self,
-        window: &mut gpui::Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn reset_appearance(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state {
             core.reset_appearance();
             cx.notify();
         }
         let slider = self.translucency_slider.clone();
         slider.update(cx, |state, cx| {
-            state.set_value(
-                SliderValue::Single(f32::from(DEFAULT_TRANSLUCENCY_PCT)),
-                window,
-                cx,
-            );
+            state.set_value(SliderValue::Single(f32::from(DEFAULT_TRANSLUCENCY_PCT)), window, cx);
         });
     }
 

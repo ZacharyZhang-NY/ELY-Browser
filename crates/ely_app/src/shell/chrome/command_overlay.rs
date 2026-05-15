@@ -61,11 +61,8 @@ fn render_panel(
     selected_index: usize,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
-    let query_label = if needle.is_empty() {
-        "Type to search…".to_string()
-    } else {
-        needle.to_string()
-    };
+    let query_label =
+        if needle.is_empty() { "Type to search…".to_string() } else { needle.to_string() };
 
     div()
         .w(px(640.0))
@@ -94,11 +91,7 @@ fn render_header(query_label: String, is_empty: bool) -> AnyElement {
         .py(px(16.0))
         .border_b_1()
         .border_color(rgba(colors::DIVIDER))
-        .child(
-            div()
-                .text_color(rgb(colors::INK_3))
-                .child(IconName::Search),
-        )
+        .child(div().text_color(rgb(colors::INK_3)).child(IconName::Search))
         .child(
             div()
                 .flex_1()
@@ -110,10 +103,7 @@ fn render_header(query_label: String, is_empty: bool) -> AnyElement {
                 .child(query_label)
                 .child(blink(
                     "command-overlay-caret",
-                    div()
-                        .w(px(1.0))
-                        .h(px(18.0))
-                        .bg(rgb(colors::ACCENT)),
+                    div().w(px(1.0)).h(px(18.0)).bg(rgb(colors::ACCENT)),
                 )),
         )
         .child(
@@ -145,10 +135,8 @@ fn render_results(
     let mut sections: Vec<AnyElement> = Vec::new();
     if !tabs.is_empty() {
         let count = tabs.len();
-        sections.push(render_section(
-            "Open tabs",
-            render_tab_rows(tabs, offset, selected_index, cx),
-        ));
+        sections
+            .push(render_section("Open tabs", render_tab_rows(tabs, offset, selected_index, cx)));
         offset += count;
     }
     if !history.is_empty() {
@@ -178,13 +166,7 @@ fn render_results(
         sections.push(render_empty_state());
     }
 
-    div()
-        .max_h(px(440.0))
-        .py(px(8.0))
-        .flex()
-        .flex_col()
-        .children(sections)
-        .into_any_element()
+    div().max_h(px(440.0)).py(px(8.0)).flex().flex_col().children(sections).into_any_element()
 }
 
 fn render_section(label: &'static str, body: AnyElement) -> AnyElement {

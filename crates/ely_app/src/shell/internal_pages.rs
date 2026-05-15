@@ -297,12 +297,7 @@ fn render_canvas_surface(content: impl IntoElement) -> AnyElement {
         .flex_1()
         .h_full()
         .overflow_hidden()
-        .child(
-            div()
-                .size_full()
-                .overflow_y_scrollbar()
-                .child(content),
-        )
+        .child(div().size_full().overflow_y_scrollbar().child(content))
         .into_any_element()
 }
 

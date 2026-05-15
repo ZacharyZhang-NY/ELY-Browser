@@ -3,8 +3,8 @@ use ely_design_system::{colors, spacing};
 use ely_domain::{BrowserTab, DEFAULT_SIDEBAR_WIDTH_PX, HIDDEN_SIDEBAR_WIDTH_PX};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
-    MouseMoveEvent, MouseUpEvent, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px, rgb, rgba,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Render, SharedString, StatefulInteractiveElement,
+    Styled, Window, div, prelude::FluentBuilder, px, rgb, rgba,
 };
 
 use super::chrome::command_match::visible_command_rows;
@@ -20,7 +20,9 @@ impl Render for ElyShell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         match &self.state {
             ShellState::Ready(core) => match (core.snapshot(), core.active_tab().cloned()) {
-                (Ok(snapshot), Ok(active_tab)) => self.render_browser(snapshot, active_tab, window, cx),
+                (Ok(snapshot), Ok(active_tab)) => {
+                    self.render_browser(snapshot, active_tab, window, cx)
+                }
                 (Err(error), _) | (_, Err(error)) => render_error(error.to_string()),
             },
             ShellState::StartupError(message) => render_error(message.clone()),
@@ -89,23 +91,24 @@ impl ElyShell {
                         sidebar_hidden,
                         cx,
                     ))
-                    .child(self.render_main_pane(&snapshot, &active_tab, sidebar_collapsed, window, cx)),
+                    .child(self.render_main_pane(
+                        &snapshot,
+                        &active_tab,
+                        sidebar_collapsed,
+                        window,
+                        cx,
+                    )),
             )
-            .when(hover_expanded, |el| {
-                el.child(self.render_hidden_sidebar_overlay(&snapshot, cx))
-            })
+            .when(hover_expanded, |el| el.child(self.render_hidden_sidebar_overlay(&snapshot, cx)))
             // Workspace popover only makes sense when the picker pill is
             // visible — i.e. the sidebar is expanded. Compact/hidden
             // modes don't render the trigger, so showing the disclosure
             // would float a stranded card with no anchor.
-            .when(
-                self.workspace_picker_open && !sidebar_collapsed && !sidebar_hidden,
-                |el| {
-                    let anchor = WorkspaceDisclosureAnchor::solve(sidebar_width);
-                    el.child(render_workspace_disclosure_backdrop(cx))
-                        .child(render_workspace_disclosure(&snapshot, anchor, cx))
-                },
-            )
+            .when(self.workspace_picker_open && !sidebar_collapsed && !sidebar_hidden, |el| {
+                let anchor = WorkspaceDisclosureAnchor::solve(sidebar_width);
+                el.child(render_workspace_disclosure_backdrop(cx))
+                    .child(render_workspace_disclosure(&snapshot, anchor, cx))
+            })
             .children(render_command_overlay(self, &snapshot, cx))
             .into_any_element()
     }
@@ -260,11 +263,7 @@ impl ElyShell {
         }
     }
 
-    pub(super) fn begin_sidebar_resize(
-        &mut self,
-        cursor_x: f32,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn begin_sidebar_resize(&mut self, cursor_x: f32, cx: &mut Context<Self>) {
         let ShellState::Ready(core) = &self.state else {
             return;
         };
@@ -329,8 +328,7 @@ const REVEAL_THRESHOLD_PX: f32 = 24.0;
 /// Once revealed, cursor x past this px collapses the hidden sidebar back to
 /// the rail. Sits past the right edge of the expanded sidebar plus a small
 /// buffer so brief overshoots don't ping-pong the state.
-const COLLAPSE_THRESHOLD_PX: f32 =
-    spacing::SHELL_INSET + DEFAULT_SIDEBAR_WIDTH_PX as f32 + 24.0;
+const COLLAPSE_THRESHOLD_PX: f32 = spacing::SHELL_INSET + DEFAULT_SIDEBAR_WIDTH_PX as f32 + 24.0;
 
 fn render_error(message: String) -> AnyElement {
     div()
@@ -354,10 +352,7 @@ fn active_sidebar_width(snapshot: &BrowserSnapshot) -> Result<f32, String> {
     Ok(f32::from(active_space.sidebar_width_px()))
 }
 
-pub(super) fn tab_profile_label(
-    tab: &BrowserTab,
-    profiles: &[ely_domain::Profile],
-) -> String {
+pub(super) fn tab_profile_label(tab: &BrowserTab, profiles: &[ely_domain::Profile]) -> String {
     profiles
         .iter()
         .find(|profile| profile.id() == tab.profile_id())

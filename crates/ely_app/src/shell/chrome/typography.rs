@@ -2,12 +2,9 @@ use std::borrow::Cow;
 
 use gpui::App;
 
-const NEWSREADER_REGULAR: &[u8] =
-    include_bytes!("../../../assets/fonts/Newsreader.ttf");
-const NEWSREADER_ITALIC: &[u8] =
-    include_bytes!("../../../assets/fonts/Newsreader-Italic.ttf");
-const GEIST_REGULAR: &[u8] =
-    include_bytes!("../../../assets/fonts/Geist-Regular.ttf");
+const NEWSREADER_REGULAR: &[u8] = include_bytes!("../../../assets/fonts/Newsreader.ttf");
+const NEWSREADER_ITALIC: &[u8] = include_bytes!("../../../assets/fonts/Newsreader-Italic.ttf");
+const GEIST_REGULAR: &[u8] = include_bytes!("../../../assets/fonts/Geist-Regular.ttf");
 
 /// The bundled Newsreader.ttf is the 16pt optical-size cut. GPUI's text
 /// system matches by the font's TrueType name-id 1, which is

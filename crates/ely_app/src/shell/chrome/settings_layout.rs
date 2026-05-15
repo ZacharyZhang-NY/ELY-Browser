@@ -38,11 +38,7 @@ const NAV_GROUPS: &[NavGroup] = &[
                 label: "Spaces",
                 route: "ely://settings/spaces",
             },
-            NavItem {
-                icon: IconName::Search,
-                label: "Search",
-                route: "ely://settings/search",
-            },
+            NavItem { icon: IconName::Search, label: "Search", route: "ely://settings/search" },
             NavItem {
                 icon: IconName::SquareTerminal,
                 label: "Shortcuts",
@@ -53,11 +49,7 @@ const NAV_GROUPS: &[NavGroup] = &[
     NavGroup {
         label: "ACCOUNT",
         items: &[
-            NavItem {
-                icon: IconName::ChartPie,
-                label: "Sync",
-                route: "ely://settings/sync",
-            },
+            NavItem { icon: IconName::ChartPie, label: "Sync", route: "ely://settings/sync" },
             NavItem {
                 icon: IconName::Eye,
                 label: "Privacy & Security",
@@ -83,11 +75,7 @@ const NAV_GROUPS: &[NavGroup] = &[
     NavGroup {
         label: "POWER",
         items: &[
-            NavItem {
-                icon: IconName::Asterisk,
-                label: "Plugins",
-                route: "ely://settings/plugins",
-            },
+            NavItem { icon: IconName::Asterisk, label: "Plugins", route: "ely://settings/plugins" },
             NavItem {
                 icon: IconName::LoaderCircle,
                 label: "Updates",
@@ -102,11 +90,7 @@ const NAV_GROUPS: &[NavGroup] = &[
     },
     NavGroup {
         label: "ABOUT",
-        items: &[NavItem {
-            icon: IconName::Info,
-            label: "About",
-            route: "ely://about",
-        }],
+        items: &[NavItem { icon: IconName::Info, label: "About", route: "ely://about" }],
     },
 ];
 
@@ -149,9 +133,12 @@ fn render_nav_column(
         .gap(px(2.0))
         .overflow_y_scrollbar()
         .child(render_nav_brand(snapshot))
-        .children(NAV_GROUPS.iter().enumerate().map(|(group_index, group)| {
-            render_nav_group(group_index, group, active_route, cx)
-        }))
+        .children(
+            NAV_GROUPS
+                .iter()
+                .enumerate()
+                .map(|(group_index, group)| render_nav_group(group_index, group, active_route, cx)),
+        )
         .into_any_element()
 }
 
@@ -173,10 +160,7 @@ fn render_nav_brand(snapshot: &BrowserSnapshot) -> AnyElement {
             div()
                 .text_size(px(11.5))
                 .text_color(rgb(colors::INK_4))
-                .child(format!(
-                    "ELY 0.42 · Profile: {}",
-                    snapshot.active_profile_name
-                )),
+                .child(format!("ELY 0.42 · Profile: {}", snapshot.active_profile_name)),
         )
         .into_any_element()
 }
@@ -224,9 +208,7 @@ fn render_nav_item(
     let icon = item.icon.clone();
 
     div()
-        .id(SharedString::from(format!(
-            "settings-nav-{group_index}-{item_index}"
-        )))
+        .id(SharedString::from(format!("settings-nav-{group_index}-{item_index}")))
         .flex()
         .items_center()
         .gap(px(10.0))
@@ -242,11 +224,7 @@ fn render_nav_item(
         .on_click(cx.listener(move |shell, _, window, cx| {
             shell.open_internal_tab(route, window, cx);
         }))
-        .child(
-            div()
-                .text_color(rgb(colors::INK_3))
-                .child(icon),
-        )
+        .child(div().text_color(rgb(colors::INK_3)).child(icon))
         .child(div().flex_1().truncate().child(item.label))
         .into_any_element()
 }
