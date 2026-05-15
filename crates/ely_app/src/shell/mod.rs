@@ -482,8 +482,14 @@ impl ElyShell {
 
 fn start_external_web_surface_timer(cx: &mut Context<ElyShell>) {
     cx.spawn(async move |shell, cx| {
+        // 8 ms ≈ 125 Hz, matched to a 120 Hz display's frame budget.
+        // The Servo worker thread does the blocking IPC, so this tick
+        // only enqueues Poll requests and drains the response channel
+        // — cheap enough to run twice as often as the previous 60 Hz
+        // schedule and lets active pages feed the renderer a fresh
+        // frame between every display refresh.
         loop {
-            Timer::after(Duration::from_millis(16)).await;
+            Timer::after(Duration::from_millis(8)).await;
             let result = shell.update(cx, |shell, cx| {
                 if shell.tick_external_web_surfaces() {
                     cx.notify();

@@ -21,7 +21,18 @@ where
     })
 }
 
-/// Soft fade-in over `panel_transition_ms` once the element first mounts.
+/// Cubic ease-out: `1 - (1 - t)^3`. Decelerates as it approaches `1.0`,
+/// matching the productive register's "settles fast" feel used by every
+/// reveal / pop / scale animation in the shell. Inlined so callers can
+/// shape their `t` value before applying it to opacity or scale without
+/// adding a per-frame function-call cost.
+pub(crate) fn ease_out_cubic(t: f32) -> f32 {
+    let inv = (1.0 - t).clamp(0.0, 1.0);
+    1.0 - inv * inv * inv
+}
+
+/// Soft fade-in over `duration_ms` once the element first mounts, eased
+/// out so the trail end settles to fully opaque without an abrupt cut.
 ///
 /// Drives the design's `panel transition` motion token (180 ms productive)
 /// for surfaces like the command overlay and workspace disclosure that
@@ -31,5 +42,26 @@ where
     E: IntoElement + Styled + 'static,
 {
     let animation = Animation::new(Duration::from_millis(duration_ms));
-    element.with_animation(id, animation, |element, t| element.opacity(t))
+    element.with_animation(id, animation, |element, t| element.opacity(ease_out_cubic(t)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ease_out_cubic;
+
+    #[test]
+    fn ease_out_cubic_anchors_at_endpoints() {
+        assert!((ease_out_cubic(0.0)).abs() < f32::EPSILON);
+        assert!((ease_out_cubic(1.0) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn ease_out_cubic_decelerates() {
+        // First half should travel less than the second half — that's
+        // the visual signature of ease-out.
+        let first_half = ease_out_cubic(0.5);
+        let second_half = 1.0 - first_half;
+        assert!(first_half > 0.5, "ease-out spends more time near 1.0 ({first_half})");
+        assert!(second_half < 0.5);
+    }
 }
