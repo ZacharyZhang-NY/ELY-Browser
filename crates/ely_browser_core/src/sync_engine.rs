@@ -75,20 +75,17 @@ impl SyncEngine {
         self.bearer_store.load().map(|token| token.is_some())
     }
 
-    /// Build the JSON snapshot payload and ship it to the worker. The
-    /// caller passes the BrowserCore directly so the snapshot reads
-    /// the latest committed state; we don't keep a parallel copy.
-    pub fn upload_now(&mut self, core: &BrowserCore) -> Result<SyncOutcome, SyncClientError> {
+    /// Ship a pre-serialised snapshot payload to the worker. Callers
+    /// usually pair this with `BrowserCore::build_sync_snapshot_bytes`
+    /// — building the bytes on the UI thread and only crossing the
+    /// thread boundary with `Vec<u8>` keeps `BrowserCore` itself
+    /// single-threaded.
+    pub fn upload_bytes(&mut self, bytes: Vec<u8>) -> Result<SyncOutcome, SyncClientError> {
         let Some(bearer) = self.bearer_store.load()? else {
             let outcome = SyncOutcome::SignedOut;
             self.last_outcome = Some(outcome.clone());
             return Ok(outcome);
         };
-        let snapshot = SyncSnapshotBody::from_core(core);
-        let bytes = serde_json::to_vec(&snapshot).map_err(|error| SyncClientError::Json {
-            endpoint: "snapshot".to_string(),
-            source: error,
-        })?;
         let payload = SnapshotPayload::new(bytes)?;
         let logical_clock = current_logical_clock();
         let snapshot_id = snapshot_id_for_user(&self.identity);
@@ -199,5 +196,19 @@ pub struct SyncEngineBuilder {
 impl SyncEngineBuilder {
     pub fn build(self) -> Result<SyncEngine, SyncClientError> {
         SyncEngine::for_profile_dir(&self.profile_data_dir, self.device_name, self.platform)
+    }
+}
+
+impl BrowserCore {
+    /// Build the JSON byte payload the sync engine expects. Lives on
+    /// `BrowserCore` so the snapshot reads the live state and so the
+    /// UI thread does the (synchronous, cheap) serialization before
+    /// handing bytes off to the worker thread.
+    pub fn build_sync_snapshot_bytes(&self) -> Result<Vec<u8>, SyncClientError> {
+        let body = SyncSnapshotBody::from_core(self);
+        serde_json::to_vec(&body).map_err(|error| SyncClientError::Json {
+            endpoint: "snapshot".to_string(),
+            source: error,
+        })
     }
 }

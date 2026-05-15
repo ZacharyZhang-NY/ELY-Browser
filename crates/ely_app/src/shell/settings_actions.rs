@@ -1,3 +1,4 @@
+use ely_browser_core::SyncEngine;
 use ely_domain::{
     ArchivePolicy, DEFAULT_TRANSLUCENCY_PCT, DiagnosticsReportingPolicy, DownloadPolicy,
     FavoriteLimit, HistoryRecordingPolicy, NewTabDestination, ProfileId, ProfileSyncPolicy,
@@ -5,6 +6,8 @@ use ely_domain::{
 };
 use gpui::Context;
 use gpui_component::slider::SliderValue;
+
+use crate::services::servo_profile_data::{default_profile_data_root, profile_data_dir};
 
 use super::{ElyShell, ShellState};
 
@@ -238,6 +241,50 @@ impl ElyShell {
         }
     }
 
+    /// Push the active profile's bookmarks to `ely-browser-cloud` as a
+    /// snapshot. The HTTP round-trip runs on a dedicated worker thread
+    /// (the UI thread never blocks on the network), and the result is
+    /// emitted via `tracing` so the user can inspect it through
+    /// `RUST_LOG=ely::sync=info`. No bearer token on disk → the
+    /// engine reports `SignedOut` and the click is a no-op.
+    pub(super) fn trigger_cloud_sync_upload(&mut self, _cx: &mut Context<Self>) {
+        let ShellState::Ready(core) = &self.state else {
+            return;
+        };
+        let Some(snapshot) = core.snapshot().ok() else {
+            return;
+        };
+        let active_profile_id = snapshot.active_profile_id.clone();
+        let device_name = format!("ELY · {}", snapshot.active_profile_name);
+        let Some(profile_root) = default_profile_data_root() else {
+            tracing::warn!(target: "ely::sync", "profile data root is unavailable");
+            return;
+        };
+        let profile_dir = profile_data_dir(&profile_root, &active_profile_id);
+        let bytes = match core.build_sync_snapshot_bytes() {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                tracing::warn!(
+                    target: "ely::sync",
+                    error = %error,
+                    "snapshot serialisation failed; aborting upload",
+                );
+                return;
+            }
+        };
+        std::thread::Builder::new()
+            .name("ely-sync-upload".to_string())
+            .spawn(move || run_sync_upload(profile_dir, device_name, bytes))
+            .map(|_| ())
+            .unwrap_or_else(|error| {
+                tracing::warn!(
+                    target: "ely::sync",
+                    error = %error,
+                    "failed to spawn ely-sync-upload thread",
+                );
+            });
+    }
+
     pub(super) fn set_update_policy(
         &mut self,
         update_policy: UpdatePolicy,
@@ -262,5 +309,43 @@ impl ElyShell {
         {
             cx.notify();
         }
+    }
+}
+
+fn run_sync_upload(profile_dir: std::path::PathBuf, device_name: String, bytes: Vec<u8>) {
+    let mut engine = match SyncEngine::for_profile_dir(&profile_dir, device_name, sync_platform()) {
+        Ok(engine) => engine,
+        Err(error) => {
+            tracing::warn!(
+                target: "ely::sync",
+                error = %error,
+                "could not initialise sync engine",
+            );
+            return;
+        }
+    };
+    match engine.upload_bytes(bytes) {
+        Ok(outcome) => tracing::info!(
+            target: "ely::sync",
+            outcome = ?outcome,
+            "snapshot upload complete",
+        ),
+        Err(error) => tracing::warn!(
+            target: "ely::sync",
+            error = %error,
+            "snapshot upload failed",
+        ),
+    }
+}
+
+const fn sync_platform() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "macos"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "linux") {
+        "linux"
+    } else {
+        "other"
     }
 }
