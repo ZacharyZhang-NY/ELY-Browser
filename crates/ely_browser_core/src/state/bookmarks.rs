@@ -242,6 +242,13 @@ impl BrowserCore {
             .collect()
     }
 
+    /// Read-only view across every bookmark, regardless of profile —
+    /// used by the sync engine which mirrors the full state to the
+    /// Cloudflare worker, not just the visible profile.
+    pub fn visible_bookmarks_for_sync(&self) -> Vec<&BookmarkEntry> {
+        self.bookmarks.iter().collect()
+    }
+
     fn bookmark_mut(&mut self, bookmark_id: &BookmarkId) -> Result<&mut BookmarkEntry, CoreError> {
         self.bookmarks
             .iter_mut()

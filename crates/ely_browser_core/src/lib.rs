@@ -1,6 +1,7 @@
 mod error;
 mod navigation;
 mod state;
+mod sync_engine;
 
 pub use error::CoreError;
 pub use state::{
@@ -10,3 +11,4 @@ pub use state::{
     ElySpacePackage, InitialBrowserConfig, InstalledPlugin, LocalDataInventory, PluginAuditAction,
     PluginAuditEvent, SiteDataClearance, SpaceImportProfileMapping, TrashedSpace,
 };
+pub use sync_engine::{SyncEngine, SyncEngineBuilder, SyncOutcome};

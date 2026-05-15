@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 ely_domain = { path = "../ely_domain" }
+ely_sync_client = { path = "../ely_sync_client" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

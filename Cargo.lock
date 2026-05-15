@@ -2277,6 +2277,7 @@ name = "ely_browser_core"
 version = "0.1.0"
 dependencies = [
  "ely_domain",
+ "ely_sync_client",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
