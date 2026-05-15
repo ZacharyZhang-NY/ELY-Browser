@@ -5,6 +5,7 @@ members = [
     "crates/ely_design_system",
     "crates/ely_domain",
     "crates/ely_servo_host",
+    "crates/ely_sync_client",
 ]
 default-members = ["crates/ely_app"]
 resolver = "2"
