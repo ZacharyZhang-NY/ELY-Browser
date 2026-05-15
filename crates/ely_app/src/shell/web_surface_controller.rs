@@ -65,7 +65,8 @@ impl ElyShell {
         for metadata in result.page_metadata {
             metadata_changed |= self.apply_web_surface_page_metadata(metadata);
         }
-        result.changed || url_changed || metadata_changed
+        let sync_changed = self.drain_sync_updates();
+        result.changed || url_changed || metadata_changed || sync_changed
     }
 
     pub(super) fn record_external_web_viewport(

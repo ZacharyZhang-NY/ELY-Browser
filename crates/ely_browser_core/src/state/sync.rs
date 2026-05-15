@@ -1,4 +1,7 @@
-use ely_domain::{SyncObjectKind, SyncObjectPolicy, SyncObjectState, SyncObjectStatus, SyncStatus};
+use ely_domain::{
+    SyncConnectionState, SyncObjectKind, SyncObjectPolicy, SyncObjectState, SyncObjectStatus,
+    SyncStatus,
+};
 
 use super::BrowserCore;
 
@@ -75,54 +78,57 @@ impl BrowserCore {
         self.sync_object_policies.get(kind)
     }
 
+    pub fn set_sync_connection_state(&mut self, state: SyncConnectionState) {
+        self.sync_connection_state = state;
+    }
+
     pub(super) fn sync_status(&self) -> SyncStatus {
-        SyncStatus::signed_out(vec![
-            self.sync_object_status(
-                SyncObjectKind::Spaces,
-                self.spaces.len(),
-                SyncObjectState::LocalOnly,
-            ),
-            self.sync_object_status(
-                SyncObjectKind::Tabs,
-                self.sync_enabled_tab_count(),
-                SyncObjectState::LocalOnly,
-            ),
-            self.sync_object_status(
-                SyncObjectKind::Bookmarks,
-                self.bookmarks.len(),
-                SyncObjectState::LocalOnly,
-            ),
-            self.sync_object_status(
-                SyncObjectKind::Notes,
-                self.notes.len(),
-                SyncObjectState::LocalOnly,
-            ),
-            self.sync_object_status(
-                SyncObjectKind::ReadingList,
-                self.reading_list.len(),
-                SyncObjectState::LocalOnly,
-            ),
-            self.sync_object_status(
-                SyncObjectKind::Profiles,
-                self.profiles.len(),
-                SyncObjectState::LocalOnly,
-            ),
-            self.sync_object_status(
-                SyncObjectKind::SitePermissions,
-                self.site_permissions.len(),
-                SyncObjectState::LocalOnly,
-            ),
-            self.sync_object_status(
-                SyncObjectKind::History,
-                self.history_entries.len(),
-                SyncObjectState::PrivacyControlled,
-            ),
-            self.sync_object_status(
-                SyncObjectKind::PluginSettings,
-                self.installed_plugins.len(),
-                SyncObjectState::LocalOnly,
-            ),
-        ])
+        let enabled_state = match &self.sync_connection_state {
+            SyncConnectionState::SyncReady { .. } => SyncObjectState::Synced,
+            _ => SyncObjectState::LocalOnly,
+        };
+        SyncStatus::new(
+            self.sync_connection_state.clone(),
+            vec![
+                self.sync_object_status(SyncObjectKind::Spaces, self.spaces.len(), enabled_state),
+                self.sync_object_status(
+                    SyncObjectKind::Tabs,
+                    self.sync_enabled_tab_count(),
+                    enabled_state,
+                ),
+                self.sync_object_status(
+                    SyncObjectKind::Bookmarks,
+                    self.bookmarks.len(),
+                    enabled_state,
+                ),
+                self.sync_object_status(SyncObjectKind::Notes, self.notes.len(), enabled_state),
+                self.sync_object_status(
+                    SyncObjectKind::ReadingList,
+                    self.reading_list.len(),
+                    enabled_state,
+                ),
+                self.sync_object_status(
+                    SyncObjectKind::Profiles,
+                    self.profiles.len(),
+                    enabled_state,
+                ),
+                self.sync_object_status(
+                    SyncObjectKind::SitePermissions,
+                    self.site_permissions.len(),
+                    enabled_state,
+                ),
+                self.sync_object_status(
+                    SyncObjectKind::History,
+                    self.history_entries.len(),
+                    SyncObjectState::PrivacyControlled,
+                ),
+                self.sync_object_status(
+                    SyncObjectKind::PluginSettings,
+                    self.installed_plugins.len(),
+                    enabled_state,
+                ),
+            ],
+        )
     }
 
     fn sync_object_status(

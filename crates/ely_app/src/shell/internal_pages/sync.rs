@@ -266,6 +266,7 @@ fn render_state_dot(state: SyncObjectState) -> AnyElement {
         SyncObjectState::LocalOnly => colors::ink_4(),
         SyncObjectState::Paused => colors::ink_5(),
         SyncObjectState::PrivacyControlled => colors::accent(),
+        SyncObjectState::Synced => colors::success(),
     };
 
     div().size(px(8.0)).rounded_full().bg(rgb(color)).into_any_element()
@@ -304,10 +305,46 @@ fn render_policy_toggle(
         .into_any_element()
 }
 
-fn connection_label(connection: &SyncConnectionState) -> &'static str {
+fn connection_label(connection: &SyncConnectionState) -> String {
     match connection {
-        SyncConnectionState::SignedOut => "Local-only · sign-in coming soon",
+        SyncConnectionState::SignedOut => "Local-only · drop a session token to enable".to_string(),
+        SyncConnectionState::SignedIn => "Signed in · awaiting first sync".to_string(),
+        SyncConnectionState::AwaitingDeviceApproval => {
+            "Signed in · waiting for device approval".to_string()
+        }
+        SyncConnectionState::SyncReady { last_synced_at_secs } => {
+            format!("Synced · last upload {}", relative_time_since(*last_synced_at_secs))
+        }
+        SyncConnectionState::SyncError { message } => {
+            format!("Sync error · {}", short_message(message))
+        }
     }
+}
+
+fn relative_time_since(secs: u64) -> String {
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    let when = UNIX_EPOCH + Duration::from_secs(secs);
+    let elapsed = SystemTime::now().duration_since(when).unwrap_or_default();
+    let total_secs = elapsed.as_secs();
+    if total_secs < 60 {
+        return format!("{total_secs}s ago");
+    }
+    if total_secs < 3600 {
+        return format!("{}m ago", total_secs / 60);
+    }
+    if total_secs < 86400 {
+        return format!("{}h ago", total_secs / 3600);
+    }
+    format!("{}d ago", total_secs / 86400)
+}
+
+fn short_message(message: &str) -> String {
+    const MAX_LEN: usize = 72;
+    if message.len() <= MAX_LEN {
+        return message.to_string();
+    }
+    let truncated: String = message.chars().take(MAX_LEN - 1).collect();
+    format!("{truncated}…")
 }
 
 fn sync_object_kind_label(kind: SyncObjectKind) -> &'static str {
@@ -329,6 +366,7 @@ fn sync_object_state_label(state: SyncObjectState) -> &'static str {
         SyncObjectState::LocalOnly => "Local only",
         SyncObjectState::Paused => "Paused",
         SyncObjectState::PrivacyControlled => "Privacy controlled",
+        SyncObjectState::Synced => "Synced",
     }
 }
 

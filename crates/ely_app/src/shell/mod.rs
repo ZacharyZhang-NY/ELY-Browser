@@ -99,8 +99,27 @@ pub struct ElyShell {
     pending_plugin_install: Option<PendingPluginInstall>,
     pending_plugin_uninstall: Option<PendingPluginUninstall>,
     web_surfaces: WebSurfaceStore,
+    /// Receives sync upload outcomes from the off-thread worker so the
+    /// shell can refresh the connection state without blocking. Sender
+    /// is cloned for each spawned upload; receiver is drained on every
+    /// `tick_external_web_surfaces`.
+    sync_inbox_rx: std::sync::mpsc::Receiver<SyncStateUpdate>,
+    pub(crate) sync_inbox_tx: std::sync::mpsc::Sender<SyncStateUpdate>,
     _command_subscription: Subscription,
     _translucency_subscription: Subscription,
+}
+
+/// Messages the off-thread sync worker pushes back to the shell so the
+/// `SyncConnectionState` on `BrowserCore` reflects the live engine
+/// without the UI thread ever touching the network. `SignedIn` is the
+/// initial-probe state set synchronously on shell startup and does not
+/// flow through this channel.
+#[derive(Clone, Debug)]
+pub(crate) enum SyncStateUpdate {
+    SignedOut,
+    AwaitingDeviceApproval,
+    SyncReady { last_synced_at_secs: u64 },
+    SyncError { message: String },
 }
 
 impl ElyShell {
@@ -182,7 +201,8 @@ impl ElyShell {
             Err(error) => ShellState::StartupError(error.to_string()),
         };
 
-        let shell = Self {
+        let (sync_inbox_tx, sync_inbox_rx) = std::sync::mpsc::channel();
+        let mut shell = Self {
             state,
             focus_handle: cx.focus_handle(),
             command_input,
@@ -215,11 +235,74 @@ impl ElyShell {
             pending_plugin_install: None,
             pending_plugin_uninstall: None,
             web_surfaces: WebSurfaceStore::new(),
+            sync_inbox_rx,
+            sync_inbox_tx,
             _command_subscription: command_subscription,
             _translucency_subscription: translucency_subscription,
         };
+        shell.probe_initial_sync_state();
         start_external_web_surface_timer(cx);
         shell
+    }
+
+    /// Inspect the on-disk bearer token (if any) and seed the
+    /// `SyncConnectionState` so the Sync settings page reads the right
+    /// label on first render — without any sync setting page open it
+    /// would otherwise stay `SignedOut` until the user clicks Sync now.
+    fn probe_initial_sync_state(&mut self) {
+        let ShellState::Ready(core) = &mut self.state else {
+            return;
+        };
+        let Some(snapshot) = core.snapshot().ok() else {
+            return;
+        };
+        let active_profile_id = snapshot.active_profile_id.clone();
+        let Some(profile_root) = crate::services::servo_profile_data::default_profile_data_root()
+        else {
+            return;
+        };
+        let profile_dir = crate::services::servo_profile_data::profile_data_dir(
+            &profile_root,
+            &active_profile_id,
+        );
+        let bearer_path = profile_dir.join("sync").join("bearer.token");
+        let bearer_present = std::fs::metadata(&bearer_path).map(|m| m.len() > 0).unwrap_or(false);
+        let state = if bearer_present {
+            ely_domain::SyncConnectionState::SignedIn
+        } else {
+            ely_domain::SyncConnectionState::SignedOut
+        };
+        core.set_sync_connection_state(state);
+    }
+
+    /// Drain any sync upload outcomes the off-thread worker pushed
+    /// since the previous tick and stamp the resulting connection
+    /// state on `BrowserCore`. Returns `true` when at least one
+    /// update was applied so callers can `cx.notify()` accordingly.
+    pub(super) fn drain_sync_updates(&mut self) -> bool {
+        let ShellState::Ready(core) = &mut self.state else {
+            return false;
+        };
+        let mut latest: Option<ely_domain::SyncConnectionState> = None;
+        while let Ok(update) = self.sync_inbox_rx.try_recv() {
+            latest = Some(match update {
+                SyncStateUpdate::SignedOut => ely_domain::SyncConnectionState::SignedOut,
+                SyncStateUpdate::AwaitingDeviceApproval => {
+                    ely_domain::SyncConnectionState::AwaitingDeviceApproval
+                }
+                SyncStateUpdate::SyncReady { last_synced_at_secs } => {
+                    ely_domain::SyncConnectionState::SyncReady { last_synced_at_secs }
+                }
+                SyncStateUpdate::SyncError { message } => {
+                    ely_domain::SyncConnectionState::SyncError { message }
+                }
+            });
+        }
+        if let Some(state) = latest {
+            core.set_sync_connection_state(state);
+            return true;
+        }
+        false
     }
 
     fn focus_command_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {

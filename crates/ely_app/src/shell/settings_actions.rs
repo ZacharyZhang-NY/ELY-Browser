@@ -243,10 +243,9 @@ impl ElyShell {
 
     /// Push the active profile's bookmarks to `ely-browser-cloud` as a
     /// snapshot. The HTTP round-trip runs on a dedicated worker thread
-    /// (the UI thread never blocks on the network), and the result is
-    /// emitted via `tracing` so the user can inspect it through
-    /// `RUST_LOG=ely::sync=info`. No bearer token on disk → the
-    /// engine reports `SignedOut` and the click is a no-op.
+    /// (the UI thread never blocks on the network), and the worker
+    /// reports back through the shell's `sync_inbox` so the sync page
+    /// reflects the new state without waiting for a manual refresh.
     pub(super) fn trigger_cloud_sync_upload(&mut self, _cx: &mut Context<Self>) {
         let ShellState::Ready(core) = &self.state else {
             return;
@@ -272,9 +271,10 @@ impl ElyShell {
                 return;
             }
         };
+        let tx = self.sync_inbox_tx.clone();
         std::thread::Builder::new()
             .name("ely-sync-upload".to_string())
-            .spawn(move || run_sync_upload(profile_dir, device_name, bytes))
+            .spawn(move || run_sync_upload(profile_dir, device_name, bytes, tx))
             .map(|_| ())
             .unwrap_or_else(|error| {
                 tracing::warn!(
@@ -312,29 +312,56 @@ impl ElyShell {
     }
 }
 
-fn run_sync_upload(profile_dir: std::path::PathBuf, device_name: String, bytes: Vec<u8>) {
+fn run_sync_upload(
+    profile_dir: std::path::PathBuf,
+    device_name: String,
+    bytes: Vec<u8>,
+    inbox: std::sync::mpsc::Sender<super::SyncStateUpdate>,
+) {
     let mut engine = match SyncEngine::for_profile_dir(&profile_dir, device_name, sync_platform()) {
         Ok(engine) => engine,
         Err(error) => {
-            tracing::warn!(
-                target: "ely::sync",
-                error = %error,
-                "could not initialise sync engine",
-            );
+            let message = error.to_string();
+            tracing::warn!(target: "ely::sync", error = %message, "could not initialise sync engine");
+            let _ = inbox.send(super::SyncStateUpdate::SyncError { message });
             return;
         }
     };
     match engine.upload_bytes(bytes) {
-        Ok(outcome) => tracing::info!(
-            target: "ely::sync",
-            outcome = ?outcome,
-            "snapshot upload complete",
-        ),
-        Err(error) => tracing::warn!(
-            target: "ely::sync",
-            error = %error,
-            "snapshot upload failed",
-        ),
+        Ok(ely_browser_core::SyncOutcome::SignedOut) => {
+            tracing::info!(target: "ely::sync", "no bearer token on disk; sync skipped");
+            let _ = inbox.send(super::SyncStateUpdate::SignedOut);
+        }
+        Ok(ely_browser_core::SyncOutcome::Uploaded {
+            snapshot_id,
+            logical_clock,
+            payload_bytes,
+            device_id,
+        }) => {
+            tracing::info!(
+                target: "ely::sync",
+                snapshot_id = %snapshot_id,
+                logical_clock,
+                payload_bytes,
+                device_id = %device_id,
+                "snapshot upload complete",
+            );
+            let last_synced_at_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let _ = inbox.send(super::SyncStateUpdate::SyncReady { last_synced_at_secs });
+        }
+        Err(error) => {
+            let message = error.to_string();
+            tracing::warn!(target: "ely::sync", error = %message, "snapshot upload failed");
+            let update = if message.contains("device_not_approved") {
+                super::SyncStateUpdate::AwaitingDeviceApproval
+            } else {
+                super::SyncStateUpdate::SyncError { message }
+            };
+            let _ = inbox.send(update);
+        }
     }
 }
 

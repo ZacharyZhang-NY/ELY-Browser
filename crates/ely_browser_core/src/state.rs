@@ -162,6 +162,7 @@ pub struct BrowserCore {
     update_policy: UpdatePolicy,
     appearance: AppearanceSettings,
     sync_object_policies: SyncObjectPolicies,
+    sync_connection_state: ely_domain::SyncConnectionState,
     command_query: String,
 }
 
@@ -210,6 +211,7 @@ impl BrowserCore {
             update_policy: UpdatePolicy::default(),
             appearance: AppearanceSettings::default(),
             sync_object_policies: SyncObjectPolicies::default(),
+            sync_connection_state: ely_domain::SyncConnectionState::SignedOut,
             spaces: vec![space],
             profiles: vec![profile],
             tabs: vec![tab],
