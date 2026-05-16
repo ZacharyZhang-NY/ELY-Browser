@@ -32,7 +32,7 @@ impl Render for ElyShell {
                         appearance,
                     ));
                     match active_tab_from_snapshot(&snapshot) {
-                        Some(active_tab) => self.render_browser(snapshot, active_tab, window, cx),
+                        Some(active_tab) => self.render_browser(&snapshot, active_tab, window, cx),
                         None => render_error("active tab missing from snapshot".to_string()),
                     }
                 }
@@ -70,19 +70,19 @@ fn resolve_color_mode(
     }
 }
 
-fn active_tab_from_snapshot(snapshot: &BrowserSnapshot) -> Option<BrowserTab> {
-    snapshot.tabs.iter().find(|tab| tab.id() == &snapshot.active_tab_id).cloned()
+fn active_tab_from_snapshot(snapshot: &BrowserSnapshot) -> Option<&BrowserTab> {
+    snapshot.tabs.iter().find(|tab| tab.id() == &snapshot.active_tab_id)
 }
 
 impl ElyShell {
     fn render_browser(
         &mut self,
-        snapshot: BrowserSnapshot,
-        active_tab: BrowserTab,
+        snapshot: &BrowserSnapshot,
+        active_tab: &BrowserTab,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let sidebar_width = match active_sidebar_width(&snapshot) {
+        let sidebar_width = match active_sidebar_width(snapshot) {
             Ok(sidebar_width) => sidebar_width,
             Err(message) => return render_error(message),
         };
@@ -129,21 +129,21 @@ impl ElyShell {
                     .gap(px(spacing::SIDEBAR_MAIN_GAP))
                     .flex()
                     .child(self.render_sidebar(
-                        &snapshot,
+                        snapshot,
                         sidebar_width,
                         sidebar_collapsed,
                         sidebar_hidden,
                         cx,
                     ))
                     .child(self.render_main_pane(
-                        &snapshot,
-                        &active_tab,
+                        snapshot,
+                        active_tab,
                         sidebar_collapsed,
                         window,
                         cx,
                     )),
             )
-            .when(hover_expanded, |el| el.child(self.render_hidden_sidebar_overlay(&snapshot, cx)))
+            .when(hover_expanded, |el| el.child(self.render_hidden_sidebar_overlay(snapshot, cx)))
             // Workspace popover only makes sense when the picker pill is
             // visible — i.e. the sidebar is expanded. Compact/hidden
             // modes don't render the trigger, so showing the disclosure
@@ -151,9 +151,9 @@ impl ElyShell {
             .when(self.workspace_picker_open && !sidebar_collapsed && !sidebar_hidden, |el| {
                 let anchor = WorkspaceDisclosureAnchor::solve(sidebar_width);
                 el.child(render_workspace_disclosure_backdrop(cx))
-                    .child(render_workspace_disclosure(&snapshot, anchor, cx))
+                    .child(render_workspace_disclosure(snapshot, anchor, cx))
             })
-            .children(render_command_overlay(self, &snapshot, cx))
+            .children(render_command_overlay(self, snapshot, cx))
             .into_any_element()
     }
 

@@ -408,10 +408,16 @@ impl BrowserCore {
     pub fn snapshot(&self) -> Result<BrowserSnapshot, CoreError> {
         let active_space = self.active_space()?;
         let active_profile = self.active_profile()?;
+        let tabs = self.visible_tabs();
+        let pinned_tabs = tabs
+            .iter()
+            .filter(|tab| tab.flags().pinned && !tab.flags().favorite)
+            .cloned()
+            .collect();
 
         Ok(BrowserSnapshot {
             favorites: self.favorites(),
-            pinned_tabs: self.pinned_tabs(),
+            pinned_tabs,
             archived_tabs: self.archived_tabs.clone(),
             bookmarks: self.visible_bookmarks(),
             notes: self.visible_notes(),
@@ -431,7 +437,7 @@ impl BrowserCore {
             trashed_spaces: self.trashed_spaces.clone(),
             profiles: self.profiles.clone(),
             sync_status: self.sync_status(),
-            tabs: self.visible_tabs(),
+            tabs,
             active_tab_id: self.active_tab_id.clone(),
             active_space_id: self.active_space_id.clone(),
             active_profile_id: self.active_profile_id.clone(),
@@ -475,15 +481,6 @@ impl BrowserCore {
 
     fn favorites(&self) -> Vec<BrowserTab> {
         self.tabs.iter().filter(|tab| tab.flags().favorite).cloned().collect()
-    }
-
-    fn pinned_tabs(&self) -> Vec<BrowserTab> {
-        tab_order::sorted_tabs(
-            self.tabs
-                .iter()
-                .filter(|tab| tab.space_id() == &self.active_space_id)
-                .filter(|tab| tab.flags().pinned && !tab.flags().favorite),
-        )
     }
 
     fn visible_tabs(&self) -> Vec<BrowserTab> {
