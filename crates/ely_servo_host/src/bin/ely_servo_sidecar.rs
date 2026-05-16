@@ -23,6 +23,8 @@ mod live;
 mod live_output;
 #[path = "ely_servo_sidecar/live_protocol.rs"]
 mod live_protocol;
+#[path = "ely_servo_sidecar/live_session.rs"]
+mod live_session;
 #[path = "ely_servo_sidecar/perf.rs"]
 mod perf;
 #[path = "ely_servo_sidecar/report.rs"]
