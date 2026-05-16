@@ -15,7 +15,7 @@ describe("better auth email otp", () => {
 
     const email = sentEmails[0]!;
     assert.equal(email.to, "user@example.com");
-    assert.deepEqual(email.from, { email: "auth@elydora.com", name: "ELY Browser" });
+    assert.deepEqual(email.from, { email: "browser@elydora.com", name: "ELY Browser" });
     assert.equal(email.subject, "Your ELY Browser sign-in code");
     assert.match(email.text ?? "", /Your ELY Browser sign-in code is \d{6}\./);
     assert.match(email.html ?? "", /<strong[^>]*>\d{6}<\/strong>/);
