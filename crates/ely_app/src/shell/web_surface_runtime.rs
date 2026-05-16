@@ -62,6 +62,7 @@ impl WebSurfaceRuntime {
         let user_navigation_input = input_requests_history_navigation(&input);
         let next_scroll_offset = input.scroll_offset;
 
+        let submitted_at = Instant::now();
         let started_loading = {
             let session = session_for_scope(&mut self.sessions, tab.id(), scope.clone());
             let started_loading = session.started_loading(&requested_url, size, zoom_percent);
@@ -75,7 +76,7 @@ impl WebSurfaceRuntime {
             session.size = size;
             session.zoom_percent = zoom_percent;
             session.scroll_offset = next_scroll_offset;
-            session.cadence.note_ensure(input_kind, started_loading, Instant::now());
+            session.cadence.note_ensure(input_kind, started_loading, submitted_at);
             started_loading
         };
 
@@ -103,6 +104,9 @@ impl WebSurfaceRuntime {
             return Err("Servo worker was created but is no longer registered".to_string());
         };
         scoped.worker.submit_ensure(request);
+        if let Some(session) = self.sessions.get_mut(tab.id()) {
+            session.cadence.note_poll_submitted(submitted_at);
+        }
         log_ensure_submitted(tab, size, input_kind.label(), enqueued_at, started_loading);
 
         Ok(WebSurfaceEnsureResult { requested_url, started_loading })

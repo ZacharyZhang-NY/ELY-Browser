@@ -128,7 +128,9 @@ fn store_tick_delay_tracks_runtime_cadence() -> Result<(), String> {
         WebSurfaceInputOutcome::Applied,
     );
     assert!(store.ensure_surface(&tab, ProfileDataMode::Transient, &[]));
-    assert_eq!(store.next_tick_delay(&visible), Duration::ZERO);
+    let ensure_delay = store.next_tick_delay(&visible);
+    assert!(ensure_delay > Duration::ZERO);
+    assert!(ensure_delay <= ACTIVE_POLL_INTERVAL);
 
     let _ = store.tick(&visible);
     let delay = store.next_tick_delay(&visible);
