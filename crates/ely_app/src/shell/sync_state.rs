@@ -97,16 +97,7 @@ impl ElyShell {
         let ShellState::Ready(core) = &self.state else {
             return false;
         };
-        let Some(snapshot) = core.snapshot().ok() else {
-            return false;
-        };
-        matches!(
-            snapshot.sync_status.connection(),
-            SyncConnectionState::SignedIn
-                | SyncConnectionState::AwaitingDeviceApproval
-                | SyncConnectionState::SyncReady { .. }
-                | SyncConnectionState::SyncError { .. }
-        )
+        core.cloud_sync_upload_enabled()
     }
 
     /// Inspect the on-disk bearer token and seed `SyncConnectionState`

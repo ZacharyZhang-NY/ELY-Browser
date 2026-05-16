@@ -88,6 +88,17 @@ impl BrowserCore {
         self.sync_connection_state = state;
     }
 
+    #[must_use]
+    pub fn cloud_sync_upload_enabled(&self) -> bool {
+        matches!(
+            self.sync_connection_state,
+            SyncConnectionState::SignedIn
+                | SyncConnectionState::AwaitingDeviceApproval
+                | SyncConnectionState::SyncReady { .. }
+                | SyncConnectionState::SyncError { .. }
+        )
+    }
+
     pub(crate) fn sync_space_name_for(&self, space_id: &SpaceId) -> Option<String> {
         self.spaces
             .iter()
