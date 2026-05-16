@@ -182,20 +182,15 @@ impl ElyShell {
 
 impl ElyShell {
     fn ensure_visible_web_surfaces(&mut self, visible_tabs: Vec<VisibleWebSurfaceTab>) -> bool {
-        let mut url_changed = false;
         let mut changed = false;
         for visible in visible_tabs {
-            let outcome = self.web_surfaces.ensure_surface(
+            changed |= self.web_surfaces.ensure_surface(
                 &visible.tab,
                 visible.profile_data_mode,
                 &visible.permissions,
             );
-            changed |= outcome.changed;
-            if let Some(url_change) = outcome.url_change {
-                url_changed |= self.apply_web_surface_url_change(url_change);
-            }
         }
-        changed || url_changed
+        changed
     }
 
     fn apply_web_surface_url_change(&mut self, change: WebSurfaceUrlChange) -> bool {

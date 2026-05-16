@@ -48,20 +48,19 @@ impl WebSurfaceStore {
         tab: &BrowserTab,
         profile_data_mode: ProfileDataMode,
         permissions: &[WebSurfaceSitePermission],
-    ) -> WebSurfaceEnsureOutcome {
+    ) -> bool {
         if !is_external_web_url(tab.url().as_str()) {
-            return WebSurfaceEnsureOutcome::default();
+            return false;
         }
-
         let requested_url = tab.url().as_str().to_string();
         let Some(size) = self.surfaces.get(tab.id()).and_then(|surface| surface.viewport_size)
         else {
-            return WebSurfaceEnsureOutcome::default();
+            return false;
         };
         let ensure_key =
             WebSurfaceEnsureKey::new(requested_url.clone(), size, tab.zoom_percent(), permissions);
         if self.surfaces.get(tab.id()).is_some_and(|surface| !surface.should_ensure(&ensure_key)) {
-            return WebSurfaceEnsureOutcome::default();
+            return false;
         }
         let input = self.take_pending_input(tab.id(), requested_url.as_str());
         let previous_frame =
@@ -75,14 +74,14 @@ impl WebSurfaceStore {
                         requested_url: result.requested_url,
                         previous_frame,
                     });
-                    return WebSurfaceEnsureOutcome { changed: true, url_change: None };
+                    return true;
                 }
-                WebSurfaceEnsureOutcome::default()
+                false
             }
             Err(message) => {
                 self.surface_mut(tab.id()).mark_ensured(ensure_key);
                 self.surface_mut(tab.id()).state = Some(WebSurfaceState::Failed { message });
-                WebSurfaceEnsureOutcome { changed: true, url_change: None }
+                true
             }
         }
     }
@@ -162,16 +161,12 @@ impl WebSurfaceStore {
         let stale_tab_ids = self
             .surfaces
             .keys()
-            .filter(|tab_id| !open_tab_ids.iter().any(|open_tab_id| open_tab_id == *tab_id))
+            .filter(|tab_id| !open_tab_ids.contains(*tab_id))
             .cloned()
             .collect::<Vec<_>>();
         for tab_id in stale_tab_ids {
             self.close_surface(&tab_id);
         }
-    }
-
-    pub(super) fn close_surface(&mut self, tab_id: &TabId) {
-        self.close_surface_for_tab(tab_id);
     }
 
     pub(super) fn record_scroll_delta(
@@ -196,6 +191,7 @@ impl WebSurfaceStore {
         };
 
         let surface = self.surface_mut(tab_id);
+        let flush_throttled = surface.input_flush_is_throttled(Instant::now());
         let scroll = surface
             .scroll_offset
             .get_or_insert_with(|| WebSurfaceScrollState::new(requested_url.to_string()));
@@ -211,7 +207,11 @@ impl WebSurfaceStore {
         surface.pending_scroll_point = Some(point);
         surface.mark_pending_input_started();
         surface.click_point = None;
-        WebSurfaceInputOutcome::Applied
+        if flush_throttled {
+            WebSurfaceInputOutcome::Buffered
+        } else {
+            WebSurfaceInputOutcome::Applied
+        }
     }
 
     pub(super) fn record_viewport_size(
@@ -381,6 +381,13 @@ impl WebSurfaceStore {
             .map(|state| state.text);
         let hover_point = surface.hover_point.take();
         let enqueued_at = surface.pending_input_started_at.take();
+        if scroll_delta.is_some()
+            || click_point.is_some()
+            || hover_point.is_some()
+            || typed_text.is_some()
+        {
+            surface.mark_input_flushed(Instant::now());
+        }
 
         WebSurfacePendingInput {
             enqueued_at,
@@ -453,7 +460,7 @@ impl WebSurfaceStore {
         self.surfaces.entry(tab_id.clone()).or_insert_with(PerTabSurface::new)
     }
 
-    fn close_surface_for_tab(&mut self, tab_id: &TabId) {
+    pub(super) fn close_surface(&mut self, tab_id: &TabId) {
         self.runtime.close_tab(tab_id);
         self.surfaces.remove(tab_id);
         if self.keyboard_focus.as_ref().is_some_and(|focus| focus.tab_id == *tab_id) {
@@ -474,12 +481,6 @@ impl WebSurfaceStore {
 
 pub(super) fn is_external_web_url(url: &str) -> bool {
     url.starts_with("https://") || url.starts_with("http://")
-}
-
-#[derive(Default)]
-pub(super) struct WebSurfaceEnsureOutcome {
-    pub(super) changed: bool,
-    pub(super) url_change: Option<WebSurfaceUrlChange>,
 }
 
 #[derive(Default)]

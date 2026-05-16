@@ -4,6 +4,7 @@ use ely_domain::TabId;
 use gpui::{Bounds, Pixels};
 
 use super::{
+    web_surface_cadence::ACTIVE_POLL_INTERVAL,
     web_surface_frame::WebSurfaceFrame,
     web_surface_geometry::{
         WebSurfaceClickPoint, WebSurfaceScrollDelta, WebSurfaceScrollOffset, WebSurfaceSize,
@@ -70,6 +71,8 @@ pub(super) struct WebSurfacePendingInput {
 pub(super) enum WebSurfaceInputOutcome {
     /// State changed and the renderer should re-notify.
     Applied,
+    /// State changed and the active cadence timer will flush it.
+    Buffered,
     /// Same value as currently recorded — nothing to flush downstream.
     NoChange,
     /// Geometry constructor rejected the input (zero/NaN/negative
@@ -124,6 +127,7 @@ pub(super) struct PerTabSurface {
     pub(super) scroll_offset: Option<WebSurfaceScrollState>,
     pub(super) typed_text: Option<WebSurfaceTextInputState>,
     pub(super) state: Option<WebSurfaceState>,
+    last_input_flushed_at: Option<Instant>,
 }
 
 impl PerTabSurface {
@@ -141,6 +145,7 @@ impl PerTabSurface {
             scroll_offset: None,
             typed_text: None,
             state: None,
+            last_input_flushed_at: None,
         }
     }
 
@@ -155,6 +160,15 @@ impl PerTabSurface {
 
     pub(super) fn mark_hover_enqueued(&mut self, now: Instant) {
         self.last_hover_enqueued_at = Some(now);
+    }
+
+    pub(super) fn input_flush_is_throttled(&self, now: Instant) -> bool {
+        self.last_input_flushed_at
+            .is_some_and(|last| now.duration_since(last) < ACTIVE_POLL_INTERVAL)
+    }
+
+    pub(super) fn mark_input_flushed(&mut self, now: Instant) {
+        self.last_input_flushed_at = Some(now);
     }
 
     pub(super) fn should_ensure(&self, key: &WebSurfaceEnsureKey) -> bool {
@@ -240,6 +254,17 @@ mod tests {
         surface.mark_ensured(old_key);
 
         assert!(surface.should_ensure(&new_key));
+    }
+
+    #[test]
+    fn recent_input_flush_throttles_immediate_flush() {
+        let start = Instant::now();
+        let mut surface = PerTabSurface::new();
+
+        surface.mark_input_flushed(start);
+
+        assert!(surface.input_flush_is_throttled(start + Duration::from_millis(7)));
+        assert!(!surface.input_flush_is_throttled(start + Duration::from_millis(8)));
     }
 
     fn ensure_key(url: &str, width: u32, height: u32) -> WebSurfaceEnsureKey {

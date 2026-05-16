@@ -103,11 +103,11 @@ fn unchanged_surface_without_input_skips_runtime_ensure() -> Result<(), String> 
         store.record_viewport_size(tab.id(), viewport_bounds(), 1.0),
         WebSurfaceInputOutcome::Applied,
     );
-    assert!(store.ensure_surface(&tab, ProfileDataMode::Transient, &[]).changed);
+    assert!(store.ensure_surface(&tab, ProfileDataMode::Transient, &[]));
     store.flush_runtime_for_test();
     assert_eq!(IDLE_SKIP_ENSURE_COUNT.load(Ordering::SeqCst), 1);
 
-    assert!(!store.ensure_surface(&tab, ProfileDataMode::Transient, &[]).changed);
+    assert!(!store.ensure_surface(&tab, ProfileDataMode::Transient, &[]));
     store.flush_runtime_for_test();
     assert_eq!(IDLE_SKIP_ENSURE_COUNT.load(Ordering::SeqCst), 1);
     Ok(())
@@ -126,7 +126,7 @@ fn store_tick_delay_tracks_runtime_cadence() -> Result<(), String> {
         store.record_viewport_size(tab.id(), viewport_bounds(), 1.0),
         WebSurfaceInputOutcome::Applied,
     );
-    assert!(store.ensure_surface(&tab, ProfileDataMode::Transient, &[]).changed);
+    assert!(store.ensure_surface(&tab, ProfileDataMode::Transient, &[]));
     assert_eq!(store.next_tick_delay(&visible), Duration::ZERO);
 
     let _ = store.tick(&visible);
@@ -188,13 +188,13 @@ fn failed_surface_ensure_waits_for_a_new_key_before_retrying() -> Result<(), Str
         store.record_viewport_size(tab.id(), viewport_bounds(), 1.0),
         WebSurfaceInputOutcome::Applied,
     );
-    assert!(store.ensure_surface(&tab, ProfileDataMode::Transient, &[]).changed);
+    assert!(store.ensure_surface(&tab, ProfileDataMode::Transient, &[]));
     store.flush_runtime_for_test();
     let tick = store.tick(&[tab.id().clone()]);
     assert!(tick.changed, "the failing client must surface a state change via tick");
     assert_eq!(FAILING_ENSURE_COUNT.load(Ordering::SeqCst), 1);
 
-    assert!(!store.ensure_surface(&tab, ProfileDataMode::Transient, &[]).changed);
+    assert!(!store.ensure_surface(&tab, ProfileDataMode::Transient, &[]));
     store.flush_runtime_for_test();
     let _ = store.tick(&[tab.id().clone()]);
     assert_eq!(FAILING_ENSURE_COUNT.load(Ordering::SeqCst), 1);
@@ -203,7 +203,7 @@ fn failed_surface_ensure_waits_for_a_new_key_before_retrying() -> Result<(), Str
         store.record_viewport_size(tab.id(), resized_viewport_bounds(), 1.0),
         WebSurfaceInputOutcome::Applied,
     );
-    assert!(store.ensure_surface(&tab, ProfileDataMode::Transient, &[]).changed);
+    assert!(store.ensure_surface(&tab, ProfileDataMode::Transient, &[]));
     store.flush_runtime_for_test();
     let _ = store.tick(&[tab.id().clone()]);
     assert_eq!(FAILING_ENSURE_COUNT.load(Ordering::SeqCst), 2);
