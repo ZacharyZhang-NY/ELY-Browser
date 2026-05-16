@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, fs, path::PathBuf, time::Instant};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use ely_domain::{BrowserTab, ProfileId, TabId};
 
@@ -177,12 +182,24 @@ impl WebSurfaceRuntime {
             let Some(scoped) = self.workers.get(&session.scope) else {
                 continue;
             };
-            if scoped.worker.submit_poll(tab_id.as_str().to_string()) {
-                session.cadence.note_poll_submitted(poll_now);
-            }
+            let _ = scoped.worker.submit_poll(tab_id.as_str().to_string());
+            session.cadence.note_poll_submitted(poll_now);
         }
 
         frames
+    }
+
+    pub(super) fn next_poll_delay(
+        &self,
+        visible_tab_ids: &[TabId],
+        now: Instant,
+    ) -> Option<Duration> {
+        visible_tab_ids
+            .iter()
+            .filter_map(|tab_id| self.sessions.get(tab_id))
+            .filter(|session| self.workers.contains_key(&session.scope))
+            .map(|session| session.cadence.next_poll_delay(now))
+            .min()
     }
 
     pub(super) fn close_tab(&mut self, tab_id: &TabId) {

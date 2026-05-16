@@ -42,8 +42,6 @@ mod web_surface_worker;
 #[cfg(test)]
 mod gpui_harness_tests;
 
-use std::time::Duration;
-
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
 use ely_domain::{DEFAULT_TRANSLUCENCY_PCT, ProfileId, SpaceId, TabId};
 use gpui::{AppContext, Context, Entity, FocusHandle, Subscription, Timer, Window};
@@ -459,14 +457,12 @@ impl ElyShell {
 
 fn start_external_web_surface_timer(cx: &mut Context<ElyShell>) {
     cx.spawn(async move |shell, cx| {
-        // 8 ms ≈ 125 Hz, matched to a 120 Hz display's frame budget.
-        // The Servo worker thread does the blocking IPC, so this tick
-        // only enqueues Poll requests and drains the response channel
-        // — cheap enough to run twice as often as the previous 60 Hz
-        // schedule and lets active pages feed the renderer a fresh
-        // frame between every display refresh.
         loop {
-            Timer::after(Duration::from_millis(8)).await;
+            let delay = match shell.update(cx, |shell, _| shell.external_web_surface_tick_delay()) {
+                Ok(delay) => delay,
+                Err(_) => break,
+            };
+            Timer::after(delay).await;
             let result = shell.update(cx, |shell, cx| {
                 if shell.tick_external_web_surfaces() {
                     cx.notify();

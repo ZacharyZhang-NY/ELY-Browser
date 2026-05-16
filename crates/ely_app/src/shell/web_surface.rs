@@ -1,4 +1,5 @@
-use std::{collections::BTreeMap, time::Instant};
+use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 
 use ely_domain::{BrowserTab, TabId};
 use gpui::{Bounds, Pixels, Point};
@@ -7,6 +8,7 @@ use crate::services::ProfileDataMode;
 
 use super::web_surface_metadata::WebSurfacePageMetadata;
 use super::{
+    web_surface_cadence::IDLE_POLL_INTERVAL,
     web_surface_frame::WebSurfaceFrame,
     web_surface_geometry::{WebSurfaceClickPoint, WebSurfaceScrollDelta, WebSurfaceSize},
     web_surface_permissions::WebSurfaceSitePermission,
@@ -147,6 +149,13 @@ impl WebSurfaceStore {
         }
 
         result
+    }
+
+    pub(super) fn next_tick_delay(&self, visible_tab_ids: &[TabId]) -> Duration {
+        self.runtime
+            .next_poll_delay(visible_tab_ids, Instant::now())
+            .unwrap_or(IDLE_POLL_INTERVAL)
+            .min(IDLE_POLL_INTERVAL)
     }
 
     pub(super) fn retain_tabs(&mut self, open_tab_ids: &[TabId]) {

@@ -69,14 +69,34 @@ impl ElyShell {
         result.changed || url_changed || metadata_changed || sync_changed
     }
 
+    pub(super) fn external_web_surface_tick_delay(&self) -> std::time::Duration {
+        let visible_tab_ids = match &self.state {
+            super::ShellState::Ready(core) => {
+                core.visible_content_tab_ids().unwrap_or_else(|_| Vec::new())
+            }
+            super::ShellState::StartupError(_) => Vec::new(),
+        };
+        self.web_surfaces.next_tick_delay(&visible_tab_ids)
+    }
+
+    fn flush_external_web_surface_tick(&mut self, cx: &mut Context<Self>) {
+        if self.tick_external_web_surfaces() {
+            cx.notify();
+        }
+    }
+
     pub(super) fn record_external_web_viewport(
         &mut self,
         tab_id: TabId,
         bounds: Bounds<Pixels>,
         scale_factor: f32,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) {
-        let _ = self.web_surfaces.record_viewport_size(&tab_id, bounds, scale_factor);
+        if self.web_surfaces.record_viewport_size(&tab_id, bounds, scale_factor)
+            == WebSurfaceInputOutcome::Applied
+        {
+            self.flush_external_web_surface_tick(cx);
+        }
     }
 
     pub(super) fn scroll_external_web_viewport(
@@ -86,15 +106,18 @@ impl ElyShell {
         delta: Point<Pixels>,
         position: Point<Pixels>,
         scale_factor: f32,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) {
-        let _ = self.web_surfaces.record_scroll_delta(
+        if self.web_surfaces.record_scroll_delta(
             &tab_id,
             requested_url.as_str(),
             delta,
             position,
             scale_factor,
-        );
+        ) == WebSurfaceInputOutcome::Applied
+        {
+            self.flush_external_web_surface_tick(cx);
+        }
     }
 
     pub(super) fn hover_external_web_viewport(
@@ -102,9 +125,13 @@ impl ElyShell {
         tab_id: TabId,
         position: Point<Pixels>,
         scale_factor: f32,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) {
-        let _ = self.web_surfaces.record_hover_point(&tab_id, position, scale_factor);
+        if self.web_surfaces.record_hover_point(&tab_id, position, scale_factor)
+            == WebSurfaceInputOutcome::Applied
+        {
+            self.flush_external_web_surface_tick(cx);
+        }
     }
 
     pub(super) fn click_external_web_viewport(
@@ -113,16 +140,19 @@ impl ElyShell {
         requested_url: String,
         position: Point<Pixels>,
         window: &mut gpui::Window,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) {
         self.focus_handle.focus(window);
         let scale_factor = window.scale_factor();
-        let _ = self.web_surfaces.record_click_point(
+        if self.web_surfaces.record_click_point(
             &tab_id,
             requested_url.as_str(),
             position,
             scale_factor,
-        );
+        ) == WebSurfaceInputOutcome::Applied
+        {
+            self.flush_external_web_surface_tick(cx);
+        }
     }
 
     /// Hand focus to the shell's root focus handle so subsequent
@@ -138,11 +168,12 @@ impl ElyShell {
         tab_id: TabId,
         requested_url: String,
         text: &str,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) -> bool {
         if self.web_surfaces.record_typed_text(&tab_id, requested_url.as_str(), text)
             == WebSurfaceInputOutcome::Applied
         {
+            self.flush_external_web_surface_tick(cx);
             return true;
         }
 

@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
-const ACTIVE_POLL_INTERVAL: Duration = Duration::from_millis(8);
-const IDLE_POLL_INTERVAL: Duration = Duration::from_millis(80);
+pub(super) const ACTIVE_POLL_INTERVAL: Duration = Duration::from_millis(8);
+pub(super) const IDLE_POLL_INTERVAL: Duration = Duration::from_millis(80);
 const LOAD_BOOST_WINDOW: Duration = Duration::from_secs(5);
 const INPUT_BOOST_WINDOW: Duration = Duration::from_millis(600);
 const HOVER_BOOST_WINDOW: Duration = Duration::from_millis(120);
@@ -55,6 +55,10 @@ impl WebSurfacePollCadence {
 
     pub(super) fn should_poll(&self, now: Instant) -> bool {
         self.next_poll_at.is_none_or(|next| now >= next)
+    }
+
+    pub(super) fn next_poll_delay(&self, now: Instant) -> Duration {
+        self.next_poll_at.map_or(Duration::ZERO, |next| next.saturating_duration_since(now))
     }
 
     pub(super) fn note_poll_submitted(&mut self, now: Instant) {
@@ -120,7 +124,9 @@ impl WebSurfaceInputKind {
 mod tests {
     use std::time::{Duration, Instant};
 
-    use super::{WebSurfaceInputKind, WebSurfacePollCadence};
+    use super::{
+        ACTIVE_POLL_INTERVAL, IDLE_POLL_INTERVAL, WebSurfaceInputKind, WebSurfacePollCadence,
+    };
 
     #[test]
     fn idle_poll_uses_low_frequency_after_submission() {
@@ -129,6 +135,7 @@ mod tests {
 
         cadence.note_poll_submitted(start);
 
+        assert_eq!(cadence.next_poll_delay(start), IDLE_POLL_INTERVAL);
         assert!(!cadence.should_poll(start + Duration::from_millis(79)));
         assert!(cadence.should_poll(start + Duration::from_millis(80)));
     }
@@ -141,6 +148,7 @@ mod tests {
         cadence.note_ensure(WebSurfaceInputKind::Scroll, false, start);
         cadence.note_poll_submitted(start);
 
+        assert_eq!(cadence.next_poll_delay(start), ACTIVE_POLL_INTERVAL);
         assert!(!cadence.should_poll(start + Duration::from_millis(7)));
         assert!(cadence.should_poll(start + Duration::from_millis(8)));
     }

@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeMap,
     sync::atomic::{AtomicUsize, Ordering},
+    time::Duration,
 };
 
 use ely_domain::{BrowserTab, ProfileId, SpaceId, TabId, UrlText};
@@ -9,6 +10,7 @@ use crate::{
     services::ProfileDataMode,
     shell::{
         WebSurfaceStore,
+        web_surface_cadence::{ACTIVE_POLL_INTERVAL, IDLE_POLL_INTERVAL},
         web_surface_geometry::{WebSurfaceScrollOffset, WebSurfaceSize},
         web_surface_state::{WebSurfaceInputOutcome, WebSurfacePendingInput},
         web_surface_worker::{LiveRuntimeClient, LiveRuntimeClientError},
@@ -108,6 +110,30 @@ fn unchanged_surface_without_input_skips_runtime_ensure() -> Result<(), String> 
     assert!(!store.ensure_surface(&tab, ProfileDataMode::Transient, &[]).changed);
     store.flush_runtime_for_test();
     assert_eq!(IDLE_SKIP_ENSURE_COUNT.load(Ordering::SeqCst), 1);
+    Ok(())
+}
+
+#[test]
+fn store_tick_delay_tracks_runtime_cadence() -> Result<(), String> {
+    let mut store = WebSurfaceStore::new_with_runtime(WebSurfaceRuntime::new_with_client_factory(
+        fake_client_factory,
+    ));
+    let tab = web_tab(TabId::new(), ProfileId::new(), "https://example.com/cadence")?;
+    let visible = vec![tab.id().clone()];
+
+    assert_eq!(store.next_tick_delay(&visible), IDLE_POLL_INTERVAL);
+    assert_eq!(
+        store.record_viewport_size(tab.id(), viewport_bounds(), 1.0),
+        WebSurfaceInputOutcome::Applied,
+    );
+    assert!(store.ensure_surface(&tab, ProfileDataMode::Transient, &[]).changed);
+    assert_eq!(store.next_tick_delay(&visible), Duration::ZERO);
+
+    let _ = store.tick(&visible);
+    let delay = store.next_tick_delay(&visible);
+
+    assert!(delay <= ACTIVE_POLL_INTERVAL);
+    assert!(delay > Duration::ZERO);
     Ok(())
 }
 
