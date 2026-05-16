@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use super::{ElyShell, ShellState};
 
 /// Messages the off-thread sync workers push back to the shell so
@@ -34,29 +36,58 @@ pub(crate) const fn sync_platform_label() -> &'static str {
 impl ElyShell {
     /// Inspect the on-disk bearer token and seed `SyncConnectionState`
     /// so the Sync settings page reads the startup state on first render.
-    pub(super) fn probe_initial_sync_state(&mut self) {
+    pub(super) fn probe_initial_sync_state(&mut self) -> bool {
         let ShellState::Ready(core) = &mut self.state else {
-            return;
+            return false;
         };
         let Some(snapshot) = core.snapshot().ok() else {
-            return;
+            return false;
         };
         let active_profile_id = snapshot.active_profile_id.clone();
         let Some(profile_root) = crate::services::servo_profile_data::default_profile_data_root()
         else {
-            return;
+            return false;
         };
         let profile_dir = crate::services::servo_profile_data::profile_data_dir(
             &profile_root,
             &active_profile_id,
         );
         let bearer_path = profile_dir.join("sync").join("bearer.token");
-        let bearer_present = std::fs::metadata(&bearer_path).map(|m| m.len() > 0).unwrap_or(false);
+        let bearer_present = bearer_token_file_present(&bearer_path);
         let state = if bearer_present {
             ely_domain::SyncConnectionState::SignedIn
         } else {
             ely_domain::SyncConnectionState::SignedOut
         };
         core.set_sync_connection_state(state);
+        bearer_present
+    }
+}
+
+fn bearer_token_file_present(path: &Path) -> bool {
+    std::fs::metadata(path).map(|metadata| metadata.len() > 0).unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bearer_token_file_present;
+
+    #[test]
+    fn bearer_token_file_presence_requires_bytes() -> Result<(), Box<dyn std::error::Error>> {
+        let suffix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();
+        let dir = std::env::temp_dir().join(format!("ely-sync-token-probe-{}", suffix));
+        std::fs::create_dir_all(&dir)?;
+        let path = dir.join("bearer.token");
+
+        assert!(!bearer_token_file_present(&path));
+
+        std::fs::write(&path, "")?;
+        assert!(!bearer_token_file_present(&path));
+
+        std::fs::write(&path, "session-token")?;
+        assert!(bearer_token_file_present(&path));
+
+        std::fs::remove_dir_all(dir)?;
+        Ok(())
     }
 }

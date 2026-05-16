@@ -237,7 +237,10 @@ impl ElyShell {
             _command_subscription: command_subscription,
             _translucency_subscription: translucency_subscription,
         };
-        shell.probe_initial_sync_state();
+        let should_run_initial_sync = shell.probe_initial_sync_state();
+        if should_run_initial_sync {
+            shell.trigger_cloud_sync_upload();
+        }
         start_external_web_surface_timer(cx);
         shell
     }
