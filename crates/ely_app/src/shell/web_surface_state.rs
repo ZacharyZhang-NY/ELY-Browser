@@ -9,7 +9,7 @@ use super::{
     web_surface_geometry::{
         WebSurfaceClickPoint, WebSurfaceScrollDelta, WebSurfaceScrollOffset, WebSurfaceSize,
     },
-    web_surface_metadata::WebSurfacePageMetadata,
+    web_surface_metadata::{WebSurfaceMetadataTracker, WebSurfacePageMetadata},
     web_surface_permissions::WebSurfaceSitePermission,
     web_surface_runtime::WebSurfaceUrlChange,
 };
@@ -137,6 +137,7 @@ pub(super) struct PerTabSurface {
     pub(super) typed_text: Option<WebSurfaceTextInputState>,
     pub(super) state: Option<WebSurfaceState>,
     last_input_flushed_at: Option<Instant>,
+    metadata_tracker: WebSurfaceMetadataTracker,
 }
 
 impl PerTabSurface {
@@ -155,6 +156,7 @@ impl PerTabSurface {
             typed_text: None,
             state: None,
             last_input_flushed_at: None,
+            metadata_tracker: WebSurfaceMetadataTracker::default(),
         }
     }
 
@@ -193,6 +195,14 @@ impl PerTabSurface {
             Some(WebSurfaceState::Ready(current)) => current.has_same_software_render_as(frame),
             _ => false,
         }
+    }
+
+    pub(super) fn changed_page_metadata(
+        &mut self,
+        tab_id: &TabId,
+        frame: &WebSurfaceFrame,
+    ) -> Option<WebSurfacePageMetadata> {
+        self.metadata_tracker.changed_metadata_for(tab_id, frame)
     }
 
     fn has_pending_input(&self) -> bool {

@@ -10,7 +10,6 @@ use super::{
     web_surface_cadence::IDLE_POLL_INTERVAL,
     web_surface_frame::WebSurfaceFrame,
     web_surface_geometry::{WebSurfaceClickPoint, WebSurfaceScrollDelta, WebSurfaceSize},
-    web_surface_metadata::WebSurfacePageMetadata,
     web_surface_permissions::WebSurfaceSitePermission,
     web_surface_runtime::{WebSurfaceRuntime, WebSurfaceRuntimeFrame},
     web_surface_state::{
@@ -118,9 +117,8 @@ impl WebSurfaceStore {
                         }
                         continue;
                     }
-                    result
-                        .page_metadata
-                        .extend(WebSurfacePageMetadata::from_frame(&tab_id, &frame));
+                    let metadata = self.surface_mut(&tab_id).changed_page_metadata(&tab_id, &frame);
+                    result.page_metadata.extend(metadata);
                     if self
                         .surfaces
                         .get(&tab_id)

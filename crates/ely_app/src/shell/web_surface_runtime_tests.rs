@@ -176,7 +176,7 @@ fn identical_ready_software_frame_keeps_tick_unchanged() -> Result<(), String> {
     let second_tick = store.tick(&visible_tabs);
 
     assert!(!second_tick.changed);
-    assert_eq!(second_tick.page_metadata.len(), 1);
+    assert_eq!(second_tick.page_metadata.len(), 0);
     assert_eq!(second_tick.url_changes.len(), 1);
     assert_eq!(REPEATED_FRAME_ENSURE_COUNT.load(Ordering::SeqCst), 2);
     Ok(())
