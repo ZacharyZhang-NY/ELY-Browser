@@ -4,10 +4,9 @@ use std::sync::Arc;
 
 use ahash::AHasher;
 #[cfg(target_os = "macos")]
-use core_video::{
-    pixel_buffer::{CVPixelBuffer, kCVPixelBufferLock_ReadOnly, kCVPixelFormatType_32BGRA},
-    r#return::kCVReturnSuccess,
-};
+use core_video::pixel_buffer::{CVPixelBuffer, kCVPixelFormatType_32BGRA};
+#[cfg(all(test, feature = "live-site-smoke", target_os = "macos"))]
+use core_video::{pixel_buffer::kCVPixelBufferLock_ReadOnly, r#return::kCVReturnSuccess};
 use gpui::RenderImage;
 use image::{ImageBuffer, Rgba};
 use thiserror::Error;
@@ -233,13 +232,17 @@ impl WebSurfaceFrame {
     }
 
     pub(super) fn has_visible_content_for_initial_display(&self) -> Result<bool, WebSurfaceError> {
-        #[cfg(target_os = "macos")]
-        if let Some(pixel_buffer) = self.pixel_buffer.as_ref() {
-            return sample_hardware_pixel_buffer(pixel_buffer)
-                .map(|sample| sample.has_visible_content());
+        // The sidecar suppresses blank initial hardware frames with readback
+        // sampling before sending them. Keep this app-side gate metadata-only
+        // so GPUI's update path never locks or scans IOSurface memory.
+        #[cfg(all(test, feature = "live-site-smoke"))]
+        {
+            Ok(self.non_white_pixel_count > 0 && self.content_pixel_count > 0)
         }
-
-        Ok(true)
+        #[cfg(not(all(test, feature = "live-site-smoke")))]
+        {
+            Ok(true)
+        }
     }
 
     #[cfg(all(test, feature = "live-site-smoke"))]
@@ -314,16 +317,16 @@ pub(super) enum WebSurfaceError {
     #[cfg(target_os = "macos")]
     #[error("servo hardware surface pixel format 0x{actual:x} is unsupported; expected 32BGRA")]
     UnsupportedHardwareSurfaceFormat { actual: u32 },
-    #[cfg(target_os = "macos")]
+    #[cfg(all(test, feature = "live-site-smoke", target_os = "macos"))]
     #[error("servo hardware surface lock failed with status {status}")]
     HardwareSurfaceLockFailed { status: i32 },
-    #[cfg(target_os = "macos")]
+    #[cfg(all(test, feature = "live-site-smoke", target_os = "macos"))]
     #[error("servo hardware surface unlock failed with status {status}")]
     HardwareSurfaceUnlockFailed { status: i32 },
-    #[cfg(target_os = "macos")]
+    #[cfg(all(test, feature = "live-site-smoke", target_os = "macos"))]
     #[error("servo hardware surface base address is unavailable")]
     HardwareSurfaceBaseAddressUnavailable,
-    #[cfg(target_os = "macos")]
+    #[cfg(all(test, feature = "live-site-smoke", target_os = "macos"))]
     #[error("servo hardware surface row stride {bytes_per_row} is too small for width {width}")]
     HardwareSurfaceRowStrideTooSmall { width: usize, bytes_per_row: usize },
 }
@@ -368,19 +371,11 @@ fn rgba_hash(bytes: &[u8]) -> u64 {
     hasher.finish()
 }
 
-#[cfg(any(all(test, feature = "live-site-smoke"), target_os = "macos"))]
+#[cfg(all(test, feature = "live-site-smoke"))]
 struct WebSurfacePixelSample {
     non_white_pixel_count: u64,
     content_pixel_count: u64,
-    #[cfg_attr(not(all(test, feature = "live-site-smoke")), allow(dead_code))]
     sample_hash: u64,
-}
-
-#[cfg(any(all(test, feature = "live-site-smoke"), target_os = "macos"))]
-impl WebSurfacePixelSample {
-    fn has_visible_content(&self) -> bool {
-        self.non_white_pixel_count > 0 && self.content_pixel_count > 0
-    }
 }
 
 #[cfg(all(test, feature = "live-site-smoke"))]
@@ -399,7 +394,7 @@ fn pixel_sample_for_parts(
     })
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(test, feature = "live-site-smoke", target_os = "macos"))]
 fn sample_hardware_pixel_buffer(
     pixel_buffer: &CVPixelBuffer,
 ) -> Result<WebSurfacePixelSample, WebSurfaceError> {
@@ -417,7 +412,7 @@ fn sample_hardware_pixel_buffer(
     sample
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(test, feature = "live-site-smoke", target_os = "macos"))]
 fn sample_locked_hardware_pixel_buffer(
     pixel_buffer: &CVPixelBuffer,
 ) -> Result<WebSurfacePixelSample, WebSurfaceError> {
@@ -441,7 +436,7 @@ fn sample_locked_hardware_pixel_buffer(
     Ok(sample_bgra_rows(bytes, width, height, bytes_per_row))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(test, feature = "live-site-smoke", target_os = "macos"))]
 fn sample_bgra_rows(
     bytes: &[u8],
     width: usize,
