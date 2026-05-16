@@ -429,6 +429,7 @@ impl BrowserCore {
             TabUrlUpdate::PushHistory => self.tabs[tab_index].navigate_to(url),
             TabUrlUpdate::PreserveHistory => self.tabs[tab_index].set_url(url),
         }
+        self.refresh_tab_url_metadata(tab_index)?;
         self.tabs[tab_index].mark_ready();
         let snapshot_tab = self.tabs[tab_index].clone();
         self.record_history_entry(&snapshot_tab);
@@ -450,11 +451,23 @@ impl BrowserCore {
             return Ok(false);
         };
 
+        self.refresh_tab_url_metadata(tab_index)?;
         self.tabs[tab_index].mark_ready();
         let snapshot_tab = self.tabs[tab_index].clone();
         self.record_history_entry(&snapshot_tab);
         self.record_tab_activity(&active_id, SystemTime::now());
         Ok(true)
+    }
+
+    fn refresh_tab_url_metadata(&mut self, tab_index: usize) -> Result<(), CoreError> {
+        let title = tab_title(self.tabs[tab_index].url());
+        self.tabs[tab_index].set_title(title);
+        if let Some(favicon_key) = self.tabs[tab_index].url().favicon_url() {
+            self.tabs[tab_index].set_favicon_key(favicon_key)?;
+        } else {
+            self.tabs[tab_index].clear_favicon_key();
+        }
+        Ok(())
     }
 
     pub(super) fn build_tab(&self, url: UrlText) -> BrowserTab {

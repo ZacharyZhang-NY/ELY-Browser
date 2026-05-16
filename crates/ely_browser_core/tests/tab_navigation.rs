@@ -54,6 +54,55 @@ fn observed_loaded_url_replaces_active_url_without_back_stack() -> Result<(), Bo
 }
 
 #[test]
+fn navigation_replaces_new_tab_metadata_with_url_metadata() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.navigate_active_tab(UrlText::parse("https://example.com/research")?)?;
+
+    let active_tab = core.active_tab()?;
+    assert_eq!(active_tab.title(), "example.com");
+    assert_eq!(
+        active_tab.favicon_key(),
+        Some("https://www.google.com/s2/favicons?domain=example.com&sz=64"),
+    );
+    Ok(())
+}
+
+#[test]
+fn internal_navigation_clears_previous_web_favicon() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.navigate_active_tab(UrlText::parse("https://example.com/research")?)?;
+    core.navigate_active_tab(UrlText::parse("ely://history")?)?;
+
+    let active_tab = core.active_tab()?;
+    assert_eq!(active_tab.title(), "History");
+    assert_eq!(active_tab.favicon_key(), None);
+    Ok(())
+}
+
+#[test]
+fn history_navigation_refreshes_url_metadata() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.navigate_active_tab(UrlText::parse("https://example.com/a")?)?;
+    let tab_id = core.active_tab()?.id().clone();
+    core.set_tab_title(&tab_id, "Live Example")?;
+    core.navigate_active_tab(UrlText::parse("https://servo.org/b")?)?;
+
+    assert!(core.navigate_active_tab_back()?);
+
+    let active_tab = core.active_tab()?;
+    assert_eq!(active_tab.url().as_str(), "https://example.com/a");
+    assert_eq!(active_tab.title(), "example.com");
+    assert_eq!(
+        active_tab.favicon_key(),
+        Some("https://www.google.com/s2/favicons?domain=example.com&sz=64"),
+    );
+    Ok(())
+}
+
+#[test]
 fn user_loaded_url_enters_active_back_stack() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     core.navigate_active_tab(UrlText::parse("https://example.com/a")?)?;
