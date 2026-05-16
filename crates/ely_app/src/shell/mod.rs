@@ -105,6 +105,10 @@ pub struct ElyShell {
     /// `tick_external_web_surfaces`.
     sync_inbox_rx: std::sync::mpsc::Receiver<SyncStateUpdate>,
     pub(crate) sync_inbox_tx: std::sync::mpsc::Sender<SyncStateUpdate>,
+    sync_upload_scheduled: bool,
+    sync_upload_in_flight: bool,
+    sync_upload_pending: bool,
+    sync_upload_pending_logical_clock_floor: Option<u64>,
     pub(crate) auth_email_input: Entity<InputState>,
     pub(crate) auth_otp_input: Entity<InputState>,
     pub(crate) auth_flow_phase: auth::AuthFlowPhase,
@@ -178,6 +182,7 @@ impl ElyShell {
 
                 if sync_address {
                     shell.sync_address_input(window, cx);
+                    shell.schedule_cloud_sync_upload(cx);
                 }
 
                 cx.notify();
@@ -231,6 +236,10 @@ impl ElyShell {
             web_surfaces: WebSurfaceStore::new(),
             sync_inbox_rx,
             sync_inbox_tx,
+            sync_upload_scheduled: false,
+            sync_upload_in_flight: false,
+            sync_upload_pending: false,
+            sync_upload_pending_logical_clock_floor: None,
             auth_email_input,
             auth_otp_input,
             auth_flow_phase: auth::AuthFlowPhase::Idle,
@@ -243,84 +252,6 @@ impl ElyShell {
         }
         start_external_web_surface_timer(cx);
         shell
-    }
-
-    /// Drain any sync upload outcomes the off-thread worker pushed
-    /// since the previous tick and stamp the resulting connection
-    /// state on `BrowserCore`. Returns `true` when at least one
-    /// update was applied so callers can `cx.notify()` accordingly.
-    pub(super) fn drain_sync_updates(&mut self) -> bool {
-        let mut latest_connection: Option<ely_domain::SyncConnectionState> = None;
-        let mut auth_changed = false;
-        let mut trigger_initial_sync = false;
-        let mut trigger_merged_upload = None;
-        while let Ok(update) = self.sync_inbox_rx.try_recv() {
-            match update {
-                SyncStateUpdate::SignedOut => {
-                    latest_connection = Some(ely_domain::SyncConnectionState::SignedOut);
-                }
-                SyncStateUpdate::AwaitingDeviceApproval => {
-                    latest_connection =
-                        Some(ely_domain::SyncConnectionState::AwaitingDeviceApproval);
-                }
-                SyncStateUpdate::RemoteSnapshot { bytes, logical_clock } => {
-                    if let ShellState::Ready(core) = &mut self.state {
-                        match core.apply_sync_snapshot_bytes(&bytes) {
-                            Ok(summary) => {
-                                tracing::info!(
-                                    target: "ely::sync",
-                                    imported = summary.imported(),
-                                    updated = summary.updated(),
-                                    skipped = summary.skipped(),
-                                    "remote snapshot applied",
-                                );
-                                trigger_merged_upload = Some(logical_clock);
-                            }
-                            Err(error) => {
-                                latest_connection =
-                                    Some(ely_domain::SyncConnectionState::SyncError {
-                                        message: error.to_string(),
-                                    });
-                            }
-                        }
-                    }
-                }
-                SyncStateUpdate::SyncReady { last_synced_at_secs } => {
-                    latest_connection =
-                        Some(ely_domain::SyncConnectionState::SyncReady { last_synced_at_secs });
-                }
-                SyncStateUpdate::SyncError { message } => {
-                    latest_connection =
-                        Some(ely_domain::SyncConnectionState::SyncError { message });
-                }
-                SyncStateUpdate::AuthOtpSent { email } => {
-                    self.auth_flow_phase = auth::AuthFlowPhase::AwaitingOtp { email };
-                    auth_changed = true;
-                }
-                SyncStateUpdate::AuthSucceeded { email } => {
-                    self.auth_flow_phase = auth::AuthFlowPhase::Idle;
-                    latest_connection = Some(ely_domain::SyncConnectionState::SignedIn);
-                    trigger_initial_sync = true;
-                    tracing::info!(target: "ely::sync", email = %email, "email OTP sign-in succeeded");
-                    auth_changed = true;
-                }
-                SyncStateUpdate::AuthError { email, message } => {
-                    self.auth_flow_phase = auth::AuthFlowPhase::Error { email, message };
-                    auth_changed = true;
-                }
-            }
-        }
-        if let (Some(state), ShellState::Ready(core)) = (latest_connection, &mut self.state) {
-            core.set_sync_connection_state(state);
-        }
-        if trigger_initial_sync {
-            self.trigger_cloud_sync_upload();
-        }
-        let merged_upload_requested = trigger_merged_upload.is_some();
-        if let Some(logical_clock_floor) = trigger_merged_upload {
-            self.trigger_cloud_sync_upload_after_remote(logical_clock_floor);
-        }
-        auth_changed || trigger_initial_sync || merged_upload_requested
     }
 
     fn focus_command_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -340,6 +271,7 @@ impl ElyShell {
             && core.select_tab(tab_id).is_ok()
         {
             self.sync_address_input(window, cx);
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -349,6 +281,7 @@ impl ElyShell {
             && core.select_space(space_id).is_ok()
         {
             self.sync_address_input(window, cx);
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -363,6 +296,7 @@ impl ElyShell {
             && core.select_profile(profile_id).is_ok()
         {
             self.sync_address_input(window, cx);
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -372,6 +306,7 @@ impl ElyShell {
             && core.select_next_tab().is_ok()
         {
             self.sync_address_input(window, cx);
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -381,6 +316,7 @@ impl ElyShell {
             && core.select_previous_tab().is_ok()
         {
             self.sync_address_input(window, cx);
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -390,6 +326,7 @@ impl ElyShell {
             && core.close_active_tab().is_ok()
         {
             self.sync_address_input(window, cx);
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -399,6 +336,7 @@ impl ElyShell {
             && core.restore_last_archived_tab().is_ok()
         {
             self.sync_address_input(window, cx);
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -413,6 +351,7 @@ impl ElyShell {
             && core.restore_archived_tab(tab_id).is_ok()
         {
             self.sync_address_input(window, cx);
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -421,6 +360,7 @@ impl ElyShell {
         if let ShellState::Ready(core) = &mut self.state
             && core.toggle_active_tab_favorite().is_ok()
         {
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -429,6 +369,7 @@ impl ElyShell {
         if let ShellState::Ready(core) = &mut self.state
             && core.toggle_active_tab_pinned().is_ok()
         {
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -437,6 +378,7 @@ impl ElyShell {
         if let ShellState::Ready(core) = &mut self.state
             && core.zoom_active_tab_in().is_ok()
         {
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -445,6 +387,7 @@ impl ElyShell {
         if let ShellState::Ready(core) = &mut self.state
             && core.zoom_active_tab_out().is_ok()
         {
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -453,6 +396,7 @@ impl ElyShell {
         if let ShellState::Ready(core) = &mut self.state
             && core.reset_active_tab_zoom().is_ok()
         {
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -467,7 +411,7 @@ fn start_external_web_surface_timer(cx: &mut Context<ElyShell>) {
             };
             Timer::after(delay).await;
             let result = shell.update(cx, |shell, cx| {
-                if shell.tick_external_web_surfaces() {
+                if shell.tick_external_web_surfaces(cx) {
                     cx.notify();
                 }
             });

@@ -15,6 +15,7 @@ impl ElyShell {
         {
             self.sync_address_input(window, cx);
             self.focus_address_bar(window, cx);
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -30,6 +31,7 @@ impl ElyShell {
         {
             self.sync_address_input(window, cx);
             self.focus_address_bar(window, cx);
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -50,6 +52,7 @@ impl ElyShell {
             && core.close_tab(tab_id).is_ok()
         {
             self.sync_address_input(window, cx);
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }

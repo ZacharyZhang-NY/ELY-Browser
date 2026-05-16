@@ -184,7 +184,10 @@ impl ElyShell {
         };
 
         match import_result {
-            Ok(message) => self.set_bookmark_file_notice(message, cx),
+            Ok(message) => {
+                self.set_bookmark_file_notice(message, cx);
+                self.schedule_cloud_sync_upload(cx);
+            }
             Err(error) => self.set_bookmark_file_error(error, cx),
         }
     }

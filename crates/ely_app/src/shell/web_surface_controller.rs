@@ -45,7 +45,7 @@ impl ElyShell {
         }
     }
 
-    pub(super) fn tick_external_web_surfaces(&mut self) -> bool {
+    pub(super) fn tick_external_web_surfaces(&mut self, cx: &mut Context<Self>) -> bool {
         let (visible_tab_ids, open_tab_ids, visible_tabs) = match &self.state {
             super::ShellState::Ready(core) => {
                 let visible_tabs = core.visible_content_tabs().unwrap_or_else(|_| Vec::new());
@@ -65,6 +65,9 @@ impl ElyShell {
             metadata_changed |= self.apply_web_surface_page_metadata(metadata);
         }
         let sync_changed = self.drain_sync_updates();
+        if url_changed || metadata_changed {
+            self.schedule_cloud_sync_upload(cx);
+        }
         result.changed || url_changed || metadata_changed || sync_changed
     }
 
@@ -79,7 +82,7 @@ impl ElyShell {
     }
 
     fn flush_external_web_surface_tick(&mut self, cx: &mut Context<Self>) {
-        if self.tick_external_web_surfaces() {
+        if self.tick_external_web_surfaces(cx) {
             cx.notify();
         }
     }

@@ -91,9 +91,11 @@ impl ElyShell {
             ShellState::StartupError(message) => Err(message.clone()),
         };
 
+        let updated = result.is_ok();
         self.bookmark_edit_error = result.err();
-        if self.bookmark_edit_error.is_none() {
+        if updated {
             self.pending_bookmark_edit = None;
+            self.schedule_cloud_sync_upload(cx);
         }
         cx.notify();
     }

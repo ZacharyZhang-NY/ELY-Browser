@@ -18,6 +18,7 @@ impl ElyShell {
         {
             self.sync_address_input(window, cx);
             self.focus_address_bar(window, cx);
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -74,6 +75,7 @@ impl ElyShell {
                 core.open_tab(url);
             }
             self.sync_address_input(window, cx);
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -83,6 +85,7 @@ impl ElyShell {
             && core.navigate_active_tab_back().is_ok_and(|changed| changed)
         {
             self.sync_address_input(window, cx);
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -96,6 +99,7 @@ impl ElyShell {
             && core.navigate_active_tab_forward().is_ok_and(|changed| changed)
         {
             self.sync_address_input(window, cx);
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -108,6 +112,7 @@ impl ElyShell {
             core.open_tab(url);
             self.sync_address_input(window, cx);
             self.focus_address_bar(window, cx);
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }

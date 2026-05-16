@@ -193,6 +193,7 @@ impl ElyShell {
         if let ShellState::Ready(core) = &mut self.state
             && core.set_profile_sync_policy(profile_id, sync_policy).is_ok()
         {
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -200,6 +201,7 @@ impl ElyShell {
     pub(super) fn reset_profile_sync_settings(&mut self, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state {
             core.reset_profile_sync_settings();
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -231,6 +233,7 @@ impl ElyShell {
     ) {
         if let ShellState::Ready(core) = &mut self.state {
             core.set_sync_object_policy(kind, policy);
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -238,6 +241,7 @@ impl ElyShell {
     pub(super) fn reset_sync_settings(&mut self, cx: &mut Context<Self>) {
         if let ShellState::Ready(core) = &mut self.state {
             core.reset_sync_settings();
+            self.schedule_cloud_sync_upload(cx);
             cx.notify();
         }
     }
@@ -251,6 +255,13 @@ impl ElyShell {
     }
 
     fn trigger_cloud_sync_upload_with_clock_floor(&mut self, logical_clock_floor: Option<u64>) {
+        if self.sync_upload_in_flight {
+            self.sync_upload_scheduled = false;
+            self.queue_cloud_sync_upload(logical_clock_floor);
+            return;
+        }
+        self.sync_upload_scheduled = false;
+
         let ShellState::Ready(core) = &self.state else {
             return;
         };
@@ -278,19 +289,19 @@ impl ElyShell {
         let tx = self.sync_inbox_tx.clone();
         let thread_name =
             if logical_clock_floor.is_some() { "ely-sync-merge-upload" } else { "ely-sync-upload" };
-        std::thread::Builder::new()
-            .name(thread_name.to_string())
-            .spawn(move || {
+        self.sync_upload_in_flight = true;
+        if let Err(error) =
+            std::thread::Builder::new().name(thread_name.to_string()).spawn(move || {
                 run_sync_upload(profile_dir, device_name, bytes, logical_clock_floor, tx)
             })
-            .map(|_| ())
-            .unwrap_or_else(|error| {
-                tracing::warn!(
-                    target: "ely::sync",
-                    error = %error,
-                    "failed to spawn ely-sync-upload thread",
-                );
-            });
+        {
+            self.sync_upload_in_flight = false;
+            tracing::warn!(
+                target: "ely::sync",
+                error = %error,
+                "failed to spawn ely-sync-upload thread",
+            );
+        }
     }
 
     pub(super) fn set_update_policy(
