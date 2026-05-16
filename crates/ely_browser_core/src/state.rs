@@ -30,6 +30,7 @@ mod space_exports;
 mod spaces;
 mod splits;
 mod sync;
+mod sync_apply;
 mod sync_context;
 mod sync_notes;
 mod sync_profiles;
