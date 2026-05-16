@@ -9,7 +9,7 @@ use gpui::{
 use gpui_component::{IconName, scroll::ScrollableElement, slider::Slider};
 
 use crate::shell::ElyShell;
-use crate::shell::chrome::SERIF_FAMILY;
+use crate::shell::chrome::{SERIF_FAMILY, animations::toggle_thumb_motion};
 
 pub(crate) fn render_appearance_form(
     shell: &mut ElyShell,
@@ -146,7 +146,7 @@ fn render_appearance_rows(
         .child(render_theme_mode_row(appearance.theme_mode(), cx))
         .child(render_accent_row())
         .child(render_translucency_row(shell, appearance.translucency_pct()))
-        .child(render_reduce_motion_row(appearance.reduce_motion(), cx))
+        .child(render_reduce_motion_row(shell, appearance.reduce_motion(), cx))
         .child(render_reset_row(cx))
         .into_any_element()
 }
@@ -288,12 +288,18 @@ fn swatch(color: u32, selected: bool) -> AnyElement {
     element.into_any_element()
 }
 
-fn render_reduce_motion_row(reduce: bool, cx: &mut Context<ElyShell>) -> AnyElement {
+fn render_reduce_motion_row(
+    shell: &ElyShell,
+    reduce: bool,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let id = "toggle-reduce-motion";
+    let press_id = shell.chrome_motion_animation_id(id);
     settings_row(
         "Reduce motion",
         "Mute transitions and ambient effects.",
         div()
-            .id(SharedString::from("toggle-reduce-motion"))
+            .id(SharedString::from(id))
             .w(px(34.0))
             .h(px(20.0))
             .rounded_full()
@@ -302,14 +308,16 @@ fn render_reduce_motion_row(reduce: bool, cx: &mut Context<ElyShell>) -> AnyElem
             .cursor_pointer()
             .hover(|style| style.opacity(0.9))
             .active(|style| style.opacity(0.78))
-            .on_click(cx.listener(|shell, _, _, cx| shell.toggle_reduce_motion(cx)))
-            .child(
-                div()
-                    .size(px(16.0))
-                    .rounded_full()
-                    .bg(rgb(0xffffff))
-                    .when(reduce, |el| el.ml(px(14.0))),
-            )
+            .on_click(cx.listener(move |shell, _, _, cx| {
+                shell.toggle_reduce_motion(cx);
+                shell.trigger_chrome_motion(id);
+            }))
+            .child(toggle_thumb_motion(
+                press_id,
+                reduce,
+                14.0,
+                div().size(px(16.0)).rounded_full().bg(rgb(0xffffff)),
+            ))
             .into_any_element(),
     )
 }

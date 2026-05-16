@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::shell::ElyShell;
-use crate::shell::chrome::animations::chrome_motion_feedback;
+use crate::shell::chrome::animations::{chrome_motion_feedback, toggle_thumb_motion};
 
 pub(super) fn render_primary_button<F>(
     shell: &ElyShell,
@@ -106,6 +106,7 @@ pub(super) fn render_policy_toggle(
     let track_color = if enabled { colors::accent() } else { 0x281e1426 };
     let id = SharedString::from(format!("sync-policy-{index}"));
     let press_id = shell.chrome_motion_animation_id(id.as_str());
+    let thumb_press_id = press_id.clone();
     let selection_id = SharedString::from(format!("{}-selection", id.as_str()));
 
     let element = div()
@@ -122,13 +123,12 @@ pub(super) fn render_policy_toggle(
             shell.trigger_chrome_motion(id.clone());
             shell.set_sync_object_policy(kind, next_policy, cx);
         }))
-        .child(
-            div()
-                .size(px(16.0))
-                .rounded_full()
-                .bg(rgb(0xffffff))
-                .when(enabled, |this| this.ml(px(14.0))),
-        );
+        .child(toggle_thumb_motion(
+            thumb_press_id,
+            enabled,
+            14.0,
+            div().size(px(16.0)).rounded_full().bg(rgb(0xffffff)),
+        ));
 
     chrome_motion_feedback(press_id, selection_id, enabled, element)
 }

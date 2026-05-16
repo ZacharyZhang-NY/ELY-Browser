@@ -1,9 +1,10 @@
 use std::time::Duration;
 
-use gpui::{Animation, AnimationExt, AnyElement, ElementId, IntoElement, SharedString, Styled};
+use gpui::{Animation, AnimationExt, AnyElement, ElementId, IntoElement, SharedString, Styled, px};
 
 pub(crate) const MOTION_PRESS_MS: u64 = 120;
 pub(crate) const MOTION_SELECTION_MS: u64 = 160;
+pub(crate) const MOTION_TOGGLE_MS: u64 = 150;
 #[cfg(test)]
 pub(crate) const MOTION_FRAME_BUDGET_120HZ: Duration = Duration::from_micros(8_333);
 
@@ -83,9 +84,37 @@ where
     element.into_any_element()
 }
 
+pub(crate) fn toggle_thumb_motion<E>(
+    press_id: Option<SharedString>,
+    checked: bool,
+    active_offset_px: f32,
+    element: E,
+) -> AnyElement
+where
+    E: IntoElement + Styled + 'static,
+{
+    let end = if checked { active_offset_px } else { 0.0 };
+    let element = element.ml(px(end));
+    let Some(press_id) = press_id else {
+        return element.into_any_element();
+    };
+
+    let start = if checked { 0.0 } else { active_offset_px };
+    element
+        .with_animation(
+            press_id,
+            Animation::new(Duration::from_millis(MOTION_TOGGLE_MS)).with_easing(ease_out_cubic),
+            move |element, t| element.ml(px(start + (end - start) * t)),
+        )
+        .into_any_element()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{MOTION_FRAME_BUDGET_120HZ, MOTION_PRESS_MS, MOTION_SELECTION_MS, ease_out_cubic};
+    use super::{
+        MOTION_FRAME_BUDGET_120HZ, MOTION_PRESS_MS, MOTION_SELECTION_MS, MOTION_TOGGLE_MS,
+        ease_out_cubic,
+    };
 
     #[test]
     fn ease_out_cubic_anchors_at_endpoints() {
@@ -108,5 +137,6 @@ mod tests {
         assert_eq!(MOTION_FRAME_BUDGET_120HZ.as_micros(), 8_333);
         assert!(MOTION_PRESS_MS <= 15 * MOTION_FRAME_BUDGET_120HZ.as_millis() as u64);
         assert!(MOTION_SELECTION_MS <= 20 * MOTION_FRAME_BUDGET_120HZ.as_millis() as u64);
+        assert!(MOTION_TOGGLE_MS <= 19 * MOTION_FRAME_BUDGET_120HZ.as_millis() as u64);
     }
 }
