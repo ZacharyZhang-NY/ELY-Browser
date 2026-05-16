@@ -47,7 +47,8 @@ impl WebSurfacePollCadence {
             WebSurfaceRenderPhase::Created | WebSurfaceRenderPhase::Loading
                 if self.last_render_phase != Some(phase) =>
             {
-                extend_deadline(&mut self.load_active_until, now + LOAD_BOOST_WINDOW);
+                self.load_active_until = None;
+                extend_deadline(&mut self.settle_active_until, now + FRAME_SETTLE_WINDOW);
             }
             WebSurfaceRenderPhase::Created | WebSurfaceRenderPhase::Loading => {}
             WebSurfaceRenderPhase::Complete if self.last_render_phase != Some(phase) => {
@@ -231,12 +232,42 @@ mod tests {
     }
 
     #[test]
+    fn loading_frame_shortens_started_loading_boost() {
+        let start = Instant::now();
+        let mut cadence = WebSurfacePollCadence::default();
+
+        cadence.note_ensure(WebSurfaceInputKind::Idle, true, start);
+        cadence.note_frame("loading", start + Duration::from_secs(1));
+        cadence.note_poll_submitted(start + Duration::from_millis(1_300));
+
+        assert_eq!(
+            cadence.next_poll_delay(start + Duration::from_millis(1_300)),
+            IDLE_POLL_INTERVAL
+        );
+    }
+
+    #[test]
     fn complete_frame_preserves_recent_input_boost() {
         let start = Instant::now();
         let mut cadence = WebSurfacePollCadence::default();
 
         cadence.note_ensure(WebSurfaceInputKind::Scroll, false, start);
         cadence.note_frame("complete", start + Duration::from_millis(100));
+        cadence.note_poll_submitted(start + Duration::from_millis(500));
+
+        assert_eq!(
+            cadence.next_poll_delay(start + Duration::from_millis(500)),
+            ACTIVE_POLL_INTERVAL
+        );
+    }
+
+    #[test]
+    fn loading_frame_preserves_recent_input_boost() {
+        let start = Instant::now();
+        let mut cadence = WebSurfacePollCadence::default();
+
+        cadence.note_ensure(WebSurfaceInputKind::Scroll, false, start);
+        cadence.note_frame("loading", start + Duration::from_millis(100));
         cadence.note_poll_submitted(start + Duration::from_millis(500));
 
         assert_eq!(
