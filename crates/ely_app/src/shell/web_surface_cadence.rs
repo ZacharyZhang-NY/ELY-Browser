@@ -49,9 +49,10 @@ impl WebSurfacePollCadence {
                 self.boost_until(now + FRAME_SETTLE_WINDOW);
             }
             WebSurfaceRenderPhase::Complete => {}
-            WebSurfaceRenderPhase::Other => {
+            WebSurfaceRenderPhase::Other if self.last_render_phase != Some(phase) => {
                 self.boost_until(now + INPUT_BOOST_WINDOW);
             }
+            WebSurfaceRenderPhase::Other => {}
         }
         self.last_render_phase = Some(phase);
     }
@@ -230,5 +231,17 @@ mod tests {
             cadence.next_poll_delay(start + Duration::from_millis(5_010)),
             IDLE_POLL_INTERVAL
         );
+    }
+
+    #[test]
+    fn repeated_other_frames_do_not_extend_active_window() {
+        let start = Instant::now();
+        let mut cadence = WebSurfacePollCadence::default();
+
+        cadence.note_frame("sleeping", start);
+        cadence.note_frame("sleeping", start + Duration::from_millis(200));
+        cadence.note_poll_submitted(start + Duration::from_millis(610));
+
+        assert_eq!(cadence.next_poll_delay(start + Duration::from_millis(610)), IDLE_POLL_INTERVAL);
     }
 }
