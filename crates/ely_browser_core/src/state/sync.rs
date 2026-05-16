@@ -7,7 +7,7 @@ use ely_domain::{
 };
 use ely_sync_client::SyncClientError;
 
-use super::BrowserCore;
+use super::{BrowserCore, sync_context::SyncSnapshotApplyContext};
 use crate::sync_engine::SyncSnapshotApplySummary;
 use crate::sync_records::{BookmarkSyncRecord, SpaceSyncRecord, SyncSnapshotBody, TabSyncRecord};
 
@@ -111,20 +111,24 @@ impl BrowserCore {
         body: SyncSnapshotBody,
     ) -> Result<SyncSnapshotApplySummary, SyncClientError> {
         let mut summary = SyncSnapshotApplySummary::default();
+        let mut context = SyncSnapshotApplyContext::default();
+        for record in body.profiles {
+            self.apply_profile_sync_record(record, &mut summary, &mut context)?;
+        }
         for record in body.spaces {
-            self.apply_space_sync_record(record, &mut summary)?;
+            self.apply_space_sync_record(record, &mut summary, &context)?;
         }
         for record in body.tabs {
-            self.apply_tab_sync_record(record, &mut summary)?;
+            self.apply_tab_sync_record(record, &mut summary, &context)?;
         }
         for record in body.bookmarks {
-            self.apply_bookmark_sync_record(record, &mut summary)?;
+            self.apply_bookmark_sync_record(record, &mut summary, &context)?;
         }
         for record in body.notes {
-            self.apply_note_sync_record(record, &mut summary)?;
+            self.apply_note_sync_record(record, &mut summary, &context)?;
         }
         for record in body.reading_list {
-            self.apply_reading_list_sync_record(record, &mut summary)?;
+            self.apply_reading_list_sync_record(record, &mut summary, &context)?;
         }
         Ok(summary)
     }
@@ -203,13 +207,7 @@ impl BrowserCore {
         }
         self.tabs
             .iter()
-            .filter(|tab| {
-                tab.sync_enabled()
-                    && self
-                        .profiles
-                        .iter()
-                        .any(|profile| profile.id() == tab.profile_id() && profile.allows_sync())
-            })
+            .filter(|tab| tab.sync_enabled() && self.profile_allows_cloud_sync(tab.profile_id()))
             .collect()
     }
 
@@ -224,9 +222,10 @@ impl BrowserCore {
         &mut self,
         record: SpaceSyncRecord,
         summary: &mut SyncSnapshotApplySummary,
+        context: &SyncSnapshotApplyContext,
     ) -> Result<(), SyncClientError> {
         let space_id = parse_space_id(&record.id)?;
-        let default_profile_id = self.sync_profile_id(&record.default_profile_id)?;
+        let default_profile_id = self.sync_profile_id(&record.default_profile_id, context)?;
         let archive_policy = ArchivePolicy::from(record.archive_policy.clone());
         let existing_index =
             self.spaces.iter().position(|space| space.id() == &space_id).or_else(|| {
@@ -302,9 +301,10 @@ impl BrowserCore {
         &mut self,
         record: TabSyncRecord,
         summary: &mut SyncSnapshotApplySummary,
+        context: &SyncSnapshotApplyContext,
     ) -> Result<(), SyncClientError> {
         let tab_id = parse_tab_id(&record.id)?;
-        let profile_id = self.sync_profile_id(&record.profile_id)?;
+        let profile_id = self.sync_profile_id(&record.profile_id, context)?;
         let space_id = self.sync_space_id(&record.space_id, record.space_name.as_deref())?;
         let url = UrlText::parse(&record.url).map_err(snapshot_schema_error)?;
         let created_at = UNIX_EPOCH + Duration::from_secs(record.created_at_secs);
@@ -350,9 +350,10 @@ impl BrowserCore {
         &mut self,
         record: BookmarkSyncRecord,
         summary: &mut SyncSnapshotApplySummary,
+        context: &SyncSnapshotApplyContext,
     ) -> Result<(), SyncClientError> {
         let bookmark_id = parse_bookmark_id(&record.id)?;
-        let profile_id = self.sync_profile_id(&record.profile_id)?;
+        let profile_id = self.sync_profile_id(&record.profile_id, context)?;
         let space_id = self.sync_space_id(&record.space_id, record.space_name.as_deref())?;
         let url = UrlText::parse(&record.url).map_err(snapshot_schema_error)?;
         let added_at = UNIX_EPOCH + Duration::from_secs(record.added_at_secs);
@@ -402,12 +403,27 @@ impl BrowserCore {
         Ok(())
     }
 
-    pub(super) fn sync_profile_id(&self, raw: &str) -> Result<ProfileId, SyncClientError> {
+    pub(super) fn sync_profile_id(
+        &self,
+        raw: &str,
+        context: &SyncSnapshotApplyContext,
+    ) -> Result<ProfileId, SyncClientError> {
         let profile_id = ProfileId::parse(raw).map_err(snapshot_schema_error)?;
+        if let Some(local_profile_id) = context.profile_alias(&profile_id) {
+            return Ok(local_profile_id);
+        }
         if self.profiles.iter().any(|profile| profile.id() == &profile_id) {
             return Ok(profile_id);
         }
         Ok(self.active_profile_id.clone())
+    }
+
+    pub(super) fn profile_allows_cloud_sync(&self, profile_id: &ProfileId) -> bool {
+        self.profiles.iter().any(|profile| {
+            profile.id() == profile_id
+                && profile.allows_sync()
+                && profile.sync_policy() == ely_domain::ProfileSyncPolicy::Enabled
+        })
     }
 
     pub(super) fn sync_space_id(

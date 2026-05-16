@@ -6,7 +6,7 @@ use ely_domain::{
 };
 use ely_sync_client::SyncClientError;
 
-use super::{BrowserCore, sync::snapshot_schema_error};
+use super::{BrowserCore, sync::snapshot_schema_error, sync_context::SyncSnapshotApplyContext};
 use crate::{
     sync_engine::SyncSnapshotApplySummary,
     sync_records::{ReadingListSyncRecord, ReadingProgressSyncRecord},
@@ -19,11 +19,7 @@ impl BrowserCore {
         }
         self.reading_list
             .iter()
-            .filter(|entry| {
-                self.profiles
-                    .iter()
-                    .any(|profile| profile.id() == entry.profile_id() && profile.allows_sync())
-            })
+            .filter(|entry| self.profile_allows_cloud_sync(entry.profile_id()))
             .collect()
     }
 
@@ -31,9 +27,10 @@ impl BrowserCore {
         &mut self,
         record: ReadingListSyncRecord,
         summary: &mut SyncSnapshotApplySummary,
+        context: &SyncSnapshotApplyContext,
     ) -> Result<(), SyncClientError> {
         let entry_id = ReadingListId::parse(&record.id).map_err(snapshot_schema_error)?;
-        let profile_id = self.sync_profile_id(&record.profile_id)?;
+        let profile_id = self.sync_profile_id(&record.profile_id, context)?;
         let space_id = self.sync_space_id(&record.space_id, record.space_name.as_deref())?;
         let source_url = UrlText::parse(&record.source_url).map_err(snapshot_schema_error)?;
         let progress = reading_progress_from_sync_record(record.progress)?;

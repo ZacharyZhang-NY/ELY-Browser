@@ -68,6 +68,12 @@ impl Profile {
     }
 
     #[must_use]
+    pub fn restore(id: ProfileId, mut profile: Self) -> Self {
+        profile.id = id;
+        profile
+    }
+
+    #[must_use]
     pub fn id(&self) -> &ProfileId {
         &self.id
     }
@@ -106,10 +112,51 @@ impl Profile {
         self.download_policy = download_policy;
     }
 
+    pub fn set_presentation(&mut self, name: impl Into<String>, color_hex: u32) {
+        self.name = name.into();
+        self.color_hex = color_hex;
+    }
+
     pub fn set_sync_policy(&mut self, sync_policy: ProfileSyncPolicy) {
         self.sync_policy = match self.kind {
             ProfileKind::Standard => sync_policy,
             ProfileKind::Private => ProfileSyncPolicy::Paused,
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Profile, ProfileKind, ProfileSyncPolicy};
+    use crate::ProfileId;
+
+    #[test]
+    fn restores_existing_profile_identity() {
+        let id = ProfileId::new();
+        let profile = Profile::new("Research", 0x9fc9a2, ProfileKind::Standard);
+        let profile = Profile::restore(id.clone(), profile);
+
+        assert_eq!(profile.id(), &id);
+        assert_eq!(profile.name(), "Research");
+        assert_eq!(profile.color_hex(), 0x9fc9a2);
+    }
+
+    #[test]
+    fn updates_profile_presentation() {
+        let mut profile = Profile::new("Old", 0x111111, ProfileKind::Standard);
+
+        profile.set_presentation("New", 0x222222);
+
+        assert_eq!(profile.name(), "New");
+        assert_eq!(profile.color_hex(), 0x222222);
+    }
+
+    #[test]
+    fn private_profile_sync_policy_stays_paused() {
+        let mut profile = Profile::new("Private", 0x807d72, ProfileKind::Private);
+
+        profile.set_sync_policy(ProfileSyncPolicy::Enabled);
+
+        assert_eq!(profile.sync_policy(), ProfileSyncPolicy::Paused);
     }
 }

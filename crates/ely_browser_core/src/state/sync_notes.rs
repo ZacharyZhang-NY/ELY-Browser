@@ -6,7 +6,7 @@ use ely_domain::{
 };
 use ely_sync_client::SyncClientError;
 
-use super::{BrowserCore, sync::snapshot_schema_error};
+use super::{BrowserCore, sync::snapshot_schema_error, sync_context::SyncSnapshotApplyContext};
 use crate::{
     sync_engine::SyncSnapshotApplySummary,
     sync_records::{NoteSyncRecord, NoteTargetSyncRecord},
@@ -17,23 +17,17 @@ impl BrowserCore {
         if self.sync_object_policy(SyncObjectKind::Notes) == SyncObjectPolicy::Paused {
             return Vec::new();
         }
-        self.notes
-            .iter()
-            .filter(|note| {
-                self.profiles
-                    .iter()
-                    .any(|profile| profile.id() == note.profile_id() && profile.allows_sync())
-            })
-            .collect()
+        self.notes.iter().filter(|note| self.profile_allows_cloud_sync(note.profile_id())).collect()
     }
 
     pub(super) fn apply_note_sync_record(
         &mut self,
         record: NoteSyncRecord,
         summary: &mut SyncSnapshotApplySummary,
+        context: &SyncSnapshotApplyContext,
     ) -> Result<(), SyncClientError> {
         let note_id = NoteId::parse(&record.id).map_err(snapshot_schema_error)?;
-        let profile_id = self.sync_profile_id(&record.profile_id)?;
+        let profile_id = self.sync_profile_id(&record.profile_id, context)?;
         let space_id = self.sync_space_id(&record.space_id, record.space_name.as_deref())?;
         let source_url = UrlText::parse(&record.source_url).map_err(snapshot_schema_error)?;
         let target =

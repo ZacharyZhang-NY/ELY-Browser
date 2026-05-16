@@ -1,8 +1,8 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ely_domain::{
-    ArchivePolicy, BookmarkEntry, BrowserTab, NoteEntry, NoteTarget, ReadingListEntry,
-    ReadingProgress, Space, TabFlags,
+    ArchivePolicy, BookmarkEntry, BrowserTab, NoteEntry, NoteTarget, Profile, ProfileKind,
+    ProfileSyncPolicy, ReadingListEntry, ReadingProgress, Space, TabFlags,
 };
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +13,8 @@ pub(crate) const SNAPSHOT_SCHEMA_REV: u32 = 1;
 #[derive(Serialize, Deserialize)]
 pub(crate) struct SyncSnapshotBody {
     pub(crate) schema_rev: u32,
+    #[serde(default)]
+    pub(crate) profiles: Vec<ProfileSyncRecord>,
     #[serde(default)]
     pub(crate) spaces: Vec<SpaceSyncRecord>,
     pub(crate) bookmarks: Vec<BookmarkSyncRecord>,
@@ -28,6 +30,11 @@ impl SyncSnapshotBody {
     pub(crate) fn from_core(core: &BrowserCore) -> Self {
         Self {
             schema_rev: SNAPSHOT_SCHEMA_REV,
+            profiles: core
+                .visible_profiles_for_sync()
+                .into_iter()
+                .map(ProfileSyncRecord::from_profile)
+                .collect(),
             spaces: core
                 .visible_spaces_for_sync()
                 .into_iter()
@@ -67,6 +74,79 @@ impl SyncSnapshotBody {
                     )
                 })
                 .collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct ProfileSyncRecord {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) color_hex: u32,
+    pub(crate) kind: ProfileKindSyncRecord,
+    pub(crate) sync_policy: ProfileSyncPolicySyncRecord,
+}
+
+impl ProfileSyncRecord {
+    fn from_profile(profile: &Profile) -> Self {
+        Self {
+            id: profile.id().as_str().to_string(),
+            name: profile.name().to_string(),
+            color_hex: profile.color_hex(),
+            kind: ProfileKindSyncRecord::from_profile_kind(profile.kind()),
+            sync_policy: ProfileSyncPolicySyncRecord::from_profile_sync_policy(
+                profile.sync_policy(),
+            ),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ProfileKindSyncRecord {
+    Standard,
+    Private,
+}
+
+impl ProfileKindSyncRecord {
+    fn from_profile_kind(kind: &ProfileKind) -> Self {
+        match kind {
+            ProfileKind::Standard => Self::Standard,
+            ProfileKind::Private => Self::Private,
+        }
+    }
+}
+
+impl From<ProfileKindSyncRecord> for ProfileKind {
+    fn from(kind: ProfileKindSyncRecord) -> Self {
+        match kind {
+            ProfileKindSyncRecord::Standard => Self::Standard,
+            ProfileKindSyncRecord::Private => Self::Private,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ProfileSyncPolicySyncRecord {
+    Enabled,
+    Paused,
+}
+
+impl ProfileSyncPolicySyncRecord {
+    fn from_profile_sync_policy(policy: ProfileSyncPolicy) -> Self {
+        match policy {
+            ProfileSyncPolicy::Enabled => Self::Enabled,
+            ProfileSyncPolicy::Paused => Self::Paused,
+        }
+    }
+}
+
+impl From<ProfileSyncPolicySyncRecord> for ProfileSyncPolicy {
+    fn from(policy: ProfileSyncPolicySyncRecord) -> Self {
+        match policy {
+            ProfileSyncPolicySyncRecord::Enabled => Self::Enabled,
+            ProfileSyncPolicySyncRecord::Paused => Self::Paused,
         }
     }
 }

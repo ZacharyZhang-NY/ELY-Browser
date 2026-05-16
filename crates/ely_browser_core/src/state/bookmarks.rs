@@ -249,7 +249,10 @@ impl BrowserCore {
         if self.sync_object_policy(SyncObjectKind::Bookmarks) == SyncObjectPolicy::Paused {
             return Vec::new();
         }
-        self.bookmarks.iter().collect()
+        self.bookmarks
+            .iter()
+            .filter(|bookmark| self.profile_allows_cloud_sync(bookmark.profile_id()))
+            .collect()
     }
 
     fn bookmark_mut(&mut self, bookmark_id: &BookmarkId) -> Result<&mut BookmarkEntry, CoreError> {
