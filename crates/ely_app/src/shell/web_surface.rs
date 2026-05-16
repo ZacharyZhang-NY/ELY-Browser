@@ -118,21 +118,34 @@ impl WebSurfaceStore {
         for frame in frames {
             match frame {
                 WebSurfaceRuntimeFrame::Ready { tab_id, frame, url_change } => {
-                    match self.initial_display_gate_message(&tab_id, &frame, false) {
+                    let had_ready = matches!(
+                        self.surfaces.get(&tab_id).and_then(|surface| surface.state.as_ref()),
+                        Some(WebSurfaceState::Ready(_))
+                    );
+                    match self.initial_display_gate_message(&tab_id, &frame, had_ready) {
                         Ok(()) => {}
                         Err(message) => {
-                            self.surface_mut(&tab_id).state =
-                                Some(WebSurfaceState::Failed { message });
-                            result.changed = true;
+                            // Only transition to Failed when there is
+                            // nothing on screen yet — once a real frame
+                            // has rendered, transient gate failures
+                            // (e.g. a stray empty-paint pass) must not
+                            // wipe it out.
+                            if !had_ready {
+                                self.surface_mut(&tab_id).state =
+                                    Some(WebSurfaceState::Failed { message });
+                                result.changed = true;
+                            }
                             continue;
                         }
                     }
-                    if self.should_hold_initial_frame(&tab_id, &frame, false) {
-                        self.surface_mut(&tab_id).state = Some(WebSurfaceState::Loading {
-                            requested_url: frame.requested_url.clone(),
-                            previous_frame: None,
-                        });
-                        result.changed = true;
+                    if self.should_hold_initial_frame(&tab_id, &frame, had_ready) {
+                        if !had_ready {
+                            self.surface_mut(&tab_id).state = Some(WebSurfaceState::Loading {
+                                requested_url: frame.requested_url.clone(),
+                                previous_frame: None,
+                            });
+                            result.changed = true;
+                        }
                         continue;
                     }
                     if let Some(metadata) = WebSurfacePageMetadata::from_frame(&tab_id, &frame) {
@@ -145,6 +158,25 @@ impl WebSurfaceStore {
                     }
                 }
                 WebSurfaceRuntimeFrame::Failed { tab_id, message } => {
+                    let had_ready = matches!(
+                        self.surfaces.get(&tab_id).and_then(|surface| surface.state.as_ref()),
+                        Some(WebSurfaceState::Ready(_))
+                    );
+                    if had_ready {
+                        // Keep the last good frame on screen — the
+                        // worker emits Failed for any transient ensure
+                        // / poll error (parse glitch, momentary IPC
+                        // hiccup) and downgrading every one of them
+                        // strobes the page. The error still surfaces
+                        // through `tracing` for diagnostics.
+                        tracing::warn!(
+                            target: "ely::web_surface",
+                            tab_id = %tab_id,
+                            message = %message,
+                            "transient surface error; keeping last frame",
+                        );
+                        continue;
+                    }
                     self.surface_mut(&tab_id).state = Some(WebSurfaceState::Failed { message });
                     result.changed = true;
                 }
