@@ -39,9 +39,12 @@ impl WebSurfacePollCadence {
     pub(super) fn note_frame(&mut self, render_state: &str, now: Instant) {
         let phase = WebSurfaceRenderPhase::from_render_state(render_state);
         match phase {
-            WebSurfaceRenderPhase::Created | WebSurfaceRenderPhase::Loading => {
+            WebSurfaceRenderPhase::Created | WebSurfaceRenderPhase::Loading
+                if self.last_render_phase != Some(phase) =>
+            {
                 self.boost_until(now + LOAD_BOOST_WINDOW);
             }
+            WebSurfaceRenderPhase::Created | WebSurfaceRenderPhase::Loading => {}
             WebSurfaceRenderPhase::Complete if self.last_render_phase != Some(phase) => {
                 self.boost_until(now + FRAME_SETTLE_WINDOW);
             }
@@ -212,5 +215,20 @@ mod tests {
 
         assert!(!cadence.should_poll(start + Duration::from_millis(339)));
         assert!(cadence.should_poll(start + Duration::from_millis(340)));
+    }
+
+    #[test]
+    fn repeated_loading_frames_do_not_extend_load_boost_window() {
+        let start = Instant::now();
+        let mut cadence = WebSurfacePollCadence::default();
+
+        cadence.note_frame("loading", start);
+        cadence.note_frame("loading", start + Duration::from_millis(200));
+        cadence.note_poll_submitted(start + Duration::from_millis(5_010));
+
+        assert_eq!(
+            cadence.next_poll_delay(start + Duration::from_millis(5_010)),
+            IDLE_POLL_INTERVAL
+        );
     }
 }
