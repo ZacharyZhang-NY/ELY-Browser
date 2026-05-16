@@ -86,6 +86,12 @@ impl ReadingListEntry {
     }
 
     #[must_use]
+    pub fn restore(id: ReadingListId, mut entry: Self) -> Self {
+        entry.id = id;
+        entry
+    }
+
+    #[must_use]
     pub fn id(&self) -> &ReadingListId {
         &self.id
     }
@@ -140,8 +146,10 @@ fn non_empty_text(field: &'static str, value: String) -> Result<String, DomainEr
 
 #[cfg(test)]
 mod tests {
-    use super::{ReadingProgress, ReadingProgressPercent};
-    use crate::DomainError;
+    use std::time::SystemTime;
+
+    use super::{ReadingListEntry, ReadingProgress, ReadingProgressPercent};
+    use crate::{DomainError, ProfileId, ReadingListId, SpaceId, UrlText};
 
     #[test]
     fn reading_progress_percent_accepts_partial_progress() -> Result<(), DomainError> {
@@ -162,5 +170,28 @@ mod tests {
             ReadingProgressPercent::new(100),
             Err(DomainError::InvalidReadingProgressPercent { value: "100".to_string() })
         );
+    }
+
+    #[test]
+    fn restores_existing_reading_list_identity() -> Result<(), DomainError> {
+        let id = ReadingListId::new();
+        let profile_id = ProfileId::new();
+        let space_id = SpaceId::new();
+        let added_at = SystemTime::UNIX_EPOCH;
+        let entry = ReadingListEntry::new(
+            profile_id.clone(),
+            space_id.clone(),
+            " Restored ",
+            UrlText::parse("https://example.com/read")?,
+            added_at,
+        )?;
+        let entry = ReadingListEntry::restore(id.clone(), entry);
+
+        assert_eq!(entry.id(), &id);
+        assert_eq!(entry.profile_id(), &profile_id);
+        assert_eq!(entry.space_id(), &space_id);
+        assert_eq!(entry.title(), "Restored");
+        assert_eq!(entry.added_at(), added_at);
+        Ok(())
     }
 }

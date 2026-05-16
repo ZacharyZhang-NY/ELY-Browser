@@ -1,7 +1,8 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ely_domain::{
-    ArchivePolicy, BookmarkEntry, BrowserTab, NoteEntry, NoteTarget, Space, TabFlags,
+    ArchivePolicy, BookmarkEntry, BrowserTab, NoteEntry, NoteTarget, ReadingListEntry,
+    ReadingProgress, Space, TabFlags,
 };
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +20,8 @@ pub(crate) struct SyncSnapshotBody {
     pub(crate) tabs: Vec<TabSyncRecord>,
     #[serde(default)]
     pub(crate) notes: Vec<NoteSyncRecord>,
+    #[serde(default)]
+    pub(crate) reading_list: Vec<ReadingListSyncRecord>,
 }
 
 impl SyncSnapshotBody {
@@ -52,6 +55,16 @@ impl SyncSnapshotBody {
                 .into_iter()
                 .map(|entry| {
                     NoteSyncRecord::from_entry(entry, core.sync_space_name_for(entry.space_id()))
+                })
+                .collect(),
+            reading_list: core
+                .visible_reading_list_for_sync()
+                .into_iter()
+                .map(|entry| {
+                    ReadingListSyncRecord::from_entry(
+                        entry,
+                        core.sync_space_name_for(entry.space_id()),
+                    )
                 })
                 .collect(),
         }
@@ -230,6 +243,52 @@ impl NoteTargetSyncRecord {
         match target {
             NoteTarget::Url(url) => Self::Url { url: url.as_str().to_string() },
             NoteTarget::Tab(tab_id) => Self::Tab { tab_id: tab_id.as_str().to_string() },
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct ReadingListSyncRecord {
+    pub(crate) id: String,
+    pub(crate) profile_id: String,
+    pub(crate) space_id: String,
+    #[serde(default)]
+    pub(crate) space_name: Option<String>,
+    pub(crate) title: String,
+    pub(crate) source_url: String,
+    pub(crate) progress: ReadingProgressSyncRecord,
+    pub(crate) added_at_secs: u64,
+}
+
+impl ReadingListSyncRecord {
+    fn from_entry(entry: &ReadingListEntry, space_name: Option<String>) -> Self {
+        Self {
+            id: entry.id().as_str().to_string(),
+            profile_id: entry.profile_id().as_str().to_string(),
+            space_id: entry.space_id().as_str().to_string(),
+            space_name,
+            title: entry.title().to_string(),
+            source_url: entry.source_url().as_str().to_string(),
+            progress: ReadingProgressSyncRecord::from_progress(*entry.progress()),
+            added_at_secs: system_time_secs(entry.added_at()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum ReadingProgressSyncRecord {
+    Unread,
+    InProgress { percent: u8 },
+    Finished,
+}
+
+impl ReadingProgressSyncRecord {
+    fn from_progress(progress: ReadingProgress) -> Self {
+        match progress {
+            ReadingProgress::Unread => Self::Unread,
+            ReadingProgress::InProgress(percent) => Self::InProgress { percent: percent.value() },
+            ReadingProgress::Finished => Self::Finished,
         }
     }
 }

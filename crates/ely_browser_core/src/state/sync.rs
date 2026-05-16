@@ -123,6 +123,9 @@ impl BrowserCore {
         for record in body.notes {
             self.apply_note_sync_record(record, &mut summary)?;
         }
+        for record in body.reading_list {
+            self.apply_reading_list_sync_record(record, &mut summary)?;
+        }
         Ok(summary)
     }
 
