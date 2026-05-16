@@ -55,7 +55,7 @@ fn render_status_pill(snapshot: &BrowserSnapshot) -> AnyElement {
         .px(px(12.0))
         .py(px(5.0))
         .rounded(px(999.0))
-        .bg(rgba(PILL_BG))
+        .bg(rgba(pill_bg()))
         .text_size(px(11.0))
         .text_color(rgb(colors::ink_3()))
         .child(div().text_color(rgb(colors::accent())).child(IconName::Globe))
@@ -93,7 +93,7 @@ fn render_metrics_card(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -
         .max_w(px(380.0))
         .p(px(20.0))
         .rounded(px(16.0))
-        .bg(rgba(CARD_BG))
+        .bg(rgba(card_bg()))
         .flex()
         .flex_col()
         .gap(px(16.0))
@@ -160,12 +160,12 @@ fn render_reset_button(cx: &mut Context<ElyShell>) -> AnyElement {
                 .px(px(12.0))
                 .py(px(7.0))
                 .rounded(px(8.0))
-                .bg(rgba(BUTTON_BG))
+                .bg(rgba(button_bg()))
                 .text_size(px(12.0))
                 .font_weight(FontWeight(500.0))
                 .text_color(rgb(colors::ink_2()))
                 .cursor_pointer()
-                .hover(|style| style.bg(rgba(BUTTON_BG_HOVER)))
+                .hover(|style| style.bg(rgba(button_bg_hover())))
                 .active(|style| style.opacity(0.85))
                 .on_click(cx.listener(|shell, _, _, cx| shell.reset_sync_settings(cx)))
                 .child("Reset to defaults"),
@@ -186,7 +186,7 @@ fn render_what_syncs_card(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>
     div()
         .p(px(18.0))
         .rounded(px(16.0))
-        .bg(rgba(CARD_BG))
+        .bg(rgba(card_bg()))
         .flex()
         .flex_col()
         .gap(px(12.0))
@@ -370,7 +370,15 @@ fn sync_object_state_label(state: SyncObjectState) -> &'static str {
     }
 }
 
-const PILL_BG: u32 = 0xffffffb3;
-const CARD_BG: u32 = 0xffffffd9;
-const BUTTON_BG: u32 = 0xffffffd9;
-const BUTTON_BG_HOVER: u32 = 0xffffffeb;
+fn pill_bg() -> u32 {
+    colors::pick(0xffffffb3, 0x1f1d1bb3)
+}
+fn card_bg() -> u32 {
+    colors::pick(0xffffffd9, 0x1f1d1bd9)
+}
+fn button_bg() -> u32 {
+    colors::pick(0xffffffd9, 0x1f1d1bd9)
+}
+fn button_bg_hover() -> u32 {
+    colors::pick(0xffffffeb, 0x1f1d1beb)
+}

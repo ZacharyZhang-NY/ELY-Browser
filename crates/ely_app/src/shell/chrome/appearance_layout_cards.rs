@@ -119,7 +119,7 @@ fn render_layout_card(
         .id(SharedString::from(mode.id()))
         .p(px(14.0))
         .rounded(px(14.0))
-        .bg(rgba(LAYOUT_CARD_BG))
+        .bg(rgba(layout_card_bg()))
         .when(selected, |el| el.border_2().border_color(rgb(colors::accent())))
         .when(!selected, |el| el.border_1().border_color(rgba(colors::stroke())))
         .flex()
@@ -165,7 +165,7 @@ fn render_layout_preview(mode: LayoutMode) -> AnyElement {
                 .bottom(px(6.0))
                 .w(px(sidebar_width))
                 .rounded(px(5.0))
-                .bg(rgba(LAYOUT_PANEL_BG)),
+                .bg(rgba(layout_panel_bg())),
         )
         .child(
             div()
@@ -175,11 +175,17 @@ fn render_layout_preview(mode: LayoutMode) -> AnyElement {
                 .right(px(6.0))
                 .bottom(px(6.0))
                 .rounded(px(5.0))
-                .bg(rgba(LAYOUT_CANVAS_BG)),
+                .bg(rgba(layout_canvas_bg())),
         )
         .into_any_element()
 }
 
-const LAYOUT_CARD_BG: u32 = 0xffffffd9;
-const LAYOUT_PANEL_BG: u32 = 0x281e1414;
-const LAYOUT_CANVAS_BG: u32 = 0x281e140a;
+fn layout_card_bg() -> u32 {
+    colors::pick(0xffffffd9, 0x1f1d1bd9)
+}
+fn layout_panel_bg() -> u32 {
+    colors::pick(0x281e1414, 0xf2efe914)
+}
+fn layout_canvas_bg() -> u32 {
+    colors::pick(0x281e140a, 0xf2efe90a)
+}

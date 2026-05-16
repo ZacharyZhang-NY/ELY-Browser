@@ -13,7 +13,7 @@ use gpui_component::IconName;
 use crate::shell::ElyShell;
 use crate::shell::chrome::{SERIF_FAMILY, render_glyph_for};
 
-use super::style::{CARD_BG, card_shadow};
+use super::style::{card_bg, card_shadow};
 use super::time::relative_time_label;
 
 pub(crate) fn render_recap(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
@@ -44,7 +44,7 @@ fn render_continue_card(
 
     div()
         .rounded(px(16.0))
-        .bg(rgba(CARD_BG))
+        .bg(rgba(card_bg()))
         .shadow(card_shadow())
         .p(px(16.0))
         .flex()
@@ -244,7 +244,7 @@ fn render_activity_card(
 
     div()
         .rounded(px(16.0))
-        .bg(rgba(CARD_BG))
+        .bg(rgba(card_bg()))
         .shadow(card_shadow())
         .p(px(16.0))
         .flex()

@@ -175,7 +175,7 @@ where
     let leading = div()
         .size(px(24.0))
         .rounded(px(6.0))
-        .bg(rgba(ROW_ICON_BG))
+        .bg(rgba(row_icon_bg()))
         .flex()
         .items_center()
         .justify_center()
@@ -268,4 +268,6 @@ where
 
 const ROW_HOVER_BG: u32 = 0xc9644214;
 const ROW_SELECTED_BG: u32 = 0xc964421f;
-const ROW_ICON_BG: u32 = 0xffffffd9;
+fn row_icon_bg() -> u32 {
+    colors::pick(0xffffffd9, 0x1f1d1bd9)
+}

@@ -10,36 +10,48 @@ use crate::shell::ElyShell;
 
 /// Hover/active palette for the vertical sidebar rows.
 ///
-/// The original code reused `ACTIVE_NAV_BG` for both `active` and
+/// The original code reused `active_nav_bg()` for both `active` and
 /// `hover`, which made an already-active row visually inert under the
 /// cursor — the object refused to acknowledge the touch. The four
 /// tokens below split that single value into a four-step ladder:
 ///
-///   rest (transparent) → HOVER_NAV_BG → ACTIVE_NAV_BG → ACTIVE_NAV_BG_HOVER
+///   rest (transparent) → hover_nav_bg() → active_nav_bg() → active_nav_bg_hover()
 ///
 /// so every state transition produces a real, perceptible change.
 ///
 /// Values were picked by eye against the warm panel tint, then nudged
 /// until the wash on a Dawn-themed panel reads as "you touched this"
 /// without competing with the active selection's authority.
-pub(crate) const HOVER_NAV_BG: u32 = 0xffffff66; // 40% white wash
-pub(crate) const ACTIVE_NAV_BG: u32 = 0xffffffd9; // 85% white card
-pub(crate) const ACTIVE_NAV_BG_HOVER: u32 = 0xfffffff2; // 95% white — active + hover
+pub(crate) fn hover_nav_bg() -> u32 {
+    colors::pick(0xffffff66, 0x1f1d1b66)
+} // 40% white wash
+pub(crate) fn active_nav_bg() -> u32 {
+    colors::pick(0xffffffd9, 0x1f1d1bd9)
+} // 85% white card
+pub(crate) fn active_nav_bg_hover() -> u32 {
+    colors::pick(0xfffffff2, 0x1f1d1bf2)
+} // 95% white — active + hover
 
 /// Hover tint behind the per-row close (×) button. Was 8% alpha, which
 /// was visually indistinguishable from the panel background and made
 /// the click target read as inert. Brought to ~30% alpha so the
 /// hover registers as a real "press here" surface, matching the
 /// confidence of close buttons in Arc/Dia/Zen.
-pub(crate) const CLOSE_HOVER_BG: u32 = 0x281e144d;
+pub(crate) fn close_hover_bg() -> u32 {
+    colors::pick(0x281e144d, 0xf2efe94d)
+}
 
-pub(crate) const UNREAD_BADGE_BG: u32 = 0x281e140f;
+pub(crate) fn unread_badge_bg() -> u32 {
+    colors::pick(0x281e140f, 0xf2efe90f)
+}
 
 /// 50% white inner border that traces every glass panel — the GPUI
 /// substitute for the design's `box-shadow: inset 0 0 0 1px rgba(255,255,255,0.5)`.
 /// Painted as the panel's own border so it stays part of the frame and
 /// never participates in hit testing.
-pub(crate) const HIGHLIGHT_BORDER: u32 = 0xffffff80;
+pub(crate) fn highlight_border() -> u32 {
+    colors::pick(0xffffff80, 0x1f1d1b80)
+}
 
 pub(crate) const RESIZE_HANDLE_HOVER_BG: u32 = 0xffaa7733;
 
@@ -62,7 +74,7 @@ pub(crate) fn render_unread_badge(count: u32) -> impl IntoElement {
         .px(px(6.0))
         .py(px(1.0))
         .rounded(px(999.0))
-        .bg(rgba(UNREAD_BADGE_BG))
+        .bg(rgba(unread_badge_bg()))
         .text_size(px(10.0))
         .font_weight(FontWeight(500.0))
         .text_color(rgb(colors::ink_3()))

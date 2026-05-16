@@ -10,8 +10,8 @@ use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
 
 use crate::shell::ElyShell;
 use crate::shell::chrome::sidebar_chrome::{
-    ACTIVE_NAV_BG, ACTIVE_NAV_BG_HOVER, CLOSE_HOVER_BG, HIGHLIGHT_BORDER, HOVER_NAV_BG,
-    ROW_CLOSE_SIZE, panel_bg, panel_shadow, profile_initial, render_sidebar_resize_handle,
+    ROW_CLOSE_SIZE, active_nav_bg, active_nav_bg_hover, close_hover_bg, highlight_border,
+    hover_nav_bg, panel_bg, panel_shadow, profile_initial, render_sidebar_resize_handle,
     render_unread_badge, section_label, section_tabs_label, soft_shadow,
 };
 use crate::shell::chrome::{render_glyph_for, render_sidebar_header};
@@ -43,7 +43,7 @@ impl ElyShell {
                     .rounded(px(spacing::RADIUS_CARD))
                     .bg(rgba(panel_color))
                     .border_1()
-                    .border_color(rgba(HIGHLIGHT_BORDER))
+                    .border_color(rgba(highlight_border()))
                     .shadow(panel_shadow())
                     .overflow_hidden()
                     .child(render_sidebar_header(self, snapshot, cx))
@@ -102,7 +102,7 @@ impl ElyShell {
 
     fn render_settings_row(&mut self, cx: &mut Context<Self>) -> AnyElement {
         // Settings is never an "active" row — only ever rest or hover —
-        // so it uses HOVER_NAV_BG directly. Keeping it lighter than the
+        // so it uses hover_nav_bg() directly. Keeping it lighter than the
         // active nav card means the eye still finds the active selection
         // first when both are visible.
         div()
@@ -116,7 +116,7 @@ impl ElyShell {
             .text_size(px(13.0))
             .text_color(rgb(colors::ink_2()))
             .cursor_pointer()
-            .hover(|style| style.bg(rgba(HOVER_NAV_BG)).text_color(rgb(colors::ink())))
+            .hover(|style| style.bg(rgba(hover_nav_bg())).text_color(rgb(colors::ink())))
             .active(|style| style.opacity(0.82))
             .on_click(cx.listener(|shell, _, window, cx| {
                 shell.open_internal_tab("ely://settings", window, cx);
@@ -142,7 +142,7 @@ impl ElyShell {
             .flex()
             .items_center()
             .cursor_pointer()
-            .hover(|style| style.bg(rgba(HOVER_NAV_BG)))
+            .hover(|style| style.bg(rgba(hover_nav_bg())))
             .active(|style| style.opacity(0.82))
             .on_click(cx.listener(|shell, _, window, cx| {
                 shell.open_internal_tab("ely://settings/profiles", window, cx);
@@ -293,7 +293,7 @@ impl ElyShell {
             .text_color(rgb(colors::ink_3()))
             .text_size(px(13.0))
             .cursor_pointer()
-            .hover(|style| style.bg(rgba(HOVER_NAV_BG)).text_color(rgb(colors::ink())))
+            .hover(|style| style.bg(rgba(hover_nav_bg())).text_color(rgb(colors::ink())))
             .active(|style| style.opacity(0.82))
             .on_click(cx.listener(|shell, _, window, cx| {
                 shell.open_new_tab(window, cx);
@@ -377,9 +377,9 @@ impl ElyShell {
 /// place rather than three transparent-sentinel triples.
 fn nav_row_palette(active: bool) -> NavRowPalette {
     if active {
-        NavRowPalette { bg: ACTIVE_NAV_BG, hover_bg: ACTIVE_NAV_BG_HOVER, text: colors::ink() }
+        NavRowPalette { bg: active_nav_bg(), hover_bg: active_nav_bg_hover(), text: colors::ink() }
     } else {
-        NavRowPalette { bg: 0x00000000, hover_bg: HOVER_NAV_BG, text: colors::ink_2() }
+        NavRowPalette { bg: 0x00000000, hover_bg: hover_nav_bg(), text: colors::ink_2() }
     }
 }
 
@@ -417,7 +417,7 @@ where
         .text_color(rgb(colors::ink_4()))
         .opacity(0.0)
         .group_hover(group_name, |style| style.opacity(1.0))
-        .hover(|style| style.bg(rgba(CLOSE_HOVER_BG)).text_color(rgb(colors::ink())))
+        .hover(|style| style.bg(rgba(close_hover_bg())).text_color(rgb(colors::ink())))
         .cursor_pointer()
         .on_click(on_click)
         .child(IconName::Close)

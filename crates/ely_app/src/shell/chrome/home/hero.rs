@@ -9,7 +9,7 @@ use crate::shell::ElyShell;
 
 use crate::shell::chrome::{SERIF_FAMILY, render_glyph_for};
 
-use super::style::{ARROW_CHIP_BG, PILL_BG, PILL_BG_HOVER, SEARCH_BG, card_shadow, soft_shadow};
+use super::style::{arrow_chip_bg, card_shadow, pill_bg, pill_bg_hover, search_bg, soft_shadow};
 use super::time::DayPhase;
 
 pub(crate) fn render_hero(
@@ -84,7 +84,7 @@ fn render_search_bar(shell: &ElyShell, cx: &mut Context<ElyShell>) -> AnyElement
         .w(px(640.0))
         .h(px(54.0))
         .rounded(px(14.0))
-        .bg(rgba(SEARCH_BG))
+        .bg(rgba(search_bg()))
         .shadow(card_shadow())
         .px(px(16.0))
         .flex()
@@ -110,7 +110,7 @@ fn render_search_bar(shell: &ElyShell, cx: &mut Context<ElyShell>) -> AnyElement
             div()
                 .size(px(28.0))
                 .rounded(px(8.0))
-                .bg(rgba(ARROW_CHIP_BG))
+                .bg(rgba(arrow_chip_bg()))
                 .flex()
                 .items_center()
                 .justify_center()
@@ -178,7 +178,7 @@ where
     div()
         .id(SharedString::from(id))
         .rounded(px(999.0))
-        .bg(rgba(PILL_BG))
+        .bg(rgba(pill_bg()))
         .shadow(soft_shadow())
         .px(px(12.0))
         .py(px(6.0))
@@ -186,7 +186,7 @@ where
         .items_center()
         .gap(px(6.0))
         .cursor_pointer()
-        .hover(|style| style.bg(rgba(PILL_BG_HOVER)))
+        .hover(|style| style.bg(rgba(pill_bg_hover())))
         .active(|style| style.opacity(0.82))
         .on_click(cx.listener(move |shell, _, window, cx| handler(shell, window, cx)))
         .child(leading)

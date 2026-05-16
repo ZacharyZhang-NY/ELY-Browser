@@ -1,12 +1,27 @@
+use ely_design_system::colors;
 use gpui::{BoxShadow, hsla, point, px};
 
-pub(crate) const SEARCH_BG: u32 = 0xffffffd9;
-pub(crate) const ARROW_CHIP_BG: u32 = 0x281e140a;
-pub(crate) const PILL_BG: u32 = 0xffffff8c;
-pub(crate) const PILL_BG_HOVER: u32 = 0xffffffd9;
-pub(crate) const CARD_BG: u32 = 0xffffffc7;
-pub(crate) const CARD_BG_HOVER: u32 = 0xffffffeb;
-pub(crate) const ADD_TILE_BG: u32 = 0xffffff7f;
+pub(crate) fn search_bg() -> u32 {
+    colors::pick(0xffffffd9, 0x1f1d1bd9)
+}
+pub(crate) fn arrow_chip_bg() -> u32 {
+    colors::pick(0x281e140a, 0xf2efe90a)
+}
+pub(crate) fn pill_bg() -> u32 {
+    colors::pick(0xffffff8c, 0x1f1d1b8c)
+}
+pub(crate) fn pill_bg_hover() -> u32 {
+    colors::pick(0xffffffd9, 0x1f1d1bd9)
+}
+pub(crate) fn card_bg() -> u32 {
+    colors::pick(0xffffffc7, 0x1f1d1bc7)
+}
+pub(crate) fn card_bg_hover() -> u32 {
+    colors::pick(0xffffffeb, 0x1f1d1beb)
+}
+pub(crate) fn add_tile_bg() -> u32 {
+    colors::pick(0xffffff7f, 0x1f1d1b7f)
+}
 
 pub(crate) fn card_shadow() -> Vec<BoxShadow> {
     vec![BoxShadow {

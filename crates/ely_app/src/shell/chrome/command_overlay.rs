@@ -45,7 +45,7 @@ fn render_overlay(
         div()
             .absolute()
             .inset_0()
-            .bg(rgba(BACKDROP_BG))
+            .bg(rgba(backdrop_bg()))
             .flex()
             .flex_col()
             .items_center()
@@ -67,9 +67,9 @@ fn render_panel(
     div()
         .w(px(640.0))
         .rounded(px(16.0))
-        .bg(rgba(PANEL_BG))
+        .bg(rgba(panel_bg()))
         .border_1()
-        .border_color(rgba(PANEL_BORDER))
+        .border_color(rgba(panel_border()))
         .shadow(panel_shadow())
         .overflow_hidden()
         .flex()
@@ -111,7 +111,7 @@ fn render_header(query_label: String, is_empty: bool) -> AnyElement {
                 .px(px(8.0))
                 .py(px(2.0))
                 .rounded(px(6.0))
-                .bg(rgba(BADGE_BG))
+                .bg(rgba(badge_bg()))
                 .text_size(px(10.5))
                 .text_color(rgb(colors::ink_3()))
                 .child("Switcher"),
@@ -199,10 +199,18 @@ fn render_empty_state() -> AnyElement {
         .into_any_element()
 }
 
-const PANEL_BG: u32 = 0xfffffff5;
-const PANEL_BORDER: u32 = 0xffffff80;
-const BACKDROP_BG: u32 = 0x140f0a3d;
-const BADGE_BG: u32 = 0x281e140f;
+fn panel_bg() -> u32 {
+    colors::pick(0xfffffff5, 0x1f1d1bf5)
+}
+fn panel_border() -> u32 {
+    colors::pick(0xffffff80, 0x1f1d1b80)
+}
+fn backdrop_bg() -> u32 {
+    colors::pick(0x140f0a3d, 0x0d0c0a3d)
+}
+fn badge_bg() -> u32 {
+    colors::pick(0x281e140f, 0xf2efe90f)
+}
 
 fn panel_shadow() -> Vec<BoxShadow> {
     vec![BoxShadow {

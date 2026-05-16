@@ -37,8 +37,13 @@ pub fn mode() -> Mode {
     CURRENT_MODE.with(Cell::get)
 }
 
+/// Pick between a light- and dark-mode value based on the active
+/// thread-local mode. Exposed so chrome-local constants that don't
+/// belong in the global palette (component-internal translucent
+/// glass, backdrops with bespoke alpha curves) can still flip with
+/// the rest of the design system.
 #[must_use]
-fn pick(light: u32, dark: u32) -> u32 {
+pub fn pick(light: u32, dark: u32) -> u32 {
     match mode() {
         Mode::Light => light,
         Mode::Dark => dark,

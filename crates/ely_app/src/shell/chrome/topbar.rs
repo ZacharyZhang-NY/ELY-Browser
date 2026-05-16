@@ -79,7 +79,7 @@ fn render_omnibar(
         .flex_1()
         .h(px(spacing::OMNIBAR_HEIGHT))
         .rounded(px(spacing::RADIUS_PILL))
-        .bg(rgba(OMNIBAR_BG))
+        .bg(rgba(omnibar_bg()))
         .shadow(soft_shadow())
         .px(px(14.0))
         .flex()
@@ -168,7 +168,7 @@ where
         .justify_center()
         .text_color(rgb(color))
         .cursor_pointer()
-        .hover(|style| style.bg(rgba(CHIP_HOVER_BG)).text_color(rgb(colors::ink())))
+        .hover(|style| style.bg(rgba(chip_hover_bg())).text_color(rgb(colors::ink())))
         .active(|style| style.opacity(0.7))
         .on_click(cx.listener(move |shell, _, window, cx| handler(shell, window, cx)))
         .child(icon)
@@ -196,7 +196,7 @@ where
         .text_color(rgb(color))
         .when(enabled, |el| {
             el.cursor_pointer()
-                .hover(|style| style.bg(rgba(OMNIBAR_BG)).text_color(rgb(colors::ink())))
+                .hover(|style| style.bg(rgba(omnibar_bg())).text_color(rgb(colors::ink())))
                 .active(|style| style.opacity(0.82))
                 .on_click(cx.listener(move |shell, _, window, cx| handler(shell, window, cx)))
         })
@@ -222,15 +222,19 @@ where
         .justify_center()
         .cursor_pointer()
         .text_color(rgb(colors::ink_3()))
-        .hover(|style| style.bg(rgba(OMNIBAR_BG)).text_color(rgb(colors::ink())))
+        .hover(|style| style.bg(rgba(omnibar_bg())).text_color(rgb(colors::ink())))
         .active(|style| style.opacity(0.82))
         .on_click(cx.listener(move |shell, _, window, cx| handler(shell, window, cx)))
         .child(icon)
         .into_any_element()
 }
 
-const OMNIBAR_BG: u32 = 0xffffff8c;
-const CHIP_HOVER_BG: u32 = 0xffffffd9;
+fn omnibar_bg() -> u32 {
+    colors::pick(0xffffff8c, 0x1f1d1b8c)
+}
+fn chip_hover_bg() -> u32 {
+    colors::pick(0xffffffd9, 0x1f1d1bd9)
+}
 
 /// Topbar quick-toggle icon for the current theme mode. The button
 /// cycles System → Light → Dark → System, and the icon previews the

@@ -202,7 +202,7 @@ fn render_nav_item(
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
     let active = item.route == active_route;
-    let bg = if active { ACTIVE_BG } else { 0x00000000 };
+    let bg = if active { active_bg() } else { 0x00000000 };
     let text_color = if active { colors::ink() } else { colors::ink_2() };
     let route = item.route;
     let icon = item.icon.clone();
@@ -219,7 +219,7 @@ fn render_nav_item(
         .text_size(px(13.0))
         .text_color(rgb(text_color))
         .cursor_pointer()
-        .hover(|style| style.bg(rgba(HOVER_BG)))
+        .hover(|style| style.bg(rgba(hover_bg())))
         .active(|style| style.opacity(0.85))
         .on_click(cx.listener(move |shell, _, window, cx| {
             shell.open_internal_tab(route, window, cx);
@@ -229,5 +229,9 @@ fn render_nav_item(
         .into_any_element()
 }
 
-const ACTIVE_BG: u32 = 0xffffffd9;
-const HOVER_BG: u32 = 0xffffff8c;
+fn active_bg() -> u32 {
+    colors::pick(0xffffffd9, 0x1f1d1bd9)
+}
+fn hover_bg() -> u32 {
+    colors::pick(0xffffff8c, 0x1f1d1b8c)
+}

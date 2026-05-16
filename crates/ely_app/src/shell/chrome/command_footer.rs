@@ -13,7 +13,7 @@ pub(crate) fn render_command_footer() -> AnyElement {
         .border_color(rgba(colors::divider()))
         .text_size(px(10.5))
         .text_color(rgb(colors::ink_3()))
-        .bg(rgba(FOOTER_BG))
+        .bg(rgba(footer_bg()))
         // Only the shortcuts that actually do something today.
         // `⌘↵` (split-on-open) and `⇥` (filter) are real product
         // features but not yet wired through the command overlay's
@@ -41,12 +41,16 @@ pub(crate) fn render_kbd(label: &'static str) -> AnyElement {
         .px(px(5.0))
         .py(px(1.0))
         .rounded(px(4.0))
-        .bg(rgba(KBD_BG))
+        .bg(rgba(kbd_bg()))
         .text_size(px(10.0))
         .text_color(rgb(colors::ink_3()))
         .child(label)
         .into_any_element()
 }
 
-const KBD_BG: u32 = 0xffffffd9;
-const FOOTER_BG: u32 = 0xffffff8c;
+fn kbd_bg() -> u32 {
+    colors::pick(0xffffffd9, 0x1f1d1bd9)
+}
+fn footer_bg() -> u32 {
+    colors::pick(0xffffff8c, 0x1f1d1b8c)
+}

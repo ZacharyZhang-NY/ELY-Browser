@@ -136,7 +136,7 @@ fn render_picker_pill(
     let space_name = active_space.map(|space| space.name().to_string()).unwrap_or_default();
     let space_glyph = active_space.map(|space| space.icon().to_string()).unwrap_or_default();
     let chevron = if picker_open { IconName::ChevronUp } else { IconName::ChevronDown };
-    let bg = if picker_open { PICKER_BG_HOVER } else { PICKER_BG };
+    let bg = if picker_open { picker_bg_hover() } else { picker_bg() };
 
     div()
         .id(SharedString::from("workspace-picker"))
@@ -151,7 +151,7 @@ fn render_picker_pill(
         .bg(rgba(bg))
         .shadow(soft_shadow())
         .cursor_pointer()
-        .hover(|style| style.bg(rgba(PICKER_BG_HOVER)))
+        .hover(|style| style.bg(rgba(picker_bg_hover())))
         .active(|style| style.opacity(0.85))
         .on_click(cx.listener(|shell, _, _, cx| {
             shell.toggle_workspace_picker(cx);
@@ -237,9 +237,9 @@ pub(crate) fn render_workspace_disclosure(
         .gap(px(2.0))
         .p(px(4.0))
         .rounded(px(10.0))
-        .bg(rgba(DISCLOSURE_BG))
+        .bg(rgba(disclosure_bg()))
         .border_1()
-        .border_color(rgba(DISCLOSURE_BORDER))
+        .border_color(rgba(disclosure_border()))
         .shadow(soft_shadow())
         .children(
             snapshot
@@ -280,7 +280,7 @@ fn render_disclosure_row(
 ) -> AnyElement {
     let space_id = space.id().clone();
     let active = space.id() == active_id;
-    let bg = if active { DISCLOSURE_ROW_ACTIVE_BG } else { 0x00000000 };
+    let bg = if active { disclosure_row_active_bg() } else { 0x00000000 };
 
     div()
         .id(SharedString::from(format!("workspace-row-{index}")))
@@ -292,7 +292,7 @@ fn render_disclosure_row(
         .rounded(px(8.0))
         .bg(rgba(bg))
         .cursor_pointer()
-        .hover(|style| style.bg(rgba(DISCLOSURE_ROW_HOVER_BG)))
+        .hover(|style| style.bg(rgba(disclosure_row_hover_bg())))
         .active(|style| style.opacity(0.85))
         .on_click(cx.listener(move |shell, _, window, cx| {
             shell.select_space_from_picker(&space_id, window, cx);
@@ -327,7 +327,7 @@ fn render_disclosure_footer(cx: &mut Context<ElyShell>) -> AnyElement {
         .text_size(px(12.0))
         .text_color(rgb(colors::ink_3()))
         .cursor_pointer()
-        .hover(|style| style.bg(rgba(DISCLOSURE_ROW_HOVER_BG)).text_color(rgb(colors::ink())))
+        .hover(|style| style.bg(rgba(disclosure_row_hover_bg())).text_color(rgb(colors::ink())))
         .active(|style| style.opacity(0.85))
         .on_click(cx.listener(|shell, _, window, cx| {
             shell.close_workspace_picker(cx);
@@ -361,14 +361,14 @@ fn render_add_workspace_button(cx: &mut Context<ElyShell>) -> AnyElement {
         .id(SharedString::from("workspace-add"))
         .size(px(PICKER_BUTTON_SIZE))
         .rounded(px(9.0))
-        .bg(rgba(ADD_BUTTON_BG))
+        .bg(rgba(add_button_bg()))
         .shadow(soft_shadow())
         .flex()
         .items_center()
         .justify_center()
         .text_color(rgb(colors::ink_3()))
         .cursor_pointer()
-        .hover(|style| style.bg(rgba(PICKER_BG)).text_color(rgb(colors::ink())))
+        .hover(|style| style.bg(rgba(picker_bg())).text_color(rgb(colors::ink())))
         .active(|style| style.opacity(0.82))
         .on_click(cx.listener(|shell, _, window, cx| {
             shell.open_internal_tab("ely://settings/spaces", window, cx);
@@ -377,13 +377,27 @@ fn render_add_workspace_button(cx: &mut Context<ElyShell>) -> AnyElement {
         .into_any_element()
 }
 
-const PICKER_BG: u32 = 0xffffff99;
-const PICKER_BG_HOVER: u32 = 0xffffffd9;
-const ADD_BUTTON_BG: u32 = 0xffffff66;
-const DISCLOSURE_BG: u32 = 0xffffffd9;
-const DISCLOSURE_BORDER: u32 = 0xffffff80;
-const DISCLOSURE_ROW_ACTIVE_BG: u32 = 0xffffffeb;
-const DISCLOSURE_ROW_HOVER_BG: u32 = 0xffffffb3;
+fn picker_bg() -> u32 {
+    colors::pick(0xffffff99, 0x1f1d1b99)
+}
+fn picker_bg_hover() -> u32 {
+    colors::pick(0xffffffd9, 0x1f1d1bd9)
+}
+fn add_button_bg() -> u32 {
+    colors::pick(0xffffff66, 0x1f1d1b66)
+}
+fn disclosure_bg() -> u32 {
+    colors::pick(0xffffffd9, 0x1f1d1bd9)
+}
+fn disclosure_border() -> u32 {
+    colors::pick(0xffffff80, 0x1f1d1b80)
+}
+fn disclosure_row_active_bg() -> u32 {
+    colors::pick(0xffffffeb, 0x1f1d1beb)
+}
+fn disclosure_row_hover_bg() -> u32 {
+    colors::pick(0xffffffb3, 0x1f1d1bb3)
+}
 
 fn soft_shadow() -> Vec<BoxShadow> {
     vec![

@@ -192,7 +192,7 @@ impl ElyShell {
             .rounded(px(spacing::RADIUS_CARD))
             .bg(rgba(panel_color))
             .border_1()
-            .border_color(rgba(MAIN_PANE_HIGHLIGHT_BORDER))
+            .border_color(rgba(main_pane_highlight_border()))
             .shadow(panel_shadow())
             .overflow_hidden()
             .child(render_topbar_chrome(self, snapshot, active_tab, sidebar_collapsed, window, cx))
@@ -339,7 +339,9 @@ impl ElyShell {
 /// substitute for the design's `box-shadow: inset 0 0 0 1px rgba(255,255,255,0.5)`.
 /// Painted as the panel's own border so it stays part of the frame and
 /// never participates in hit testing.
-const MAIN_PANE_HIGHLIGHT_BORDER: u32 = 0xffffff80;
+fn main_pane_highlight_border() -> u32 {
+    colors::pick(0xffffff80, 0x1f1d1b80)
+}
 
 /// Lower clamp for the live sidebar-resize drag. Stays a touch above
 /// the per-space DEFAULT so a casual flick doesn't snap the user to a

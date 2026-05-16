@@ -45,7 +45,7 @@ impl ElyShell {
             .rounded(px(spacing::RADIUS_CARD))
             .bg(rgba(panel_color))
             .border_1()
-            .border_color(rgba(HIGHLIGHT_BORDER))
+            .border_color(rgba(highlight_border()))
             .shadow(panel_shadow())
             .children(snapshot.favorites.iter().enumerate().map(|(index, tab)| {
                 self.render_compact_tab_button(
@@ -276,7 +276,9 @@ pub(super) fn collapsed_sidebar_active(sidebar_width: f32) -> bool {
 /// Painting it as the panel's own border keeps it part of the frame
 /// (no separate absolute overlay) so it never participates in hit
 /// testing and never blocks clicks on inner content.
-const HIGHLIGHT_BORDER: u32 = 0xffffff80;
+fn highlight_border() -> u32 {
+    colors::pick(0xffffff80, 0x1f1d1b80)
+}
 
 fn panel_shadow() -> Vec<BoxShadow> {
     vec![

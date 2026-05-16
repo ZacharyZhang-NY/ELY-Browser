@@ -11,7 +11,7 @@ use crate::shell::ElyShell;
 use crate::shell::chrome::render_glyph_for;
 
 use super::section::render_section_chevron_label;
-use super::style::{ADD_TILE_BG, CARD_BG, CARD_BG_HOVER, card_shadow};
+use super::style::{add_tile_bg, card_bg, card_bg_hover, card_shadow};
 
 pub(crate) fn render_favorites_grid(
     snapshot: &BrowserSnapshot,
@@ -53,7 +53,7 @@ fn render_favorite_tile(index: usize, tab: &BrowserTab, cx: &mut Context<ElyShel
         .id(SharedString::from(format!("fav-tile-{index}")))
         .h(px(96.0))
         .rounded(px(16.0))
-        .bg(rgba(CARD_BG))
+        .bg(rgba(card_bg()))
         .shadow(card_shadow())
         .flex()
         .flex_col()
@@ -61,7 +61,7 @@ fn render_favorite_tile(index: usize, tab: &BrowserTab, cx: &mut Context<ElyShel
         .justify_center()
         .gap(px(8.0))
         .cursor_pointer()
-        .hover(|style| style.bg(rgba(CARD_BG_HOVER)))
+        .hover(|style| style.bg(rgba(card_bg_hover())))
         .active(|style| style.opacity(0.85))
         .on_click(cx.listener(move |shell, _, window, cx| {
             shell.select_tab(&tab_id, window, cx);
@@ -83,13 +83,13 @@ fn render_add_favorite_tile(cx: &mut Context<ElyShell>) -> AnyElement {
         .id(SharedString::from("fav-tile-add"))
         .h(px(96.0))
         .rounded(px(16.0))
-        .bg(rgba(ADD_TILE_BG))
+        .bg(rgba(add_tile_bg()))
         .flex()
         .items_center()
         .justify_center()
         .text_color(rgb(colors::ink_4()))
         .cursor_pointer()
-        .hover(|style| style.bg(rgba(CARD_BG)))
+        .hover(|style| style.bg(rgba(card_bg())))
         .on_click(cx.listener(|shell, _, window, cx| {
             shell.open_internal_tab("ely://bookmarks", window, cx);
         }))

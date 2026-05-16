@@ -200,7 +200,7 @@ fn translucency_preset(
         .px(px(10.0))
         .py(px(4.0))
         .rounded(px(6.0))
-        .bg(rgba(SEGMENT_BG))
+        .bg(rgba(segment_bg()))
         .text_size(px(11.5))
         .font_weight(FontWeight(500.0))
         .text_color(rgb(colors::ink_2()))
@@ -224,7 +224,7 @@ fn render_theme_mode_row(active: ThemeMode, cx: &mut Context<ElyShell>) -> AnyEl
             .gap(px(2.0))
             .p(px(2.0))
             .rounded(px(8.0))
-            .bg(rgba(SEGMENT_BG))
+            .bg(rgba(segment_bg()))
             .child(theme_segment("System", ThemeMode::System, active, cx))
             .child(theme_segment("Light", ThemeMode::Light, active, cx))
             .child(theme_segment("Dark", ThemeMode::Dark, active, cx))
@@ -326,7 +326,7 @@ fn render_reset_row(cx: &mut Context<ElyShell>) -> AnyElement {
             .px(px(12.0))
             .py(px(7.0))
             .rounded(px(8.0))
-            .bg(rgba(SEGMENT_BG))
+            .bg(rgba(segment_bg()))
             .text_size(px(12.0))
             .font_weight(FontWeight(500.0))
             .text_color(rgb(colors::ink_2()))
@@ -399,4 +399,6 @@ fn transparent_like(color: Hsla) -> Hsla {
     hsla(color.h, color.s, color.l, 0.0)
 }
 
-const SEGMENT_BG: u32 = 0x281e140d;
+fn segment_bg() -> u32 {
+    colors::pick(0x281e140d, 0xf2efe90d)
+}

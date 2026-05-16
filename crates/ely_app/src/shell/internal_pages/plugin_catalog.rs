@@ -91,7 +91,7 @@ impl ElyShell {
                     .h(px(42.0))
                     .px(px(16.0))
                     .rounded(px(12.0))
-                    .bg(rgba(SEARCH_BG))
+                    .bg(rgba(search_bg()))
                     .flex()
                     .items_center()
                     .gap(px(10.0))
@@ -258,12 +258,12 @@ fn render_plugin_card(
         .id(SharedString::from(format!("plugin-card-{index}")))
         .p(px(14.0))
         .rounded(px(16.0))
-        .bg(rgba(CARD_BG))
+        .bg(rgba(card_bg()))
         .flex()
         .flex_col()
         .gap(px(10.0))
         .cursor_pointer()
-        .hover(|style| style.bg(rgba(CARD_BG_HOVER)))
+        .hover(|style| style.bg(rgba(card_bg_hover())))
         .active(|style| style.opacity(0.85))
         .on_click(cx.listener(move |shell, _, window, cx| {
             shell.open_internal_tab(&detail_route, window, cx);
@@ -317,7 +317,7 @@ fn render_plugin_card(
                         .px(px(9.0))
                         .py(px(3.0))
                         .rounded(px(6.0))
-                        .bg(rgba(STATUS_BG))
+                        .bg(rgba(status_bg()))
                         .text_size(px(11.0))
                         .font_weight(FontWeight(500.0))
                         .text_color(rgb(status_color))
@@ -378,11 +378,19 @@ fn sandbox_chip_label(snapshot: &BrowserSnapshot) -> &'static str {
     }
 }
 
-const SEARCH_BG: u32 = 0xffffffd9;
+fn search_bg() -> u32 {
+    colors::pick(0xffffffd9, 0x1f1d1bd9)
+}
 const INSTALL_BG: u32 = 0x1d1c1aff;
-const CARD_BG: u32 = 0xffffffc7;
-const CARD_BG_HOVER: u32 = 0xffffffeb;
-const STATUS_BG: u32 = 0xffffffd9;
+fn card_bg() -> u32 {
+    colors::pick(0xffffffc7, 0x1f1d1bc7)
+}
+fn card_bg_hover() -> u32 {
+    colors::pick(0xffffffeb, 0x1f1d1beb)
+}
+fn status_bg() -> u32 {
+    colors::pick(0xffffffd9, 0x1f1d1bd9)
+}
 
 /// Pick a deterministic gradient pair for a plugin cover. Mirrors the
 /// design's palette of 8 pastel-to-bold ramps used across `plugins.jsx`,

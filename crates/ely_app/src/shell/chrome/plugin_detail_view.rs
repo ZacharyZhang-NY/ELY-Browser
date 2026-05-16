@@ -32,7 +32,7 @@ pub(crate) fn render_plugin_detail_view(
                 .mx_auto()
                 .p(px(24.0))
                 .rounded(px(16.0))
-                .bg(rgba(CARD_BG))
+                .bg(rgba(card_bg()))
                 .grid()
                 .grid_cols(8)
                 .gap(px(24.0))
@@ -138,13 +138,13 @@ where
         .id(SharedString::from("plugin-detail-secondary"))
         .size(px(40.0))
         .rounded(px(10.0))
-        .bg(rgba(SECONDARY_BG))
+        .bg(rgba(secondary_bg()))
         .flex()
         .items_center()
         .justify_center()
         .text_color(rgb(colors::ink_3()))
         .cursor_pointer()
-        .hover(|style| style.bg(rgba(SECONDARY_BG_HOVER)).text_color(rgb(colors::ink())))
+        .hover(|style| style.bg(rgba(secondary_bg_hover())).text_color(rgb(colors::ink())))
         .active(|style| style.opacity(0.82))
         .on_click(cx.listener(move |shell, _, window, cx| handler(shell, window, cx)))
         .child(icon)
@@ -304,7 +304,7 @@ fn stat_card(label: &'static str, value: String) -> AnyElement {
         .px(px(12.0))
         .py(px(10.0))
         .rounded(px(10.0))
-        .bg(rgba(STAT_BG))
+        .bg(rgba(stat_bg()))
         .flex()
         .flex_col()
         .gap(px(2.0))
@@ -358,7 +358,7 @@ fn render_contribution_row(contribution: &PluginContributionPoint) -> AnyElement
         .px(px(12.0))
         .py(px(10.0))
         .rounded(px(10.0))
-        .bg(rgba(CONTRIBUTION_BG))
+        .bg(rgba(contribution_bg()))
         .child(
             div()
                 .size(px(18.0))
@@ -401,9 +401,19 @@ fn category_label(plugin: &InstalledPlugin) -> &'static str {
     if high_risk { "ELY · AUDIT NEEDED" } else { "ELY · SANDBOXED" }
 }
 
-const CARD_BG: u32 = 0xffffffd9;
-const SECONDARY_BG: u32 = 0xffffffd9;
-const SECONDARY_BG_HOVER: u32 = 0xffffffeb;
-const STAT_BG: u32 = 0xffffffb3;
-const CONTRIBUTION_BG: u32 = 0xffffff8c;
+fn card_bg() -> u32 {
+    colors::pick(0xffffffd9, 0x1f1d1bd9)
+}
+fn secondary_bg() -> u32 {
+    colors::pick(0xffffffd9, 0x1f1d1bd9)
+}
+fn secondary_bg_hover() -> u32 {
+    colors::pick(0xffffffeb, 0x1f1d1beb)
+}
+fn stat_bg() -> u32 {
+    colors::pick(0xffffffb3, 0x1f1d1bb3)
+}
+fn contribution_bg() -> u32 {
+    colors::pick(0xffffff8c, 0x1f1d1b8c)
+}
 const CONTRIBUTION_BADGE_BG: u32 = 0xc964421f;
