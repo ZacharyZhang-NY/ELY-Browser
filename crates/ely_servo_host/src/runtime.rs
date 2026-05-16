@@ -111,7 +111,7 @@ impl SoftwareServoHost {
     /// bytes. The live hardware path exports the just-presented
     /// IOSurface from the rendering context.
     pub fn paint_without_readback(&mut self, webview_id: &WebViewId) -> Result<(), ServoHostError> {
-        self.paint_webview(webview_id, false).map(|_| ())
+        self.paint_webview(webview_id, false, true).map(|_| ())
     }
 
     pub fn close_webview(&mut self, webview_id: &WebViewId) -> bool {
@@ -146,6 +146,7 @@ impl SoftwareServoHost {
         &mut self,
         webview_id: &WebViewId,
         capture_frame: bool,
+        wait_for_completion: bool,
     ) -> Result<Option<RenderedFrame>, ServoHostError> {
         let rendering_context = self.webview(webview_id)?.rendering_context.clone();
         rendering_context.make_current().map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
@@ -154,18 +155,20 @@ impl SoftwareServoHost {
         // thread — it does NOT block until the framebuffer is consistent.
         // Without a barrier, `read_rendered_frame` below races the paint
         // thread and reliably reads the cleared-white state on data: URLs.
-        // Clear the pending-frame flag first so we can detect the *next*
-        // `notify_new_frame_ready` (the one our `paint()` triggers), then
-        // pump the event loop until Servo reports the new frame is ready
-        // or `paint_barrier_budget()` elapses. On timeout we fall through
-        // and read anyway, preserving the pre-T15 fast path for callers
-        // that explicitly disable the barrier with `ELY_PAINT_BARRIER_MS=0`.
+        // Clear the pending-frame flag first so barrier callers can
+        // detect the *next* `notify_new_frame_ready` (the one our
+        // `paint()` triggers), then pump the event loop until Servo
+        // reports the new frame is ready or `paint_barrier_budget()`
+        // elapses. When the caller already observed a pending frame,
+        // readback can use that ready frame and skip the extra wait.
         {
             let webview = self.webview(webview_id)?;
             webview.delegate.mark_frame_presented();
             webview.webview.paint();
         }
-        self.wait_for_paint_completion(webview_id);
+        if wait_for_completion {
+            self.wait_for_paint_completion(webview_id);
+        }
         let rendered_frame = if capture_frame {
             Some(Self::read_rendered_frame(rendering_context.as_ref())?)
         } else {
@@ -174,6 +177,19 @@ impl SoftwareServoHost {
         rendering_context.present();
         self.webview(webview_id)?.delegate.mark_frame_presented();
         Ok(rendered_frame)
+    }
+
+    pub fn paint_with_readback(
+        &mut self,
+        webview_id: &WebViewId,
+        wait_for_completion: bool,
+    ) -> Result<(), ServoHostError> {
+        let Some(rendered_frame) = self.paint_webview(webview_id, true, wait_for_completion)?
+        else {
+            return Err(ServoHostError::RenderedFrameUnavailable);
+        };
+        self.last_rendered_frame = Some(rendered_frame);
+        Ok(())
     }
 }
 
@@ -383,11 +399,7 @@ impl ServoHost for SoftwareServoHost {
     }
 
     fn paint(&mut self, webview_id: &WebViewId) -> Result<(), ServoHostError> {
-        let Some(rendered_frame) = self.paint_webview(webview_id, true)? else {
-            return Err(ServoHostError::RenderedFrameUnavailable);
-        };
-        self.last_rendered_frame = Some(rendered_frame);
-        Ok(())
+        self.paint_with_readback(webview_id, true)
     }
 
     fn last_rendered_frame(&self) -> Result<RenderedFrame, ServoHostError> {

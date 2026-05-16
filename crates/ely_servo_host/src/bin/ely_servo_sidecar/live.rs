@@ -201,12 +201,13 @@ fn poll_frame(
 ) -> Result<LiveOutcome, LiveSidecarError> {
     host.tick();
     let snapshot = host.snapshot(&session.webview_id)?;
-    if !should_paint_live_frame(snapshot.has_pending_frame(), session.awaiting_visible_frame) {
+    let has_pending_frame = snapshot.has_pending_frame();
+    if !should_paint_live_frame(has_pending_frame, session.awaiting_visible_frame) {
         return Ok(LiveOutcome::empty());
     }
 
     let (outcome, has_visible_content) =
-        paint_pending_frame(host, session, rendering_context_kind)?;
+        paint_pending_frame(host, session, rendering_context_kind, has_pending_frame)?;
     if has_visible_content {
         session.awaiting_visible_frame = false;
         session.ever_visible_frame = true;
@@ -227,22 +228,26 @@ fn paint_pending_frame(
     host: &mut SoftwareServoHost,
     session: &mut LiveSession,
     rendering_context_kind: RenderingContextKind,
+    has_pending_frame: bool,
 ) -> Result<(LiveOutcome, bool), LiveSidecarError> {
     match rendering_context_kind {
-        RenderingContextKind::Software => paint_readback_frame(host, session),
+        RenderingContextKind::Software => paint_readback_frame(host, session, !has_pending_frame),
         #[cfg(all(feature = "hardware-render", target_os = "macos"))]
-        RenderingContextKind::Hardware => paint_hardware_surface_frame(host, session),
+        RenderingContextKind::Hardware => {
+            paint_hardware_surface_frame(host, session, has_pending_frame)
+        }
         #[cfg(not(all(feature = "hardware-render", target_os = "macos")))]
-        RenderingContextKind::Hardware => paint_readback_frame(host, session),
+        RenderingContextKind::Hardware => paint_readback_frame(host, session, !has_pending_frame),
     }
 }
 
 fn paint_readback_frame(
     host: &mut SoftwareServoHost,
     session: &LiveSession,
+    wait_for_completion: bool,
 ) -> Result<(LiveOutcome, bool), LiveSidecarError> {
     let paint_started_at = Instant::now();
-    host.paint(&session.webview_id)?;
+    host.paint_with_readback(&session.webview_id, wait_for_completion)?;
     let snapshot = host.snapshot(&session.webview_id)?;
     let frame = host.last_rendered_frame()?;
     let paint_ns = elapsed_ns(paint_started_at);
@@ -259,24 +264,26 @@ fn paint_readback_frame(
 fn paint_hardware_surface_frame(
     host: &mut SoftwareServoHost,
     session: &LiveSession,
+    has_pending_frame: bool,
 ) -> Result<(LiveOutcome, bool), LiveSidecarError> {
     if !session.ever_visible_frame {
-        return paint_initial_hardware_surface_frame(host, session);
+        return paint_initial_hardware_surface_frame(host, session, !has_pending_frame);
     }
     // Cross-process IOSurface lookup can block the app-side worker for
     // seconds on macOS. Live app frames use readback so scroll/click
     // input stays bounded by the paint barrier instead of the surface
     // import path.
-    paint_readback_frame(host, session)
+    paint_readback_frame(host, session, !has_pending_frame)
 }
 
 #[cfg(all(feature = "hardware-render", target_os = "macos"))]
 fn paint_initial_hardware_surface_frame(
     host: &mut SoftwareServoHost,
     session: &LiveSession,
+    wait_for_completion: bool,
 ) -> Result<(LiveOutcome, bool), LiveSidecarError> {
     let paint_started_at = Instant::now();
-    host.paint(&session.webview_id)?;
+    host.paint_with_readback(&session.webview_id, wait_for_completion)?;
     let snapshot = host.snapshot(&session.webview_id)?;
     let frame = host.last_rendered_frame()?;
     let paint_ns = elapsed_ns(paint_started_at);
