@@ -94,6 +94,14 @@ impl BrowserCore {
         self.set_active_profile_download_policy(DownloadPolicy::ask_every_time())
     }
 
+    pub fn profile_kind_for(&self, profile_id: &ProfileId) -> Result<ProfileKind, CoreError> {
+        self.profiles
+            .iter()
+            .find(|profile| profile.id() == profile_id)
+            .map(|profile| profile.kind().clone())
+            .ok_or_else(|| CoreError::ProfileNotFound { id: profile_id.clone() })
+    }
+
     pub fn set_profile_sync_policy(
         &mut self,
         profile_id: &ProfileId,

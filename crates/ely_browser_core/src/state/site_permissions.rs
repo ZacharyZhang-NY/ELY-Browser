@@ -50,6 +50,18 @@ impl BrowserCore {
             .collect()
     }
 
+    pub fn site_permissions_for_profile_origin(
+        &self,
+        profile_id: &ProfileId,
+        origin: &SiteOrigin,
+    ) -> Vec<SitePermissionEntry> {
+        self.site_permissions
+            .iter()
+            .filter(|entry| entry.profile_id() == profile_id && entry.origin() == origin)
+            .cloned()
+            .collect()
+    }
+
     pub(super) fn visible_site_permission_audit_events(&self) -> Vec<SitePermissionAuditEvent> {
         self.site_permission_audit_events
             .iter()

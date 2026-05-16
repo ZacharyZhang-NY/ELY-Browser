@@ -1,3 +1,4 @@
+use ely_domain::BrowserTab;
 use ely_domain::TabId;
 
 use super::BrowserCore;
@@ -22,5 +23,14 @@ impl BrowserCore {
             return Ok(vec![active_tab.id().clone()]);
         }
         Ok(layout.panes().iter().map(|pane| pane.tab_id().clone()).collect())
+    }
+
+    pub fn visible_content_tabs(&self) -> Result<Vec<BrowserTab>, CoreError> {
+        let ids = self.visible_content_tab_ids()?;
+        Ok(ids
+            .iter()
+            .filter_map(|id| self.tabs.iter().find(|tab| tab.id() == id))
+            .cloned()
+            .collect())
     }
 }

@@ -1,4 +1,4 @@
-use ely_browser_core::BrowserSnapshot;
+use ely_browser_core::{BrowserCore, BrowserSnapshot};
 use ely_domain::{BrowserTab, ProfileKind, TabId, UrlText};
 use gpui::{AnyElement, Bounds, Context, Pixels, Point};
 
@@ -7,7 +7,9 @@ use crate::services::ProfileDataMode;
 use super::{
     ElyShell,
     web_surface_metadata::WebSurfacePageMetadata,
-    web_surface_permissions::web_surface_site_permissions_for_tab,
+    web_surface_permissions::{
+        WebSurfaceSitePermission, web_surface_site_permissions_for_core_tab,
+    },
     web_surface_runtime::{WebSurfaceUrlChange, WebSurfaceUrlChangeKind},
     web_surface_state::{WebSurfaceInputOutcome, WebSurfaceState},
     web_surface_view::{
@@ -44,19 +46,16 @@ impl ElyShell {
     }
 
     pub(super) fn tick_external_web_surfaces(&mut self) -> bool {
-        let (visible_tab_ids, open_tab_ids, snapshot) = match &self.state {
-            super::ShellState::Ready(core) => (
-                core.visible_content_tab_ids().unwrap_or_else(|_| Vec::new()),
-                core.open_tab_ids(),
-                core.snapshot().ok(),
-            ),
-            super::ShellState::StartupError(_) => (Vec::new(), Vec::new(), None),
+        let (visible_tab_ids, open_tab_ids, visible_tabs) = match &self.state {
+            super::ShellState::Ready(core) => {
+                let visible_tabs = core.visible_content_tabs().unwrap_or_else(|_| Vec::new());
+                let visible_tab_ids = visible_tabs.iter().map(|tab| tab.id().clone()).collect();
+                (visible_tab_ids, core.open_tab_ids(), visible_web_surface_tabs(core, visible_tabs))
+            }
+            super::ShellState::StartupError(_) => (Vec::new(), Vec::new(), Vec::new()),
         };
         self.web_surfaces.retain_tabs(&open_tab_ids);
-        let mut url_changed = snapshot
-            .as_ref()
-            .map(|snapshot| self.ensure_visible_web_surfaces(snapshot, &visible_tab_ids))
-            .unwrap_or(false);
+        let mut url_changed = self.ensure_visible_web_surfaces(visible_tabs);
         let result = self.web_surfaces.tick(&visible_tab_ids);
         for url_change in result.url_changes {
             url_changed |= self.apply_web_surface_url_change(url_change);
@@ -182,20 +181,15 @@ impl ElyShell {
 }
 
 impl ElyShell {
-    fn ensure_visible_web_surfaces(
-        &mut self,
-        snapshot: &BrowserSnapshot,
-        visible_tab_ids: &[TabId],
-    ) -> bool {
+    fn ensure_visible_web_surfaces(&mut self, visible_tabs: Vec<VisibleWebSurfaceTab>) -> bool {
         let mut url_changed = false;
         let mut changed = false;
-        let visible_tabs = visible_external_web_tabs(&snapshot.tabs, visible_tab_ids);
-        for tab in visible_tabs {
-            let Some(profile_data_mode) = profile_data_mode_for(tab, snapshot) else {
-                continue;
-            };
-            let permissions = web_surface_site_permissions_for_tab(tab, snapshot);
-            let outcome = self.web_surfaces.ensure_surface(tab, profile_data_mode, &permissions);
+        for visible in visible_tabs {
+            let outcome = self.web_surfaces.ensure_surface(
+                &visible.tab,
+                visible.profile_data_mode,
+                &visible.permissions,
+            );
             changed |= outcome.changed;
             if let Some(url_change) = outcome.url_change {
                 url_changed |= self.apply_web_surface_url_change(url_change);
@@ -241,55 +235,38 @@ impl ElyShell {
     }
 }
 
-fn visible_external_web_tabs<'a>(
-    tabs: &'a [BrowserTab],
-    visible_tab_ids: &[TabId],
-) -> Vec<&'a BrowserTab> {
-    visible_tab_ids
-        .iter()
-        .filter_map(|tab_id| tabs.iter().find(|tab| tab.id() == tab_id))
+struct VisibleWebSurfaceTab {
+    tab: BrowserTab,
+    profile_data_mode: ProfileDataMode,
+    permissions: Vec<WebSurfaceSitePermission>,
+}
+
+fn visible_web_surface_tabs(
+    core: &BrowserCore,
+    tabs: Vec<BrowserTab>,
+) -> Vec<VisibleWebSurfaceTab> {
+    tabs.into_iter()
         .filter(|tab| super::web_surface::is_external_web_url(tab.url().as_str()))
+        .filter_map(|tab| {
+            let profile_data_mode =
+                core.profile_kind_for(tab.profile_id()).ok().map(profile_data_mode_from_kind)?;
+            let permissions = web_surface_site_permissions_for_core_tab(core, &tab);
+            Some(VisibleWebSurfaceTab { tab, profile_data_mode, permissions })
+        })
         .collect()
 }
 
 fn profile_data_mode_for(tab: &BrowserTab, snapshot: &BrowserSnapshot) -> Option<ProfileDataMode> {
-    snapshot.profiles.iter().find(|profile| profile.id() == tab.profile_id()).map(|profile| {
-        match profile.kind() {
-            ProfileKind::Standard => ProfileDataMode::Persistent,
-            ProfileKind::Private => ProfileDataMode::Transient,
-        }
-    })
+    snapshot
+        .profiles
+        .iter()
+        .find(|profile| profile.id() == tab.profile_id())
+        .map(|profile| profile_data_mode_from_kind(profile.kind().clone()))
 }
 
-#[cfg(test)]
-mod tests {
-    use ely_domain::{BrowserTab, ProfileId, SpaceId, TabId, UrlText};
-
-    use super::visible_external_web_tabs;
-
-    #[test]
-    fn visible_external_web_tabs_follow_visible_order() -> Result<(), String> {
-        let first_id = TabId::new();
-        let second_id = TabId::new();
-        let internal_id = TabId::new();
-        let tabs = vec![
-            web_tab(first_id.clone(), "https://example.com/first")?,
-            web_tab(internal_id.clone(), "ely://settings")?,
-            web_tab(second_id.clone(), "http://example.com/second")?,
-        ];
-
-        let visible =
-            visible_external_web_tabs(&tabs, &[internal_id, second_id.clone(), first_id.clone()])
-                .into_iter()
-                .map(|tab| tab.id().clone())
-                .collect::<Vec<_>>();
-
-        assert_eq!(visible, vec![second_id, first_id]);
-        Ok(())
-    }
-
-    fn web_tab(tab_id: TabId, url: &str) -> Result<BrowserTab, String> {
-        let url = UrlText::parse(url).map_err(|error| error.to_string())?;
-        Ok(BrowserTab::new(tab_id, SpaceId::new(), ProfileId::new(), "Web", url))
+fn profile_data_mode_from_kind(kind: ProfileKind) -> ProfileDataMode {
+    match kind {
+        ProfileKind::Standard => ProfileDataMode::Persistent,
+        ProfileKind::Private => ProfileDataMode::Transient,
     }
 }

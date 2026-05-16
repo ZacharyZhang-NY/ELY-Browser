@@ -1,3 +1,5 @@
+use ely_browser_core::BrowserCore;
+#[cfg(test)]
 use ely_browser_core::BrowserSnapshot;
 use ely_domain::{BrowserTab, SiteOrigin, SitePermissionDecision, SitePermissionFeature};
 
@@ -30,6 +32,7 @@ impl WebSurfaceSitePermission {
     }
 }
 
+#[cfg(test)]
 pub(super) fn web_surface_site_permissions_for_tab(
     tab: &BrowserTab,
     snapshot: &BrowserSnapshot,
@@ -43,6 +46,22 @@ pub(super) fn web_surface_site_permissions_for_tab(
         .iter()
         .filter(|entry| entry.profile_id() == tab.profile_id())
         .filter(|entry| entry.origin() == &origin)
+        .map(|entry| {
+            WebSurfaceSitePermission::new(entry.origin().clone(), entry.feature(), entry.decision())
+        })
+        .collect()
+}
+
+pub(super) fn web_surface_site_permissions_for_core_tab(
+    core: &BrowserCore,
+    tab: &BrowserTab,
+) -> Vec<WebSurfaceSitePermission> {
+    let Ok(Some(origin)) = SiteOrigin::from_url(tab.url()) else {
+        return Vec::new();
+    };
+
+    core.site_permissions_for_profile_origin(tab.profile_id(), &origin)
+        .into_iter()
         .map(|entry| {
             WebSurfaceSitePermission::new(entry.origin().clone(), entry.feature(), entry.decision())
         })
