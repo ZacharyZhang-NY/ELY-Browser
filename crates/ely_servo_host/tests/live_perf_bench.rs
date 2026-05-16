@@ -152,8 +152,8 @@ fn run_live_bench() -> Result<(), Box<dyn Error>> {
     print_surface_handles(&kind, &outcome.surface_handles);
     print_current_surface_summary(&kind, &outcome.current_surface_ids);
     eprintln!(
-        "\n=== ELY_PERF_KIND={kind} bootstrap_rgba_bytes={} steady_state_rgba_bytes={} ===",
-        outcome.bootstrap_rgba_bytes, outcome.steady_state_rgba_bytes,
+        "\n=== ELY_PERF_KIND={kind} readback_rgba_bytes={} surface_rgba_bytes={} ===",
+        outcome.readback_rgba_bytes, outcome.surface_rgba_bytes,
     );
     assert!(
         !outcome.summaries.is_empty(),
@@ -161,29 +161,8 @@ fn run_live_bench() -> Result<(), Box<dyn Error>> {
     );
     if kind == "hardware" {
         assert!(
-            !outcome.surface_handles.is_empty(),
-            "hardware path must publish at least one IOSurface handle"
-        );
-        // Mach port dedup: the surfman attached swap chain on macOS
-        // rotates between front+back surfaces, so we expect a SMALL
-        // number of distinct mach port publishes — definitely not one
-        // per frame. Anything close to `frames` is a regression to the
-        // T10.3 starting state where dedup tracked only the last id.
-        let max_expected = 8;
-        assert!(
-            outcome.surface_handles.len() <= max_expected,
-            "expected at most {max_expected} IOSurface publishes (one per unique surface), \
-             got {} — dedup regressed",
-            outcome.surface_handles.len()
-        );
-        assert!(
-            !outcome.current_surface_ids.is_empty(),
-            "hardware path must report current_surface_id on every frame"
-        );
-        assert_eq!(
-            outcome.steady_state_rgba_bytes, 0,
-            "hardware path leaked {} RGBA bytes while scrolling",
-            outcome.steady_state_rgba_bytes,
+            outcome.surface_handles.is_empty() && outcome.current_surface_ids.is_empty(),
+            "hardware live path uses bounded readback and must skip IOSurface selection"
         );
     } else {
         assert!(
@@ -194,17 +173,14 @@ fn run_live_bench() -> Result<(), Box<dyn Error>> {
             outcome.current_surface_ids.is_empty(),
             "software path must never report current_surface_id"
         );
-        // Software path keeps streaming pixels — every frame must
-        // carry a full RGBA payload.
-        let viewport_bytes = (1024u64) * (768u64) * 4;
-        let total_rgba_bytes = outcome.bootstrap_rgba_bytes + outcome.steady_state_rgba_bytes;
-        assert!(
-            total_rgba_bytes >= viewport_bytes,
-            "software path delivered only {} bytes — expected at least one full frame ({})",
-            total_rgba_bytes,
-            viewport_bytes,
-        );
     }
+    let viewport_bytes = (1024u64) * (768u64) * 4;
+    assert!(
+        outcome.readback_rgba_bytes >= viewport_bytes,
+        "{kind} path delivered only {} bytes — expected at least one full frame ({})",
+        outcome.readback_rgba_bytes,
+        viewport_bytes,
+    );
     Ok(())
 }
 
@@ -212,8 +188,8 @@ struct BenchOutcome {
     summaries: Vec<FramePerfSummary>,
     surface_handles: Vec<BenchSurfaceHandle>,
     current_surface_ids: Vec<u64>,
-    bootstrap_rgba_bytes: u64,
-    steady_state_rgba_bytes: u64,
+    readback_rgba_bytes: u64,
+    surface_rgba_bytes: u64,
 }
 
 fn spawn_sidecar(kind: &str, profile_data_dir: &PathBuf) -> Result<Child, Box<dyn Error>> {
@@ -242,8 +218,8 @@ fn drive_bench(
     let mut summaries = Vec::new();
     let mut surface_handles = Vec::new();
     let mut current_surface_ids = Vec::new();
-    let mut bootstrap_rgba_bytes: u64 = 0;
-    let mut steady_state_rgba_bytes: u64 = 0;
+    let mut readback_rgba_bytes: u64 = 0;
+    let mut surface_rgba_bytes: u64 = 0;
 
     let navigate = build_ensure(tab, profile_id, url, 0, 0, false);
     write_request(stdin, &navigate)?;
@@ -252,46 +228,64 @@ fn drive_bench(
     record_summary(&response, kind, &mut summaries);
     record_surface_handle(&response, kind, &mut surface_handles);
     record_current_surface_id(&response, &mut current_surface_ids);
-    record_rgba_bytes(&response, &mut bootstrap_rgba_bytes, &mut steady_state_rgba_bytes);
+    record_rgba_bytes(&response, &mut readback_rgba_bytes, &mut surface_rgba_bytes);
 
     let mut accumulated_scroll = 0;
-    for frame_index in 0..frames {
+    let mut painted_frames = 0;
+    let max_attempts = frames.saturating_mul(4).max(frames + 10);
+    for attempt in 0..max_attempts {
+        if painted_frames >= frames {
+            break;
+        }
         let scroll_delta_y =
-            if frame_index % 80 == 79 { -SCROLL_STEP_PX * 60 } else { SCROLL_STEP_PX };
+            if painted_frames % 80 == 79 { -SCROLL_STEP_PX * 60 } else { SCROLL_STEP_PX };
         accumulated_scroll += scroll_delta_y;
         let request = build_ensure(tab, profile_id, url, 0, scroll_delta_y, true);
         write_request(stdin, &request)?;
         let response = read_response(reader, RESPONSE_TIMEOUT)?;
         if let Some(error) = response.error.as_ref() {
-            return Err(format!("sidecar error at frame {frame_index}: {error}").into());
+            return Err(format!("sidecar error at attempt {attempt}: {error}").into());
+        }
+        if response.frame.is_some() {
+            painted_frames += 1;
         }
         assert_frame_viewport_report(&response);
         record_summary(&response, kind, &mut summaries);
         record_surface_handle(&response, kind, &mut surface_handles);
         record_current_surface_id(&response, &mut current_surface_ids);
-        record_rgba_bytes(&response, &mut bootstrap_rgba_bytes, &mut steady_state_rgba_bytes);
+        record_rgba_bytes(&response, &mut readback_rgba_bytes, &mut surface_rgba_bytes);
     }
+    assert_eq!(painted_frames, frames, "bench did not receive the requested painted frame count");
     let _ = accumulated_scroll;
+    for _ in 0..5 {
+        if !summaries.is_empty() {
+            break;
+        }
+        let poll = build_poll(tab);
+        write_request(stdin, &poll)?;
+        let response = read_response(reader, RESPONSE_TIMEOUT)?;
+        record_summary(&response, kind, &mut summaries);
+    }
 
     Ok(BenchOutcome {
         summaries,
         surface_handles,
         current_surface_ids,
-        bootstrap_rgba_bytes,
-        steady_state_rgba_bytes,
+        readback_rgba_bytes,
+        surface_rgba_bytes,
     })
 }
 
 fn record_rgba_bytes(
     response: &LiveResponse,
-    bootstrap_rgba_bytes: &mut u64,
-    steady_state_rgba_bytes: &mut u64,
+    readback_rgba_bytes: &mut u64,
+    surface_rgba_bytes: &mut u64,
 ) {
     let rgba_byte_count = response.frame.as_ref().map_or(0, |frame| frame.rgba_byte_count as u64);
     if response.current_surface_id.is_some() {
-        *steady_state_rgba_bytes += rgba_byte_count;
+        *surface_rgba_bytes += rgba_byte_count;
     } else {
-        *bootstrap_rgba_bytes += rgba_byte_count;
+        *readback_rgba_bytes += rgba_byte_count;
     }
 }
 
@@ -403,6 +397,10 @@ fn build_ensure(
         hx = hover_x_json,
         hy = hover_y_json,
     )
+}
+
+fn build_poll(tab: &TabId) -> String {
+    format!(r#"{{"type":"poll","tab_id":"{}"}}"#, tab.as_str())
 }
 
 fn write_request(stdin: &mut ChildStdin, request: &str) -> Result<(), Box<dyn Error>> {
