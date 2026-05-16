@@ -10,7 +10,9 @@ const FRAME_SETTLE_WINDOW: Duration = Duration::from_millis(250);
 #[derive(Clone, Debug, Default)]
 pub(super) struct WebSurfacePollCadence {
     next_poll_at: Option<Instant>,
-    active_until: Option<Instant>,
+    load_active_until: Option<Instant>,
+    interaction_active_until: Option<Instant>,
+    settle_active_until: Option<Instant>,
     last_render_phase: Option<WebSurfaceRenderPhase>,
 }
 
@@ -23,15 +25,18 @@ impl WebSurfacePollCadence {
     ) {
         if started_loading {
             self.last_render_phase = None;
-            self.boost_until(now + LOAD_BOOST_WINDOW);
+            self.settle_active_until = None;
+            extend_deadline(&mut self.load_active_until, now + LOAD_BOOST_WINDOW);
         }
         match input_kind {
             WebSurfaceInputKind::Idle => {}
-            WebSurfaceInputKind::Hover => self.boost_until(now + HOVER_BOOST_WINDOW),
+            WebSurfaceInputKind::Hover => {
+                extend_deadline(&mut self.interaction_active_until, now + HOVER_BOOST_WINDOW);
+            }
             WebSurfaceInputKind::Scroll
             | WebSurfaceInputKind::Click
             | WebSurfaceInputKind::Text => {
-                self.boost_until(now + INPUT_BOOST_WINDOW);
+                extend_deadline(&mut self.interaction_active_until, now + INPUT_BOOST_WINDOW);
             }
         }
     }
@@ -42,15 +47,17 @@ impl WebSurfacePollCadence {
             WebSurfaceRenderPhase::Created | WebSurfaceRenderPhase::Loading
                 if self.last_render_phase != Some(phase) =>
             {
-                self.boost_until(now + LOAD_BOOST_WINDOW);
+                extend_deadline(&mut self.load_active_until, now + LOAD_BOOST_WINDOW);
             }
             WebSurfaceRenderPhase::Created | WebSurfaceRenderPhase::Loading => {}
             WebSurfaceRenderPhase::Complete if self.last_render_phase != Some(phase) => {
-                self.boost_until(now + FRAME_SETTLE_WINDOW);
+                self.load_active_until = None;
+                extend_deadline(&mut self.settle_active_until, now + FRAME_SETTLE_WINDOW);
             }
             WebSurfaceRenderPhase::Complete => {}
             WebSurfaceRenderPhase::Other if self.last_render_phase != Some(phase) => {
-                self.boost_until(now + INPUT_BOOST_WINDOW);
+                self.load_active_until = None;
+                extend_deadline(&mut self.interaction_active_until, now + INPUT_BOOST_WINDOW);
             }
             WebSurfaceRenderPhase::Other => {}
         }
@@ -70,17 +77,20 @@ impl WebSurfacePollCadence {
     }
 
     fn current_interval(&self, now: Instant) -> Duration {
-        if self.active_until.is_some_and(|deadline| now < deadline) {
-            ACTIVE_POLL_INTERVAL
-        } else {
-            IDLE_POLL_INTERVAL
-        }
+        if self.has_active_window(now) { ACTIVE_POLL_INTERVAL } else { IDLE_POLL_INTERVAL }
     }
 
-    fn boost_until(&mut self, deadline: Instant) {
-        if self.active_until.is_none_or(|current| deadline > current) {
-            self.active_until = Some(deadline);
-        }
+    fn has_active_window(&self, now: Instant) -> bool {
+        [self.load_active_until, self.interaction_active_until, self.settle_active_until]
+            .into_iter()
+            .flatten()
+            .any(|deadline| now < deadline)
+    }
+}
+
+fn extend_deadline(slot: &mut Option<Instant>, deadline: Instant) {
+    if slot.is_none_or(|current| deadline > current) {
+        *slot = Some(deadline);
     }
 }
 
@@ -203,6 +213,36 @@ mod tests {
 
         assert!(!cadence.should_poll(start + Duration::from_millis(379)));
         assert!(cadence.should_poll(start + Duration::from_millis(380)));
+    }
+
+    #[test]
+    fn complete_frame_shortens_started_loading_boost() {
+        let start = Instant::now();
+        let mut cadence = WebSurfacePollCadence::default();
+
+        cadence.note_ensure(WebSurfaceInputKind::Idle, true, start);
+        cadence.note_frame("complete", start + Duration::from_secs(1));
+        cadence.note_poll_submitted(start + Duration::from_millis(1_300));
+
+        assert_eq!(
+            cadence.next_poll_delay(start + Duration::from_millis(1_300)),
+            IDLE_POLL_INTERVAL
+        );
+    }
+
+    #[test]
+    fn complete_frame_preserves_recent_input_boost() {
+        let start = Instant::now();
+        let mut cadence = WebSurfacePollCadence::default();
+
+        cadence.note_ensure(WebSurfaceInputKind::Scroll, false, start);
+        cadence.note_frame("complete", start + Duration::from_millis(100));
+        cadence.note_poll_submitted(start + Duration::from_millis(500));
+
+        assert_eq!(
+            cadence.next_poll_delay(start + Duration::from_millis(500)),
+            ACTIVE_POLL_INTERVAL
+        );
     }
 
     #[test]
