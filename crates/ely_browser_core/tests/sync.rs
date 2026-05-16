@@ -2,8 +2,8 @@ use std::error::Error;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
 use ely_domain::{
-    ArchivePolicy, SyncConnectionState, SyncObjectKind, SyncObjectPolicy, SyncObjectState,
-    SyncObjectStatus, UrlText,
+    ArchivePolicy, NoteTarget, SyncConnectionState, SyncObjectKind, SyncObjectPolicy,
+    SyncObjectState, SyncObjectStatus, UrlText,
 };
 
 #[test]
@@ -289,6 +289,122 @@ fn sync_snapshot_omits_paused_bookmarks() -> Result<(), Box<dyn Error>> {
     assert_eq!(summary.updated(), 0);
     assert_eq!(summary.skipped(), 0);
     assert!(snapshot.bookmarks.is_empty());
+    Ok(())
+}
+
+#[test]
+fn sync_snapshot_imports_remote_url_notes_into_active_scope() -> Result<(), Box<dyn Error>> {
+    let mut source = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let source_home_tab_id = source.snapshot()?.active_tab_id;
+    source.set_tab_sync_enabled(&source_home_tab_id, false)?;
+    let source_tab_id = source.open_tab(UrlText::parse("https://example.com/research")?);
+    source.set_tab_sync_enabled(&source_tab_id, false)?;
+    source.set_tab_title(&source_tab_id, "Research Brief")?;
+    source.save_active_url_note(" # Finding\r\n- one ")?;
+    let bytes = source.build_sync_snapshot_bytes()?;
+
+    let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let target_profile_id = target.snapshot()?.active_profile_id;
+    let target_space_id = target.snapshot()?.active_space_id;
+    let summary = target.apply_sync_snapshot_bytes(&bytes)?;
+    let snapshot = target.snapshot()?;
+    let [note] = snapshot.notes.as_slice() else {
+        return Err(format!("expected 1 note, got {}", snapshot.notes.len()).into());
+    };
+
+    assert_eq!(summary.imported(), 1);
+    assert_eq!(summary.updated(), 0);
+    assert_eq!(summary.skipped(), 0);
+    assert_eq!(note.profile_id(), &target_profile_id);
+    assert_eq!(note.space_id(), &target_space_id);
+    assert_eq!(note.title(), "Research Brief");
+    assert_eq!(note.body(), "# Finding\n- one");
+    assert_eq!(note.source_url().as_str(), "https://example.com/research");
+    assert_eq!(note.target(), &NoteTarget::Url(UrlText::parse("https://example.com/research")?));
+    Ok(())
+}
+
+#[test]
+fn sync_snapshot_imports_remote_tab_notes_after_tabs() -> Result<(), Box<dyn Error>> {
+    let mut source = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let source_home_tab_id = source.snapshot()?.active_tab_id;
+    source.set_tab_sync_enabled(&source_home_tab_id, false)?;
+    let source_tab_id = source.open_tab(UrlText::parse("https://example.com/research")?);
+    source.set_tab_title(&source_tab_id, "Research Brief")?;
+    source.save_active_tab_note("pinned tab context")?;
+    let bytes = source.build_sync_snapshot_bytes()?;
+
+    let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let summary = target.apply_sync_snapshot_bytes(&bytes)?;
+    let snapshot = target.snapshot()?;
+    let imported_tab = snapshot
+        .tabs
+        .iter()
+        .find(|tab| tab.url().as_str() == "https://example.com/research")
+        .ok_or("missing imported tab")?;
+    let imported_note = snapshot
+        .notes
+        .iter()
+        .find(|note| note.source_url().as_str() == "https://example.com/research")
+        .ok_or("missing imported note")?;
+
+    assert_eq!(summary.imported(), 2);
+    assert_eq!(summary.updated(), 0);
+    assert_eq!(summary.skipped(), 0);
+    assert_eq!(imported_note.target(), &NoteTarget::Tab(imported_tab.id().clone()));
+    assert_eq!(imported_note.body(), "pinned tab context");
+    Ok(())
+}
+
+#[test]
+fn sync_snapshot_updates_existing_note_body() -> Result<(), Box<dyn Error>> {
+    let mut source = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let source_home_tab_id = source.snapshot()?.active_tab_id;
+    source.set_tab_sync_enabled(&source_home_tab_id, false)?;
+    let source_tab_id = source.open_tab(UrlText::parse("https://example.com/research")?);
+    source.set_tab_sync_enabled(&source_tab_id, false)?;
+    source.set_tab_title(&source_tab_id, "Research Brief")?;
+    source.save_active_url_note("canonical note")?;
+    let bytes = source.build_sync_snapshot_bytes()?;
+
+    let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let target_tab_id = target.open_tab(UrlText::parse("https://example.com/research")?);
+    target.set_tab_title(&target_tab_id, "Old Title")?;
+    let target_note_id = target.save_active_url_note("old note")?;
+    let summary = target.apply_sync_snapshot_bytes(&bytes)?;
+    let snapshot = target.snapshot()?;
+    let [note] = snapshot.notes.as_slice() else {
+        return Err(format!("expected 1 note, got {}", snapshot.notes.len()).into());
+    };
+
+    assert_eq!(summary.imported(), 0);
+    assert_eq!(summary.updated(), 1);
+    assert_eq!(summary.skipped(), 0);
+    assert_eq!(note.id(), &target_note_id);
+    assert_eq!(note.title(), "Research Brief");
+    assert_eq!(note.body(), "canonical note");
+    Ok(())
+}
+
+#[test]
+fn sync_snapshot_omits_paused_notes() -> Result<(), Box<dyn Error>> {
+    let mut source = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let source_home_tab_id = source.snapshot()?.active_tab_id;
+    source.set_tab_sync_enabled(&source_home_tab_id, false)?;
+    let source_tab_id = source.open_tab(UrlText::parse("https://example.com/research")?);
+    source.set_tab_sync_enabled(&source_tab_id, false)?;
+    source.save_active_url_note("local only")?;
+    source.set_sync_object_policy(SyncObjectKind::Notes, SyncObjectPolicy::Paused);
+    let bytes = source.build_sync_snapshot_bytes()?;
+
+    let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let summary = target.apply_sync_snapshot_bytes(&bytes)?;
+    let snapshot = target.snapshot()?;
+
+    assert_eq!(summary.imported(), 0);
+    assert_eq!(summary.updated(), 0);
+    assert_eq!(summary.skipped(), 0);
+    assert!(snapshot.notes.is_empty());
     Ok(())
 }
 

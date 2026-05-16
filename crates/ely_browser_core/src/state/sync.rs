@@ -120,6 +120,9 @@ impl BrowserCore {
         for record in body.bookmarks {
             self.apply_bookmark_sync_record(record, &mut summary)?;
         }
+        for record in body.notes {
+            self.apply_note_sync_record(record, &mut summary)?;
+        }
         Ok(summary)
     }
 
@@ -396,7 +399,7 @@ impl BrowserCore {
         Ok(())
     }
 
-    fn sync_profile_id(&self, raw: &str) -> Result<ProfileId, SyncClientError> {
+    pub(super) fn sync_profile_id(&self, raw: &str) -> Result<ProfileId, SyncClientError> {
         let profile_id = ProfileId::parse(raw).map_err(snapshot_schema_error)?;
         if self.profiles.iter().any(|profile| profile.id() == &profile_id) {
             return Ok(profile_id);
@@ -404,7 +407,7 @@ impl BrowserCore {
         Ok(self.active_profile_id.clone())
     }
 
-    fn sync_space_id(
+    pub(super) fn sync_space_id(
         &self,
         raw: &str,
         space_name: Option<&str>,
@@ -460,6 +463,6 @@ fn parse_space_id(raw: &str) -> Result<SpaceId, SyncClientError> {
     SpaceId::parse(raw).map_err(snapshot_schema_error)
 }
 
-fn snapshot_schema_error(error: impl ToString) -> SyncClientError {
+pub(super) fn snapshot_schema_error(error: impl ToString) -> SyncClientError {
     SyncClientError::SnapshotSchema(error.to_string())
 }

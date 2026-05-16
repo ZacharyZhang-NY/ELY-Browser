@@ -30,6 +30,7 @@ mod space_exports;
 mod spaces;
 mod splits;
 mod sync;
+mod sync_notes;
 mod tab_group_order;
 mod tab_groups;
 mod tab_lifecycle;

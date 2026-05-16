@@ -1,6 +1,8 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ely_domain::{ArchivePolicy, BookmarkEntry, BrowserTab, Space, TabFlags};
+use ely_domain::{
+    ArchivePolicy, BookmarkEntry, BrowserTab, NoteEntry, NoteTarget, Space, TabFlags,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::state::BrowserCore;
@@ -15,6 +17,8 @@ pub(crate) struct SyncSnapshotBody {
     pub(crate) bookmarks: Vec<BookmarkSyncRecord>,
     #[serde(default)]
     pub(crate) tabs: Vec<TabSyncRecord>,
+    #[serde(default)]
+    pub(crate) notes: Vec<NoteSyncRecord>,
 }
 
 impl SyncSnapshotBody {
@@ -41,6 +45,13 @@ impl SyncSnapshotBody {
                 .into_iter()
                 .map(|entry| {
                     TabSyncRecord::from_entry(entry, core.sync_space_name_for(entry.space_id()))
+                })
+                .collect(),
+            notes: core
+                .visible_notes_for_sync()
+                .into_iter()
+                .map(|entry| {
+                    NoteSyncRecord::from_entry(entry, core.sync_space_name_for(entry.space_id()))
                 })
                 .collect(),
         }
@@ -171,6 +182,54 @@ impl TabSyncRecord {
             zoom_percent: entry.zoom_percent(),
             created_at_secs: system_time_secs(entry.created_at()),
             last_active_at_secs: system_time_secs(entry.last_active_at()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct NoteSyncRecord {
+    pub(crate) id: String,
+    pub(crate) profile_id: String,
+    pub(crate) space_id: String,
+    #[serde(default)]
+    pub(crate) space_name: Option<String>,
+    pub(crate) target: NoteTargetSyncRecord,
+    pub(crate) title: String,
+    pub(crate) source_url: String,
+    pub(crate) body: String,
+    pub(crate) created_at_secs: u64,
+    pub(crate) updated_at_secs: u64,
+}
+
+impl NoteSyncRecord {
+    fn from_entry(entry: &NoteEntry, space_name: Option<String>) -> Self {
+        Self {
+            id: entry.id().as_str().to_string(),
+            profile_id: entry.profile_id().as_str().to_string(),
+            space_id: entry.space_id().as_str().to_string(),
+            space_name,
+            target: NoteTargetSyncRecord::from_note_target(entry.target()),
+            title: entry.title().to_string(),
+            source_url: entry.source_url().as_str().to_string(),
+            body: entry.body().to_string(),
+            created_at_secs: system_time_secs(entry.created_at()),
+            updated_at_secs: system_time_secs(entry.updated_at()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum NoteTargetSyncRecord {
+    Url { url: String },
+    Tab { tab_id: String },
+}
+
+impl NoteTargetSyncRecord {
+    fn from_note_target(target: &NoteTarget) -> Self {
+        match target {
+            NoteTarget::Url(url) => Self::Url { url: url.as_str().to_string() },
+            NoteTarget::Tab(tab_id) => Self::Tab { tab_id: tab_id.as_str().to_string() },
         }
     }
 }

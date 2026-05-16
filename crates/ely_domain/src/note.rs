@@ -48,6 +48,13 @@ impl NoteEntry {
     }
 
     #[must_use]
+    pub fn restore(id: NoteId, mut entry: Self, updated_at: SystemTime) -> Self {
+        entry.id = id;
+        entry.updated_at = updated_at;
+        entry
+    }
+
+    #[must_use]
     pub fn id(&self) -> &NoteId {
         &self.id
     }
@@ -177,6 +184,35 @@ mod tests {
 
         assert_eq!(note.target(), &NoteTarget::Tab(tab_id));
         assert_eq!(note.target_label(), "Tab note");
+        Ok(())
+    }
+
+    #[test]
+    fn restores_existing_note_identity_and_timestamps() -> Result<(), DomainError> {
+        let id = crate::NoteId::new();
+        let profile_id = ProfileId::new();
+        let space_id = SpaceId::new();
+        let created_at = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
+        let updated_at = created_at + Duration::from_secs(20);
+        let source_url = UrlText::parse("https://example.com/restored")?;
+        let note = NoteEntry::new(
+            profile_id.clone(),
+            space_id.clone(),
+            NoteTarget::Url(source_url.clone()),
+            " Restored ",
+            source_url,
+            " body\r\ncopy ",
+            created_at,
+        )?;
+        let note = NoteEntry::restore(id.clone(), note, updated_at);
+
+        assert_eq!(note.id(), &id);
+        assert_eq!(note.profile_id(), &profile_id);
+        assert_eq!(note.space_id(), &space_id);
+        assert_eq!(note.title(), "Restored");
+        assert_eq!(note.body(), "body\ncopy");
+        assert_eq!(note.created_at(), created_at);
+        assert_eq!(note.updated_at(), updated_at);
         Ok(())
     }
 
