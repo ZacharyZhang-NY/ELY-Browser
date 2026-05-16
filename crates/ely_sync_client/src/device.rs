@@ -4,6 +4,7 @@ use std::{
     path::Path,
 };
 
+use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -51,10 +52,7 @@ impl DeviceIdentity {
 
     pub fn generate(device_name: impl Into<String>, platform: impl Into<String>) -> Self {
         let device_id = format!("ely-{}", Uuid::now_v7().simple());
-        // Placeholder public key — Ed25519 device-bound signing is a
-        // backend feature still in design. The worker validates the
-        // shape but does not currently challenge it.
-        let public_key = format!("ed25519:{}", Uuid::now_v7().simple());
+        let public_key = public_key_hex();
         Self { device_id, public_key, device_name: device_name.into(), platform: platform.into() }
     }
 
@@ -102,6 +100,18 @@ fn io_err(error: io::Error) -> SyncClientError {
     SyncClientError::TokenStorage(error.to_string())
 }
 
+fn public_key_hex() -> String {
+    let mut seed = [0_u8; 32];
+    seed[..16].copy_from_slice(Uuid::now_v7().as_bytes());
+    seed[16..].copy_from_slice(Uuid::now_v7().as_bytes());
+    let signing_key = SigningKey::from_bytes(&seed);
+    hex_string(&signing_key.verifying_key().to_bytes())
+}
+
+fn hex_string(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct DeviceRegistration<'a> {
     pub device_id: &'a str,
@@ -147,6 +157,8 @@ mod tests {
         let path = dir.join("device.json");
         let identity = DeviceIdentity::load_or_create(&path, "Test", "macos")?;
         identity.validate()?;
+        assert_eq!(identity.public_key.len(), 64);
+        assert!(identity.public_key.as_bytes().iter().all(u8::is_ascii_hexdigit));
 
         let again = DeviceIdentity::load_or_create(&path, "ignored", "ignored")?;
         assert_eq!(identity, again);

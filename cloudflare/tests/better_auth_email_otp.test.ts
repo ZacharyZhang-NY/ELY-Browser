@@ -47,6 +47,9 @@ function testEnv(sentEmails: ElyEmailMessageBuilder[] | null): Env {
       get() {
         return Promise.resolve(null);
       },
+      put() {
+        return Promise.resolve();
+      },
       delete() {
         return Promise.resolve();
       },

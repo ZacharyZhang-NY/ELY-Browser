@@ -6,7 +6,7 @@ use std::{
 use ely_domain::BookmarkEntry;
 use ely_sync_client::{
     ApiClientConfig, BearerToken, BearerTokenStore, DeviceIdentity, SnapshotPayload,
-    SnapshotUploadRequest, SyncApiClient, SyncClientError,
+    SnapshotUploadRequest, SyncApiClient, SyncClientError, SyncLatestSnapshotDocument,
 };
 use serde::{Deserialize, Serialize};
 
@@ -75,22 +75,99 @@ impl SyncEngine {
         self.bearer_store.load().map(|token| token.is_some())
     }
 
-    /// Ship a pre-serialised snapshot payload to the worker. Callers
-    /// usually pair this with `BrowserCore::build_sync_snapshot_bytes`
-    /// — building the bytes on the UI thread and only crossing the
-    /// thread boundary with `Vec<u8>` keeps `BrowserCore` itself
-    /// single-threaded.
-    pub fn upload_bytes(&mut self, bytes: Vec<u8>) -> Result<SyncOutcome, SyncClientError> {
+    /// Run the snapshot sync plan for a pre-serialised local payload.
+    /// The engine registers the device, checks the worker's latest
+    /// snapshot, downloads a newer remote payload when another device
+    /// wrote one, and uploads when the local payload is ready to win.
+    pub fn sync_bytes(&mut self, bytes: Vec<u8>) -> Result<SyncOutcome, SyncClientError> {
         let Some(bearer) = self.bearer_store.load()? else {
             let outcome = SyncOutcome::SignedOut;
             self.last_outcome = Some(outcome.clone());
             return Ok(outcome);
         };
         let payload = SnapshotPayload::new(bytes)?;
-        let logical_clock = current_logical_clock();
-        let snapshot_id = snapshot_id_for_user(&self.identity);
-
         let client = SyncApiClient::new(self.api_config.clone(), bearer)?;
+        let Some(client) = self.approved_client(client)? else {
+            let outcome =
+                SyncOutcome::AwaitingDeviceApproval { device_id: self.identity.device_id.clone() };
+            self.last_outcome = Some(outcome.clone());
+            return Ok(outcome);
+        };
+
+        let status = client.sync_status()?;
+        let outcome = match status.snapshots.latest {
+            Some(latest) if latest.payload_hash == payload.payload_hash() => {
+                SyncOutcome::AlreadyCurrent {
+                    snapshot_id: latest.snapshot_id,
+                    logical_clock: latest.logical_clock,
+                    payload_bytes: latest.size_bytes,
+                    device_id: latest.device_id,
+                }
+            }
+            Some(latest) if latest.device_id != self.identity.device_id => {
+                self.download_remote_snapshot(&client, latest)?
+            }
+            Some(latest) => self.upload_payload(&client, payload, latest.logical_clock)?,
+            None => self.upload_payload(&client, payload, 0)?,
+        };
+        self.last_outcome = Some(outcome.clone());
+        Ok(outcome)
+    }
+
+    /// Upload a local payload after the UI thread has applied a remote
+    /// snapshot. The caller passes the remote logical clock so the new
+    /// merged snapshot is ordered after the downloaded one.
+    pub fn upload_merged_bytes(
+        &mut self,
+        bytes: Vec<u8>,
+        logical_clock_floor: u64,
+    ) -> Result<SyncOutcome, SyncClientError> {
+        let Some(bearer) = self.bearer_store.load()? else {
+            let outcome = SyncOutcome::SignedOut;
+            self.last_outcome = Some(outcome.clone());
+            return Ok(outcome);
+        };
+        let payload = SnapshotPayload::new(bytes)?;
+        let client = SyncApiClient::new(self.api_config.clone(), bearer)?;
+        let Some(client) = self.approved_client(client)? else {
+            let outcome =
+                SyncOutcome::AwaitingDeviceApproval { device_id: self.identity.device_id.clone() };
+            self.last_outcome = Some(outcome.clone());
+            return Ok(outcome);
+        };
+        let outcome = self.upload_payload(&client, payload, logical_clock_floor)?;
+        self.last_outcome = Some(outcome.clone());
+        Ok(outcome)
+    }
+
+    fn approved_client(
+        &self,
+        client: SyncApiClient,
+    ) -> Result<Option<SyncApiClient>, SyncClientError> {
+        let registration = client.register_device(
+            &self.identity,
+            &device_registration_idempotency_key(&self.identity),
+        )?;
+        if registration.device.is_approved() {
+            return Ok(Some(client));
+        }
+        if registration.device.approval_status == "pending" {
+            return Ok(None);
+        }
+        Err(SyncClientError::DeviceApprovalStatus {
+            device_id: registration.device.device_id,
+            status: registration.device.approval_status,
+        })
+    }
+
+    fn upload_payload(
+        &self,
+        client: &SyncApiClient,
+        payload: SnapshotPayload,
+        logical_clock_floor: u64,
+    ) -> Result<SyncOutcome, SyncClientError> {
+        let logical_clock = current_logical_clock().max(logical_clock_floor.saturating_add(1));
+        let snapshot_id = snapshot_id_for_user(&self.identity);
         let request = SnapshotUploadRequest::new(
             &snapshot_id,
             self.api_config.region(),
@@ -99,21 +176,92 @@ impl SyncEngine {
             &payload,
         );
         let document = client.upload_snapshot(&request)?;
-        let outcome = SyncOutcome::Uploaded {
+        Ok(SyncOutcome::Uploaded {
             snapshot_id: document.snapshot.snapshot_id,
             logical_clock: document.snapshot.logical_clock,
             payload_bytes: document.snapshot.size_bytes,
             device_id: document.device_id,
-        };
-        self.last_outcome = Some(outcome.clone());
-        Ok(outcome)
+        })
+    }
+
+    fn download_remote_snapshot(
+        &self,
+        client: &SyncApiClient,
+        latest: SyncLatestSnapshotDocument,
+    ) -> Result<SyncOutcome, SyncClientError> {
+        let download = client.download_snapshot(&latest.snapshot_id)?;
+        let payload = download.payload()?;
+        Ok(SyncOutcome::RemoteSnapshot {
+            snapshot_id: latest.snapshot_id,
+            logical_clock: latest.logical_clock,
+            payload_bytes: latest.size_bytes,
+            device_id: latest.device_id,
+            bytes: payload.into_bytes(),
+        })
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SyncOutcome {
     SignedOut,
-    Uploaded { snapshot_id: String, logical_clock: u64, payload_bytes: u64, device_id: String },
+    AwaitingDeviceApproval {
+        device_id: String,
+    },
+    AlreadyCurrent {
+        snapshot_id: String,
+        logical_clock: u64,
+        payload_bytes: u64,
+        device_id: String,
+    },
+    RemoteSnapshot {
+        snapshot_id: String,
+        logical_clock: u64,
+        payload_bytes: u64,
+        device_id: String,
+        bytes: Vec<u8>,
+    },
+    Uploaded {
+        snapshot_id: String,
+        logical_clock: u64,
+        payload_bytes: u64,
+        device_id: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SyncSnapshotApplySummary {
+    imported: usize,
+    updated: usize,
+    skipped: usize,
+}
+
+impl SyncSnapshotApplySummary {
+    #[must_use]
+    pub fn imported(self) -> usize {
+        self.imported
+    }
+
+    #[must_use]
+    pub fn updated(self) -> usize {
+        self.updated
+    }
+
+    #[must_use]
+    pub fn skipped(self) -> usize {
+        self.skipped
+    }
+
+    pub(crate) fn record_imported(&mut self) {
+        self.imported += 1;
+    }
+
+    pub(crate) fn record_updated(&mut self) {
+        self.updated += 1;
+    }
+
+    pub(crate) fn record_skipped(&mut self) {
+        self.skipped += 1;
+    }
 }
 
 const SNAPSHOT_SCHEMA_REV: u32 = 1;
@@ -123,18 +271,17 @@ fn current_logical_clock() -> u64 {
 }
 
 fn snapshot_id_for_user(identity: &DeviceIdentity) -> String {
-    // The Cloudflare worker requires `^[a-z0-9][a-z0-9._-]{0,127}$`.
-    // The device ID already satisfies the pattern (lowercased prefix
-    // + UUIDv7 simple form) and is per-user-stable, so we reuse it as
-    // the snapshot id. Future work can extend this to per-object-type
-    // snapshots without disturbing the existing one.
     identity.device_id.clone()
 }
 
+fn device_registration_idempotency_key(identity: &DeviceIdentity) -> String {
+    format!("device-register:{}", identity.device_id)
+}
+
 #[derive(Serialize, Deserialize)]
-struct SyncSnapshotBody {
-    schema_rev: u32,
-    bookmarks: Vec<BookmarkSyncRecord>,
+pub(crate) struct SyncSnapshotBody {
+    pub(crate) schema_rev: u32,
+    pub(crate) bookmarks: Vec<BookmarkSyncRecord>,
 }
 
 impl SyncSnapshotBody {
@@ -144,7 +291,12 @@ impl SyncSnapshotBody {
             bookmarks: core
                 .visible_bookmarks_for_sync()
                 .into_iter()
-                .map(BookmarkSyncRecord::from)
+                .map(|entry| {
+                    BookmarkSyncRecord::from_entry(
+                        entry,
+                        core.sync_space_name_for(entry.space_id()),
+                    )
+                })
                 .collect(),
         }
     }
@@ -153,30 +305,36 @@ impl SyncSnapshotBody {
 /// Wire representation of a bookmark. We keep this struct stable so a
 /// future deserializer can read snapshots written by earlier app
 /// versions; new fields must default-fill on read.
-#[derive(Serialize, Deserialize)]
-struct BookmarkSyncRecord {
-    id: String,
-    title: String,
-    url: String,
-    profile_id: String,
-    space_id: String,
-    collection_name: String,
-    tags: Vec<String>,
-    note: Option<String>,
-    added_at_secs: u64,
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct BookmarkSyncRecord {
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) url: String,
+    pub(crate) profile_id: String,
+    pub(crate) space_id: String,
+    #[serde(default)]
+    pub(crate) space_name: Option<String>,
+    pub(crate) collection_name: String,
+    pub(crate) tags: Vec<String>,
+    pub(crate) note: Option<String>,
+    #[serde(default)]
+    pub(crate) thumbnail_key: Option<String>,
+    pub(crate) added_at_secs: u64,
 }
 
-impl From<&BookmarkEntry> for BookmarkSyncRecord {
-    fn from(entry: &BookmarkEntry) -> Self {
+impl BookmarkSyncRecord {
+    fn from_entry(entry: &BookmarkEntry, space_name: Option<String>) -> Self {
         Self {
             id: entry.id().as_str().to_string(),
             title: entry.title().to_string(),
             url: entry.url().as_str().to_string(),
             profile_id: entry.profile_id().as_str().to_string(),
             space_id: entry.space_id().as_str().to_string(),
+            space_name,
             collection_name: entry.collection_name().to_string(),
             tags: entry.tags().to_vec(),
             note: entry.note().map(str::to_string),
+            thumbnail_key: entry.thumbnail_key().map(str::to_string),
             added_at_secs: entry
                 .added_at()
                 .duration_since(UNIX_EPOCH)
@@ -210,5 +368,21 @@ impl BrowserCore {
             endpoint: "snapshot".to_string(),
             source: error,
         })
+    }
+
+    pub fn apply_sync_snapshot_bytes(
+        &mut self,
+        bytes: &[u8],
+    ) -> Result<SyncSnapshotApplySummary, SyncClientError> {
+        let body: SyncSnapshotBody = serde_json::from_slice(bytes).map_err(|error| {
+            SyncClientError::Json { endpoint: "snapshot".to_string(), source: error }
+        })?;
+        if body.schema_rev != SNAPSHOT_SCHEMA_REV {
+            return Err(SyncClientError::SnapshotSchema(format!(
+                "unsupported schema_rev {}",
+                body.schema_rev
+            )));
+        }
+        self.apply_sync_snapshot_body(body)
     }
 }

@@ -111,19 +111,20 @@ mod tests {
     }
 
     #[test]
-    fn json_round_trip_preserves_kebab_case_variants() {
+    fn json_round_trip_preserves_kebab_case_variants() -> Result<(), serde_json::Error> {
         let mut settings = AppearanceSettings::default();
         settings.set_wallpaper(WallpaperTheme::Mint);
         settings.set_theme_mode(ThemeMode::Light);
         settings.set_reduce_motion(true);
         settings.set_translucency_pct(60);
 
-        let json = serde_json::to_string(&settings).unwrap();
+        let json = serde_json::to_string(&settings)?;
         assert!(json.contains("\"wallpaper\":\"mint\""));
         assert!(json.contains("\"theme_mode\":\"light\""));
         assert!(json.contains("\"translucency_pct\":60"));
 
-        let restored: AppearanceSettings = serde_json::from_str(&json).unwrap();
+        let restored: AppearanceSettings = serde_json::from_str(&json)?;
         assert_eq!(restored, settings);
+        Ok(())
     }
 }

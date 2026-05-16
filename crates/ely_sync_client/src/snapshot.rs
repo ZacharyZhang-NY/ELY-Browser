@@ -44,6 +44,10 @@ impl SnapshotPayload {
     pub fn payload_hash(&self) -> &str {
         &self.payload_hash
     }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]

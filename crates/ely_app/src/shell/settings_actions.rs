@@ -242,12 +242,15 @@ impl ElyShell {
         }
     }
 
-    /// Push the active profile's bookmarks to `ely-browser-cloud` as a
-    /// snapshot. The HTTP round-trip runs on a dedicated worker thread
-    /// (the UI thread never blocks on the network), and the worker
-    /// reports back through the shell's `sync_inbox` so the sync page
-    /// reflects the new state without waiting for a manual refresh.
     pub(crate) fn trigger_cloud_sync_upload(&mut self) {
+        self.trigger_cloud_sync_upload_with_clock_floor(None);
+    }
+
+    pub(crate) fn trigger_cloud_sync_upload_after_remote(&mut self, logical_clock_floor: u64) {
+        self.trigger_cloud_sync_upload_with_clock_floor(Some(logical_clock_floor));
+    }
+
+    fn trigger_cloud_sync_upload_with_clock_floor(&mut self, logical_clock_floor: Option<u64>) {
         let ShellState::Ready(core) = &self.state else {
             return;
         };
@@ -273,9 +276,13 @@ impl ElyShell {
             }
         };
         let tx = self.sync_inbox_tx.clone();
+        let thread_name =
+            if logical_clock_floor.is_some() { "ely-sync-merge-upload" } else { "ely-sync-upload" };
         std::thread::Builder::new()
-            .name("ely-sync-upload".to_string())
-            .spawn(move || run_sync_upload(profile_dir, device_name, bytes, tx))
+            .name(thread_name.to_string())
+            .spawn(move || {
+                run_sync_upload(profile_dir, device_name, bytes, logical_clock_floor, tx)
+            })
             .map(|_| ())
             .unwrap_or_else(|error| {
                 tracing::warn!(
@@ -317,6 +324,7 @@ fn run_sync_upload(
     profile_dir: std::path::PathBuf,
     device_name: String,
     bytes: Vec<u8>,
+    logical_clock_floor: Option<u64>,
     inbox: std::sync::mpsc::Sender<SyncStateUpdate>,
 ) {
     let mut engine = match SyncEngine::for_profile_dir(
@@ -332,10 +340,59 @@ fn run_sync_upload(
             return;
         }
     };
-    match engine.upload_bytes(bytes) {
+    let outcome = match logical_clock_floor {
+        Some(floor) => engine.upload_merged_bytes(bytes, floor),
+        None => engine.sync_bytes(bytes),
+    };
+    match outcome {
         Ok(ely_browser_core::SyncOutcome::SignedOut) => {
             tracing::info!(target: "ely::sync", "no bearer token on disk; sync skipped");
             let _ = inbox.send(SyncStateUpdate::SignedOut);
+        }
+        Ok(ely_browser_core::SyncOutcome::AwaitingDeviceApproval { device_id }) => {
+            tracing::info!(
+                target: "ely::sync",
+                device_id = %device_id,
+                "sync device is awaiting approval",
+            );
+            let _ = inbox.send(SyncStateUpdate::AwaitingDeviceApproval);
+        }
+        Ok(ely_browser_core::SyncOutcome::RemoteSnapshot {
+            snapshot_id,
+            logical_clock,
+            payload_bytes,
+            device_id,
+            bytes,
+        }) => {
+            tracing::info!(
+                target: "ely::sync",
+                snapshot_id = %snapshot_id,
+                logical_clock,
+                payload_bytes,
+                device_id = %device_id,
+                "remote snapshot downloaded",
+            );
+            let _ = inbox.send(SyncStateUpdate::RemoteSnapshot { bytes, logical_clock });
+        }
+        Ok(ely_browser_core::SyncOutcome::AlreadyCurrent {
+            snapshot_id,
+            logical_clock,
+            payload_bytes,
+            device_id,
+        }) => {
+            tracing::info!(
+                target: "ely::sync",
+                snapshot_id = %snapshot_id,
+                logical_clock,
+                payload_bytes,
+                device_id = %device_id,
+                "snapshot already current",
+            );
+            let last_synced_at_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let _ = inbox.send(SyncStateUpdate::SyncReady { last_synced_at_secs });
         }
         Ok(ely_browser_core::SyncOutcome::Uploaded {
             snapshot_id,

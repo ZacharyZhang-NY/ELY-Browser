@@ -86,3 +86,72 @@ fn tab_sync_status_counts_sync_enabled_tabs() -> Result<(), Box<dyn Error>> {
     assert_eq!(tabs_status.local_count(), 1);
     Ok(())
 }
+
+#[test]
+fn sync_snapshot_imports_remote_bookmarks_into_active_scope() -> Result<(), Box<dyn Error>> {
+    let mut source = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    source.open_tab(UrlText::parse("https://example.com/research")?);
+    let bookmark_id = source.bookmark_active_tab()?;
+    source.set_bookmark_collection_name(&bookmark_id, "Research")?;
+    source.set_bookmark_tags(&bookmark_id, vec!["rust".to_string(), "gpui".to_string()])?;
+    source.set_bookmark_note(&bookmark_id, "Read later")?;
+    let bytes = source.build_sync_snapshot_bytes()?;
+
+    let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let target_profile_id = target.snapshot()?.active_profile_id;
+    let target_space_id = target.snapshot()?.active_space_id;
+    let summary = target.apply_sync_snapshot_bytes(&bytes)?;
+    let snapshot = target.snapshot()?;
+
+    assert_eq!(summary.imported(), 1);
+    assert_eq!(summary.updated(), 0);
+    assert_eq!(summary.skipped(), 0);
+    assert_eq!(snapshot.bookmarks.len(), 1);
+    assert_eq!(snapshot.bookmarks[0].profile_id(), &target_profile_id);
+    assert_eq!(snapshot.bookmarks[0].space_id(), &target_space_id);
+    assert_eq!(snapshot.bookmarks[0].collection_name(), "Research");
+    assert_eq!(snapshot.bookmarks[0].tags(), &["rust".to_string(), "gpui".to_string()]);
+    assert_eq!(snapshot.bookmarks[0].note(), Some("Read later"));
+    Ok(())
+}
+
+#[test]
+fn sync_snapshot_updates_existing_bookmark_metadata() -> Result<(), Box<dyn Error>> {
+    let mut source = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    source.open_tab(UrlText::parse("https://example.com/research")?);
+    let source_bookmark_id = source.bookmark_active_tab()?;
+    source.set_bookmark_collection_name(&source_bookmark_id, "Research")?;
+    source.set_bookmark_tags(&source_bookmark_id, vec!["servo".to_string()])?;
+    source.set_bookmark_note(&source_bookmark_id, "Canonical")?;
+    let bytes = source.build_sync_snapshot_bytes()?;
+
+    let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    target.open_tab(UrlText::parse("https://example.com/research")?);
+    let target_bookmark_id = target.bookmark_active_tab()?;
+    target.set_bookmark_collection_name(&target_bookmark_id, "Inbox")?;
+    let summary = target.apply_sync_snapshot_bytes(&bytes)?;
+    let snapshot = target.snapshot()?;
+
+    assert_eq!(summary.imported(), 0);
+    assert_eq!(summary.updated(), 1);
+    assert_eq!(summary.skipped(), 0);
+    assert_eq!(snapshot.bookmarks.len(), 1);
+    assert_eq!(snapshot.bookmarks[0].id(), &target_bookmark_id);
+    assert_eq!(snapshot.bookmarks[0].collection_name(), "Research");
+    assert_eq!(snapshot.bookmarks[0].tags(), &["servo".to_string()]);
+    assert_eq!(snapshot.bookmarks[0].note(), Some("Canonical"));
+    Ok(())
+}
+
+#[test]
+fn sync_snapshot_rejects_unknown_schema_rev() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let bytes = br#"{"schema_rev":999,"bookmarks":[]}"#;
+
+    let Err(error) = core.apply_sync_snapshot_bytes(bytes) else {
+        return Err("expected sync snapshot schema error".into());
+    };
+
+    assert!(error.to_string().contains("unsupported schema_rev 999"));
+    Ok(())
+}

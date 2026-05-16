@@ -1,4 +1,5 @@
 import type { AuthContext } from "./auth.js";
+import { authSessionCacheKvKey } from "./auth.js";
 import type { Env } from "./bindings.js";
 import {
   type DeviceApprovalDocument,
@@ -227,6 +228,7 @@ export async function registerDeviceDocument(
     throw new DevicePersistenceError("device_registration_missing");
   }
   await bindSessionDeviceContext(env, context, registration.deviceId, nowSeconds);
+  await refreshSessionDeviceCache(env, context, registration.deviceId);
 
   return {
     version: 1,
@@ -244,6 +246,23 @@ async function bindSessionDeviceContext(
   await env.ELY_DB.prepare(SESSION_DEVICE_CONTEXT_UPSERT_QUERY)
     .bind(context.sessionId, context.userId, deviceId, nowSeconds, context.sessionId, context.userId)
     .run();
+}
+
+async function refreshSessionDeviceCache(
+  env: Env,
+  context: AuthContext,
+  deviceId: string,
+): Promise<void> {
+  await env.ELY_KV.put(
+    authSessionCacheKvKey(env.ELY_ENVIRONMENT, context.tokenHash),
+    JSON.stringify({
+      version: 1,
+      user_id: context.userId,
+      session_id: context.sessionId,
+      device_id: deviceId,
+      expires_at: context.expiresAt,
+    }),
+  );
 }
 
 export async function approveDeviceDocument(

@@ -106,6 +106,19 @@ impl SyncApiClient {
         read_json_response::<DeviceListResponse>(&endpoint, response)
     }
 
+    /// `GET /api/sync/status` — return the worker-side cursor,
+    /// object, snapshot, and device summary for the authenticated
+    /// approved device.
+    pub fn sync_status(&self) -> Result<SyncStatusDocument, SyncClientError> {
+        let endpoint = self.endpoint("/api/sync/status");
+        let response = self
+            .agent
+            .get(&endpoint)
+            .set("Authorization", &format!("Bearer {}", self.bearer.as_str()))
+            .call();
+        read_json_response::<SyncStatusDocument>(&endpoint, response)
+    }
+
     /// `POST /api/sync/snapshot` — push the full per-user state. The
     /// worker enforces logical-clock monotonicity, so callers must
     /// pass a value strictly greater than the last accepted snapshot.
@@ -160,6 +173,55 @@ pub struct SnapshotUploadDocument {
     pub user_id: String,
     pub device_id: String,
     pub snapshot: crate::snapshot::SnapshotDocument,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct SyncStatusDocument {
+    pub version: u32,
+    pub user_id: String,
+    pub device_id: String,
+    pub cursor: SyncCursorStatusDocument,
+    pub objects: Vec<SyncObjectStatusDocument>,
+    pub snapshots: SyncSnapshotStatusDocument,
+    pub devices: SyncDeviceStatusDocument,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct SyncCursorStatusDocument {
+    pub latest_change_id: u64,
+    pub total_changes: u64,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct SyncObjectStatusDocument {
+    pub object_type: String,
+    pub active_count: u64,
+    pub deleted_count: u64,
+    pub latest_logical_clock: u64,
+    pub latest_updated_at: u64,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct SyncSnapshotStatusDocument {
+    pub total_snapshots: u64,
+    pub latest: Option<SyncLatestSnapshotDocument>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct SyncLatestSnapshotDocument {
+    pub snapshot_id: String,
+    pub payload_hash: String,
+    pub logical_clock: u64,
+    pub device_id: String,
+    pub size_bytes: u64,
+    pub created_at: u64,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct SyncDeviceStatusDocument {
+    pub approved_count: u64,
+    pub current_device_id: String,
+    pub current_device_approved: bool,
 }
 
 fn read_json_response<T: DeserializeOwned>(

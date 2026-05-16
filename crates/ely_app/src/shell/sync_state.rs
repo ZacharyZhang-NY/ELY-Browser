@@ -7,6 +7,7 @@
 pub(crate) enum SyncStateUpdate {
     SignedOut,
     AwaitingDeviceApproval,
+    RemoteSnapshot { bytes: Vec<u8>, logical_clock: u64 },
     SyncReady { last_synced_at_secs: u64 },
     SyncError { message: String },
     AuthOtpSent { email: String },

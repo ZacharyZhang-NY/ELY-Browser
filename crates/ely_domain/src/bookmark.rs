@@ -42,6 +42,32 @@ impl BookmarkEntry {
         })
     }
 
+    pub fn restore(
+        id: BookmarkId,
+        profile_id: ProfileId,
+        space_id: SpaceId,
+        collection_name: impl Into<String>,
+        title: impl Into<String>,
+        url: UrlText,
+        added_at: SystemTime,
+    ) -> Result<Self, DomainError> {
+        let collection_name = non_empty_text("bookmark collection", collection_name.into())?;
+        let title = non_empty_text("bookmark title", title.into())?;
+
+        Ok(Self {
+            id,
+            profile_id,
+            space_id,
+            collection_name,
+            title,
+            url,
+            tags: Vec::new(),
+            note: None,
+            thumbnail_key: None,
+            added_at,
+        })
+    }
+
     #[must_use]
     pub fn id(&self) -> &BookmarkId {
         &self.id

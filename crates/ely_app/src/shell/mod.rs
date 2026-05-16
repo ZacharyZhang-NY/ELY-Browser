@@ -277,6 +277,7 @@ impl ElyShell {
         let mut latest_connection: Option<ely_domain::SyncConnectionState> = None;
         let mut auth_changed = false;
         let mut trigger_initial_sync = false;
+        let mut trigger_merged_upload = None;
         while let Ok(update) = self.sync_inbox_rx.try_recv() {
             match update {
                 SyncStateUpdate::SignedOut => {
@@ -285,6 +286,28 @@ impl ElyShell {
                 SyncStateUpdate::AwaitingDeviceApproval => {
                     latest_connection =
                         Some(ely_domain::SyncConnectionState::AwaitingDeviceApproval);
+                }
+                SyncStateUpdate::RemoteSnapshot { bytes, logical_clock } => {
+                    if let ShellState::Ready(core) = &mut self.state {
+                        match core.apply_sync_snapshot_bytes(&bytes) {
+                            Ok(summary) => {
+                                tracing::info!(
+                                    target: "ely::sync",
+                                    imported = summary.imported(),
+                                    updated = summary.updated(),
+                                    skipped = summary.skipped(),
+                                    "remote snapshot applied",
+                                );
+                                trigger_merged_upload = Some(logical_clock);
+                            }
+                            Err(error) => {
+                                latest_connection =
+                                    Some(ely_domain::SyncConnectionState::SyncError {
+                                        message: error.to_string(),
+                                    });
+                            }
+                        }
+                    }
                 }
                 SyncStateUpdate::SyncReady { last_synced_at_secs } => {
                     latest_connection =
@@ -317,7 +340,11 @@ impl ElyShell {
         if trigger_initial_sync {
             self.trigger_cloud_sync_upload();
         }
-        auth_changed || trigger_initial_sync
+        let merged_upload_requested = trigger_merged_upload.is_some();
+        if let Some(logical_clock_floor) = trigger_merged_upload {
+            self.trigger_cloud_sync_upload_after_remote(logical_clock_floor);
+        }
+        auth_changed || trigger_initial_sync || merged_upload_requested
     }
 
     fn focus_command_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {

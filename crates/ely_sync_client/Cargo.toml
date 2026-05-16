@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+ed25519-dalek.workspace = true
 ely_domain = { path = "../ely_domain" }
 serde = { workspace = true }
 serde_json = { workspace = true }

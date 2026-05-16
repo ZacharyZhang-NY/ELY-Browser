@@ -157,6 +157,8 @@ describe("device routes", () => {
 
   it("registers the current device as a pending idempotent D1 write", async () => {
     const tokenHash = await authTokenHash(ACCESS_TOKEN);
+    const sessionCacheKey = authSessionCacheKvKey("local", tokenHash);
+    const kvPuts: [string, string][] = [];
     const d1 = testD1Database([
       {
         device_id: "device-01",
@@ -182,7 +184,8 @@ describe("device routes", () => {
       }),
       testEnv({
         d1,
-        kvEntries: [[authSessionCacheKvKey("local", tokenHash), sessionDocument()]],
+        kvEntries: [[sessionCacheKey, sessionDocument()]],
+        kvPuts,
       }),
     );
 
@@ -220,6 +223,46 @@ describe("device routes", () => {
     assert.equal(d1.binds[0]?.[7], IDEMPOTENCY_KEY);
     assert.deepEqual(d1.binds[1], ["user-01", IDEMPOTENCY_KEY]);
     assert.deepEqual(d1.binds[2]?.slice(0, 3), ["session-01", "user-01", "device-01"]);
+    assert.deepEqual(kvPuts, [[sessionCacheKey, sessionDocument("device-01")]]);
+  });
+
+  it("registers and caches device context for sessions without a current device", async () => {
+    const tokenHash = await authTokenHash(ACCESS_TOKEN);
+    const sessionCacheKey = authSessionCacheKvKey("local", tokenHash);
+    const kvPuts: [string, string][] = [];
+    const d1 = testD1Database([
+      {
+        device_id: "device-01",
+        public_key: PUBLIC_KEY,
+        device_name: "MacBook Pro",
+        platform: "macOS",
+        approval_status: "pending",
+        created_at: 1_780_000_100,
+        approved_at: null,
+        last_active_at: 1_780_000_100,
+        revoked_at: null,
+      },
+    ]);
+
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/devices/register", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${ACCESS_TOKEN}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(deviceRegistrationBody()),
+      }),
+      testEnv({
+        d1,
+        kvEntries: [[sessionCacheKey, sessionDocument(null)]],
+        kvPuts,
+      }),
+    );
+
+    assert.equal(response.status, 201);
+    assert.deepEqual(d1.binds[2]?.slice(0, 3), ["session-01", "user-01", "device-01"]);
+    assert.deepEqual(kvPuts, [[sessionCacheKey, sessionDocument("device-01")]]);
   });
 
   it("rejects invalid device registration payloads before D1 writes", async () => {

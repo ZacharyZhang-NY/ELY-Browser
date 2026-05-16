@@ -30,4 +30,10 @@ pub enum SyncClientError {
 
     #[error("Snapshot base64 decode failed: {0}")]
     SnapshotBase64(String),
+
+    #[error("Snapshot schema is invalid: {0}")]
+    SnapshotSchema(String),
+
+    #[error("Device {device_id} cannot sync with approval status {status}")]
+    DeviceApprovalStatus { device_id: String, status: String },
 }

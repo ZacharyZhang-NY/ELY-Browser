@@ -319,6 +319,10 @@ function testEnv(options: TestEnvOptions = {}): Env {
         options.kvReads?.push(key);
         return Promise.resolve(values.get(key) ?? null);
       },
+      put(key: string, value: string): Promise<void> {
+        values.set(key, value);
+        return Promise.resolve();
+      },
       delete(key: string): Promise<void> {
         values.delete(key);
         return Promise.resolve();

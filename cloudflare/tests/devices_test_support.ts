@@ -15,6 +15,7 @@ export interface TestEnvOptions {
   d1?: RecordedD1Database;
   kvEntries?: [string, string][];
   kvDeletes?: string[];
+  kvPuts?: [string, string][];
   kvReads?: string[];
   r2Deletes?: string[];
   r2Gets?: string[];
@@ -50,6 +51,11 @@ export function testEnv(options: TestEnvOptions): Env {
       get(key: string): Promise<string | null> {
         options.kvReads?.push(key);
         return Promise.resolve(values.get(key) ?? null);
+      },
+      put(key: string, value: string): Promise<void> {
+        options.kvPuts?.push([key, value]);
+        values.set(key, value);
+        return Promise.resolve();
       },
       delete(key: string): Promise<void> {
         options.kvDeletes?.push(key);
@@ -110,12 +116,12 @@ export function testD1Database(rows: unknown[] | TestD1DatabaseOptions): Recorde
   };
 }
 
-export function sessionDocument(deviceId = "device-01"): string {
+export function sessionDocument(deviceId: string | null = "device-01"): string {
   return JSON.stringify({
     version: 1,
     user_id: "user-01",
     session_id: "session-01",
-    device_id: deviceId,
+    ...(deviceId === null ? {} : { device_id: deviceId }),
     expires_at: "2099-01-01T00:00:00.000Z",
   });
 }
