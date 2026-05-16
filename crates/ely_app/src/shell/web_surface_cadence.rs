@@ -128,6 +128,42 @@ mod tests {
         ACTIVE_POLL_INTERVAL, IDLE_POLL_INTERVAL, WebSurfaceInputKind, WebSurfacePollCadence,
     };
 
+    const FRAME_BUDGET_120HZ: Duration = Duration::from_micros(8_333);
+
+    #[test]
+    fn active_poll_interval_fits_120hz_budget() {
+        assert!(ACTIVE_POLL_INTERVAL <= FRAME_BUDGET_120HZ);
+    }
+
+    #[test]
+    fn active_inputs_hold_120hz_poll_cadence() {
+        for input_kind in [
+            WebSurfaceInputKind::Scroll,
+            WebSurfaceInputKind::Click,
+            WebSurfaceInputKind::Text,
+            WebSurfaceInputKind::Hover,
+        ] {
+            let start = Instant::now();
+            let mut cadence = WebSurfacePollCadence::default();
+
+            cadence.note_ensure(input_kind, false, start);
+            cadence.note_poll_submitted(start);
+
+            assert!(cadence.next_poll_delay(start) <= FRAME_BUDGET_120HZ);
+        }
+    }
+
+    #[test]
+    fn loading_frames_hold_120hz_poll_cadence() {
+        let start = Instant::now();
+        let mut cadence = WebSurfacePollCadence::default();
+
+        cadence.note_frame("loading", start);
+        cadence.note_poll_submitted(start);
+
+        assert!(cadence.next_poll_delay(start) <= FRAME_BUDGET_120HZ);
+    }
+
     #[test]
     fn idle_poll_uses_low_frequency_after_submission() {
         let start = Instant::now();
