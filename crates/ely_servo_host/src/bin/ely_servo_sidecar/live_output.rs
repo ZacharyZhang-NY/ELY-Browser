@@ -11,8 +11,12 @@ use ely_servo_host::{IOSurfaceIdentity, SoftwareServoHost};
 use super::live_protocol::{LiveOutcome, LiveSidecarError, PartialFrameTimings};
 use super::perf::{FramePerfAggregator, FramePerfSummary, FrameStageTimings, elapsed_ns};
 
-/// Populate the hardware surface protocol fields on `outcome`. Two
-/// pieces of state ride out together:
+/// Populate the hardware surface protocol fields on `outcome`. Mach
+/// app clients keep readback frames free of surface fields because
+/// synchronous IOSurface import can block the live worker; the no-Mach
+/// bench path publishes readback warm-up handles so it can validate
+/// payloadless steady-state frames. Two pieces of state ride out
+/// together:
 ///
 ///   * `current_surface_id` — set on every payload-bearing hardware
 ///     frame so the receiver knows which previously-imported
@@ -30,12 +34,13 @@ pub(super) fn populate_surface_fields(
     webview_id: &ely_domain::WebViewId,
     tab_id: &str,
     published_surface_ids: &mut HashMap<String, HashSet<IOSurfaceIdentity>>,
+    publish_readback_surface_fields: bool,
     outcome: &mut LiveOutcome,
 ) {
     if outcome.response.frame.is_none() {
         return;
     }
-    if outcome.frame.is_some() {
+    if outcome.frame.is_some() && !publish_readback_surface_fields {
         return;
     }
     #[cfg(all(feature = "hardware-render", target_os = "macos"))]
@@ -58,7 +63,7 @@ pub(super) fn populate_surface_fields(
     }
     #[cfg(not(all(feature = "hardware-render", target_os = "macos")))]
     {
-        let _ = (host, webview_id, tab_id, published_surface_ids);
+        let _ = (host, webview_id, tab_id, published_surface_ids, publish_readback_surface_fields);
     }
 }
 
@@ -154,12 +159,9 @@ pub(super) fn write_outcome(
     if let Some(summary) = pending_summary.take() {
         outcome.response.perf = Some(summary);
     }
-    // Hardware path: receiver samples the IOSurface directly through
-    // its CVPixelBuffer cache, so the raw RGBA payload is dead
-    // weight. Drop it from the wire (and zero the byte count in the
-    // header so the client knows nothing follows). At 1080p × 60 fps
-    // that's 8 MB × 60 = ~480 MB/s of pipe traffic eliminated.
-    let drop_rgba_payload = outcome.response.current_surface_id.is_some();
+    // Payloadless hardware frames carry only the IOSurface selector.
+    let drop_rgba_payload =
+        outcome.response.current_surface_id.is_some() && outcome.frame.is_none();
     if drop_rgba_payload && let Some(report) = outcome.response.frame.as_mut() {
         report.rgba_byte_count = 0;
     }

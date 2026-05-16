@@ -65,13 +65,6 @@ impl SoftwareServoHost {
     }
 
     /// Construct the host with an explicit [`RenderingContextKind`].
-    ///
-    /// `Hardware` requires the `hardware-render` feature; the call
-    /// fails with `ServoHostError::HardwareRenderUnavailable` if the
-    /// feature wasn't compiled in. This is the constructor the
-    /// sidecar binary will use once a `--rendering-context` CLI
-    /// flag lands; today the default path through `new` and
-    /// `new_with_config_dir` keeps the software behaviour unchanged.
     pub fn new_with_config_dir_and_kind(
         size: ServoSurfaceSize,
         config_dir: Option<PathBuf>,
@@ -106,12 +99,17 @@ impl SoftwareServoHost {
         self.create_webview_in_context(tab_id, profile_id, size)
     }
 
-    /// Paint and present the webview's current surface while leaving
-    /// framebuffer readback to callers that explicitly need RGBA
-    /// bytes. The live hardware path exports the just-presented
-    /// IOSurface from the rendering context.
+    /// Paint and present the current surface without RGBA readback.
     pub fn paint_without_readback(&mut self, webview_id: &WebViewId) -> Result<(), ServoHostError> {
-        self.paint_webview(webview_id, false, true).map(|_| ())
+        self.paint_without_readback_with_completion(webview_id, true)
+    }
+
+    pub fn paint_without_readback_with_completion(
+        &mut self,
+        webview_id: &WebViewId,
+        wait_for_completion: bool,
+    ) -> Result<(), ServoHostError> {
+        self.paint_webview(webview_id, false, wait_for_completion).map(|_| ())
     }
 
     pub fn close_webview(&mut self, webview_id: &WebViewId) -> bool {
@@ -151,16 +149,8 @@ impl SoftwareServoHost {
         let rendering_context = self.webview(webview_id)?.rendering_context.clone();
         rendering_context.make_current().map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
         rendering_context.prepare_for_rendering();
-        // `webview.paint()` dispatches a render command to Servo's paint
-        // thread — it does NOT block until the framebuffer is consistent.
-        // Without a barrier, `read_rendered_frame` below races the paint
-        // thread and reliably reads the cleared-white state on data: URLs.
-        // Clear the pending-frame flag first so barrier callers can
-        // detect the *next* `notify_new_frame_ready` (the one our
-        // `paint()` triggers), then pump the event loop until Servo
-        // reports the new frame is ready or `paint_barrier_budget()`
-        // elapses. When the caller already observed a pending frame,
-        // readback can use that ready frame and skip the extra wait.
+        // Clear the pending-frame flag before `paint()` so barrier callers observe
+        // the next Servo frame-ready notification for this paint.
         {
             let webview = self.webview(webview_id)?;
             webview.delegate.mark_frame_presented();
@@ -228,12 +218,7 @@ impl ServoHost for SoftwareServoHost {
                 // replacing the about:blank WebView so CSS viewport = physical surface / DPR.
                 .hidpi_scale_factor(hidpi_scale_factor)
                 .build();
-            // Cosmetic: makes the freshly built WebView paint its
-            // first frame. The input-accepting invariant lives in
-            // `webview_for_input`; we deliberately do not re-show or
-            // re-focus on the `load()` branch so a background tab
-            // finishing a load cannot steal focus from the foreground
-            // tab between the user's mouse-down and the next render.
+            // The input-accepting invariant lives in `webview_for_input`.
             webview.webview.show();
             webview.webview.focus();
         } else {

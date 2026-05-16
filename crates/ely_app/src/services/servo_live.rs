@@ -133,17 +133,17 @@ impl ServoLiveClient {
         if let Some(error) = response.error {
             return Err(ServoLiveError::SidecarFailed { message: error });
         }
+        let surface_handle = response.surface_handle;
+        let current_surface_id = response.current_surface_id;
 
         if let Some(perf) = response.perf.as_ref() {
             log_frame_perf(perf);
         }
 
-        if let Some(handle) = response.surface_handle.as_ref() {
+        if let Some(handle) = surface_handle.as_ref() {
             log_iosurface_handle(handle);
-            #[cfg(target_os = "macos")]
-            self.import_iosurface_handle(handle)?;
         }
-        if let Some(surface_id) = response.current_surface_id {
+        if let Some(surface_id) = current_surface_id {
             log_iosurface_current(surface_id);
         }
 
@@ -182,7 +182,15 @@ impl ServoLiveClient {
         let mut frame = ServoLiveFrame::from_parts(report, rgba_bytes);
 
         #[cfg(target_os = "macos")]
-        if let Some(surface_id) = response.current_surface_id {
+        if let Some(handle) = surface_handle.as_ref() {
+            // Drain the stdout payload before IOSurface import so the
+            // sidecar cannot block writing RGBA bytes while this worker
+            // is inside IOSurfaceLookupFromMachPort.
+            self.import_iosurface_handle(handle)?;
+        }
+
+        #[cfg(target_os = "macos")]
+        if let Some(surface_id) = current_surface_id {
             let pixel_buffer = self.iosurface_cache.pixel_buffer_for(surface_id);
             if pixel_buffer.is_none() && !has_software_payload {
                 return Err(ServoLiveError::IOSurfacePixelBufferMissing { surface_id });

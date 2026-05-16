@@ -7,7 +7,7 @@ use std::{
 
 use ely_domain::{ProfileId, TabId, UrlText};
 #[cfg(all(feature = "hardware-render", target_os = "macos"))]
-use ely_servo_host::WebViewState;
+use ely_servo_host::ServoHostError;
 use ely_servo_host::{
     IOSurfaceIdentity, NavigationRequest, RenderingContextKind, ServoHost, ServoSurfaceSize,
     SoftwareServoHost,
@@ -26,6 +26,7 @@ use super::perf::{FramePerfAggregator, FramePerfSummary, elapsed_ns};
 
 pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
     let LiveArgs { profile_data_dir, iosurface_mach_service, rendering_context_kind } = args;
+    let publish_readback_surface_fields = iosurface_mach_service.is_none();
     fs::create_dir_all(&profile_data_dir)?;
     let context_label = rendering_context_label(rendering_context_kind);
     let mut host = SoftwareServoHost::new_with_config_dir_and_kind(
@@ -64,6 +65,7 @@ pub(super) fn run_live(args: LiveArgs) -> Result<(), LiveSidecarError> {
                 &mut sessions,
                 &mut published_surface_ids,
                 rendering_context_kind,
+                publish_readback_surface_fields,
                 request,
             ),
             Err(error) => Err(LiveSidecarError::Json(error)),
@@ -92,6 +94,7 @@ fn handle_request(
     sessions: &mut HashMap<String, LiveSession>,
     published_surface_ids: &mut HashMap<String, HashSet<IOSurfaceIdentity>>,
     rendering_context_kind: RenderingContextKind,
+    publish_readback_surface_fields: bool,
     request: LiveRequest,
 ) -> Result<LiveOutcome, LiveSidecarError> {
     match request {
@@ -159,12 +162,14 @@ fn handle_request(
                 session.awaiting_visible_frame = true;
             }
             let webview_id = session.webview_id.clone();
-            let mut outcome = poll_frame(host, session, rendering_context_kind)?;
+            let mut outcome =
+                poll_frame(host, session, rendering_context_kind, &tab_id, published_surface_ids)?;
             populate_surface_fields(
                 host,
                 &webview_id,
                 &tab_id,
                 published_surface_ids,
+                publish_readback_surface_fields,
                 &mut outcome,
             );
             Ok(outcome)
@@ -174,12 +179,14 @@ fn handle_request(
                 return Ok(LiveOutcome::empty());
             };
             let webview_id = session.webview_id.clone();
-            let mut outcome = poll_frame(host, session, rendering_context_kind)?;
+            let mut outcome =
+                poll_frame(host, session, rendering_context_kind, &tab_id, published_surface_ids)?;
             populate_surface_fields(
                 host,
                 &webview_id,
                 &tab_id,
                 published_surface_ids,
+                publish_readback_surface_fields,
                 &mut outcome,
             );
             Ok(outcome)
@@ -198,6 +205,8 @@ fn poll_frame(
     host: &mut SoftwareServoHost,
     session: &mut LiveSession,
     rendering_context_kind: RenderingContextKind,
+    tab_id: &str,
+    published_surface_ids: &HashMap<String, HashSet<IOSurfaceIdentity>>,
 ) -> Result<LiveOutcome, LiveSidecarError> {
     host.tick();
     let snapshot = host.snapshot(&session.webview_id)?;
@@ -206,8 +215,14 @@ fn poll_frame(
         return Ok(LiveOutcome::empty());
     }
 
-    let (outcome, has_visible_content) =
-        paint_pending_frame(host, session, rendering_context_kind, has_pending_frame)?;
+    let (outcome, has_visible_content) = paint_pending_frame(
+        host,
+        session,
+        rendering_context_kind,
+        tab_id,
+        published_surface_ids,
+        has_pending_frame,
+    )?;
     if has_visible_content {
         session.awaiting_visible_frame = false;
         session.ever_visible_frame = true;
@@ -228,14 +243,23 @@ fn paint_pending_frame(
     host: &mut SoftwareServoHost,
     session: &mut LiveSession,
     rendering_context_kind: RenderingContextKind,
+    tab_id: &str,
+    published_surface_ids: &HashMap<String, HashSet<IOSurfaceIdentity>>,
     has_pending_frame: bool,
 ) -> Result<(LiveOutcome, bool), LiveSidecarError> {
+    #[cfg(not(all(feature = "hardware-render", target_os = "macos")))]
+    let _ = (tab_id, published_surface_ids);
+
     match rendering_context_kind {
         RenderingContextKind::Software => paint_readback_frame(host, session, !has_pending_frame),
         #[cfg(all(feature = "hardware-render", target_os = "macos"))]
-        RenderingContextKind::Hardware => {
-            paint_hardware_surface_frame(host, session, has_pending_frame)
-        }
+        RenderingContextKind::Hardware => paint_hardware_surface_frame(
+            host,
+            session,
+            tab_id,
+            published_surface_ids,
+            has_pending_frame,
+        ),
         #[cfg(not(all(feature = "hardware-render", target_os = "macos")))]
         RenderingContextKind::Hardware => paint_readback_frame(host, session, !has_pending_frame),
     }
@@ -264,16 +288,22 @@ fn paint_readback_frame(
 fn paint_hardware_surface_frame(
     host: &mut SoftwareServoHost,
     session: &LiveSession,
+    tab_id: &str,
+    published_surface_ids: &HashMap<String, HashSet<IOSurfaceIdentity>>,
     has_pending_frame: bool,
 ) -> Result<(LiveOutcome, bool), LiveSidecarError> {
     if !session.ever_visible_frame {
         return paint_initial_hardware_surface_frame(host, session, !has_pending_frame);
     }
-    // Cross-process IOSurface lookup can block the app-side worker for
-    // seconds on macOS. Live app frames use readback so scroll/click
-    // input stays bounded by the paint barrier instead of the surface
-    // import path.
-    paint_readback_frame(host, session, !has_pending_frame)
+    if !payloadless_surface_pool_ready(published_surface_ids, tab_id, session.width, session.height)
+    {
+        return paint_readback_frame(host, session, !has_pending_frame);
+    }
+    let (outcome, identity) = paint_hardware_surface_report(host, session, !has_pending_frame)?;
+    if !surface_has_been_published(published_surface_ids, tab_id, identity) {
+        return paint_readback_frame(host, session, true);
+    }
+    Ok((outcome, true))
 }
 
 #[cfg(all(feature = "hardware-render", target_os = "macos"))]
@@ -289,17 +319,61 @@ fn paint_initial_hardware_surface_frame(
     let paint_ns = elapsed_ns(paint_started_at);
     let encode_started_at = Instant::now();
     let report = LiveFrameReport::new(&snapshot, &frame, session.device_pixel_ratio());
-    let has_visible_content = frame.non_white_pixel_count() > 0
-        && frame.content_pixel_count() > 0
-        && hardware_snapshot_has_visible_document(&snapshot);
+    let has_visible_content = frame.non_white_pixel_count() > 0 && frame.content_pixel_count() > 0;
     let encode_ns = elapsed_ns(encode_started_at);
     let timings = PartialFrameTimings { paint_ns, encode_ns };
     Ok((LiveOutcome::from_frame(report, frame, timings), has_visible_content))
 }
 
 #[cfg(all(feature = "hardware-render", target_os = "macos"))]
-fn hardware_snapshot_has_visible_document(snapshot: &ely_servo_host::WebViewSnapshot) -> bool {
-    snapshot.title().is_some() || matches!(snapshot.state(), WebViewState::Complete)
+fn paint_hardware_surface_report(
+    host: &mut SoftwareServoHost,
+    session: &LiveSession,
+    wait_for_completion: bool,
+) -> Result<(LiveOutcome, IOSurfaceIdentity), LiveSidecarError> {
+    let paint_started_at = Instant::now();
+    host.paint_without_readback_with_completion(&session.webview_id, wait_for_completion)?;
+    let snapshot = host.snapshot(&session.webview_id)?;
+    let identity = host.peek_iosurface_identity(&session.webview_id)?.ok_or_else(|| {
+        ServoHostError::HardwareSurfaceUnavailable { id: session.webview_id.clone() }
+    })?;
+    let paint_ns = elapsed_ns(paint_started_at);
+    let encode_started_at = Instant::now();
+    let report = LiveFrameReport::from_surface(
+        &snapshot,
+        identity.width,
+        identity.height,
+        session.device_pixel_ratio(),
+    );
+    let encode_ns = elapsed_ns(encode_started_at);
+    let timings = PartialFrameTimings { paint_ns, encode_ns };
+    Ok((LiveOutcome::from_report(report, timings), identity))
+}
+
+#[cfg(all(feature = "hardware-render", target_os = "macos"))]
+fn payloadless_surface_pool_ready(
+    published_surface_ids: &HashMap<String, HashSet<IOSurfaceIdentity>>,
+    tab_id: &str,
+    width: u32,
+    height: u32,
+) -> bool {
+    published_surface_ids.get(tab_id).is_some_and(|published| {
+        published
+            .iter()
+            .filter(|identity| identity.width == width && identity.height == height)
+            .take(2)
+            .count()
+            >= 2
+    })
+}
+
+#[cfg(all(feature = "hardware-render", target_os = "macos"))]
+fn surface_has_been_published(
+    published_surface_ids: &HashMap<String, HashSet<IOSurfaceIdentity>>,
+    tab_id: &str,
+    identity: IOSurfaceIdentity,
+) -> bool {
+    published_surface_ids.get(tab_id).is_some_and(|published| published.contains(&identity))
 }
 
 #[cfg(test)]

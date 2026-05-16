@@ -33,6 +33,9 @@ pub enum ServoHostError {
     #[error("servo rendered frame is unavailable")]
     RenderedFrameUnavailable,
 
+    #[error("servo hardware surface is unavailable for {id}")]
+    HardwareSurfaceUnavailable { id: WebViewId },
+
     #[error("servo screenshot capture timed out for {id}")]
     ScreenshotTimedOut { id: WebViewId },
 

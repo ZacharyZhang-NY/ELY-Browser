@@ -103,7 +103,7 @@ impl LiveOutcome {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, all(feature = "hardware-render", target_os = "macos")))]
     pub fn from_report(report: LiveFrameReport, partial_timings: PartialFrameTimings) -> Self {
         Self {
             response: LiveResponse::frame(report),
@@ -202,6 +202,31 @@ impl LiveFrameReport {
             non_white_pixel_count: frame.non_white_pixel_count(),
             content_pixel_count: frame.content_pixel_count(),
             sample_hash: frame.sample_hash(),
+        }
+    }
+
+    #[cfg(all(feature = "hardware-render", target_os = "macos"))]
+    pub fn from_surface(
+        snapshot: &WebViewSnapshot,
+        width: u32,
+        height: u32,
+        device_pixel_ratio: f32,
+    ) -> Self {
+        let (css_viewport_width, css_viewport_height) =
+            css_viewport_size(width, height, device_pixel_ratio);
+        Self {
+            loaded_url: snapshot.url().map(str::to_string),
+            title: snapshot.title().map(str::to_string),
+            state: state_label(snapshot.state()),
+            width,
+            height,
+            device_pixel_ratio,
+            css_viewport_width,
+            css_viewport_height,
+            rgba_byte_count: 0,
+            non_white_pixel_count: 0,
+            content_pixel_count: 0,
+            sample_hash: 0,
         }
     }
 }
