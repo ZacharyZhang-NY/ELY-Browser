@@ -8,9 +8,8 @@ use ely_domain::{
 use ely_sync_client::SyncClientError;
 
 use super::BrowserCore;
-use crate::sync_engine::{
-    BookmarkSyncRecord, SpaceSyncRecord, SyncSnapshotApplySummary, SyncSnapshotBody, TabSyncRecord,
-};
+use crate::sync_engine::SyncSnapshotApplySummary;
+use crate::sync_records::{BookmarkSyncRecord, SpaceSyncRecord, SyncSnapshotBody, TabSyncRecord};
 
 #[derive(Clone, Debug)]
 pub(super) struct SyncObjectPolicies {

@@ -2,6 +2,7 @@ mod error;
 mod navigation;
 mod state;
 mod sync_engine;
+mod sync_records;
 
 pub use error::CoreError;
 pub use state::{
