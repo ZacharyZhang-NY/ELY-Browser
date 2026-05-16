@@ -25,17 +25,28 @@ const HEADER_PX: f32 = 10.0;
 const PICKER_ROW_PY: f32 = 4.0;
 /// Horizontal padding inside the picker row (left/right).
 const PICKER_ROW_PX: f32 = 2.0;
-/// Gap between the tile, the pill, and the add button.
-const PICKER_ROW_GAP: f32 = 6.0;
-/// Square size of the workspaces tile and the add button.
+/// Effective square height of the picker pill row content (matches
+/// the prior tile/add-button size so vertical rhythm is preserved
+/// after the tile and add button were folded into a single pill).
 const PICKER_BUTTON_SIZE: f32 = 32.0;
 /// Visual lift applied to the popover so it nestles just below the
 /// picker pill instead of sitting flush on its bottom edge.
 const DISCLOSURE_LIFT: f32 = 6.0;
 /// Width reserved at the start of the sidebar's picker row for the
-/// macOS traffic lights so the workspaces tile never collides with
-/// the close / minimize / maximize circles.
-pub(crate) const TRAFFIC_LIGHT_RESERVE: f32 = 76.0;
+/// macOS traffic lights so the picker pill never collides with the
+/// close / minimize / maximize circles.
+///
+/// Derivation: traffic-light origin is `SHELL_INSET + 34 = 50 px` from
+/// the window edge (see `main.rs::TRAFFIC_LIGHT_ORIGIN_X`). The macOS
+/// system traffic-light group renders ~62 px wide (three ~14 px
+/// circles with ~10 px gaps), so the rightmost circle reaches
+/// `50 + 62 = 112 px`. The pill's outer left edge sits at
+/// `SHELL_INSET + 1 px border + HEADER_PX + PICKER_ROW_PX + RESERVE`
+/// = `29 + RESERVE`. Setting RESERVE to 100 px puts the pill at
+/// `129 px` — 17 px of breathing room past the green button, enough
+/// that the pill's drop-shadow doesn't visually bleed into the
+/// circles even on Retina sub-pixel positioning.
+pub(crate) const TRAFFIC_LIGHT_RESERVE: f32 = 100.0;
 
 pub(crate) fn render_sidebar_header(
     shell: &ElyShell,
@@ -62,46 +73,20 @@ fn render_workspace_picker(
     picker_open: bool,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
-    // The disclosure renders at the window root (see render.rs) so it can
-    // sit above a fullscreen click-out backdrop and extend past the
-    // sidebar's overflow_hidden clip. Picker row keeps just the tile, the
-    // pill, and the add button — and reserves space at the start for the
-    // macOS traffic lights that float in this same horizontal band.
+    // The disclosure renders at the window root (see render.rs) so it
+    // can sit above a fullscreen click-out backdrop and extend past
+    // the sidebar's overflow_hidden clip. After folding the dashboard
+    // tile and the "+" button into a single workspace identity, the
+    // pill is the sole occupant of the picker row — it just reserves
+    // space at the start for the macOS traffic lights that float in
+    // this same horizontal band.
     div()
         .flex()
         .items_center()
-        .gap(px(PICKER_ROW_GAP))
         .py(px(PICKER_ROW_PY))
         .px(px(PICKER_ROW_PX))
         .pl(px(TRAFFIC_LIGHT_RESERVE))
-        .child(render_workspaces_tile(cx))
         .child(render_picker_pill(active_space, picker_open, cx))
-        .child(render_add_workspace_button(cx))
-        .into_any_element()
-}
-
-fn render_workspaces_tile(cx: &mut Context<ElyShell>) -> AnyElement {
-    div()
-        .id(SharedString::from("workspace-tile"))
-        .size(px(PICKER_BUTTON_SIZE))
-        .rounded(px(9.0))
-        .bg(linear_gradient(
-            135.0,
-            linear_color_stop(hsla(0.0, 0.0, 1.0, 1.0), 0.0),
-            linear_color_stop(hsla(20.0 / 360.0, 0.6, 0.94, 1.0), 1.0),
-        ))
-        .shadow(soft_shadow())
-        .flex()
-        .items_center()
-        .justify_center()
-        .text_color(rgb(colors::accent()))
-        .cursor_pointer()
-        .hover(|style| style.opacity(0.92))
-        .active(|style| style.opacity(0.82))
-        .on_click(cx.listener(|shell, _, window, cx| {
-            shell.open_internal_tab("ely://settings/spaces", window, cx);
-        }))
-        .child(IconName::LayoutDashboard)
         .into_any_element()
 }
 
@@ -167,12 +152,7 @@ impl WorkspaceDisclosureAnchor {
     /// upstream, so changing one of those constants moves the popover
     /// with it.
     pub(crate) fn solve(sidebar_width_px: f32) -> Self {
-        let left_px = spacing::SHELL_INSET
-            + HEADER_PX
-            + PICKER_ROW_PX
-            + TRAFFIC_LIGHT_RESERVE
-            + PICKER_BUTTON_SIZE
-            + PICKER_ROW_GAP;
+        let left_px = spacing::SHELL_INSET + HEADER_PX + PICKER_ROW_PX + TRAFFIC_LIGHT_RESERVE;
 
         let top_px = spacing::SHELL_INSET
             + HEADER_PT
@@ -181,17 +161,11 @@ impl WorkspaceDisclosureAnchor {
             + PICKER_ROW_PY
             + DISCLOSURE_LIFT;
 
-        // Pill spans flex_1 between tile and add button inside the
-        // padded picker row. So:
+        // Pill now owns the picker row alone, so:
         //   pill_w = sidebar_w
         //          - 2 * (HEADER_PX + PICKER_ROW_PX)   (row insets)
         //          - TRAFFIC_LIGHT_RESERVE             (left reserve)
-        //          - 2 * PICKER_BUTTON_SIZE            (tile + add)
-        //          - 2 * PICKER_ROW_GAP                (two gaps)
-        let chrome = 2.0 * (HEADER_PX + PICKER_ROW_PX)
-            + TRAFFIC_LIGHT_RESERVE
-            + 2.0 * PICKER_BUTTON_SIZE
-            + 2.0 * PICKER_ROW_GAP;
+        let chrome = 2.0 * (HEADER_PX + PICKER_ROW_PX) + TRAFFIC_LIGHT_RESERVE;
         let width_px = (sidebar_width_px - chrome).max(0.0);
 
         Self { top_px, left_px, width_px }
@@ -230,6 +204,7 @@ pub(crate) fn render_workspace_disclosure(
                 .enumerate()
                 .map(|(index, space)| render_disclosure_row(index, space, &active_id, cx)),
         )
+        .child(render_new_workspace_row(cx))
         .child(render_disclosure_footer(cx));
 
     fade_in("workspace-disclosure", 140, body).into_any_element()
@@ -338,24 +313,31 @@ fn render_workspace_glyph(emoji: String) -> AnyElement {
         .into_any_element()
 }
 
-fn render_add_workspace_button(cx: &mut Context<ElyShell>) -> AnyElement {
+fn render_new_workspace_row(cx: &mut Context<ElyShell>) -> AnyElement {
+    // The "+" now lives inside the disclosure as a peer row to the
+    // existing spaces, keeping a single source of "workspace identity"
+    // visible at rest. Click semantics mirror the old top-of-sidebar
+    // button so existing flows keep working.
     div()
         .id(SharedString::from("workspace-add"))
-        .size(px(PICKER_BUTTON_SIZE))
-        .rounded(px(9.0))
-        .bg(rgba(add_button_bg()))
-        .shadow(soft_shadow())
         .flex()
         .items_center()
-        .justify_center()
-        .text_color(rgb(colors::ink_3()))
+        .gap(px(8.0))
+        .px(px(8.0))
+        .py(px(6.0))
+        .rounded(px(8.0))
+        .text_size(px(13.0))
+        .font_weight(gpui::FontWeight(500.0))
+        .text_color(rgb(colors::ink_2()))
         .cursor_pointer()
-        .hover(|style| style.bg(rgba(picker_bg())).text_color(rgb(colors::ink())))
-        .active(|style| style.opacity(0.82))
+        .hover(|style| style.bg(rgba(disclosure_row_hover_bg())).text_color(rgb(colors::ink())))
+        .active(|style| style.opacity(0.85))
         .on_click(cx.listener(|shell, _, window, cx| {
+            shell.close_workspace_picker(cx);
             shell.open_internal_tab("ely://settings/spaces", window, cx);
         }))
-        .child(IconName::Plus)
+        .child(div().text_color(rgb(colors::ink_3())).child(IconName::Plus))
+        .child(div().flex_1().min_w_0().truncate().child("New workspace"))
         .into_any_element()
 }
 
@@ -364,9 +346,6 @@ fn picker_bg() -> u32 {
 }
 fn picker_bg_hover() -> u32 {
     colors::pick(0xffffffd9, 0x1f1d1bd9)
-}
-fn add_button_bg() -> u32 {
-    colors::pick(0xffffff66, 0x1f1d1b66)
 }
 fn disclosure_bg() -> u32 {
     colors::pick(0xffffffd9, 0x1f1d1bd9)
@@ -406,12 +385,13 @@ mod tests {
     fn anchor_lines_up_with_default_sidebar_picker_pill() {
         // Default sidebar (280 px) should land the popover at the
         // window-relative position the visual design was tuned for.
-        // After the title-row removal the picker is the only header
-        // row, so the anchor sits closer to the top edge.
+        // The picker pill now owns the row alone (tile + add-button
+        // folded into the disclosure), so the anchor sits flush to
+        // the traffic-light reserve with no extra tile offset.
         let anchor = WorkspaceDisclosureAnchor::solve(280.0);
-        assert_eq!(anchor.left_px, 142.0);
+        assert_eq!(anchor.left_px, 128.0);
         assert_eq!(anchor.top_px, 70.0);
-        assert_eq!(anchor.width_px, 104.0);
+        assert_eq!(anchor.width_px, 156.0);
     }
 
     #[test]
@@ -422,8 +402,8 @@ mod tests {
         let wide = WorkspaceDisclosureAnchor::solve(360.0);
         assert_eq!(narrow.left_px, wide.left_px);
         assert_eq!(narrow.top_px, wide.top_px);
-        assert_eq!(narrow.width_px, 64.0);
-        assert_eq!(wide.width_px, 184.0);
+        assert_eq!(narrow.width_px, 116.0);
+        assert_eq!(wide.width_px, 236.0);
     }
 
     #[test]
