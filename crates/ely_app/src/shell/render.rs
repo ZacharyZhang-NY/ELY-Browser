@@ -23,22 +23,31 @@ impl Render for ElyShell {
         // shade. `ThemeMode::System` defers to the OS preference via
         // GPUI's `Window::appearance`; explicit Light / Dark wins.
         let appearance = window.appearance();
-        let theme_mode = match &self.state {
-            ShellState::Ready(core) => {
-                core.snapshot().map(|s| s.appearance.theme_mode()).unwrap_or_default()
-            }
-            ShellState::StartupError(_) => ely_domain::ThemeMode::default(),
-        };
-        colors::set_mode(resolve_color_mode(theme_mode, appearance));
 
         match &self.state {
-            ShellState::Ready(core) => match (core.snapshot(), core.active_tab().cloned()) {
-                (Ok(snapshot), Ok(active_tab)) => {
-                    self.render_browser(snapshot, active_tab, window, cx)
+            ShellState::Ready(core) => match core.snapshot() {
+                Ok(snapshot) => {
+                    colors::set_mode(resolve_color_mode(
+                        snapshot.appearance.theme_mode(),
+                        appearance,
+                    ));
+                    match active_tab_from_snapshot(&snapshot) {
+                        Some(active_tab) => self.render_browser(snapshot, active_tab, window, cx),
+                        None => render_error("active tab missing from snapshot".to_string()),
+                    }
                 }
-                (Err(error), _) | (_, Err(error)) => render_error(error.to_string()),
+                Err(error) => {
+                    colors::set_mode(resolve_color_mode(
+                        ely_domain::ThemeMode::default(),
+                        appearance,
+                    ));
+                    render_error(error.to_string())
+                }
             },
-            ShellState::StartupError(message) => render_error(message.clone()),
+            ShellState::StartupError(message) => {
+                colors::set_mode(resolve_color_mode(ely_domain::ThemeMode::default(), appearance));
+                render_error(message.clone())
+            }
         }
     }
 }
@@ -59,6 +68,10 @@ fn resolve_color_mode(
             }
         },
     }
+}
+
+fn active_tab_from_snapshot(snapshot: &BrowserSnapshot) -> Option<BrowserTab> {
+    snapshot.tabs.iter().find(|tab| tab.id() == &snapshot.active_tab_id).cloned()
 }
 
 impl ElyShell {
