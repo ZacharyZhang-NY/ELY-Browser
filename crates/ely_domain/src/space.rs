@@ -80,6 +80,18 @@ impl Space {
         self.record_update();
     }
 
+    pub fn set_presentation(
+        &mut self,
+        name: impl Into<String>,
+        icon: impl Into<String>,
+        accent_hex: u32,
+    ) {
+        self.name = name.into();
+        self.icon = icon.into();
+        self.accent_hex = accent_hex;
+        self.record_update();
+    }
+
     #[must_use]
     pub fn archive_policy(&self) -> &ArchivePolicy {
         &self.archive_policy

@@ -3,7 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use ely_domain::{BookmarkEntry, BrowserTab, TabFlags};
+use ely_domain::{ArchivePolicy, BookmarkEntry, BrowserTab, Space, TabFlags};
 use ely_sync_client::{
     ApiClientConfig, BearerToken, BearerTokenStore, DeviceIdentity, SnapshotPayload,
     SnapshotUploadRequest, SyncApiClient, SyncClientError, SyncLatestSnapshotDocument,
@@ -12,10 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::state::BrowserCore;
 
-/// Per-profile sync scaffolding. Holds the persisted device identity
-/// and the bearer-token store; the API client is only constructed at
-/// the moment the user runs a manual sync (so a logged-out user
-/// doesn't pay TLS handshake cost on startup).
+/// Per-profile sync engine for device identity, bearer-token storage, and snapshot IO.
 #[derive(Debug)]
 pub struct SyncEngine {
     api_config: ApiClientConfig,
@@ -281,6 +278,8 @@ fn device_registration_idempotency_key(identity: &DeviceIdentity) -> String {
 #[derive(Serialize, Deserialize)]
 pub(crate) struct SyncSnapshotBody {
     pub(crate) schema_rev: u32,
+    #[serde(default)]
+    pub(crate) spaces: Vec<SpaceSyncRecord>,
     pub(crate) bookmarks: Vec<BookmarkSyncRecord>,
     #[serde(default)]
     pub(crate) tabs: Vec<TabSyncRecord>,
@@ -290,6 +289,11 @@ impl SyncSnapshotBody {
     fn from_core(core: &BrowserCore) -> Self {
         Self {
             schema_rev: SNAPSHOT_SCHEMA_REV,
+            spaces: core
+                .visible_spaces_for_sync()
+                .into_iter()
+                .map(SpaceSyncRecord::from_space)
+                .collect(),
             bookmarks: core
                 .visible_bookmarks_for_sync()
                 .into_iter()
@@ -311,9 +315,59 @@ impl SyncSnapshotBody {
     }
 }
 
-/// Wire representation of a bookmark. We keep this struct stable so a
-/// future deserializer can read snapshots written by earlier app
-/// versions; new fields must default-fill on read.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct SpaceSyncRecord {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) icon: String,
+    pub(crate) accent_hex: u32,
+    pub(crate) default_profile_id: String,
+    pub(crate) archive_policy: SpaceArchivePolicySyncRecord,
+    pub(crate) sidebar_width_px: u16,
+    pub(crate) sort_key: u64,
+}
+
+impl SpaceSyncRecord {
+    fn from_space(space: &Space) -> Self {
+        Self {
+            id: space.id().as_str().to_string(),
+            name: space.name().to_string(),
+            icon: space.icon().to_string(),
+            accent_hex: space.accent_hex(),
+            default_profile_id: space.default_profile_id().as_str().to_string(),
+            archive_policy: SpaceArchivePolicySyncRecord::from(space.archive_policy()),
+            sidebar_width_px: space.sidebar_width_px(),
+            sort_key: space.sort_key(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum SpaceArchivePolicySyncRecord {
+    Manual,
+    IdleDays { days: u16 },
+}
+
+impl From<&ArchivePolicy> for SpaceArchivePolicySyncRecord {
+    fn from(policy: &ArchivePolicy) -> Self {
+        match policy {
+            ArchivePolicy::Manual => Self::Manual,
+            ArchivePolicy::IdleDays(days) => Self::IdleDays { days: *days },
+        }
+    }
+}
+
+impl From<SpaceArchivePolicySyncRecord> for ArchivePolicy {
+    fn from(policy: SpaceArchivePolicySyncRecord) -> Self {
+        match policy {
+            SpaceArchivePolicySyncRecord::Manual => Self::Manual,
+            SpaceArchivePolicySyncRecord::IdleDays { days } => Self::IdleDays(days),
+        }
+    }
+}
+
+/// Wire representation of a bookmark with default-fill fields for older snapshots.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct BookmarkSyncRecord {
     pub(crate) id: String,

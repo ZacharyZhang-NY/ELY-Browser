@@ -2,8 +2,8 @@ use std::error::Error;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
 use ely_domain::{
-    SyncConnectionState, SyncObjectKind, SyncObjectPolicy, SyncObjectState, SyncObjectStatus,
-    UrlText,
+    ArchivePolicy, SyncConnectionState, SyncObjectKind, SyncObjectPolicy, SyncObjectState,
+    SyncObjectStatus, UrlText,
 };
 
 #[test]
@@ -152,6 +152,46 @@ fn sync_snapshot_imports_remote_tabs_into_active_scope() -> Result<(), Box<dyn E
     assert!(imported.flags().pinned);
     assert!(imported.flags().favorite);
     assert_eq!(imported.zoom_percent(), 125);
+    Ok(())
+}
+
+#[test]
+fn sync_snapshot_imports_remote_spaces_before_tabs() -> Result<(), Box<dyn Error>> {
+    let mut source = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let source_home_tab_id = source.snapshot()?.active_tab_id;
+    source.set_tab_sync_enabled(&source_home_tab_id, false)?;
+    let research_space_id = source.create_space("Research", "R", 0xf54e00)?;
+    source.set_active_space_archive_policy(ArchivePolicy::IdleDays(14))?;
+    source.set_space_sidebar_width(&research_space_id, 320)?;
+    let research_home_tab_id = source.snapshot()?.active_tab_id;
+    source.set_tab_sync_enabled(&research_home_tab_id, false)?;
+    source.open_tab(UrlText::parse("https://example.com/research")?);
+    let bytes = source.build_sync_snapshot_bytes()?;
+
+    let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let summary = target.apply_sync_snapshot_bytes(&bytes)?;
+    let snapshot = target.snapshot()?;
+    let research_space = snapshot
+        .spaces
+        .iter()
+        .find(|space| space.name() == "Research")
+        .ok_or("missing imported research space")?;
+    let research_space_id = research_space.id().clone();
+    assert_eq!(research_space.archive_policy(), &ArchivePolicy::IdleDays(14));
+    assert_eq!(research_space.sidebar_width_px(), 320);
+
+    target.select_space(&research_space_id)?;
+    let snapshot = target.snapshot()?;
+    let imported_tab = snapshot
+        .tabs
+        .iter()
+        .find(|tab| tab.url().as_str() == "https://example.com/research")
+        .ok_or("missing imported research tab")?;
+
+    assert_eq!(summary.imported(), 2);
+    assert_eq!(summary.updated(), 0);
+    assert_eq!(summary.skipped(), 0);
+    assert_eq!(imported_tab.space_id(), &research_space_id);
     Ok(())
 }
 

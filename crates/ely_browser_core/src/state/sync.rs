@@ -1,14 +1,15 @@
 use std::time::{Duration, UNIX_EPOCH};
 
 use ely_domain::{
-    BookmarkEntry, BookmarkId, BrowserTab, ProfileId, SpaceId, SyncConnectionState, SyncObjectKind,
-    SyncObjectPolicy, SyncObjectState, SyncObjectStatus, SyncStatus, TabId, UrlText,
+    ArchivePolicy, BookmarkEntry, BookmarkId, BrowserTab, ProfileId, Space, SpaceId,
+    SyncConnectionState, SyncObjectKind, SyncObjectPolicy, SyncObjectState, SyncObjectStatus,
+    SyncStatus, TabId, UrlText,
 };
 use ely_sync_client::SyncClientError;
 
 use super::BrowserCore;
 use crate::sync_engine::{
-    BookmarkSyncRecord, SyncSnapshotApplySummary, SyncSnapshotBody, TabSyncRecord,
+    BookmarkSyncRecord, SpaceSyncRecord, SyncSnapshotApplySummary, SyncSnapshotBody, TabSyncRecord,
 };
 
 #[derive(Clone, Debug)]
@@ -111,6 +112,9 @@ impl BrowserCore {
         body: SyncSnapshotBody,
     ) -> Result<SyncSnapshotApplySummary, SyncClientError> {
         let mut summary = SyncSnapshotApplySummary::default();
+        for record in body.spaces {
+            self.apply_space_sync_record(record, &mut summary)?;
+        }
         for record in body.tabs {
             self.apply_tab_sync_record(record, &mut summary)?;
         }
@@ -202,6 +206,91 @@ impl BrowserCore {
                         .any(|profile| profile.id() == tab.profile_id() && profile.allows_sync())
             })
             .collect()
+    }
+
+    pub(crate) fn visible_spaces_for_sync(&self) -> Vec<&Space> {
+        if self.sync_object_policy(SyncObjectKind::Spaces) == SyncObjectPolicy::Paused {
+            return Vec::new();
+        }
+        self.spaces.iter().collect()
+    }
+
+    fn apply_space_sync_record(
+        &mut self,
+        record: SpaceSyncRecord,
+        summary: &mut SyncSnapshotApplySummary,
+    ) -> Result<(), SyncClientError> {
+        let space_id = parse_space_id(&record.id)?;
+        let default_profile_id = self.sync_profile_id(&record.default_profile_id)?;
+        let archive_policy = ArchivePolicy::from(record.archive_policy.clone());
+        let existing_index =
+            self.spaces.iter().position(|space| space.id() == &space_id).or_else(|| {
+                self.spaces
+                    .iter()
+                    .position(|space| space.name().eq_ignore_ascii_case(record.name.trim()))
+            });
+
+        match existing_index {
+            Some(index) => {
+                if self.update_space_from_sync_record(
+                    index,
+                    record,
+                    default_profile_id,
+                    archive_policy,
+                ) {
+                    summary.record_updated();
+                }
+            }
+            None => {
+                let mut space = Space::new(
+                    record.name,
+                    record.icon,
+                    record.accent_hex,
+                    default_profile_id,
+                    record.sort_key,
+                );
+                space.set_archive_policy(archive_policy);
+                space.set_sidebar_width_px(record.sidebar_width_px);
+                self.spaces.push(space);
+                summary.record_imported();
+            }
+        }
+        Ok(())
+    }
+
+    fn update_space_from_sync_record(
+        &mut self,
+        index: usize,
+        record: SpaceSyncRecord,
+        default_profile_id: ProfileId,
+        archive_policy: ArchivePolicy,
+    ) -> bool {
+        let space = &mut self.spaces[index];
+        let mut changed = false;
+        if space.name() != record.name
+            || space.icon() != record.icon
+            || space.accent_hex() != record.accent_hex
+        {
+            space.set_presentation(record.name, record.icon, record.accent_hex);
+            changed = true;
+        }
+        if space.default_profile_id() != &default_profile_id {
+            space.set_default_profile_id(default_profile_id);
+            changed = true;
+        }
+        if space.archive_policy() != &archive_policy {
+            space.set_archive_policy(archive_policy);
+            changed = true;
+        }
+        if space.sidebar_width_px() != record.sidebar_width_px {
+            space.set_sidebar_width_px(record.sidebar_width_px);
+            changed = true;
+        }
+        if space.sort_key() != record.sort_key {
+            space.set_sort_key(record.sort_key);
+            changed = true;
+        }
+        changed
     }
 
     fn apply_tab_sync_record(
@@ -366,6 +455,10 @@ fn parse_bookmark_id(raw: &str) -> Result<BookmarkId, SyncClientError> {
 
 fn parse_tab_id(raw: &str) -> Result<TabId, SyncClientError> {
     TabId::parse(raw).map_err(snapshot_schema_error)
+}
+
+fn parse_space_id(raw: &str) -> Result<SpaceId, SyncClientError> {
+    SpaceId::parse(raw).map_err(snapshot_schema_error)
 }
 
 fn snapshot_schema_error(error: impl ToString) -> SyncClientError {
