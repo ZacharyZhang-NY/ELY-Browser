@@ -430,8 +430,6 @@ impl MacWindowState {
                 return;
             }
 
-            let titlebar_height = self.titlebar_height();
-
             unsafe {
                 let close_button: id = msg_send![
                     self.native_window,
@@ -449,9 +447,27 @@ impl MacWindowState {
                 let mut close_button_frame: CGRect = msg_send![close_button, frame];
                 let mut min_button_frame: CGRect = msg_send![min_button, frame];
                 let mut zoom_button_frame: CGRect = msg_send![zoom_button, frame];
+
+                // The buttons live inside the window's themeFrame, which
+                // is Y-up and shares its height with the window itself.
+                // Using `self.titlebar_height()` here returns 0 once
+                // `NSFullSizeContentViewWindowMask` is set (the content
+                // layout fills the whole window), so the previous
+                // `titlebar_height - y - button_h` math collapsed the
+                // origin to a large negative number — macOS still
+                // painted the buttons through a separate caching layer,
+                // but the hit-test rectangle followed the frame off
+                // screen and clicks stopped reaching close / minimize /
+                // zoom. Anchor against the button's real superview
+                // instead so the frame and the visual position stay in
+                // lockstep.
+                let close_super: id = msg_send![close_button, superview];
+                let super_frame: CGRect = msg_send![close_super, frame];
+                let super_height = px(super_frame.size.height as f32);
+
                 let mut origin = point(
                     traffic_light_position.x,
-                    titlebar_height
+                    super_height
                         - traffic_light_position.y
                         - px(close_button_frame.size.height as f32),
                 );
@@ -546,6 +562,16 @@ impl MacWindowState {
         get_scale_factor(self.native_window)
     }
 
+    /// Reports the height of the title bar's NSWindow chrome, i.e. the
+    /// vertical band that NSWindow steals from the window frame for
+    /// the system title and traffic-light controls. Returns 0 with
+    /// `NSFullSizeContentViewWindowMask` (the content layout fills the
+    /// whole frame), which is exactly why `move_traffic_light` cannot
+    /// rely on this value to position custom traffic lights — see the
+    /// long-form comment there. Kept for callers that want the legacy
+    /// "non-full-size" interpretation; do not reach for it from new
+    /// chrome-positioning code.
+    #[allow(dead_code)]
     fn titlebar_height(&self) -> Pixels {
         unsafe {
             let frame = NSWindow::frame(self.native_window);
