@@ -3,6 +3,7 @@ mod auth;
 mod bookmark_files;
 mod bookmarks;
 pub(crate) mod chrome;
+mod chrome_motion;
 mod command_actions;
 mod download_targets;
 mod downloads;
@@ -70,6 +71,7 @@ pub struct ElyShell {
     pub(crate) workspace_picker_open: bool,
     pub(crate) sidebar_hover_expanded: bool,
     pub(crate) command_selected_index: usize,
+    chrome_motion: chrome_motion::ChromeMotionState,
     /// Live state for sidebar-resize drag. While the user holds the
     /// resize handle: `(mouse_x_at_drag_start, sidebar_width_px_at_drag_start)`.
     /// `None` whenever no drag is in flight.
@@ -202,6 +204,7 @@ impl ElyShell {
             workspace_picker_open: false,
             sidebar_hover_expanded: false,
             command_selected_index: 0,
+            chrome_motion: chrome_motion::ChromeMotionState::default(),
             sidebar_resize_origin: None,
             download_action_error: None,
             download_clear_confirmation: false,
@@ -237,36 +240,6 @@ impl ElyShell {
         shell.probe_initial_sync_state();
         start_external_web_surface_timer(cx);
         shell
-    }
-
-    /// Inspect the on-disk bearer token (if any) and seed the
-    /// `SyncConnectionState` so the Sync settings page reads the right
-    /// label on first render — without any sync setting page open it
-    /// would otherwise stay `SignedOut` until the user clicks Sync now.
-    fn probe_initial_sync_state(&mut self) {
-        let ShellState::Ready(core) = &mut self.state else {
-            return;
-        };
-        let Some(snapshot) = core.snapshot().ok() else {
-            return;
-        };
-        let active_profile_id = snapshot.active_profile_id.clone();
-        let Some(profile_root) = crate::services::servo_profile_data::default_profile_data_root()
-        else {
-            return;
-        };
-        let profile_dir = crate::services::servo_profile_data::profile_data_dir(
-            &profile_root,
-            &active_profile_id,
-        );
-        let bearer_path = profile_dir.join("sync").join("bearer.token");
-        let bearer_present = std::fs::metadata(&bearer_path).map(|m| m.len() > 0).unwrap_or(false);
-        let state = if bearer_present {
-            ely_domain::SyncConnectionState::SignedIn
-        } else {
-            ely_domain::SyncConnectionState::SignedOut
-        };
-        core.set_sync_connection_state(state);
     }
 
     /// Drain any sync upload outcomes the off-thread worker pushed

@@ -5,15 +5,15 @@ use ely_domain::{
     HIDDEN_SIDEBAR_WIDTH_PX, Space,
 };
 use gpui::{
-    AnyElement, BoxShadow, Context, IntoElement, ParentElement, Styled, Window, div, hsla, point,
-    px, rgb, rgba,
+    AnyElement, BoxShadow, Context, IntoElement, ParentElement, SharedString, Styled, Window, div,
+    hsla, point, px, rgb, rgba,
 };
 use gpui_component::{
     IconName, Selectable, Sizable, StyledExt,
     button::{Button, ButtonVariants},
 };
 
-use super::chrome::panel_bg;
+use super::chrome::{animations::chrome_motion_feedback, panel_bg};
 use super::{ElyShell, ShellState, render::tab_profile_label};
 use crate::ToggleSidebar;
 
@@ -167,16 +167,21 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let space_id = space.id().clone();
-        Button::new(("compact-space", index))
+        let target = SharedString::from(format!("compact-space-{}", space.id().as_str()));
+        let press_id = self.chrome_motion_animation_id(target.as_str());
+        let selection_id = SharedString::from(format!("{}-selection", target.as_str()));
+        let button = Button::new(("compact-space", index))
             .ghost()
             .small()
             .selected(active)
             .label(space.icon().to_string())
             .tooltip(space.name().to_string())
             .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.trigger_chrome_motion(target.clone());
                 shell.select_space(&space_id, window, cx);
-            }))
-            .into_any_element()
+            }));
+
+        chrome_motion_feedback(press_id, selection_id, active, div().child(button))
     }
 
     fn render_compact_tab_button(
@@ -190,16 +195,18 @@ impl ElyShell {
     ) -> AnyElement {
         let tab_id = tab.id().clone();
         let tooltip = format!("{} - {}", tab.title(), tab_profile_label(tab, &snapshot.profiles));
-        Button::new(id)
-            .ghost()
-            .small()
-            .selected(active)
-            .icon(icon)
-            .tooltip(tooltip)
-            .on_click(cx.listener(move |shell, _, window, cx| {
-                shell.select_tab(&tab_id, window, cx);
-            }))
-            .into_any_element()
+        let target = SharedString::from(format!("compact-tab-{}", tab.id().as_str()));
+        let press_id = self.chrome_motion_animation_id(target.as_str());
+        let selection_id = SharedString::from(format!("{}-selection", target.as_str()));
+        let button =
+            Button::new(id).ghost().small().selected(active).icon(icon).tooltip(tooltip).on_click(
+                cx.listener(move |shell, _, window, cx| {
+                    shell.trigger_chrome_motion(target.clone());
+                    shell.select_tab(&tab_id, window, cx);
+                }),
+            );
+
+        chrome_motion_feedback(press_id, selection_id, active, div().child(button))
     }
 
     fn render_compact_archived_button(
@@ -210,15 +217,20 @@ impl ElyShell {
     ) -> AnyElement {
         let tab = archived_tab.tab();
         let tab_id = tab.id().clone();
-        Button::new(("compact-archive", index))
+        let target = SharedString::from(format!("compact-archive-{}", tab.id().as_str()));
+        let press_id = self.chrome_motion_animation_id(target.as_str());
+        let selection_id = SharedString::from(format!("{}-selection", target.as_str()));
+        let button = Button::new(("compact-archive", index))
             .ghost()
             .small()
             .icon(IconName::Undo2)
             .tooltip(tab.title().to_string())
             .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.trigger_chrome_motion(target.clone());
                 shell.restore_archived_tab(&tab_id, window, cx);
-            }))
-            .into_any_element()
+            }));
+
+        chrome_motion_feedback(press_id, selection_id, false, div().child(button))
     }
 }
 

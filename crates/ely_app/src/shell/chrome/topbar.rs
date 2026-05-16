@@ -9,6 +9,7 @@ use gpui::{
 use gpui_component::{IconName, input::Input};
 
 use crate::shell::ElyShell;
+use crate::shell::chrome::animations::chrome_motion_feedback;
 use crate::shell::sidebar::render_command_bar_identity;
 
 pub(crate) fn render_topbar(
@@ -30,6 +31,7 @@ pub(crate) fn render_topbar(
         .border_color(rgba(colors::divider()))
         .when(sidebar_collapsed, |el| el.child(render_command_bar_identity(snapshot, 56.0, true)))
         .child(render_nav_arrow(
+            shell,
             "nav-back",
             IconName::ArrowLeft,
             active_tab.can_navigate_back(),
@@ -37,6 +39,7 @@ pub(crate) fn render_topbar(
             |shell, window, cx| shell.navigate_active_tab_back(window, cx),
         ))
         .child(render_nav_arrow(
+            shell,
             "nav-forward",
             IconName::ArrowRight,
             active_tab.can_navigate_forward(),
@@ -44,19 +47,24 @@ pub(crate) fn render_topbar(
             |shell, window, cx| shell.navigate_active_tab_forward(window, cx),
         ))
         .child(render_omnibar(shell, active_tab, window, cx))
-        .child(render_topbar_action("share-url", IconName::Copy, cx, |shell, window, cx| {
+        .child(render_topbar_action(shell, "share-url", IconName::Copy, cx, |shell, window, cx| {
             shell.copy_active_tab_url(window, cx)
         }))
-        .child(render_topbar_action("open-downloads", IconName::Folder, cx, |shell, window, cx| {
-            shell.open_downloads(window, cx)
-        }))
         .child(render_topbar_action(
+            shell,
+            "open-downloads",
+            IconName::Folder,
+            cx,
+            |shell, window, cx| shell.open_downloads(window, cx),
+        ))
+        .child(render_topbar_action(
+            shell,
             "toggle-theme",
             theme_mode_icon(snapshot.appearance.theme_mode()),
             cx,
             |shell, _window, cx| shell.cycle_theme_mode(cx),
         ))
-        .child(render_topbar_action("open-menu", IconName::Menu, cx, |shell, window, cx| {
+        .child(render_topbar_action(shell, "open-menu", IconName::Menu, cx, |shell, window, cx| {
             shell.open_internal_tab("ely://settings", window, cx)
         }))
         .into_any_element()
@@ -74,6 +82,8 @@ fn render_omnibar(
     let command_focused = shell.command_input.read(cx).focus_handle(cx).is_focused(window);
     let show_styled = !command_focused && active_url != "ely://new-tab";
     let secure = active_url.starts_with("https://") || active_url.starts_with("ely://");
+    let omnibar_motion_target = "omnibar-content";
+    let omnibar_press_id = shell.chrome_motion_animation_id(omnibar_motion_target);
 
     div()
         .flex_1()
@@ -86,14 +96,18 @@ fn render_omnibar(
         .items_center()
         .gap(px(10.0))
         .child(render_lock_or_search(secure, show_styled))
-        .child(
+        .child(chrome_motion_feedback(
+            omnibar_press_id,
+            "omnibar-content-selection",
+            false,
             div()
                 .id(SharedString::from("omnibar-content"))
                 .flex_1()
                 .min_w_0()
                 .cursor_pointer()
                 .hover(|style| style.opacity(0.92))
-                .on_click(cx.listener(|shell, _, window, cx| {
+                .on_click(cx.listener(move |shell, _, window, cx| {
+                    shell.trigger_chrome_motion(omnibar_motion_target);
                     shell.focus_address_bar(window, cx);
                 }))
                 .child(if show_styled {
@@ -101,8 +115,9 @@ fn render_omnibar(
                 } else {
                     render_omnibar_input(shell)
                 }),
-        )
+        ))
         .child(render_omnibar_chip(
+            shell,
             "omnibar-filters",
             IconName::Settings2,
             false,
@@ -110,6 +125,7 @@ fn render_omnibar(
             |shell, window, cx| shell.focus_address_bar(window, cx),
         ))
         .child(render_omnibar_chip(
+            shell,
             "omnibar-favorite",
             favorite_icon,
             favorite_active,
@@ -149,6 +165,7 @@ fn render_lock_or_search(secure: bool, show_styled: bool) -> AnyElement {
 }
 
 fn render_omnibar_chip<F>(
+    shell: &ElyShell,
     id: &'static str,
     icon: IconName,
     active: bool,
@@ -159,7 +176,8 @@ where
     F: Fn(&mut ElyShell, &mut gpui::Window, &mut Context<ElyShell>) + 'static,
 {
     let color = if active { colors::accent() } else { colors::ink_4() };
-    div()
+    let press_id = shell.chrome_motion_animation_id(id);
+    let element = div()
         .id(SharedString::from(id))
         .size(px(22.0))
         .rounded(px(6.0))
@@ -170,12 +188,17 @@ where
         .cursor_pointer()
         .hover(|style| style.bg(rgba(chip_hover_bg())).text_color(rgb(colors::ink())))
         .active(|style| style.opacity(0.7))
-        .on_click(cx.listener(move |shell, _, window, cx| handler(shell, window, cx)))
-        .child(icon)
-        .into_any_element()
+        .on_click(cx.listener(move |shell, _, window, cx| {
+            shell.trigger_chrome_motion(id);
+            handler(shell, window, cx);
+        }))
+        .child(icon);
+
+    chrome_motion_feedback(press_id, SharedString::from(format!("{id}-selection")), active, element)
 }
 
 fn render_nav_arrow<F>(
+    shell: &ElyShell,
     id: &'static str,
     icon: IconName,
     enabled: bool,
@@ -186,7 +209,8 @@ where
     F: Fn(&mut ElyShell, &mut gpui::Window, &mut Context<ElyShell>) + 'static,
 {
     let color = if enabled { colors::ink_3() } else { colors::ink_5() };
-    div()
+    let press_id = if enabled { shell.chrome_motion_animation_id(id) } else { None };
+    let element = div()
         .id(SharedString::from(id))
         .size(px(30.0))
         .rounded(px(8.0))
@@ -198,13 +222,18 @@ where
             el.cursor_pointer()
                 .hover(|style| style.bg(rgba(omnibar_bg())).text_color(rgb(colors::ink())))
                 .active(|style| style.opacity(0.82))
-                .on_click(cx.listener(move |shell, _, window, cx| handler(shell, window, cx)))
+                .on_click(cx.listener(move |shell, _, window, cx| {
+                    shell.trigger_chrome_motion(id);
+                    handler(shell, window, cx);
+                }))
         })
-        .child(icon)
-        .into_any_element()
+        .child(icon);
+
+    chrome_motion_feedback(press_id, SharedString::from(format!("{id}-selection")), false, element)
 }
 
 fn render_topbar_action<F>(
+    shell: &ElyShell,
     id: &'static str,
     icon: IconName,
     cx: &mut Context<ElyShell>,
@@ -213,7 +242,8 @@ fn render_topbar_action<F>(
 where
     F: Fn(&mut ElyShell, &mut gpui::Window, &mut Context<ElyShell>) + 'static,
 {
-    div()
+    let press_id = shell.chrome_motion_animation_id(id);
+    let element = div()
         .id(SharedString::from(id))
         .size(px(30.0))
         .rounded(px(8.0))
@@ -224,9 +254,13 @@ where
         .text_color(rgb(colors::ink_3()))
         .hover(|style| style.bg(rgba(omnibar_bg())).text_color(rgb(colors::ink())))
         .active(|style| style.opacity(0.82))
-        .on_click(cx.listener(move |shell, _, window, cx| handler(shell, window, cx)))
-        .child(icon)
-        .into_any_element()
+        .on_click(cx.listener(move |shell, _, window, cx| {
+            shell.trigger_chrome_motion(id);
+            handler(shell, window, cx);
+        }))
+        .child(icon);
+
+    chrome_motion_feedback(press_id, SharedString::from(format!("{id}-selection")), false, element)
 }
 
 fn omnibar_bg() -> u32 {

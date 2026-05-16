@@ -9,6 +9,7 @@ use gpui::{
 use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
 
 use crate::shell::ElyShell;
+use crate::shell::chrome::animations::chrome_motion_feedback;
 use crate::shell::chrome::sidebar_chrome::{
     ROW_CLOSE_SIZE, active_nav_bg, active_nav_bg_hover, close_hover_bg, highlight_border,
     hover_nav_bg, panel_bg, panel_shadow, profile_initial, render_sidebar_resize_handle,
@@ -105,8 +106,10 @@ impl ElyShell {
         // so it uses hover_nav_bg() directly. Keeping it lighter than the
         // active nav card means the eye still finds the active selection
         // first when both are visible.
-        div()
-            .id(SharedString::from("nav-settings"))
+        let target = "nav-settings";
+        let press_id = self.chrome_motion_animation_id(target);
+        let element = div()
+            .id(SharedString::from(target))
             .rounded(px(spacing::RADIUS_NAV))
             .px(px(10.0))
             .py(px(7.0))
@@ -118,12 +121,14 @@ impl ElyShell {
             .cursor_pointer()
             .hover(|style| style.bg(rgba(hover_nav_bg())).text_color(rgb(colors::ink())))
             .active(|style| style.opacity(0.82))
-            .on_click(cx.listener(|shell, _, window, cx| {
+            .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.trigger_chrome_motion(target);
                 shell.open_internal_tab("ely://settings", window, cx);
             }))
             .child(div().text_color(rgb(colors::ink_3())).child(IconName::Settings))
-            .child("Settings")
-            .into_any_element()
+            .child("Settings");
+
+        chrome_motion_feedback(press_id, "nav-settings-selection", false, element)
     }
 
     fn render_profile_row(
@@ -133,8 +138,10 @@ impl ElyShell {
     ) -> AnyElement {
         let profile_name = snapshot.active_profile_name.clone();
 
-        div()
-            .id(SharedString::from("nav-profile"))
+        let target = "nav-profile";
+        let press_id = self.chrome_motion_animation_id(target);
+        let element = div()
+            .id(SharedString::from(target))
             .rounded(px(spacing::RADIUS_NAV))
             .px(px(10.0))
             .py(px(6.0))
@@ -144,7 +151,8 @@ impl ElyShell {
             .cursor_pointer()
             .hover(|style| style.bg(rgba(hover_nav_bg())))
             .active(|style| style.opacity(0.82))
-            .on_click(cx.listener(|shell, _, window, cx| {
+            .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.trigger_chrome_motion(target);
                 shell.open_internal_tab("ely://settings/profiles", window, cx);
             }))
             .child(
@@ -183,8 +191,9 @@ impl ElyShell {
                 // promises "this opens a page" instead of the down
                 // chevron that promises "this opens a menu inline".
                 div().text_color(rgb(colors::ink_4())).child(IconName::ChevronRight),
-            )
-            .into_any_element()
+            );
+
+        chrome_motion_feedback(press_id, "nav-profile-selection", false, element)
     }
 
     fn render_home_anchor_row(
@@ -195,9 +204,11 @@ impl ElyShell {
         let active_tab = snapshot.tabs.iter().find(|tab| tab.id() == &snapshot.active_tab_id);
         let active = active_tab.map(|tab| tab.url().as_str() == "ely://new-tab").unwrap_or(false);
         let palette = nav_row_palette(active);
+        let target = "nav-home";
+        let press_id = self.chrome_motion_animation_id(target);
 
-        div()
-            .id(SharedString::from("nav-home"))
+        let element = div()
+            .id(SharedString::from(target))
             .rounded(px(spacing::RADIUS_NAV))
             .px(px(10.0))
             .py(px(7.0))
@@ -209,7 +220,8 @@ impl ElyShell {
             .active(|style| style.opacity(0.82))
             .bg(rgba(palette.bg))
             .when(active, |el| el.shadow(soft_shadow()))
-            .on_click(cx.listener(|shell, _, window, cx| {
+            .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.trigger_chrome_motion(target);
                 shell.open_internal_tab("ely://new-tab", window, cx);
             }))
             .child(div().text_color(rgb(colors::ink_3())).child(IconName::Frame))
@@ -220,8 +232,9 @@ impl ElyShell {
                     .font_weight(FontWeight(500.0))
                     .text_color(rgb(palette.text))
                     .child("Home"),
-            )
-            .into_any_element()
+            );
+
+        chrome_motion_feedback(press_id, "nav-home-selection", active, element)
     }
 
     fn render_launcher_row(
@@ -237,11 +250,17 @@ impl ElyShell {
         let title = tab.title().to_string();
         let initial = title.chars().next().unwrap_or('?').to_string();
         let unread = tab.unread_count();
+        let row_id = format!("nav-{}", tab.id().as_str());
+        let row_motion_target = SharedString::from(row_id.clone());
+        let row_press_id = self.chrome_motion_animation_id(&row_id);
+        let row_selection_id = SharedString::from(format!("{row_id}-selection"));
         let group_name = SharedString::from(format!("launcher-{}", tab.id().as_str()));
         let close_id = SharedString::from(format!("launcher-close-{}", tab.id().as_str()));
+        let close_motion_target = close_id.clone();
+        let close_press_id = self.chrome_motion_animation_id(close_id.as_str());
 
-        div()
-            .id(SharedString::from(format!("nav-{}", tab.id().as_str())))
+        let element = div()
+            .id(SharedString::from(row_id))
             .group(group_name.clone())
             .rounded(px(spacing::RADIUS_NAV))
             .px(px(10.0))
@@ -255,6 +274,7 @@ impl ElyShell {
             .bg(rgba(palette.bg))
             .when(active, |el| el.shadow(soft_shadow()))
             .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.trigger_chrome_motion(row_motion_target.clone());
                 shell.select_tab(&tab_id, window, cx);
             }))
             .child(render_glyph_for(host.as_deref(), &initial, 18.0))
@@ -273,17 +293,22 @@ impl ElyShell {
             .child(render_row_close_button(
                 close_id,
                 group_name,
+                close_press_id,
                 cx.listener(move |shell, _, window, cx| {
+                    shell.trigger_chrome_motion(close_motion_target.clone());
                     shell.close_tab_by_id(&close_tab_id, window, cx);
                     cx.stop_propagation();
                 }),
-            ))
-            .into_any_element()
+            ));
+
+        chrome_motion_feedback(row_press_id, row_selection_id, active, element)
     }
 
     fn render_new_tab_row(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        div()
-            .id(SharedString::from("nav-new-tab"))
+        let target = "nav-new-tab";
+        let press_id = self.chrome_motion_animation_id(target);
+        let element = div()
+            .id(SharedString::from(target))
             .rounded(px(spacing::RADIUS_NAV))
             .px(px(10.0))
             .py(px(7.0))
@@ -295,12 +320,14 @@ impl ElyShell {
             .cursor_pointer()
             .hover(|style| style.bg(rgba(hover_nav_bg())).text_color(rgb(colors::ink())))
             .active(|style| style.opacity(0.82))
-            .on_click(cx.listener(|shell, _, window, cx| {
+            .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.trigger_chrome_motion(target);
                 shell.open_new_tab(window, cx);
             }))
             .child(div().text_color(rgb(colors::ink_4())).child(IconName::Plus))
-            .child("New Tab")
-            .into_any_element()
+            .child("New Tab");
+
+        chrome_motion_feedback(press_id, "nav-new-tab-selection", false, element)
     }
 
     pub(crate) fn render_tab_row(
@@ -316,9 +343,15 @@ impl ElyShell {
         let close_id = SharedString::from(format!("tab-close-{}", tab.id().as_str()));
         let title = tab.title().to_string();
         let initial = title.chars().next().unwrap_or('?').to_string();
+        let row_id = tab.id().as_str().to_string();
+        let row_motion_target = SharedString::from(row_id.clone());
+        let row_press_id = self.chrome_motion_animation_id(&row_id);
+        let row_selection_id = SharedString::from(format!("tab-selection-{row_id}"));
+        let close_motion_target = close_id.clone();
+        let close_press_id = self.chrome_motion_animation_id(close_id.as_str());
 
-        div()
-            .id(SharedString::from(tab.id().as_str().to_string()))
+        let element = div()
+            .id(SharedString::from(row_id))
             .group(group_name.clone())
             .rounded(px(spacing::RADIUS_NAV))
             .px(px(10.0))
@@ -332,6 +365,7 @@ impl ElyShell {
             .bg(rgba(palette.bg))
             .when(active, |el| el.shadow(soft_shadow()))
             .on_click(cx.listener(move |shell, _, window, cx| {
+                shell.trigger_chrome_motion(row_motion_target.clone());
                 shell.select_tab(&tab_id, window, cx);
             }))
             .child(render_tab_favicon(tab, &initial))
@@ -361,12 +395,15 @@ impl ElyShell {
             .child(render_row_close_button(
                 close_id,
                 group_name,
+                close_press_id,
                 cx.listener(move |shell, _, window, cx| {
+                    shell.trigger_chrome_motion(close_motion_target.clone());
                     shell.close_tab_by_id(&close_tab_id, window, cx);
                     cx.stop_propagation();
                 }),
-            ))
-            .into_any_element()
+            ));
+
+        chrome_motion_feedback(row_press_id, row_selection_id, active, element)
     }
 }
 
@@ -401,12 +438,14 @@ struct NavRowPalette {
 fn render_row_close_button<F>(
     close_id: SharedString,
     group_name: SharedString,
+    press_id: Option<SharedString>,
     on_click: F,
-) -> impl IntoElement
+) -> AnyElement
 where
     F: Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
 {
-    div()
+    let selection_id = SharedString::from(format!("{}-selection", close_id.as_str()));
+    let element = div()
         .id(close_id)
         .size(px(ROW_CLOSE_SIZE))
         .rounded_full()
@@ -420,7 +459,9 @@ where
         .hover(|style| style.bg(rgba(close_hover_bg())).text_color(rgb(colors::ink())))
         .cursor_pointer()
         .on_click(on_click)
-        .child(IconName::Close)
+        .child(IconName::Close);
+
+    chrome_motion_feedback(press_id, selection_id, false, element)
 }
 
 /// Resolve the favicon glyph for a tab row. Prefers the favicon URL

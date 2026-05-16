@@ -1,6 +1,11 @@
 use std::time::Duration;
 
-use gpui::{Animation, AnimationExt, ElementId, IntoElement, Styled};
+use gpui::{Animation, AnimationExt, AnyElement, ElementId, IntoElement, SharedString, Styled};
+
+pub(crate) const MOTION_PRESS_MS: u64 = 120;
+pub(crate) const MOTION_SELECTION_MS: u64 = 160;
+#[cfg(test)]
+pub(crate) const MOTION_FRAME_BUDGET_120HZ: Duration = Duration::from_micros(8_333);
 
 /// One-second blink that toggles between fully visible and invisible at the
 /// half-period mark, matching the design's
@@ -45,9 +50,42 @@ where
     element.with_animation(id, animation, |element, t| element.opacity(ease_out_cubic(t)))
 }
 
+pub(crate) fn chrome_motion_feedback<E>(
+    press_id: Option<SharedString>,
+    selection_id: impl Into<ElementId>,
+    selected: bool,
+    element: E,
+) -> AnyElement
+where
+    E: IntoElement + Styled + 'static,
+{
+    if let Some(press_id) = press_id {
+        return element
+            .with_animation(
+                press_id,
+                Animation::new(Duration::from_millis(MOTION_PRESS_MS)).with_easing(ease_out_cubic),
+                |element, t| element.opacity(0.84 + 0.16 * t),
+            )
+            .into_any_element();
+    }
+
+    if selected {
+        return element
+            .with_animation(
+                selection_id,
+                Animation::new(Duration::from_millis(MOTION_SELECTION_MS))
+                    .with_easing(ease_out_cubic),
+                |element, t| element.opacity(0.88 + 0.12 * t),
+            )
+            .into_any_element();
+    }
+
+    element.into_any_element()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::ease_out_cubic;
+    use super::{MOTION_FRAME_BUDGET_120HZ, MOTION_PRESS_MS, MOTION_SELECTION_MS, ease_out_cubic};
 
     #[test]
     fn ease_out_cubic_anchors_at_endpoints() {
@@ -63,5 +101,12 @@ mod tests {
         let second_half = 1.0 - first_half;
         assert!(first_half > 0.5, "ease-out spends more time near 1.0 ({first_half})");
         assert!(second_half < 0.5);
+    }
+
+    #[test]
+    fn shell_motion_tokens_fit_120hz_frame_budget() {
+        assert_eq!(MOTION_FRAME_BUDGET_120HZ.as_micros(), 8_333);
+        assert!(MOTION_PRESS_MS <= 15 * MOTION_FRAME_BUDGET_120HZ.as_millis() as u64);
+        assert!(MOTION_SELECTION_MS <= 20 * MOTION_FRAME_BUDGET_120HZ.as_millis() as u64);
     }
 }
