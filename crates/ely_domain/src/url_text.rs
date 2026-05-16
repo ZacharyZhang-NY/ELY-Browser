@@ -72,18 +72,29 @@ impl UrlText {
         url.host_str().map(str::to_string).unwrap_or_else(|| self.value.clone())
     }
 
-    /// Resolve the canonical `/favicon.ico` URL for an HTTP(S) page.
-    /// Returns `None` for non-web schemes (`ely://`, `file://`, etc.)
-    /// or URLs missing an authority — those tabs render the URL-derived
-    /// glyph instead of a fetched icon.
+    /// Resolve a favicon URL for an HTTP(S) page. Returns `None` for
+    /// non-web schemes (`ely://`, `file://`, …) and for URLs missing
+    /// an authority — those tabs render the URL-derived glyph instead.
+    ///
+    /// We deliberately do NOT point the renderer at the site's own
+    /// `/favicon.ico` because a) many sites only ship that icon as
+    /// a multi-image `image/x-icon` blob the renderer's PNG/WebP
+    /// decoder can't read, and b) the URL frequently 404s or
+    /// redirects across origins (notion.com → notion.so etc.) which
+    /// the GPUI image fetcher surfaces as a noisy `ERROR` log on
+    /// every tab. Instead we route through Google's `s2/favicons`
+    /// endpoint: it normalises the response to PNG, resolves
+    /// redirects on Google's side, and serves a `_/` globe glyph
+    /// when the target site has no favicon at all. Same URL shape
+    /// every browser dev-tools panel already shows for "favicon".
     #[must_use]
     pub fn favicon_url(&self) -> Option<String> {
         let url = Url::parse(&self.value).ok()?;
         if !matches!(url.scheme(), "http" | "https") {
             return None;
         }
-        url.host_str()?;
-        url.join("/favicon.ico").ok().map(|favicon| favicon.to_string())
+        let host = url.host_str()?;
+        Some(format!("https://www.google.com/s2/favicons?domain={host}&sz=64"))
     }
 }
 
