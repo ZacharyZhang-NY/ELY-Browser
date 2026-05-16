@@ -7,7 +7,7 @@ import { jsonResponse } from "./responses.js";
 const APP_NAME = "ELY Browser";
 const AUTH_BASE_PATH = "/api/auth";
 const AUTH_CALLBACK_URL = "ely://auth/callback";
-const EMAIL_OTP_FROM_ADDRESS = "auth@elydora.com";
+const EMAIL_OTP_FROM_ADDRESS = "browser@elydora.com";
 const EMAIL_OTP_EXPIRES_IN_SECONDS = 300;
 
 type BetterAuthDatabase = NonNullable<BetterAuthOptions["database"]>;

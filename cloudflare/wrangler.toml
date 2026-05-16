@@ -19,7 +19,7 @@ id = "ba8f06dd5cc34bc4bc0f8a305c570cfb"
 
 [[send_email]]
 name = "SEND_EMAIL"
-allowed_sender_addresses = ["auth@elydora.com"]
+allowed_sender_addresses = ["browser@elydora.com"]
 
 [vars]
 ELY_ENVIRONMENT = "production"

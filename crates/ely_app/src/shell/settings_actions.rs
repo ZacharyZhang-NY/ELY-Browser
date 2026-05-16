@@ -246,7 +246,7 @@ impl ElyShell {
     /// (the UI thread never blocks on the network), and the worker
     /// reports back through the shell's `sync_inbox` so the sync page
     /// reflects the new state without waiting for a manual refresh.
-    pub(super) fn trigger_cloud_sync_upload(&mut self, _cx: &mut Context<Self>) {
+    pub(crate) fn trigger_cloud_sync_upload(&mut self) {
         let ShellState::Ready(core) = &self.state else {
             return;
         };
@@ -318,7 +318,11 @@ fn run_sync_upload(
     bytes: Vec<u8>,
     inbox: std::sync::mpsc::Sender<super::SyncStateUpdate>,
 ) {
-    let mut engine = match SyncEngine::for_profile_dir(&profile_dir, device_name, sync_platform()) {
+    let mut engine = match SyncEngine::for_profile_dir(
+        &profile_dir,
+        device_name,
+        super::sync_platform_label(),
+    ) {
         Ok(engine) => engine,
         Err(error) => {
             let message = error.to_string();
@@ -362,17 +366,5 @@ fn run_sync_upload(
             };
             let _ = inbox.send(update);
         }
-    }
-}
-
-const fn sync_platform() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "macos"
-    } else if cfg!(target_os = "windows") {
-        "windows"
-    } else if cfg!(target_os = "linux") {
-        "linux"
-    } else {
-        "other"
     }
 }

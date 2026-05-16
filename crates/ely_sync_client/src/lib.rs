@@ -27,11 +27,13 @@
 pub mod auth;
 pub mod client;
 pub mod device;
+pub mod email_otp;
 pub mod error;
 pub mod snapshot;
 
 pub use auth::{BearerToken, BearerTokenStore};
 pub use client::{ApiClientConfig, SyncApiClient};
 pub use device::{DeviceIdentity, DeviceListResponse, DeviceRecord, DeviceRegistration};
+pub use email_otp::{send_email_otp, verify_email_otp};
 pub use error::SyncClientError;
 pub use snapshot::{SnapshotDownload, SnapshotPayload, SnapshotUploadRequest};

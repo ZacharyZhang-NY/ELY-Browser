@@ -15,6 +15,7 @@ ed25519-dalek.workspace = true
 ely_browser_core = { path = "../ely_browser_core" }
 ely_design_system = { path = "../ely_design_system" }
 ely_domain = { path = "../ely_domain" }
+ely_sync_client = { path = "../ely_sync_client" }
 gpui.workspace = true
 gpui-component.workspace = true
 gpui-component-assets.workspace = true

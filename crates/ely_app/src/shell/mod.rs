@@ -1,4 +1,5 @@
 mod archive_labels;
+mod auth;
 mod bookmark_files;
 mod bookmarks;
 pub(crate) mod chrome;
@@ -105,21 +106,41 @@ pub struct ElyShell {
     /// `tick_external_web_surfaces`.
     sync_inbox_rx: std::sync::mpsc::Receiver<SyncStateUpdate>,
     pub(crate) sync_inbox_tx: std::sync::mpsc::Sender<SyncStateUpdate>,
+    pub(crate) auth_email_input: Entity<InputState>,
+    pub(crate) auth_otp_input: Entity<InputState>,
+    pub(crate) auth_flow_phase: auth::AuthFlowPhase,
     _command_subscription: Subscription,
     _translucency_subscription: Subscription,
 }
 
-/// Messages the off-thread sync worker pushes back to the shell so the
-/// `SyncConnectionState` on `BrowserCore` reflects the live engine
-/// without the UI thread ever touching the network. `SignedIn` is the
-/// initial-probe state set synchronously on shell startup and does not
-/// flow through this channel.
+/// Messages the off-thread sync workers push back to the shell so
+/// `SyncConnectionState` on `BrowserCore` and the in-flight auth
+/// form reflect live state without the UI thread ever touching the
+/// network. `SignedIn` is the initial-probe state set synchronously
+/// on shell startup and does not flow through this channel.
 #[derive(Clone, Debug)]
 pub(crate) enum SyncStateUpdate {
     SignedOut,
     AwaitingDeviceApproval,
     SyncReady { last_synced_at_secs: u64 },
     SyncError { message: String },
+    AuthOtpSent { email: String },
+    AuthSucceeded { email: String },
+    AuthError { email: String, message: String },
+}
+
+/// Stable label for the current OS used by the device registration
+/// payload. Defined once here so every off-thread call site agrees.
+pub(crate) const fn sync_platform_label() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "macos"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "linux") {
+        "linux"
+    } else {
+        "other"
+    }
 }
 
 impl ElyShell {
@@ -140,6 +161,9 @@ impl ElyShell {
             cx.new(|cx| InputState::new(window, cx).placeholder("Search ELY or type a command…"));
         let plugin_search_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Search plugins…"));
+        let auth_email_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("you@elydora.com"));
+        let auth_otp_input = cx.new(|cx| InputState::new(window, cx).placeholder("123456"));
         let translucency_slider = cx.new(|_cx| {
             SliderState::new()
                 .min(0.0)
@@ -237,6 +261,9 @@ impl ElyShell {
             web_surfaces: WebSurfaceStore::new(),
             sync_inbox_rx,
             sync_inbox_tx,
+            auth_email_input,
+            auth_otp_input,
+            auth_flow_phase: auth::AuthFlowPhase::Idle,
             _command_subscription: command_subscription,
             _translucency_subscription: translucency_subscription,
         };
@@ -280,29 +307,50 @@ impl ElyShell {
     /// state on `BrowserCore`. Returns `true` when at least one
     /// update was applied so callers can `cx.notify()` accordingly.
     pub(super) fn drain_sync_updates(&mut self) -> bool {
-        let ShellState::Ready(core) = &mut self.state else {
-            return false;
-        };
-        let mut latest: Option<ely_domain::SyncConnectionState> = None;
+        let mut latest_connection: Option<ely_domain::SyncConnectionState> = None;
+        let mut auth_changed = false;
+        let mut trigger_initial_sync = false;
         while let Ok(update) = self.sync_inbox_rx.try_recv() {
-            latest = Some(match update {
-                SyncStateUpdate::SignedOut => ely_domain::SyncConnectionState::SignedOut,
+            match update {
+                SyncStateUpdate::SignedOut => {
+                    latest_connection = Some(ely_domain::SyncConnectionState::SignedOut);
+                }
                 SyncStateUpdate::AwaitingDeviceApproval => {
-                    ely_domain::SyncConnectionState::AwaitingDeviceApproval
+                    latest_connection =
+                        Some(ely_domain::SyncConnectionState::AwaitingDeviceApproval);
                 }
                 SyncStateUpdate::SyncReady { last_synced_at_secs } => {
-                    ely_domain::SyncConnectionState::SyncReady { last_synced_at_secs }
+                    latest_connection =
+                        Some(ely_domain::SyncConnectionState::SyncReady { last_synced_at_secs });
                 }
                 SyncStateUpdate::SyncError { message } => {
-                    ely_domain::SyncConnectionState::SyncError { message }
+                    latest_connection =
+                        Some(ely_domain::SyncConnectionState::SyncError { message });
                 }
-            });
+                SyncStateUpdate::AuthOtpSent { email } => {
+                    self.auth_flow_phase = auth::AuthFlowPhase::AwaitingOtp { email };
+                    auth_changed = true;
+                }
+                SyncStateUpdate::AuthSucceeded { email } => {
+                    self.auth_flow_phase = auth::AuthFlowPhase::Idle;
+                    latest_connection = Some(ely_domain::SyncConnectionState::SignedIn);
+                    trigger_initial_sync = true;
+                    tracing::info!(target: "ely::sync", email = %email, "email OTP sign-in succeeded");
+                    auth_changed = true;
+                }
+                SyncStateUpdate::AuthError { email, message } => {
+                    self.auth_flow_phase = auth::AuthFlowPhase::Error { email, message };
+                    auth_changed = true;
+                }
+            }
         }
-        if let Some(state) = latest {
+        if let (Some(state), ShellState::Ready(core)) = (latest_connection, &mut self.state) {
             core.set_sync_connection_state(state);
-            return true;
         }
-        false
+        if trigger_initial_sync {
+            self.trigger_cloud_sync_upload();
+        }
+        auth_changed || trigger_initial_sync
     }
 
     fn focus_command_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {

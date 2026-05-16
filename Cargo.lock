@@ -2250,6 +2250,7 @@ dependencies = [
  "ely_browser_core",
  "ely_design_system",
  "ely_domain",
+ "ely_sync_client",
  "gpui",
  "gpui-component",
  "gpui-component-assets",
