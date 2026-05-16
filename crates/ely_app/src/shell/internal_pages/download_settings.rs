@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use directories::UserDirs;
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::{DownloadDestination, DownloadPolicy};
+use ely_domain::DownloadPolicy;
 use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, px, rgb};
 use gpui_component::{
     IconName, Selectable, Sizable, StyledExt,
@@ -11,7 +11,7 @@ use gpui_component::{
     scroll::ScrollableElement,
 };
 
-use super::{ElyShell, download_labels::download_policy_label, render_canvas_surface};
+use super::{ElyShell, render_canvas_surface};
 
 #[derive(Clone)]
 struct DownloadPolicyOption {
@@ -36,115 +36,29 @@ impl ElyShell {
                 .flex()
                 .flex_col()
                 .gap_5()
-                .child(render_download_settings_header(snapshot))
-                .child(render_download_policy_summary(snapshot, cx))
+                .child(render_download_settings_header(cx))
                 .child(render_download_policy_rows(&snapshot.active_download_policy, &options, cx)),
         )
     }
 }
 
-fn render_download_settings_header(snapshot: &BrowserSnapshot) -> AnyElement {
+fn render_download_settings_header(cx: &mut Context<ElyShell>) -> AnyElement {
     div()
-        .flex()
-        .items_end()
-        .justify_between()
-        .gap_4()
-        .child(
-            div()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Downloads"))
-                .child(
-                    div()
-                        .text_sm()
-                        .truncate()
-                        .text_color(rgb(colors::muted()))
-                        .child(format!("Profile: {}", snapshot.active_profile_name)),
-                ),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .text_xs()
-                .font_semibold()
-                .text_color(rgb(colors::muted()))
-                .child(IconName::Folder)
-                .child(download_destination_short_label(&snapshot.active_download_policy)),
-        )
-        .into_any_element()
-}
-
-fn render_download_policy_summary(
-    snapshot: &BrowserSnapshot,
-    cx: &mut Context<ElyShell>,
-) -> AnyElement {
-    div()
-        .rounded_md()
-        .border_1()
-        .border_color(rgb(colors::hairline()))
-        .bg(rgb(colors::canvas_soft()))
-        .px_4()
-        .py_3()
         .flex()
         .items_center()
         .justify_between()
         .gap_4()
+        .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Downloads"))
         .child(
-            div()
-                .min_w_0()
-                .flex()
-                .items_center()
-                .gap_3()
-                .child(div().text_color(rgb(colors::primary())).child(IconName::Folder))
-                .child(
-                    div()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .child(
-                            div()
-                                .text_sm()
-                                .font_semibold()
-                                .text_color(rgb(colors::ink()))
-                                .child("Download location"),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .truncate()
-                                .text_color(rgb(colors::muted()))
-                                .child(download_policy_label(&snapshot.active_download_policy)),
-                        ),
-                ),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(
-                    div()
-                        .text_xs()
-                        .font_semibold()
-                        .text_color(rgb(colors::muted()))
-                        .child(format!("{} entries", snapshot.download_entries.len())),
-                )
-                .child(
-                    Button::new("reset-download-settings")
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::Undo2)
-                        .label("Reset")
-                        .tooltip("Restore Download Defaults")
-                        .on_click(cx.listener(|shell, _, _, cx| {
-                            shell.reset_active_profile_download_settings(cx);
-                        })),
-                ),
+            Button::new("reset-download-settings")
+                .ghost()
+                .xsmall()
+                .icon(IconName::Undo2)
+                .label("Reset")
+                .tooltip("Restore Download Defaults")
+                .on_click(cx.listener(|shell, _, _, cx| {
+                    shell.reset_active_profile_download_settings(cx);
+                })),
         )
         .into_any_element()
 }
@@ -259,13 +173,6 @@ fn download_policy_options() -> Vec<DownloadPolicyOption> {
 
 fn user_downloads_dir() -> Option<PathBuf> {
     UserDirs::new().and_then(|dirs| dirs.download_dir().map(Path::to_path_buf))
-}
-
-fn download_destination_short_label(policy: &DownloadPolicy) -> &'static str {
-    match policy.destination() {
-        DownloadDestination::AskEveryTime => "Ask Every Time",
-        DownloadDestination::FixedDirectory(_) => "Fixed Folder",
-    }
 }
 
 fn download_policy_icon(option: &DownloadPolicyOption, selected: bool) -> IconName {

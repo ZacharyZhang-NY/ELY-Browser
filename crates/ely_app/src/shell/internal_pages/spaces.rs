@@ -28,39 +28,24 @@ impl ElyShell {
                 .flex()
                 .flex_col()
                 .gap_5()
-                .child(render_spaces_header(snapshot, cx))
+                .child(render_spaces_header(cx))
                 .child(render_space_file_message(
                     self.space_file_notice.as_deref(),
                     self.space_file_error.as_deref(),
                 ))
-                .child(render_active_space_summary(snapshot))
                 .child(render_spaces_list(snapshot, self.pending_space_trash.as_ref(), cx))
                 .child(render_trashed_spaces_list(snapshot, cx)),
         )
     }
 }
 
-fn render_spaces_header(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
+fn render_spaces_header(cx: &mut Context<ElyShell>) -> AnyElement {
     div()
         .flex()
-        .items_end()
+        .items_center()
         .justify_between()
         .gap_4()
-        .child(
-            div()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Spaces"))
-                .child(
-                    div()
-                        .text_sm()
-                        .truncate()
-                        .text_color(rgb(colors::muted()))
-                        .child(format!("Profile: {}", snapshot.active_profile_name)),
-                ),
-        )
+        .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Spaces"))
         .child(
             div()
                 .flex()
@@ -95,17 +80,6 @@ fn render_spaces_header(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) 
                                 cx,
                             );
                         })),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .text_xs()
-                        .font_semibold()
-                        .text_color(rgb(colors::muted()))
-                        .child(IconName::GalleryVerticalEnd)
-                        .child(format!("{} spaces", snapshot.spaces.len())),
                 ),
         )
         .into_any_element()
@@ -133,60 +107,6 @@ fn render_space_file_message(notice: Option<&str>, error: Option<&str>) -> AnyEl
         .text_color(rgb(color))
         .child(icon)
         .child(message.to_string())
-        .into_any_element()
-}
-
-fn render_active_space_summary(snapshot: &BrowserSnapshot) -> AnyElement {
-    let Some(active_space) =
-        snapshot.spaces.iter().find(|space| space.id() == &snapshot.active_space_id)
-    else {
-        return div()
-            .rounded_md()
-            .border_1()
-            .border_color(rgb(colors::error()))
-            .px_4()
-            .py_3()
-            .text_sm()
-            .text_color(rgb(colors::error()))
-            .child("Active Space is unavailable.")
-            .into_any_element();
-    };
-
-    div()
-        .rounded_md()
-        .border_1()
-        .border_color(rgb(colors::hairline()))
-        .bg(rgb(colors::canvas_soft()))
-        .px_4()
-        .py_3()
-        .flex()
-        .items_center()
-        .justify_between()
-        .gap_4()
-        .child(
-            div().min_w_0().flex().items_center().gap_3().child(space_avatar(active_space)).child(
-                div()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_semibold()
-                            .text_color(rgb(colors::ink()))
-                            .child(active_space.name().to_string()),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .truncate()
-                            .text_color(rgb(colors::muted()))
-                            .child(space_detail_label(active_space, &snapshot.profiles)),
-                    ),
-            ),
-        )
-        .child(div().text_xs().font_semibold().text_color(rgb(colors::success())).child("Active"))
         .into_any_element()
 }
 

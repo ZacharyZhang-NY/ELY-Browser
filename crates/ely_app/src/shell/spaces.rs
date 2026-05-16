@@ -1,5 +1,6 @@
 use std::time::SystemTime;
 
+use ely_browser_core::BrowserCore;
 use ely_domain::{ProfileId, SpaceId};
 use gpui::{Context, Window};
 
@@ -121,6 +122,22 @@ impl ElyShell {
         self.close_workspace_picker(cx);
     }
 
+    pub(crate) fn create_workspace_from_picker(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let ShellState::Ready(core) = &mut self.state {
+            let name = next_workspace_name(core);
+            if core.create_space(name.clone(), workspace_icon(&name), 0xf54e00).is_ok() {
+                self.workspace_picker_open = false;
+                self.sync_address_input(window, cx);
+                self.schedule_cloud_sync_upload(cx);
+                cx.notify();
+            }
+        }
+    }
+
     pub(super) fn on_select_previous_space(
         &mut self,
         _: &SelectPreviousSpace,
@@ -134,4 +151,22 @@ impl ElyShell {
             cx.notify();
         }
     }
+}
+
+fn next_workspace_name(core: &BrowserCore) -> String {
+    let Ok(snapshot) = core.snapshot() else {
+        return "Workspace 1".to_string();
+    };
+    let mut index = snapshot.spaces.len() + 1;
+    loop {
+        let name = format!("Workspace {index}");
+        if snapshot.spaces.iter().all(|space| space.name() != name) {
+            return name;
+        }
+        index += 1;
+    }
+}
+
+fn workspace_icon(name: &str) -> String {
+    name.chars().next().map_or_else(|| "W".to_string(), |char| char.to_string())
 }

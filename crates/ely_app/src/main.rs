@@ -11,7 +11,6 @@ use std::{
     time::Duration,
 };
 
-use ely_design_system::spacing;
 use ely_domain::UrlText;
 use gpui::{
     AnyWindowHandle, App, AppContext, Application, Bounds, Entity, Focusable, Menu, MenuItem,
@@ -19,6 +18,7 @@ use gpui::{
 };
 use gpui_component_assets::Assets;
 use shell::ElyShell;
+use shell::chrome::{TRAFFIC_LIGHT_ORIGIN_X, TRAFFIC_LIGHT_ORIGIN_Y};
 use shortcuts::bind_shortcuts;
 
 use crate::brand::{DEEP_LINK_PREFIX, PRODUCT_NAME};
@@ -51,11 +51,6 @@ actions!(
         ZoomOut,
     ]
 );
-
-// Measured from the window's top-left to the close button origin.
-// Places the macOS traffic lights inside the calm part of the corner curve.
-const TRAFFIC_LIGHT_ORIGIN_X: f32 = spacing::SHELL_INSET + 34.0;
-const TRAFFIC_LIGHT_ORIGIN_Y: f32 = spacing::SHELL_INSET + 22.0;
 
 fn main() {
     init_tracing();

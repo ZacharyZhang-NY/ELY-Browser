@@ -23,117 +23,29 @@ impl ElyShell {
                 .flex()
                 .flex_col()
                 .gap_5()
-                .child(render_general_header(snapshot))
-                .child(render_general_summary(snapshot.new_tab_destination, cx))
+                .child(render_general_header(cx))
                 .child(render_new_tab_destinations(snapshot.new_tab_destination, cx)),
         )
     }
 }
 
-fn render_general_header(snapshot: &BrowserSnapshot) -> AnyElement {
+fn render_general_header(cx: &mut Context<ElyShell>) -> AnyElement {
     div()
-        .flex()
-        .items_end()
-        .justify_between()
-        .gap_4()
-        .child(
-            div()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("General"))
-                .child(
-                    div()
-                        .text_sm()
-                        .truncate()
-                        .text_color(rgb(colors::muted()))
-                        .child(format!("Profile: {}", snapshot.active_profile_name)),
-                ),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .text_xs()
-                .font_semibold()
-                .text_color(rgb(colors::muted()))
-                .child(IconName::Settings2)
-                .child(snapshot.new_tab_destination.name()),
-        )
-        .into_any_element()
-}
-
-fn render_general_summary(
-    destination: NewTabDestination,
-    cx: &mut Context<ElyShell>,
-) -> AnyElement {
-    div()
-        .rounded_md()
-        .border_1()
-        .border_color(rgb(colors::hairline()))
-        .bg(rgb(colors::canvas_soft()))
-        .px_4()
-        .py_3()
         .flex()
         .items_center()
         .justify_between()
         .gap_4()
+        .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("General"))
         .child(
-            div()
-                .min_w_0()
-                .flex()
-                .items_center()
-                .gap_3()
-                .child(
-                    div().text_color(rgb(colors::primary())).child(destination_icon(destination)),
-                )
-                .child(
-                    div()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .child(
-                            div()
-                                .text_sm()
-                                .font_semibold()
-                                .text_color(rgb(colors::ink()))
-                                .child(format!("New Tab opens {}", destination.name())),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .truncate()
-                                .text_color(rgb(colors::muted()))
-                                .child(destination.detail()),
-                        ),
-                ),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(
-                    div()
-                        .text_xs()
-                        .font_semibold()
-                        .text_color(rgb(colors::success()))
-                        .child("Saved locally"),
-                )
-                .child(
-                    Button::new("reset-general-settings")
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::Undo2)
-                        .label("Reset")
-                        .tooltip("Restore General Defaults")
-                        .on_click(cx.listener(|shell, _, _, cx| {
-                            shell.reset_general_settings(cx);
-                        })),
-                ),
+            Button::new("reset-general-settings")
+                .ghost()
+                .xsmall()
+                .icon(IconName::Undo2)
+                .label("Reset")
+                .tooltip("Restore General Defaults")
+                .on_click(cx.listener(|shell, _, _, cx| {
+                    shell.reset_general_settings(cx);
+                })),
         )
         .into_any_element()
 }

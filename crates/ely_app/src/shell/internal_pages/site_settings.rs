@@ -1,9 +1,6 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::{
-    SiteOrigin, SitePermissionAuditAction, SitePermissionAuditEvent, SitePermissionDecision,
-    SitePermissionFeature,
-};
+use ely_domain::{SiteOrigin, SitePermissionDecision, SitePermissionFeature};
 use gpui::prelude::FluentBuilder;
 use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, px, rgb};
 use gpui_component::{
@@ -40,18 +37,16 @@ impl ElyShell {
                 .flex()
                 .flex_col()
                 .gap_5()
-                .child(render_site_settings_header(snapshot, &origin))
-                .child(render_site_permission_summary(snapshot, &origin))
-                .child(render_site_permission_rows(snapshot, &origin, cx))
-                .child(render_site_permission_audit(snapshot, &origin)),
+                .child(render_site_settings_header(&origin))
+                .child(render_site_permission_rows(snapshot, &origin, cx)),
         )
     }
 }
 
-fn render_site_settings_header(snapshot: &BrowserSnapshot, origin: &SiteOrigin) -> AnyElement {
+fn render_site_settings_header(origin: &SiteOrigin) -> AnyElement {
     div()
         .flex()
-        .items_end()
+        .items_center()
         .justify_between()
         .gap_4()
         .child(
@@ -63,54 +58,13 @@ fn render_site_settings_header(snapshot: &BrowserSnapshot, origin: &SiteOrigin) 
                 .child(
                     div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Site Settings"),
                 )
-                .child(div().text_sm().truncate().text_color(rgb(colors::muted())).child(format!(
-                    "{} / {}",
-                    snapshot.active_profile_name,
-                    origin.as_str()
-                ))),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .text_xs()
-                .font_semibold()
-                .text_color(rgb(colors::muted()))
-                .child(IconName::Globe)
-                .child("Profile scoped"),
-        )
-        .into_any_element()
-}
-
-fn render_site_permission_summary(snapshot: &BrowserSnapshot, origin: &SiteOrigin) -> AnyElement {
-    div()
-        .border_t_1()
-        .border_b_1()
-        .border_color(rgb(colors::hairline()))
-        .py_3()
-        .flex()
-        .items_center()
-        .justify_between()
-        .gap_4()
-        .children([
-            site_metric("Configured", configured_count(snapshot, origin)),
-            site_metric("Allowed", allowed_count(snapshot, origin)),
-            site_metric("Denied", denied_count(snapshot, origin)),
-            site_metric("Audit Events", audit_count(snapshot, origin)),
-        ])
-        .into_any_element()
-}
-
-fn site_metric(label: &'static str, value: usize) -> AnyElement {
-    div()
-        .min_w_0()
-        .flex()
-        .flex_col()
-        .gap_1()
-        .child(div().text_xs().text_color(rgb(colors::muted())).child(label))
-        .child(
-            div().text_sm().font_semibold().text_color(rgb(colors::ink())).child(value.to_string()),
+                .child(
+                    div()
+                        .text_sm()
+                        .truncate()
+                        .text_color(rgb(colors::muted()))
+                        .child(origin.as_str().to_string()),
+                ),
         )
         .into_any_element()
 }
@@ -280,47 +234,6 @@ fn permission_reset_button(
         .into_any_element()
 }
 
-fn render_site_permission_audit(snapshot: &BrowserSnapshot, origin: &SiteOrigin) -> AnyElement {
-    let events = snapshot
-        .site_permission_audit_events
-        .iter()
-        .filter(|event| event.origin() == origin)
-        .rev()
-        .take(4)
-        .collect::<Vec<_>>();
-
-    if events.is_empty() {
-        return div().into_any_element();
-    }
-
-    div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(div().text_xs().font_semibold().text_color(rgb(colors::muted())).child("Audit"))
-        .children(events.into_iter().map(render_audit_row))
-        .into_any_element()
-}
-
-fn render_audit_row(event: &SitePermissionAuditEvent) -> AnyElement {
-    div()
-        .py_2()
-        .border_b_1()
-        .border_color(rgb(colors::hairline()))
-        .flex()
-        .items_center()
-        .justify_between()
-        .gap_3()
-        .text_xs()
-        .child(div().min_w_0().truncate().text_color(rgb(colors::body())).child(format!(
-            "{} - {}",
-            event.feature().label(),
-            audit_action_label(event.action())
-        )))
-        .child(div().text_color(rgb(colors::muted())).child("Local audit"))
-        .into_any_element()
-}
-
 fn render_invalid_site_route() -> AnyElement {
     div()
         .size_full()
@@ -357,38 +270,6 @@ fn decision_for(
         .map(|entry| entry.decision())
 }
 
-fn configured_count(snapshot: &BrowserSnapshot, origin: &SiteOrigin) -> usize {
-    snapshot.site_permissions.iter().filter(|entry| entry.origin() == origin).count()
-}
-
-fn allowed_count(snapshot: &BrowserSnapshot, origin: &SiteOrigin) -> usize {
-    snapshot
-        .site_permissions
-        .iter()
-        .filter(|entry| entry.origin() == origin)
-        .filter(|entry| {
-            matches!(
-                entry.decision(),
-                SitePermissionDecision::AllowOnce | SitePermissionDecision::AllowAlways
-            )
-        })
-        .count()
-}
-
-fn denied_count(snapshot: &BrowserSnapshot, origin: &SiteOrigin) -> usize {
-    snapshot
-        .site_permissions
-        .iter()
-        .filter(|entry| {
-            entry.origin() == origin && entry.decision() == SitePermissionDecision::DenyAlways
-        })
-        .count()
-}
-
-fn audit_count(snapshot: &BrowserSnapshot, origin: &SiteOrigin) -> usize {
-    snapshot.site_permission_audit_events.iter().filter(|event| event.origin() == origin).count()
-}
-
 fn decision_color(decision: SitePermissionDecision) -> u32 {
     match decision {
         SitePermissionDecision::AllowOnce | SitePermissionDecision::AllowAlways => {
@@ -405,13 +286,6 @@ fn permission_icon(decision: Option<SitePermissionDecision>) -> IconName {
         }
         Some(SitePermissionDecision::DenyAlways) => IconName::CircleX,
         None => IconName::Info,
-    }
-}
-
-fn audit_action_label(action: &SitePermissionAuditAction) -> &'static str {
-    match action {
-        SitePermissionAuditAction::Set(decision) => decision.label(),
-        SitePermissionAuditAction::Revoked => "Reset",
     }
 }
 

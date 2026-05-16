@@ -15,89 +15,19 @@ impl ElyShell {
                 .flex()
                 .flex_col()
                 .gap_5()
-                .child(render_advanced_header(snapshot))
-                .child(render_advanced_summary(snapshot))
+                .child(render_advanced_header())
                 .child(render_advanced_rows(snapshot)),
         )
     }
 }
 
-fn render_advanced_header(snapshot: &BrowserSnapshot) -> AnyElement {
+fn render_advanced_header() -> AnyElement {
     div()
-        .flex()
-        .items_end()
-        .justify_between()
-        .gap_4()
-        .child(
-            div()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Advanced"))
-                .child(
-                    div()
-                        .text_sm()
-                        .truncate()
-                        .text_color(rgb(colors::muted()))
-                        .child(format!("Space: {}", snapshot.active_space_name)),
-                ),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .text_xs()
-                .font_semibold()
-                .text_color(rgb(colors::muted()))
-                .child(IconName::Inspector)
-                .child(format!("{} policies", advanced_policy_count())),
-        )
-        .into_any_element()
-}
-
-fn render_advanced_summary(snapshot: &BrowserSnapshot) -> AnyElement {
-    div()
-        .rounded_md()
-        .border_1()
-        .border_color(rgb(colors::hairline()))
-        .bg(rgb(colors::canvas_soft()))
-        .px_4()
-        .py_3()
         .flex()
         .items_center()
         .justify_between()
         .gap_4()
-        .child(
-            div()
-                .min_w_0()
-                .flex()
-                .items_center()
-                .gap_3()
-                .child(div().text_color(rgb(colors::primary())).child(IconName::Inspector))
-                .child(
-                    div()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .child(
-                            div()
-                                .text_sm()
-                                .font_semibold()
-                                .text_color(rgb(colors::ink()))
-                                .child("Local Runtime"),
-                        )
-                        .child(div().text_xs().truncate().text_color(rgb(colors::muted())).child(
-                            format!(
-                                "{} space / {} profile",
-                                snapshot.active_space_name, snapshot.active_profile_name
-                            ),
-                        )),
-                ),
-        )
-        .child(div().text_xs().font_semibold().text_color(rgb(colors::success())).child("Local"))
+        .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Advanced"))
         .into_any_element()
 }
 
@@ -131,24 +61,6 @@ fn render_advanced_rows(snapshot: &BrowserSnapshot) -> AnyElement {
             "Download Policy",
             download_policy_label(&snapshot.active_download_policy),
             "Active Profile download destination policy",
-        ))
-        .child(advanced_row(
-            IconName::Globe,
-            "Sync Objects",
-            snapshot.sync_status.objects().len().to_string(),
-            "Object scopes tracked by local Sync state",
-        ))
-        .child(advanced_row(
-            IconName::Asterisk,
-            "Installed Plugins",
-            snapshot.installed_plugins.len().to_string(),
-            "Verified plugins registered in Browser Core",
-        ))
-        .child(advanced_row(
-            IconName::Inspector,
-            "Audit Events",
-            audit_event_count(snapshot).to_string(),
-            "Plugin and site permission audit records",
         ))
         .into_any_element()
 }
@@ -235,12 +147,4 @@ fn archive_policy_label(policy: &ArchivePolicy) -> &'static str {
         ArchivePolicy::IdleDays(30) => "30 days",
         ArchivePolicy::IdleDays(_) => "Custom",
     }
-}
-
-fn audit_event_count(snapshot: &BrowserSnapshot) -> usize {
-    snapshot.plugin_audit_events.len() + snapshot.site_permission_audit_events.len()
-}
-
-fn advanced_policy_count() -> usize {
-    8
 }

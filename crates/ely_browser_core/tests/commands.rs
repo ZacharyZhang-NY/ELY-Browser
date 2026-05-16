@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{CommandIntent, CommandScope, ProfileKind, UrlText};
+use ely_domain::{CommandIntent, CommandScope, ProfileKind, SearchEngine, UrlText};
 
 #[test]
 fn favorite_command_toggles_active_tab() -> Result<(), Box<dyn Error>> {
@@ -183,6 +183,22 @@ fn open_sync_status_command_opens_sync_status_page() -> Result<(), Box<dyn Error
     assert_eq!(intent, Some(CommandIntent::Command("open-sync-status".to_string())));
     assert_eq!(active_tab.title(), "Sync Status");
     assert_eq!(active_tab.url().as_str(), "ely://sync/status");
+    assert_eq!(core.snapshot()?.command_query, "");
+    Ok(())
+}
+
+#[test]
+fn plain_text_command_searches_with_selected_engine() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+
+    core.set_search_engine(SearchEngine::Google);
+    core.set_command_query("servo browser");
+    let intent = core.submit_command()?;
+    let active_tab = core.active_tab()?;
+
+    assert_eq!(intent, Some(CommandIntent::Search("servo browser".to_string())));
+    assert_eq!(active_tab.url().host().as_deref(), Some("www.google.com"));
+    assert_eq!(active_tab.url().as_str(), "https://www.google.com/search?q=servo+browser");
     assert_eq!(core.snapshot()?.command_query, "");
     Ok(())
 }

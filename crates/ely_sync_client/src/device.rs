@@ -114,6 +114,7 @@ fn hex_string(bytes: &[u8]) -> String {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct DeviceRegistration<'a> {
+    pub version: u32,
     pub device_id: &'a str,
     pub public_key: &'a str,
     pub device_name: &'a str,
@@ -162,6 +163,25 @@ mod tests {
 
         let again = DeviceIdentity::load_or_create(&path, "ignored", "ignored")?;
         assert_eq!(identity, again);
+        Ok(())
+    }
+
+    #[test]
+    fn device_registration_serializes_worker_schema_version() -> Result<(), SyncClientError> {
+        let registration = DeviceRegistration {
+            version: 1,
+            device_id: "device-01",
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            device_name: "MacBook Pro",
+            platform: "macOS",
+            idempotency_key: "device-register-device-01",
+        };
+
+        let value = serde_json::to_value(registration).map_err(|error| {
+            SyncClientError::TokenStorage(format!("device registration serialize: {error}"))
+        })?;
+
+        assert_eq!(value["version"], 1);
         Ok(())
     }
 }

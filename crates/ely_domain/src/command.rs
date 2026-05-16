@@ -40,7 +40,11 @@ impl CommandIntent {
             return non_empty_text(query).map(|query| Self::ScopedSearch { scope, query });
         }
 
-        UrlText::from_address_text(trimmed).map(Self::Navigate)
+        match UrlText::from_address_text(trimmed) {
+            Ok(url) => Ok(Self::Navigate(url)),
+            Err(DomainError::InvalidUrl { .. }) => Ok(Self::Search(trimmed.to_string())),
+            Err(error) => Err(error),
+        }
     }
 }
 
@@ -67,4 +71,26 @@ fn non_empty_text(value: &str) -> Result<String, DomainError> {
         return Err(DomainError::InvalidCommand);
     }
     Ok(trimmed.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CommandIntent;
+
+    #[test]
+    fn plain_text_parses_as_search() {
+        assert_eq!(
+            CommandIntent::parse("servo browser").unwrap(),
+            CommandIntent::Search("servo browser".to_string())
+        );
+    }
+
+    #[test]
+    fn domain_like_text_parses_as_navigation() {
+        let intent = CommandIntent::parse("example.com").unwrap();
+        let CommandIntent::Navigate(url) = intent else {
+            panic!("expected navigation intent");
+        };
+        assert_eq!(url.as_str(), "https://example.com");
+    }
 }

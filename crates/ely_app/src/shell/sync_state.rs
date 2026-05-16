@@ -1,6 +1,6 @@
 use std::{path::Path, time::Duration};
 
-use ely_domain::SyncConnectionState;
+use ely_domain::{ProfileKind, SyncConnectionState};
 use gpui::{Context, Timer};
 
 use super::{ElyShell, ShellState, auth};
@@ -109,15 +109,21 @@ impl ElyShell {
         let Some(snapshot) = core.snapshot().ok() else {
             return false;
         };
-        let active_profile_id = snapshot.active_profile_id.clone();
         let Some(profile_root) = crate::services::servo_profile_data::default_profile_data_root()
         else {
             return false;
         };
-        let profile_dir = crate::services::servo_profile_data::profile_data_dir(
+        let profile_dir = crate::services::servo_profile_data::sync_profile_data_dir(
             &profile_root,
-            &active_profile_id,
+            &snapshot.active_profile_id,
+            &snapshot.active_profile_name,
+            &snapshot.active_profile_kind,
         );
+        if snapshot.active_profile_name == "Default"
+            && matches!(snapshot.active_profile_kind, ProfileKind::Standard)
+        {
+            migrate_legacy_default_sync_dir(&profile_root, &profile_dir);
+        }
         let bearer_path = profile_dir.join("sync").join("bearer.token");
         let bearer_present = bearer_token_file_present(&bearer_path);
         let state = if bearer_present {
@@ -223,6 +229,50 @@ impl ElyShell {
 
 fn bearer_token_file_present(path: &Path) -> bool {
     std::fs::metadata(path).map(|metadata| metadata.len() > 0).unwrap_or(false)
+}
+
+fn migrate_legacy_default_sync_dir(profile_root: &Path, stable_profile_dir: &Path) {
+    let stable_sync_dir = stable_profile_dir.join("sync");
+    if stable_sync_dir.exists() {
+        return;
+    }
+
+    let Ok(entries) = std::fs::read_dir(profile_root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let candidate = entry.path().join("servo").join("sync");
+        if candidate == stable_sync_dir {
+            continue;
+        }
+        if !bearer_token_file_present(&candidate.join("bearer.token")) {
+            continue;
+        }
+        if let Err(error) = copy_dir_recursive(&candidate, &stable_sync_dir) {
+            tracing::warn!(
+                target: "ely::sync",
+                error = %error,
+                source = %candidate.display(),
+                "legacy sync profile migration failed",
+            );
+        }
+        return;
+    }
+}
+
+fn copy_dir_recursive(source: &Path, destination: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(destination)?;
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let destination_path = destination.join(entry.file_name());
+        if file_type.is_dir() {
+            copy_dir_recursive(&entry.path(), &destination_path)?;
+        } else if file_type.is_file() {
+            std::fs::copy(entry.path(), destination_path)?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -28,14 +28,14 @@ impl WebSurfaceMetadataTracker {
 
 /// One page's worth of metadata observed in a Ready frame. The
 /// controller applies these to the `BrowserTab` after the frame has
-/// been swapped into the surface state. Title and favicon are
+/// been swapped into the surface state. Title and favicon key are
 /// independent: navigation often settles the URL first, then Servo
 /// emits a title change a frame or two later.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct WebSurfacePageMetadata {
     pub(super) tab_id: TabId,
     pub(super) title: Option<String>,
-    pub(super) favicon_url: Option<String>,
+    pub(super) favicon_key: Option<String>,
 }
 
 impl WebSurfacePageMetadata {
@@ -44,14 +44,14 @@ impl WebSurfacePageMetadata {
         title: Option<String>,
         loaded_url: Option<String>,
     ) -> Option<Self> {
-        let favicon_url = loaded_url
+        let favicon_key = loaded_url
             .as_deref()
             .and_then(|loaded| ely_domain::UrlText::parse(loaded).ok())
-            .and_then(|url| url.favicon_url());
-        if title.is_none() && favicon_url.is_none() {
+            .and_then(|url| url.favicon_key());
+        if title.is_none() && favicon_key.is_none() {
             return None;
         }
-        Some(Self { tab_id: tab_id.clone(), title, favicon_url })
+        Some(Self { tab_id: tab_id.clone(), title, favicon_key })
     }
 }
 

@@ -74,6 +74,7 @@ impl SyncApiClient {
         idempotency_key: &str,
     ) -> Result<DeviceRecordDocument, SyncClientError> {
         let registration = DeviceRegistration {
+            version: 1,
             device_id: &identity.device_id,
             public_key: &identity.public_key,
             device_name: &identity.device_name,

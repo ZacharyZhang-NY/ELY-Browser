@@ -462,7 +462,7 @@ impl BrowserCore {
     fn refresh_tab_url_metadata(&mut self, tab_index: usize) -> Result<(), CoreError> {
         let title = tab_title(self.tabs[tab_index].url());
         self.tabs[tab_index].set_title(title);
-        if let Some(favicon_key) = self.tabs[tab_index].url().favicon_url() {
+        if let Some(favicon_key) = self.tabs[tab_index].url().favicon_key() {
             self.tabs[tab_index].set_favicon_key(favicon_key)?;
         } else {
             self.tabs[tab_index].clear_favicon_key();

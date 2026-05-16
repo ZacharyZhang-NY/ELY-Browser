@@ -10,10 +10,11 @@
 use std::sync::mpsc::Sender;
 
 use ely_browser_core::SyncEngine;
+use ely_domain::{ProfileId, ProfileKind};
 use ely_sync_client::{ApiClientConfig, BearerToken, send_email_otp, verify_email_otp};
 use gpui::Context;
 
-use crate::services::servo_profile_data::{default_profile_data_root, profile_data_dir};
+use crate::services::servo_profile_data::{default_profile_data_root, sync_profile_data_dir};
 
 use super::sync_state::{SyncStateUpdate, sync_platform_label};
 use super::{ElyShell, ShellState};
@@ -44,16 +45,6 @@ pub(crate) enum AuthFlowPhase {
 }
 
 impl AuthFlowPhase {
-    pub(crate) fn email(&self) -> Option<&str> {
-        match self {
-            Self::Idle => None,
-            Self::SendingCode { email }
-            | Self::AwaitingOtp { email }
-            | Self::Verifying { email }
-            | Self::Error { email, .. } => Some(email),
-        }
-    }
-
     pub(crate) fn error_message(&self) -> Option<&str> {
         match self {
             Self::Error { message, .. } => Some(message.as_str()),
@@ -102,8 +93,8 @@ impl ElyShell {
                 AuthFlowPhase::Error { email, message: "Enter the code you received.".to_string() };
             return;
         }
-        let active_profile_id = match active_profile_id_for(&self.state) {
-            Some(id) => id,
+        let active_profile = match active_profile_sync_context_for(&self.state) {
+            Some(profile) => profile,
             None => return,
         };
         let Some(profile_root) = default_profile_data_root() else {
@@ -113,7 +104,12 @@ impl ElyShell {
             };
             return;
         };
-        let profile_dir = profile_data_dir(&profile_root, &active_profile_id);
+        let profile_dir = sync_profile_data_dir(
+            &profile_root,
+            &active_profile.id,
+            &active_profile.name,
+            &active_profile.kind,
+        );
         self.auth_flow_phase = AuthFlowPhase::Verifying { email: email.clone() };
         let tx = self.sync_inbox_tx.clone();
         spawn_verify_otp(email, normalized_otp, profile_dir, tx);
@@ -124,14 +120,19 @@ impl ElyShell {
     /// call to make, the token is the only artefact we own.
     pub(crate) fn submit_sign_out(&mut self, _cx: &mut Context<Self>) {
         self.auth_flow_phase = AuthFlowPhase::Idle;
-        let active_profile_id = match active_profile_id_for(&self.state) {
-            Some(id) => id,
+        let active_profile = match active_profile_sync_context_for(&self.state) {
+            Some(profile) => profile,
             None => return,
         };
         let Some(profile_root) = default_profile_data_root() else {
             return;
         };
-        let profile_dir = profile_data_dir(&profile_root, &active_profile_id);
+        let profile_dir = sync_profile_data_dir(
+            &profile_root,
+            &active_profile.id,
+            &active_profile.name,
+            &active_profile.kind,
+        );
         match SyncEngine::for_profile_dir(&profile_dir, "ELY", sync_platform_label()) {
             Ok(mut engine) => {
                 let _ = engine.install_bearer("");
@@ -162,11 +163,22 @@ fn normalize_email(raw: &str) -> Option<String> {
     Some(trimmed.to_lowercase())
 }
 
-fn active_profile_id_for(state: &ShellState) -> Option<ely_domain::ProfileId> {
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ActiveProfileSyncContext {
+    id: ProfileId,
+    name: String,
+    kind: ProfileKind,
+}
+
+fn active_profile_sync_context_for(state: &ShellState) -> Option<ActiveProfileSyncContext> {
     let ShellState::Ready(core) = state else {
         return None;
     };
-    core.snapshot().ok().map(|snapshot| snapshot.active_profile_id.clone())
+    core.snapshot().ok().map(|snapshot| ActiveProfileSyncContext {
+        id: snapshot.active_profile_id,
+        name: snapshot.active_profile_name,
+        kind: snapshot.active_profile_kind,
+    })
 }
 
 fn spawn_send_otp(email: String, tx: Sender<SyncStateUpdate>) {
@@ -253,7 +265,6 @@ mod tests {
     #[test]
     fn auth_phase_helpers() {
         let phase = AuthFlowPhase::Verifying { email: "you@there".to_string() };
-        assert_eq!(phase.email(), Some("you@there"));
         assert!(phase.is_busy());
         assert_eq!(phase.error_message(), None);
 

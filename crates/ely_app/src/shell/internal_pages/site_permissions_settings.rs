@@ -23,8 +23,7 @@ impl ElyShell {
                 .flex()
                 .flex_col()
                 .gap_5()
-                .child(render_site_permissions_header(snapshot))
-                .child(render_site_permissions_summary(snapshot))
+                .child(render_site_permissions_header())
                 .child(render_site_permissions_controls(
                     snapshot,
                     self.site_permissions_clear_confirmation.as_ref()
@@ -36,75 +35,13 @@ impl ElyShell {
     }
 }
 
-fn render_site_permissions_header(snapshot: &BrowserSnapshot) -> AnyElement {
+fn render_site_permissions_header() -> AnyElement {
     div()
-        .flex()
-        .items_end()
-        .justify_between()
-        .gap_4()
-        .child(
-            div()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(
-                    div()
-                        .text_size(px(26.0))
-                        .text_color(rgb(colors::ink()))
-                        .child("Site Permissions"),
-                )
-                .child(
-                    div()
-                        .text_sm()
-                        .truncate()
-                        .text_color(rgb(colors::muted()))
-                        .child(format!("Profile: {}", snapshot.active_profile_name)),
-                ),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .text_xs()
-                .font_semibold()
-                .text_color(rgb(colors::muted()))
-                .child(IconName::Globe)
-                .child("Profile scoped"),
-        )
-        .into_any_element()
-}
-
-fn render_site_permissions_summary(snapshot: &BrowserSnapshot) -> AnyElement {
-    div()
-        .border_t_1()
-        .border_b_1()
-        .border_color(rgb(colors::hairline()))
-        .py_3()
         .flex()
         .items_center()
         .justify_between()
         .gap_4()
-        .children([
-            site_permission_metric("Configured", snapshot.site_permissions.len()),
-            site_permission_metric("Allowed", allowed_count(snapshot)),
-            site_permission_metric("Denied", denied_count(snapshot)),
-            site_permission_metric("Audit Events", snapshot.site_permission_audit_events.len()),
-        ])
-        .into_any_element()
-}
-
-fn site_permission_metric(label: &'static str, value: usize) -> AnyElement {
-    div()
-        .min_w_0()
-        .flex()
-        .flex_col()
-        .gap_1()
-        .child(div().text_xs().text_color(rgb(colors::muted())).child(label))
-        .child(
-            div().text_sm().font_semibold().text_color(rgb(colors::ink())).child(value.to_string()),
-        )
+        .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Site Permissions"))
         .into_any_element()
 }
 
@@ -124,14 +61,7 @@ fn render_site_permissions_controls(
     div()
         .flex()
         .items_center()
-        .justify_between()
-        .gap_4()
-        .child(
-            div()
-                .text_sm()
-                .text_color(rgb(colors::muted()))
-                .child("Clear all configured permissions for this Profile."),
-        )
+        .justify_end()
         .child(
             Button::new("request-clear-site-permissions")
                 .danger()
@@ -296,27 +226,6 @@ fn render_site_permission_entry(
                 })),
         )
         .into_any_element()
-}
-
-fn allowed_count(snapshot: &BrowserSnapshot) -> usize {
-    snapshot
-        .site_permissions
-        .iter()
-        .filter(|entry| {
-            matches!(
-                entry.decision(),
-                SitePermissionDecision::AllowOnce | SitePermissionDecision::AllowAlways
-            )
-        })
-        .count()
-}
-
-fn denied_count(snapshot: &BrowserSnapshot) -> usize {
-    snapshot
-        .site_permissions
-        .iter()
-        .filter(|entry| entry.decision() == SitePermissionDecision::DenyAlways)
-        .count()
 }
 
 fn site_settings_route(origin: &SiteOrigin) -> String {

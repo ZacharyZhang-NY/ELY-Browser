@@ -224,8 +224,8 @@ impl ElyShell {
         {
             changed = true;
         }
-        if let Some(favicon_url) = metadata.favicon_url
-            && let Ok(true) = core.set_tab_favicon_key(&metadata.tab_id, favicon_url)
+        if let Some(favicon_key) = metadata.favicon_key
+            && let Ok(true) = core.set_tab_favicon_key(&metadata.tab_id, favicon_key)
         {
             changed = true;
         }

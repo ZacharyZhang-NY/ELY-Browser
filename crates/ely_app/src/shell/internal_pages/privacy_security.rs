@@ -9,7 +9,7 @@ use gpui_component::{
     scroll::ScrollableElement,
 };
 
-use super::{ElyShell, privacy_data_inventory::render_local_data_inventory, render_canvas_surface};
+use super::{ElyShell, render_canvas_surface};
 
 impl ElyShell {
     pub(super) fn render_privacy_security_page(
@@ -27,126 +27,32 @@ impl ElyShell {
                 .flex()
                 .flex_col()
                 .gap_5()
-                .child(render_privacy_header(snapshot))
-                .child(render_history_summary(snapshot, cx))
+                .child(render_privacy_header(cx))
                 .when(snapshot.active_profile_history_entry_count > 0, |this| {
                     this.child(render_history_clear_controls(confirming_clear, cx))
                 })
-                .child(render_local_data_inventory(
-                    snapshot,
-                    self.local_data_file_notice.as_deref(),
-                    self.local_data_file_error.as_deref(),
-                    cx,
-                ))
                 .child(render_privacy_settings_rows(snapshot, cx)),
         )
     }
 }
 
-fn render_privacy_header(snapshot: &BrowserSnapshot) -> AnyElement {
+fn render_privacy_header(cx: &mut Context<ElyShell>) -> AnyElement {
     div()
-        .flex()
-        .items_end()
-        .justify_between()
-        .gap_4()
-        .child(
-            div()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(
-                    div()
-                        .text_size(px(26.0))
-                        .text_color(rgb(colors::ink()))
-                        .child("Privacy & Security"),
-                )
-                .child(
-                    div()
-                        .text_sm()
-                        .truncate()
-                        .text_color(rgb(colors::muted()))
-                        .child(format!("Profile: {}", snapshot.active_profile_name)),
-                ),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .text_xs()
-                .font_semibold()
-                .text_color(rgb(colors::muted()))
-                .child(privacy_icon(snapshot.history_recording_policy))
-                .child(snapshot.history_recording_policy.status()),
-        )
-        .into_any_element()
-}
-
-fn render_history_summary(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
-    div()
-        .rounded_md()
-        .border_1()
-        .border_color(rgb(colors::hairline()))
-        .bg(rgb(colors::canvas_soft()))
-        .px_4()
-        .py_3()
         .flex()
         .items_center()
         .justify_between()
         .gap_4()
+        .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Privacy & Security"))
         .child(
-            div()
-                .min_w_0()
-                .flex()
-                .items_center()
-                .gap_3()
-                .child(
-                    div()
-                        .text_color(rgb(policy_color(snapshot.history_recording_policy)))
-                        .child(privacy_icon(snapshot.history_recording_policy)),
-                )
-                .child(
-                    div()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .child(
-                            div()
-                                .text_sm()
-                                .font_semibold()
-                                .text_color(rgb(colors::ink()))
-                                .child(snapshot.history_recording_policy.name()),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .truncate()
-                                .text_color(rgb(colors::muted()))
-                                .child(snapshot.history_recording_policy.detail()),
-                        ),
-                ),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(div().text_xs().font_semibold().text_color(rgb(colors::muted())).child(
-                    format!("{} Profile entries", snapshot.active_profile_history_entry_count),
-                ))
-                .child(
-                    Button::new("reset-privacy-settings")
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::Undo2)
-                        .label("Reset")
-                        .tooltip("Restore Privacy Defaults")
-                        .on_click(cx.listener(|shell, _, _, cx| {
-                            shell.reset_privacy_settings(cx);
-                        })),
-                ),
+            Button::new("reset-privacy-settings")
+                .ghost()
+                .xsmall()
+                .icon(IconName::Undo2)
+                .label("Reset")
+                .tooltip("Restore Privacy Defaults")
+                .on_click(cx.listener(|shell, _, _, cx| {
+                    shell.reset_privacy_settings(cx);
+                })),
         )
         .into_any_element()
 }
@@ -159,14 +65,7 @@ fn render_history_clear_controls(confirming_clear: bool, cx: &mut Context<ElyShe
     div()
         .flex()
         .items_center()
-        .justify_between()
-        .gap_4()
-        .child(
-            div()
-                .text_sm()
-                .text_color(rgb(colors::muted()))
-                .child("Clear all history saved for this Profile."),
-        )
+        .justify_end()
         .child(
             Button::new("request-clear-history")
                 .danger()

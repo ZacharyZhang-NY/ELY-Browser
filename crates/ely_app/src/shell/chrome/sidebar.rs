@@ -2,9 +2,9 @@ use ely_browser_core::BrowserSnapshot;
 use ely_design_system::{colors, spacing};
 use ely_domain::BrowserTab;
 use gpui::{
-    AnyElement, Context, FontWeight, ImageSource, InteractiveElement, IntoElement, ObjectFit,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled, StyledImage, div, hsla, img,
-    linear_color_stop, linear_gradient, prelude::FluentBuilder, px, rgb, rgba,
+    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, div, hsla, linear_color_stop, linear_gradient,
+    prelude::FluentBuilder, px, rgb, rgba,
 };
 use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
 
@@ -464,30 +464,12 @@ where
     chrome_motion_feedback(press_id, selection_id, false, element)
 }
 
-/// Resolve the favicon glyph for a tab row. Prefers the favicon URL
-/// the Servo runtime derived from the loaded URL; falls back to the
-/// initial-letter chip used everywhere else when the tab has no live
-/// favicon (yet to load, internal page, file URL, etc.).
+/// Resolve the favicon glyph for a tab row. Favicon metadata stays as
+/// a local key; rows render the host-derived glyph so the sidebar never
+/// blocks on network image assets.
 fn render_tab_favicon(tab: &BrowserTab, initial: &str) -> AnyElement {
-    if let Some(favicon_url) = tab.favicon_key()
-        && favicon_url.starts_with("http")
-    {
-        return div()
-            .size(px(FAVICON_SIZE))
-            .flex_shrink_0()
-            .rounded(px(FAVICON_RADIUS))
-            .overflow_hidden()
-            .child(
-                img(ImageSource::from(favicon_url.to_string()))
-                    .size(px(FAVICON_SIZE))
-                    .object_fit(ObjectFit::Cover),
-            )
-            .into_any_element();
-    }
-
     let host = tab.url().host();
     render_glyph_for(host.as_deref(), initial, FAVICON_SIZE)
 }
 
 const FAVICON_SIZE: f32 = 16.0;
-const FAVICON_RADIUS: f32 = 4.0;

@@ -16,6 +16,7 @@ pub(crate) mod split_pane;
 pub(crate) mod topbar;
 pub(crate) mod typography;
 pub(crate) mod wallpaper;
+pub(crate) mod window_traffic_lights;
 
 pub(crate) use appearance_form::render_appearance_form;
 pub(crate) use brand_glyph::{accent_color_for_host, render_glyph_for};
@@ -34,3 +35,6 @@ pub(crate) use split_pane::{
 pub(crate) use topbar::render_topbar;
 pub(crate) use typography::{SANS_FAMILY, SERIF_FAMILY, register_serif_fonts};
 pub(crate) use wallpaper::render_wallpaper;
+pub(crate) use window_traffic_lights::{
+    TRAFFIC_LIGHT_ORIGIN_X, TRAFFIC_LIGHT_ORIGIN_Y, render_macos_traffic_light_hitboxes,
+};

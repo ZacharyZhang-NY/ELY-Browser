@@ -197,6 +197,12 @@ pub(crate) fn render_workspace_disclosure(
         .border_1()
         .border_color(rgba(disclosure_border()))
         .shadow(soft_shadow())
+        .on_mouse_down(
+            gpui::MouseButton::Left,
+            cx.listener(|_, _: &gpui::MouseDownEvent, _, cx| {
+                cx.stop_propagation();
+            }),
+        )
         .children(
             snapshot
                 .spaces
@@ -333,8 +339,7 @@ fn render_new_workspace_row(cx: &mut Context<ElyShell>) -> AnyElement {
         .hover(|style| style.bg(rgba(disclosure_row_hover_bg())).text_color(rgb(colors::ink())))
         .active(|style| style.opacity(0.85))
         .on_click(cx.listener(|shell, _, window, cx| {
-            shell.close_workspace_picker(cx);
-            shell.open_internal_tab("ely://settings/spaces", window, cx);
+            shell.create_workspace_from_picker(window, cx);
         }))
         .child(div().text_color(rgb(colors::ink_3())).child(IconName::Plus))
         .child(div().flex_1().min_w_0().truncate().child("New workspace"))

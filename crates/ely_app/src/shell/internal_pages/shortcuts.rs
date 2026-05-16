@@ -1,5 +1,6 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
+use gpui::prelude::FluentBuilder;
 use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, px, rgb};
 use gpui_component::{
     IconName, Sizable, StyledExt,
@@ -18,7 +19,7 @@ const SHORTCUT_CATEGORIES: &[&str] = &["Command", "Tabs", "Library", "System", "
 impl ElyShell {
     pub(super) fn render_shortcuts_page(
         &mut self,
-        snapshot: &BrowserSnapshot,
+        _snapshot: &BrowserSnapshot,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let conflicts = self.shortcut_profile.conflicts();
@@ -30,64 +31,29 @@ impl ElyShell {
                 .flex()
                 .flex_col()
                 .gap_5()
-                .child(render_shortcuts_header(snapshot, conflicts.len(), cx))
+                .child(render_shortcuts_header(cx))
                 .child(render_shortcut_file_message(
                     self.shortcut_file_notice.as_deref(),
                     self.shortcut_file_error.as_deref(),
                 ))
-                .child(render_conflict_panel(&conflicts))
+                .when(!conflicts.is_empty(), |this| this.child(render_conflict_panel(&conflicts)))
                 .child(render_shortcut_categories(&self.shortcut_profile, &conflicts)),
         )
     }
 }
 
-fn render_shortcuts_header(
-    snapshot: &BrowserSnapshot,
-    conflict_count: usize,
-    cx: &mut Context<ElyShell>,
-) -> AnyElement {
-    let status = if conflict_count == 0 {
-        "Ready".to_string()
-    } else {
-        format!("{conflict_count} conflicts")
-    };
-
+fn render_shortcuts_header(cx: &mut Context<ElyShell>) -> AnyElement {
     div()
         .flex()
-        .items_end()
+        .items_center()
         .justify_between()
         .gap_4()
-        .child(
-            div()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Shortcuts"))
-                .child(
-                    div()
-                        .text_sm()
-                        .truncate()
-                        .text_color(rgb(colors::muted()))
-                        .child(format!("Profile: {}", snapshot.active_profile_name)),
-                ),
-        )
+        .child(div().text_size(px(26.0)).text_color(rgb(colors::ink())).child("Shortcuts"))
         .child(
             div()
                 .flex()
                 .items_center()
                 .gap_2()
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .text_xs()
-                        .font_semibold()
-                        .text_color(rgb(shortcut_status_color(conflict_count)))
-                        .child(shortcut_status_icon(conflict_count))
-                        .child(status),
-                )
                 .child(
                     Button::new("export-shortcuts")
                         .ghost()
@@ -311,7 +277,7 @@ fn render_shortcut_row(
                 .text_xs()
                 .child(shortcut_platform_label(profile, action, ShortcutPlatform::Macos))
                 .child(shortcut_platform_label(profile, action, ShortcutPlatform::WindowsLinux))
-                .child(shortcut_row_status(has_conflict)),
+                .when(has_conflict, |this| this.child(shortcut_row_status())),
         )
         .into_any_element()
 }
@@ -336,19 +302,13 @@ fn shortcut_platform_label(
         .into_any_element()
 }
 
-fn shortcut_row_status(has_conflict: bool) -> AnyElement {
-    let (label, color) =
-        if has_conflict { ("Conflict", colors::error()) } else { ("Ready", colors::success()) };
-
-    div().min_w(px(72.0)).font_semibold().text_color(rgb(color)).child(label).into_any_element()
-}
-
-fn shortcut_status_color(conflict_count: usize) -> u32 {
-    if conflict_count == 0 { colors::success() } else { colors::error() }
-}
-
-fn shortcut_status_icon(conflict_count: usize) -> IconName {
-    if conflict_count == 0 { IconName::CircleCheck } else { IconName::TriangleAlert }
+fn shortcut_row_status() -> AnyElement {
+    div()
+        .min_w(px(72.0))
+        .font_semibold()
+        .text_color(rgb(colors::error()))
+        .child("Conflict")
+        .into_any_element()
 }
 
 fn shortcut_row_icon(has_conflict: bool) -> IconName {

@@ -10,8 +10,8 @@ use gpui::{
 use super::chrome::command_match::visible_command_rows;
 use super::chrome::{
     SANS_FAMILY, WorkspaceDisclosureAnchor, panel_bg, panel_shadow, render_command_overlay,
-    render_topbar as render_topbar_chrome, render_wallpaper, render_workspace_disclosure,
-    render_workspace_disclosure_backdrop,
+    render_macos_traffic_light_hitboxes, render_topbar as render_topbar_chrome, render_wallpaper,
+    render_workspace_disclosure, render_workspace_disclosure_backdrop,
 };
 use super::sidebar::collapsed_sidebar_active;
 use super::{ElyShell, ShellState};
@@ -27,29 +27,45 @@ impl Render for ElyShell {
         match &self.state {
             ShellState::Ready(core) => match core.snapshot() {
                 Ok(snapshot) => {
-                    colors::set_mode(resolve_color_mode(
-                        snapshot.appearance.theme_mode(),
-                        appearance,
-                    ));
+                    apply_color_mode(
+                        resolve_color_mode(snapshot.appearance.theme_mode(), appearance),
+                        cx,
+                    );
                     match active_tab_from_snapshot(&snapshot) {
                         Some(active_tab) => self.render_browser(&snapshot, active_tab, window, cx),
                         None => render_error("active tab missing from snapshot".to_string()),
                     }
                 }
                 Err(error) => {
-                    colors::set_mode(resolve_color_mode(
-                        ely_domain::ThemeMode::default(),
-                        appearance,
-                    ));
+                    apply_color_mode(
+                        resolve_color_mode(ely_domain::ThemeMode::default(), appearance),
+                        cx,
+                    );
                     render_error(error.to_string())
                 }
             },
             ShellState::StartupError(message) => {
-                colors::set_mode(resolve_color_mode(ely_domain::ThemeMode::default(), appearance));
+                apply_color_mode(
+                    resolve_color_mode(ely_domain::ThemeMode::default(), appearance),
+                    cx,
+                );
                 render_error(message.clone())
             }
         }
     }
+}
+
+fn apply_color_mode(mode: colors::Mode, cx: &mut Context<ElyShell>) {
+    colors::set_mode(mode);
+
+    let component_mode = match mode {
+        colors::Mode::Light => gpui_component::ThemeMode::Light,
+        colors::Mode::Dark => gpui_component::ThemeMode::Dark,
+    };
+    if gpui_component::Theme::global(cx).mode != component_mode {
+        gpui_component::Theme::change(component_mode, None, cx);
+    }
+    gpui_component::Theme::global_mut(cx).font_family = SANS_FAMILY.into();
 }
 
 fn resolve_color_mode(
@@ -154,6 +170,7 @@ impl ElyShell {
                     .child(render_workspace_disclosure(snapshot, anchor, cx))
             })
             .children(render_command_overlay(self, snapshot, cx))
+            .child(render_macos_traffic_light_hitboxes(cx))
             .into_any_element()
     }
 

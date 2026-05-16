@@ -100,7 +100,7 @@ const NAV_GROUPS: &[NavGroup] = &[
 /// right swapped" instead of "the layout disappeared and a new tab
 /// opened" — the prior behavior that misread to users as a tab spawn.
 pub(crate) fn render_settings_shell(
-    snapshot: &BrowserSnapshot,
+    _snapshot: &BrowserSnapshot,
     active_route: &str,
     content: AnyElement,
     cx: &mut Context<ElyShell>,
@@ -109,16 +109,12 @@ pub(crate) fn render_settings_shell(
         .flex_1()
         .h_full()
         .flex()
-        .child(render_nav_column(snapshot, active_route, cx))
+        .child(render_nav_column(active_route, cx))
         .child(content)
         .into_any_element()
 }
 
-fn render_nav_column(
-    snapshot: &BrowserSnapshot,
-    active_route: &str,
-    cx: &mut Context<ElyShell>,
-) -> AnyElement {
+fn render_nav_column(active_route: &str, cx: &mut Context<ElyShell>) -> AnyElement {
     div()
         .w(px(232.0))
         .h_full()
@@ -132,7 +128,7 @@ fn render_nav_column(
         .flex_col()
         .gap(px(2.0))
         .overflow_y_scrollbar()
-        .child(render_nav_brand(snapshot))
+        .child(render_nav_brand())
         .children(
             NAV_GROUPS
                 .iter()
@@ -142,25 +138,16 @@ fn render_nav_column(
         .into_any_element()
 }
 
-fn render_nav_brand(snapshot: &BrowserSnapshot) -> AnyElement {
+fn render_nav_brand() -> AnyElement {
     div()
         .px(px(12.0))
         .pb(px(12.0))
-        .flex()
-        .flex_col()
-        .gap_1()
         .child(
             div()
                 .text_size(px(18.0))
                 .font_weight(FontWeight(500.0))
                 .text_color(rgb(colors::ink()))
                 .child("Settings"),
-        )
-        .child(
-            div()
-                .text_size(px(11.5))
-                .text_color(rgb(colors::ink_4()))
-                .child(format!("ELY 0.42 · Profile: {}", snapshot.active_profile_name)),
         )
         .into_any_element()
 }

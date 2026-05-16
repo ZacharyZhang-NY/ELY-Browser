@@ -61,10 +61,7 @@ fn navigation_replaces_new_tab_metadata_with_url_metadata() -> Result<(), Box<dy
 
     let active_tab = core.active_tab()?;
     assert_eq!(active_tab.title(), "example.com");
-    assert_eq!(
-        active_tab.favicon_key(),
-        Some("https://www.google.com/s2/favicons?domain=example.com&sz=64"),
-    );
+    assert_eq!(active_tab.favicon_key(), Some("ely-favicon://example.com"));
     Ok(())
 }
 
@@ -95,10 +92,7 @@ fn history_navigation_refreshes_url_metadata() -> Result<(), Box<dyn Error>> {
     let active_tab = core.active_tab()?;
     assert_eq!(active_tab.url().as_str(), "https://example.com/a");
     assert_eq!(active_tab.title(), "example.com");
-    assert_eq!(
-        active_tab.favicon_key(),
-        Some("https://www.google.com/s2/favicons?domain=example.com&sz=64"),
-    );
+    assert_eq!(active_tab.favicon_key(), Some("ely-favicon://example.com"));
     Ok(())
 }
 
