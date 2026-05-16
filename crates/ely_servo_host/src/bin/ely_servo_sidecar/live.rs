@@ -307,10 +307,7 @@ fn paint_hardware_surface_frame(
     if !payloadless_surface_pool_ready(readiness, session.width, session.height) {
         return paint_readback_frame(host, session, !has_pending_frame);
     }
-    let (outcome, identity) = paint_hardware_surface_report(host, session, !has_pending_frame)?;
-    if !surface_has_been_published(readiness.published_surface_ids, readiness.tab_id, identity) {
-        return paint_readback_frame(host, session, true);
-    }
+    let (outcome, _) = paint_hardware_surface_report(host, session, !has_pending_frame)?;
     Ok((outcome, true))
 }
 
@@ -370,16 +367,15 @@ fn payloadless_surface_pool_ready(
     let matching = published
         .iter()
         .filter(|identity| identity.width == width && identity.height == height)
-        .take(2)
         .copied()
         .collect::<Vec<_>>();
-    if matching.len() < 2 {
+    if matching.is_empty() {
         return false;
     }
     !readiness.require_client_ready_surfaces
         || matching
             .iter()
-            .all(|identity| readiness.ready_surface_ids.contains(&identity.surface_id))
+            .any(|identity| readiness.ready_surface_ids.contains(&identity.surface_id))
 }
 
 #[derive(Clone, Copy)]
@@ -418,15 +414,6 @@ fn payloadless_readiness<'a>(
     }
 }
 
-#[cfg(all(feature = "hardware-render", target_os = "macos"))]
-fn surface_has_been_published(
-    published_surface_ids: &HashMap<String, HashSet<IOSurfaceIdentity>>,
-    tab_id: &str,
-    identity: IOSurfaceIdentity,
-) -> bool {
-    published_surface_ids.get(tab_id).is_some_and(|published| published.contains(&identity))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -444,11 +431,11 @@ mod tests {
 
     #[cfg(all(feature = "hardware-render", target_os = "macos"))]
     #[test]
-    fn payloadless_pool_waits_for_client_ready_surfaces_when_required() {
+    fn payloadless_pool_accepts_one_client_ready_surface() {
         let published = published_identities([identity(7, 800, 600), identity(8, 800, 600)]);
 
-        assert!(!payloadless_surface_pool_ready(readiness(&published, &[7], true), 800, 600));
-        assert!(payloadless_surface_pool_ready(readiness(&published, &[7, 8], true), 800, 600));
+        assert!(!payloadless_surface_pool_ready(readiness(&published, &[], true), 800, 600));
+        assert!(payloadless_surface_pool_ready(readiness(&published, &[7], true), 800, 600));
     }
 
     #[cfg(all(feature = "hardware-render", target_os = "macos"))]

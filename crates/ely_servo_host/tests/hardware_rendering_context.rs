@@ -14,6 +14,7 @@
 
 use dpi::PhysicalSize;
 use ely_servo_host::HardwareOffscreenContext;
+use servo::RenderingContext;
 
 #[test]
 fn constructs_or_explains_why_not() {
@@ -52,6 +53,8 @@ fn extracts_iosurface_mach_port_from_current_surface() -> Result<(), String> {
         }
     };
 
+    context.prepare_for_rendering();
+    context.present();
     let first = context
         .current_iosurface_mach_port()
         .map_err(|error| format!("first IOSurface mach port extraction failed: {error:?}"))?;

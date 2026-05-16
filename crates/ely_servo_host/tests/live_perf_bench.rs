@@ -163,6 +163,10 @@ fn run_live_bench() -> Result<(), Box<dyn Error>> {
     );
     if kind == "hardware" {
         let full_readback_budget = viewport_bytes * u64::from(frames);
+        assert_eq!(
+            outcome.readback_rgba_bytes, viewport_bytes,
+            "hardware path should read back only the initial visible frame"
+        );
         assert!(
             total_rgba_bytes < full_readback_budget,
             "hardware path stayed on full readback: {total_rgba_bytes} >= {full_readback_budget}"
