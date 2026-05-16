@@ -2,7 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use ely_domain::{
     ArchivePolicy, BookmarkEntry, BrowserTab, NoteEntry, NoteTarget, Profile, ProfileKind,
-    ProfileSyncPolicy, ReadingListEntry, ReadingProgress, Space, TabFlags,
+    ProfileSyncPolicy, ReadingListEntry, ReadingProgress, SitePermissionEntry, Space, TabFlags,
 };
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +24,8 @@ pub(crate) struct SyncSnapshotBody {
     pub(crate) notes: Vec<NoteSyncRecord>,
     #[serde(default)]
     pub(crate) reading_list: Vec<ReadingListSyncRecord>,
+    #[serde(default)]
+    pub(crate) site_permissions: Vec<SitePermissionSyncRecord>,
 }
 
 impl SyncSnapshotBody {
@@ -73,6 +75,11 @@ impl SyncSnapshotBody {
                         core.sync_space_name_for(entry.space_id()),
                     )
                 })
+                .collect(),
+            site_permissions: core
+                .visible_site_permissions_for_sync()
+                .into_iter()
+                .map(SitePermissionSyncRecord::from_entry)
                 .collect(),
         }
     }
@@ -369,6 +376,25 @@ impl ReadingProgressSyncRecord {
             ReadingProgress::Unread => Self::Unread,
             ReadingProgress::InProgress(percent) => Self::InProgress { percent: percent.value() },
             ReadingProgress::Finished => Self::Finished,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct SitePermissionSyncRecord {
+    pub(crate) profile_id: String,
+    pub(crate) origin: String,
+    pub(crate) feature: String,
+    pub(crate) decision: String,
+}
+
+impl SitePermissionSyncRecord {
+    fn from_entry(entry: &SitePermissionEntry) -> Self {
+        Self {
+            profile_id: entry.profile_id().as_str().to_string(),
+            origin: entry.origin().as_str().to_string(),
+            feature: entry.feature().as_str().to_string(),
+            decision: entry.decision().as_str().to_string(),
         }
     }
 }

@@ -35,6 +35,7 @@ mod sync_context;
 mod sync_notes;
 mod sync_profiles;
 mod sync_reading_list;
+mod sync_site_permissions;
 mod tab_group_order;
 mod tab_groups;
 mod tab_lifecycle;

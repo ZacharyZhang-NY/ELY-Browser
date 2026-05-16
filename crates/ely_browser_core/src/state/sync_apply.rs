@@ -28,6 +28,9 @@ impl BrowserCore {
         for record in body.reading_list {
             self.apply_reading_list_sync_record(record, &mut summary, &context)?;
         }
+        for record in body.site_permissions {
+            self.apply_site_permission_sync_record(record, &mut summary, &context)?;
+        }
         Ok(summary)
     }
 }

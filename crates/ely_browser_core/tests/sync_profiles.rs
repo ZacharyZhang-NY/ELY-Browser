@@ -1,7 +1,10 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{ProfileKind, ProfileSyncPolicy, UrlText};
+use ely_domain::{
+    ProfileKind, ProfileSyncPolicy, SiteOrigin, SitePermissionDecision, SitePermissionFeature,
+    UrlText,
+};
 
 #[test]
 fn sync_snapshot_imports_remote_profiles_before_spaces() -> Result<(), Box<dyn Error>> {
@@ -76,6 +79,11 @@ fn paused_profile_data_is_omitted_from_sync_snapshots() -> Result<(), Box<dyn Er
     source.bookmark_active_tab()?;
     source.save_active_url_note("profile paused")?;
     source.save_active_tab_to_reading_list()?;
+    source.set_site_permission(
+        SiteOrigin::parse("https://example.com")?,
+        SitePermissionFeature::Camera,
+        SitePermissionDecision::AllowAlways,
+    )?;
     let bytes = source.build_sync_snapshot_bytes()?;
 
     let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
@@ -92,5 +100,6 @@ fn paused_profile_data_is_omitted_from_sync_snapshots() -> Result<(), Box<dyn Er
     assert!(snapshot.bookmarks.is_empty());
     assert!(snapshot.notes.is_empty());
     assert!(snapshot.reading_list.is_empty());
+    assert!(snapshot.site_permissions.is_empty());
     Ok(())
 }
