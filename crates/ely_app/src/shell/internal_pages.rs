@@ -32,6 +32,7 @@ mod sleep;
 mod space_actions;
 mod spaces;
 mod sync;
+mod sync_controls;
 mod tab_context;
 mod task_manager;
 mod updates;

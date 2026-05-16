@@ -1,11 +1,8 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::{
-    SyncConnectionState, SyncObjectKind, SyncObjectPolicy, SyncObjectState, SyncObjectStatus,
-};
+use ely_domain::{SyncConnectionState, SyncObjectKind, SyncObjectState, SyncObjectStatus};
 use gpui::{
-    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, div, prelude::FluentBuilder, px, rgb, rgba,
+    AnyElement, Context, FontWeight, IntoElement, ParentElement, Styled, div, px, rgb, rgba,
 };
 use gpui_component::{IconName, input::Input, scroll::ScrollableElement};
 
@@ -13,6 +10,10 @@ use crate::shell::auth::AuthFlowPhase;
 
 use crate::brand::SYNC_SERVICE_NAME;
 
+use super::sync_controls::{
+    button_bg, render_dual_button_row, render_policy_toggle, render_primary_button,
+    render_reset_button, render_sign_out_button,
+};
 use super::{ElyShell, render_canvas_surface};
 use crate::shell::chrome::SERIF_FAMILY;
 
@@ -30,7 +31,7 @@ impl ElyShell {
                     .grid_cols(2)
                     .gap(px(32.0))
                     .child(render_left_column(self, snapshot, cx))
-                    .child(render_right_column(snapshot, cx)),
+                    .child(render_right_column(self, snapshot, cx)),
             ),
         )
     }
@@ -50,7 +51,7 @@ fn render_left_column(
         .child(render_serif_headline())
         .child(render_intro_paragraph())
         .child(render_account_card(shell, snapshot, cx))
-        .child(render_metrics_card(snapshot, cx))
+        .child(render_metrics_card(shell, snapshot, cx))
         .into_any_element()
 }
 
@@ -95,7 +96,11 @@ fn render_intro_paragraph() -> AnyElement {
         .into_any_element()
 }
 
-fn render_metrics_card(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
+fn render_metrics_card(
+    shell: &ElyShell,
+    snapshot: &BrowserSnapshot,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
     div()
         .max_w(px(380.0))
         .p(px(20.0))
@@ -121,7 +126,7 @@ fn render_metrics_card(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -
                     colors::error(),
                 )),
         )
-        .child(render_reset_button(cx))
+        .child(render_reset_button(shell, cx))
         .into_any_element()
 }
 
@@ -151,7 +156,7 @@ fn render_account_card(
         | SyncConnectionState::SyncError { .. } => card
             .child(render_account_heading("Account"))
             .child(render_signed_in_chip())
-            .child(render_sign_out_button(cx))
+            .child(render_sign_out_button(shell, cx))
             .into_any_element(),
     }
 }
@@ -168,6 +173,7 @@ fn account_form(shell: &ElyShell, cx: &mut Context<ElyShell>) -> Vec<AnyElement>
     match &phase {
         AuthFlowPhase::Idle | AuthFlowPhase::Error { .. } => {
             elements.push(render_primary_button(
+                shell,
                 "send-otp",
                 "Send code",
                 false,
@@ -178,12 +184,20 @@ fn account_form(shell: &ElyShell, cx: &mut Context<ElyShell>) -> Vec<AnyElement>
             ));
         }
         AuthFlowPhase::SendingCode { .. } => {
-            elements.push(render_primary_button("send-otp", "Sending…", true, cx, |_, _| {}));
+            elements.push(render_primary_button(
+                shell,
+                "send-otp",
+                "Sending...",
+                true,
+                cx,
+                |_, _| {},
+            ));
         }
         AuthFlowPhase::AwaitingOtp { .. } | AuthFlowPhase::Verifying { .. } => {
             elements.push(render_account_label("Code"));
             elements.push(render_input(&shell.auth_otp_input, None));
             elements.push(render_dual_button_row(
+                shell,
                 phase.is_busy(),
                 cx,
                 |shell, cx| shell.submit_email_otp_verify(cx),
@@ -243,77 +257,6 @@ fn render_input(
     wrapper.into_any_element()
 }
 
-fn render_primary_button<F>(
-    id: &'static str,
-    label: &'static str,
-    disabled: bool,
-    cx: &mut Context<ElyShell>,
-    handler: F,
-) -> AnyElement
-where
-    F: Fn(&mut ElyShell, &mut Context<ElyShell>) + 'static,
-{
-    div()
-        .id(SharedString::from(id))
-        .px(px(14.0))
-        .py(px(8.0))
-        .rounded(px(8.0))
-        .bg(rgba(colors::accent()))
-        .text_size(px(12.5))
-        .font_weight(FontWeight(500.0))
-        .text_color(rgb(0xfff5e6))
-        .when(!disabled, |el| {
-            el.cursor_pointer()
-                .hover(|style| style.opacity(0.92))
-                .active(|style| style.opacity(0.78))
-                .on_click(cx.listener(move |shell, _, _, cx| handler(shell, cx)))
-        })
-        .when(disabled, |el| el.opacity(0.6))
-        .child(label)
-        .into_any_element()
-}
-
-fn render_dual_button_row<P, S>(
-    disabled: bool,
-    cx: &mut Context<ElyShell>,
-    primary: P,
-    secondary: S,
-) -> AnyElement
-where
-    P: Fn(&mut ElyShell, &mut Context<ElyShell>) + 'static,
-    S: Fn(&mut ElyShell, &mut Context<ElyShell>) + 'static,
-{
-    div()
-        .flex()
-        .gap(px(8.0))
-        .child(render_primary_button(
-            "verify-otp",
-            if disabled { "Verifying…" } else { "Verify" },
-            disabled,
-            cx,
-            primary,
-        ))
-        .child(
-            div()
-                .id(SharedString::from("resend-otp"))
-                .px(px(12.0))
-                .py(px(8.0))
-                .rounded(px(8.0))
-                .bg(rgba(button_bg()))
-                .text_size(px(12.0))
-                .text_color(rgb(colors::ink_2()))
-                .when(!disabled, |el| {
-                    el.cursor_pointer()
-                        .hover(|style| style.bg(rgba(button_bg_hover())))
-                        .active(|style| style.opacity(0.85))
-                        .on_click(cx.listener(move |shell, _, _, cx| secondary(shell, cx)))
-                })
-                .when(disabled, |el| el.opacity(0.6))
-                .child("Resend code"),
-        )
-        .into_any_element()
-}
-
 fn render_inline_error(message: &str) -> AnyElement {
     div()
         .text_size(px(11.5))
@@ -327,24 +270,6 @@ fn render_signed_in_chip() -> AnyElement {
         .text_size(px(13.0))
         .text_color(rgb(colors::ink_2()))
         .child("Signed in. New sessions on this device share the same encrypted snapshot.")
-        .into_any_element()
-}
-
-fn render_sign_out_button(cx: &mut Context<ElyShell>) -> AnyElement {
-    div()
-        .id(SharedString::from("sign-out"))
-        .px(px(12.0))
-        .py(px(7.0))
-        .rounded(px(8.0))
-        .bg(rgba(button_bg()))
-        .text_size(px(12.0))
-        .font_weight(FontWeight(500.0))
-        .text_color(rgb(colors::ink_2()))
-        .cursor_pointer()
-        .hover(|style| style.bg(rgba(button_bg_hover())))
-        .active(|style| style.opacity(0.85))
-        .on_click(cx.listener(|shell, _, _, cx| shell.submit_sign_out(cx)))
-        .child("Sign out")
         .into_any_element()
 }
 
@@ -364,55 +289,24 @@ fn render_metric(label: &'static str, value: usize, color: u32) -> AnyElement {
         .into_any_element()
 }
 
-fn render_reset_button(cx: &mut Context<ElyShell>) -> AnyElement {
-    div()
-        .flex()
-        .gap(px(8.0))
-        .child(
-            div()
-                .id(SharedString::from("sync-upload"))
-                .px(px(12.0))
-                .py(px(7.0))
-                .rounded(px(8.0))
-                .bg(rgba(colors::accent()))
-                .text_size(px(12.0))
-                .font_weight(FontWeight(500.0))
-                .text_color(rgb(0xfff5e6))
-                .cursor_pointer()
-                .hover(|style| style.opacity(0.92))
-                .active(|style| style.opacity(0.78))
-                .on_click(cx.listener(|shell, _, _, _| shell.trigger_cloud_sync_upload()))
-                .child("Sync now"),
-        )
-        .child(
-            div()
-                .id(SharedString::from("sync-reset"))
-                .px(px(12.0))
-                .py(px(7.0))
-                .rounded(px(8.0))
-                .bg(rgba(button_bg()))
-                .text_size(px(12.0))
-                .font_weight(FontWeight(500.0))
-                .text_color(rgb(colors::ink_2()))
-                .cursor_pointer()
-                .hover(|style| style.bg(rgba(button_bg_hover())))
-                .active(|style| style.opacity(0.85))
-                .on_click(cx.listener(|shell, _, _, cx| shell.reset_sync_settings(cx)))
-                .child("Reset to defaults"),
-        )
-        .into_any_element()
-}
-
-fn render_right_column(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
+fn render_right_column(
+    shell: &ElyShell,
+    snapshot: &BrowserSnapshot,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
     div()
         .flex()
         .flex_col()
         .gap(px(14.0))
-        .child(render_what_syncs_card(snapshot, cx))
+        .child(render_what_syncs_card(shell, snapshot, cx))
         .into_any_element()
 }
 
-fn render_what_syncs_card(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>) -> AnyElement {
+fn render_what_syncs_card(
+    shell: &ElyShell,
+    snapshot: &BrowserSnapshot,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
     div()
         .p(px(18.0))
         .rounded(px(16.0))
@@ -448,13 +342,14 @@ fn render_what_syncs_card(snapshot: &BrowserSnapshot, cx: &mut Context<ElyShell>
                     .objects()
                     .iter()
                     .enumerate()
-                    .map(|(index, status)| render_sync_object_row(index, status, cx)),
+                    .map(|(index, status)| render_sync_object_row(shell, index, status, cx)),
             ),
         )
         .into_any_element()
 }
 
 fn render_sync_object_row(
+    shell: &ElyShell,
     index: usize,
     status: &SyncObjectStatus,
     cx: &mut Context<ElyShell>,
@@ -487,7 +382,7 @@ fn render_sync_object_row(
                     sync_object_state_label(status.state())
                 ))),
         )
-        .child(render_policy_toggle(index, status, cx))
+        .child(render_policy_toggle(shell, index, status, cx))
         .into_any_element()
 }
 
@@ -500,39 +395,6 @@ fn render_state_dot(state: SyncObjectState) -> AnyElement {
     };
 
     div().size(px(8.0)).rounded_full().bg(rgb(color)).into_any_element()
-}
-
-fn render_policy_toggle(
-    index: usize,
-    status: &SyncObjectStatus,
-    cx: &mut Context<ElyShell>,
-) -> AnyElement {
-    let enabled = status.policy() == SyncObjectPolicy::Enabled;
-    let next_policy = if enabled { SyncObjectPolicy::Paused } else { SyncObjectPolicy::Enabled };
-    let kind = status.kind();
-    let track_color = if enabled { colors::accent() } else { 0x281e1426 };
-
-    div()
-        .id(SharedString::from(format!("sync-policy-{index}")))
-        .w(px(34.0))
-        .h(px(20.0))
-        .rounded_full()
-        .bg(rgba(track_color))
-        .p(px(2.0))
-        .cursor_pointer()
-        .hover(|style| style.opacity(0.9))
-        .active(|style| style.opacity(0.78))
-        .on_click(cx.listener(move |shell, _, _, cx| {
-            shell.set_sync_object_policy(kind, next_policy, cx);
-        }))
-        .child(
-            div()
-                .size(px(16.0))
-                .rounded_full()
-                .bg(rgb(0xffffff))
-                .when(enabled, |this| this.ml(px(14.0))),
-        )
-        .into_any_element()
 }
 
 fn connection_label(connection: &SyncConnectionState) -> String {
@@ -605,10 +467,4 @@ fn pill_bg() -> u32 {
 }
 fn card_bg() -> u32 {
     colors::pick(0xffffffd9, 0x1f1d1bd9)
-}
-fn button_bg() -> u32 {
-    colors::pick(0xffffffd9, 0x1f1d1bd9)
-}
-fn button_bg_hover() -> u32 {
-    colors::pick(0xffffffeb, 0x1f1d1beb)
 }
