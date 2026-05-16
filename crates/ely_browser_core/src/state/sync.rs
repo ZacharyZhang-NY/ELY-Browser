@@ -1,13 +1,15 @@
 use std::time::{Duration, UNIX_EPOCH};
 
 use ely_domain::{
-    BookmarkEntry, BookmarkId, ProfileId, SpaceId, SyncConnectionState, SyncObjectKind,
-    SyncObjectPolicy, SyncObjectState, SyncObjectStatus, SyncStatus, UrlText,
+    BookmarkEntry, BookmarkId, BrowserTab, ProfileId, SpaceId, SyncConnectionState, SyncObjectKind,
+    SyncObjectPolicy, SyncObjectState, SyncObjectStatus, SyncStatus, TabId, UrlText,
 };
 use ely_sync_client::SyncClientError;
 
 use super::BrowserCore;
-use crate::sync_engine::{BookmarkSyncRecord, SyncSnapshotApplySummary, SyncSnapshotBody};
+use crate::sync_engine::{
+    BookmarkSyncRecord, SyncSnapshotApplySummary, SyncSnapshotBody, TabSyncRecord,
+};
 
 #[derive(Clone, Debug)]
 pub(super) struct SyncObjectPolicies {
@@ -98,6 +100,9 @@ impl BrowserCore {
         body: SyncSnapshotBody,
     ) -> Result<SyncSnapshotApplySummary, SyncClientError> {
         let mut summary = SyncSnapshotApplySummary::default();
+        for record in body.tabs {
+            self.apply_tab_sync_record(record, &mut summary)?;
+        }
         for record in body.bookmarks {
             self.apply_bookmark_sync_record(record, &mut summary)?;
         }
@@ -170,6 +175,67 @@ impl BrowserCore {
 
     fn sync_enabled_tab_count(&self) -> usize {
         self.tabs.iter().filter(|tab| tab.sync_enabled()).count()
+    }
+
+    pub(crate) fn visible_tabs_for_sync(&self) -> Vec<&BrowserTab> {
+        self.tabs
+            .iter()
+            .filter(|tab| {
+                tab.sync_enabled()
+                    && self
+                        .profiles
+                        .iter()
+                        .any(|profile| profile.id() == tab.profile_id() && profile.allows_sync())
+            })
+            .collect()
+    }
+
+    fn apply_tab_sync_record(
+        &mut self,
+        record: TabSyncRecord,
+        summary: &mut SyncSnapshotApplySummary,
+    ) -> Result<(), SyncClientError> {
+        let tab_id = parse_tab_id(&record.id)?;
+        let profile_id = self.sync_profile_id(&record.profile_id)?;
+        let space_id = self.sync_space_id(&record.space_id, record.space_name.as_deref())?;
+        let url = UrlText::parse(&record.url).map_err(snapshot_schema_error)?;
+        let created_at = UNIX_EPOCH + Duration::from_secs(record.created_at_secs);
+        let last_active_at = UNIX_EPOCH + Duration::from_secs(record.last_active_at_secs);
+        let existing_index = self.tabs.iter().position(|tab| tab.id() == &tab_id).or_else(|| {
+            self.tabs.iter().position(|tab| {
+                tab.profile_id() == &profile_id && tab.space_id() == &space_id && tab.url() == &url
+            })
+        });
+        let id = existing_index
+            .and_then(|index| self.tabs.get(index).map(|tab| tab.id().clone()))
+            .unwrap_or(tab_id);
+        let mut tab =
+            BrowserTab::new(id.clone(), space_id.clone(), profile_id.clone(), record.title, url)
+                .with_sort_key(record.sort_key);
+        tab.restore_activity_timestamps(created_at, last_active_at);
+        tab.set_flags(record.flags);
+        tab.set_sync_enabled(record.sync_enabled);
+        tab.set_zoom_percent(record.zoom_percent).map_err(snapshot_schema_error)?;
+        if let Some(favicon_key) = record.favicon_key {
+            tab.set_favicon_key(favicon_key).map_err(snapshot_schema_error)?;
+        }
+
+        match existing_index {
+            Some(index) if self.tabs[index] == tab => summary.record_skipped(),
+            Some(index) => {
+                self.tabs[index] = tab;
+                self.sort_tabs_within_space(&space_id);
+                self.ensure_synced_tab_indexes(&id, &space_id, &profile_id);
+                summary.record_updated();
+            }
+            None => {
+                self.tabs.push(tab);
+                self.sort_tabs_within_space(&space_id);
+                self.ensure_synced_tab_indexes(&id, &space_id, &profile_id);
+                summary.record_imported();
+            }
+        }
+        Ok(())
     }
 
     fn apply_bookmark_sync_record(
@@ -253,10 +319,39 @@ impl BrowserCore {
         }
         Ok(self.active_space_id.clone())
     }
+
+    fn ensure_synced_tab_indexes(
+        &mut self,
+        tab_id: &TabId,
+        space_id: &SpaceId,
+        profile_id: &ProfileId,
+    ) {
+        if self
+            .active_tabs_by_space
+            .get(space_id)
+            .is_none_or(|mapped_id| !self.tab_belongs_to_space(mapped_id, space_id))
+        {
+            self.active_tabs_by_space.insert(space_id.clone(), tab_id.clone());
+        }
+        let key = (space_id.clone(), profile_id.clone());
+        if self.active_tabs_by_space_profile.get(&key).is_none_or(|mapped_id| {
+            !self.tabs.iter().any(|tab| {
+                tab.id() == mapped_id
+                    && tab.space_id() == space_id
+                    && tab.profile_id() == profile_id
+            })
+        }) {
+            self.active_tabs_by_space_profile.insert(key, tab_id.clone());
+        }
+    }
 }
 
 fn parse_bookmark_id(raw: &str) -> Result<BookmarkId, SyncClientError> {
     BookmarkId::parse(raw).map_err(snapshot_schema_error)
+}
+
+fn parse_tab_id(raw: &str) -> Result<TabId, SyncClientError> {
+    TabId::parse(raw).map_err(snapshot_schema_error)
 }
 
 fn snapshot_schema_error(error: impl ToString) -> SyncClientError {

@@ -3,7 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use ely_domain::BookmarkEntry;
+use ely_domain::{BookmarkEntry, BrowserTab, TabFlags};
 use ely_sync_client::{
     ApiClientConfig, BearerToken, BearerTokenStore, DeviceIdentity, SnapshotPayload,
     SnapshotUploadRequest, SyncApiClient, SyncClientError, SyncLatestSnapshotDocument,
@@ -282,6 +282,8 @@ fn device_registration_idempotency_key(identity: &DeviceIdentity) -> String {
 pub(crate) struct SyncSnapshotBody {
     pub(crate) schema_rev: u32,
     pub(crate) bookmarks: Vec<BookmarkSyncRecord>,
+    #[serde(default)]
+    pub(crate) tabs: Vec<TabSyncRecord>,
 }
 
 impl SyncSnapshotBody {
@@ -296,6 +298,13 @@ impl SyncSnapshotBody {
                         entry,
                         core.sync_space_name_for(entry.space_id()),
                     )
+                })
+                .collect(),
+            tabs: core
+                .visible_tabs_for_sync()
+                .into_iter()
+                .map(|entry| {
+                    TabSyncRecord::from_entry(entry, core.sync_space_name_for(entry.space_id()))
                 })
                 .collect(),
         }
@@ -335,13 +344,61 @@ impl BookmarkSyncRecord {
             tags: entry.tags().to_vec(),
             note: entry.note().map(str::to_string),
             thumbnail_key: entry.thumbnail_key().map(str::to_string),
-            added_at_secs: entry
-                .added_at()
-                .duration_since(UNIX_EPOCH)
-                .map(|elapsed| elapsed.as_secs())
-                .unwrap_or(0),
+            added_at_secs: system_time_secs(entry.added_at()),
         }
     }
+}
+
+/// Wire representation of an open tab. The record carries only
+/// user-visible tab state; runtime-only fields such as split layout
+/// membership and crash state stay local to the receiving device.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct TabSyncRecord {
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) url: String,
+    pub(crate) profile_id: String,
+    pub(crate) space_id: String,
+    #[serde(default)]
+    pub(crate) space_name: Option<String>,
+    #[serde(default)]
+    pub(crate) favicon_key: Option<String>,
+    #[serde(default)]
+    pub(crate) flags: TabFlags,
+    pub(crate) sort_key: u64,
+    #[serde(default = "default_sync_enabled")]
+    pub(crate) sync_enabled: bool,
+    pub(crate) zoom_percent: u16,
+    pub(crate) created_at_secs: u64,
+    pub(crate) last_active_at_secs: u64,
+}
+
+impl TabSyncRecord {
+    fn from_entry(entry: &BrowserTab, space_name: Option<String>) -> Self {
+        Self {
+            id: entry.id().as_str().to_string(),
+            title: entry.title().to_string(),
+            url: entry.url().as_str().to_string(),
+            profile_id: entry.profile_id().as_str().to_string(),
+            space_id: entry.space_id().as_str().to_string(),
+            space_name,
+            favicon_key: entry.favicon_key().map(str::to_string),
+            flags: entry.flags().clone(),
+            sort_key: entry.sort_key(),
+            sync_enabled: entry.sync_enabled(),
+            zoom_percent: entry.zoom_percent(),
+            created_at_secs: system_time_secs(entry.created_at()),
+            last_active_at_secs: system_time_secs(entry.last_active_at()),
+        }
+    }
+}
+
+fn default_sync_enabled() -> bool {
+    true
+}
+
+fn system_time_secs(time: SystemTime) -> u64 {
+    time.duration_since(UNIX_EPOCH).map(|elapsed| elapsed.as_secs()).unwrap_or(0)
 }
 
 #[derive(Debug)]

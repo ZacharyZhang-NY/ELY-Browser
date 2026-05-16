@@ -90,7 +90,10 @@ fn tab_sync_status_counts_sync_enabled_tabs() -> Result<(), Box<dyn Error>> {
 #[test]
 fn sync_snapshot_imports_remote_bookmarks_into_active_scope() -> Result<(), Box<dyn Error>> {
     let mut source = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
-    source.open_tab(UrlText::parse("https://example.com/research")?);
+    let source_home_tab_id = source.snapshot()?.active_tab_id;
+    source.set_tab_sync_enabled(&source_home_tab_id, false)?;
+    let source_tab_id = source.open_tab(UrlText::parse("https://example.com/research")?);
+    source.set_tab_sync_enabled(&source_tab_id, false)?;
     let bookmark_id = source.bookmark_active_tab()?;
     source.set_bookmark_collection_name(&bookmark_id, "Research")?;
     source.set_bookmark_tags(&bookmark_id, vec!["rust".to_string(), "gpui".to_string()])?;
@@ -116,9 +119,75 @@ fn sync_snapshot_imports_remote_bookmarks_into_active_scope() -> Result<(), Box<
 }
 
 #[test]
+fn sync_snapshot_imports_remote_tabs_into_active_scope() -> Result<(), Box<dyn Error>> {
+    let mut source = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let source_home_tab_id = source.snapshot()?.active_tab_id;
+    source.set_tab_sync_enabled(&source_home_tab_id, false)?;
+    let source_tab_id = source.open_tab(UrlText::parse("https://example.com/research")?);
+    source.set_tab_title(&source_tab_id, "Research Brief")?;
+    source.set_tab_favicon_key(&source_tab_id, "https://example.com/favicon.ico")?;
+    source.toggle_active_tab_pinned()?;
+    source.toggle_active_tab_favorite()?;
+    source.set_active_tab_zoom_percent(125)?;
+    let bytes = source.build_sync_snapshot_bytes()?;
+
+    let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let target_profile_id = target.snapshot()?.active_profile_id;
+    let target_space_id = target.snapshot()?.active_space_id;
+    let summary = target.apply_sync_snapshot_bytes(&bytes)?;
+    let snapshot = target.snapshot()?;
+    let imported = snapshot
+        .tabs
+        .iter()
+        .find(|tab| tab.url().as_str() == "https://example.com/research")
+        .ok_or("missing imported tab")?;
+
+    assert_eq!(summary.imported(), 1);
+    assert_eq!(summary.updated(), 0);
+    assert_eq!(summary.skipped(), 0);
+    assert_eq!(imported.profile_id(), &target_profile_id);
+    assert_eq!(imported.space_id(), &target_space_id);
+    assert_eq!(imported.title(), "Research Brief");
+    assert_eq!(imported.favicon_key(), Some("https://example.com/favicon.ico"));
+    assert!(imported.flags().pinned);
+    assert!(imported.flags().favorite);
+    assert_eq!(imported.zoom_percent(), 125);
+    Ok(())
+}
+
+#[test]
+fn sync_snapshot_updates_existing_tab_metadata() -> Result<(), Box<dyn Error>> {
+    let mut source = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let source_home_tab_id = source.snapshot()?.active_tab_id;
+    source.set_tab_sync_enabled(&source_home_tab_id, false)?;
+    let source_tab_id = source.open_tab(UrlText::parse("https://example.com/research")?);
+    source.set_tab_title(&source_tab_id, "Research Brief")?;
+    source.set_tab_favicon_key(&source_tab_id, "https://example.com/favicon.ico")?;
+    let bytes = source.build_sync_snapshot_bytes()?;
+
+    let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let target_tab_id = target.open_tab(UrlText::parse("https://example.com/research")?);
+    target.set_tab_title(&target_tab_id, "Old Title")?;
+    let summary = target.apply_sync_snapshot_bytes(&bytes)?;
+    let snapshot = target.snapshot()?;
+    let updated =
+        snapshot.tabs.iter().find(|tab| tab.id() == &target_tab_id).ok_or("missing updated tab")?;
+
+    assert_eq!(summary.imported(), 0);
+    assert_eq!(summary.updated(), 1);
+    assert_eq!(summary.skipped(), 0);
+    assert_eq!(updated.title(), "Research Brief");
+    assert_eq!(updated.favicon_key(), Some("https://example.com/favicon.ico"));
+    Ok(())
+}
+
+#[test]
 fn sync_snapshot_updates_existing_bookmark_metadata() -> Result<(), Box<dyn Error>> {
     let mut source = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
-    source.open_tab(UrlText::parse("https://example.com/research")?);
+    let source_home_tab_id = source.snapshot()?.active_tab_id;
+    source.set_tab_sync_enabled(&source_home_tab_id, false)?;
+    let source_tab_id = source.open_tab(UrlText::parse("https://example.com/research")?);
+    source.set_tab_sync_enabled(&source_tab_id, false)?;
     let source_bookmark_id = source.bookmark_active_tab()?;
     source.set_bookmark_collection_name(&source_bookmark_id, "Research")?;
     source.set_bookmark_tags(&source_bookmark_id, vec!["servo".to_string()])?;

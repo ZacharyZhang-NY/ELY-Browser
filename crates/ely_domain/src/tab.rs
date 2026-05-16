@@ -1,5 +1,7 @@
 use std::time::SystemTime;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{DomainError, ProfileId, SpaceId, SplitId, TabGroupId, TabId, UrlText};
 
 pub const DEFAULT_ZOOM_PERCENT: u16 = 100;
@@ -16,7 +18,7 @@ pub enum TabState {
     Archived,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TabFlags {
     pub pinned: bool,
     pub favorite: bool,
@@ -208,6 +210,10 @@ impl BrowserTab {
         self.flags.pinned = pinned;
     }
 
+    pub fn set_flags(&mut self, flags: TabFlags) {
+        self.flags = flags;
+    }
+
     pub fn move_to_space(&mut self, space_id: SpaceId) {
         self.space_id = space_id;
     }
@@ -283,6 +289,15 @@ impl BrowserTab {
 
     pub fn set_sync_enabled(&mut self, sync_enabled: bool) {
         self.sync_enabled = sync_enabled;
+    }
+
+    pub fn restore_activity_timestamps(
+        &mut self,
+        created_at: SystemTime,
+        last_active_at: SystemTime,
+    ) {
+        self.created_at = created_at;
+        self.last_active_at = last_active_at;
     }
 
     /// Replace this tab's URL directly while preserving navigation
