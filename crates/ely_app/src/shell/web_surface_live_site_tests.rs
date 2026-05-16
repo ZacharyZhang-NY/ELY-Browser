@@ -125,8 +125,8 @@ fn assert_web_surface_scrolls_prd_site() -> Result<(), Box<dyn Error>> {
     let profile_id = ProfileId::new();
     let case = PRD_TOP_SITE_CASES
         .iter()
-        .find(|case| case.url == "https://servo.org/")
-        .ok_or("missing servo.org live-site case")?;
+        .find(|case| case.url == "https://github.com")
+        .ok_or("missing github.com live-site case")?;
     let tab = web_tab(profile_id, case.url)?;
 
     assert_eq!(
@@ -299,24 +299,23 @@ fn wait_for_ready_frame(
     let mut last_error = None;
 
     loop {
-        if started_at.elapsed() >= LIVE_SITE_WAIT_TIMEOUT {
-            return Err(last_error.unwrap_or_else(|| format!("timed out rendering {}", case.url)));
-        }
-
         store.tick(std::slice::from_ref(tab_id));
         match store.state(tab_id) {
             Some(WebSurfaceState::Ready(frame)) => {
                 if let Err(error) = validate_prd_frame(frame, case, 0) {
                     last_error = Some(error);
-                    thread::sleep(LIVE_SITE_WAIT_INTERVAL);
-                    continue;
+                } else {
+                    return Ok(frame.clone());
                 }
-                return Ok(frame.clone());
             }
             Some(WebSurfaceState::Failed { message, .. }) => {
                 return Err(format!("{} failed: {message}", case.url));
             }
             Some(WebSurfaceState::Loading { .. }) | None => {}
+        }
+
+        if started_at.elapsed() >= LIVE_SITE_WAIT_TIMEOUT {
+            return Err(last_error.unwrap_or_else(|| format!("timed out rendering {}", case.url)));
         }
 
         thread::sleep(LIVE_SITE_WAIT_INTERVAL);
@@ -334,12 +333,6 @@ fn wait_for_ready_frame_at_scroll(
     let mut last_error = None;
 
     loop {
-        if started_at.elapsed() >= LIVE_SITE_WAIT_TIMEOUT {
-            return Err(last_error.unwrap_or_else(|| {
-                format!("timed out rendering {} at scroll y={expected_scroll_y}", case.url)
-            }));
-        }
-
         store.tick(std::slice::from_ref(tab_id));
         match store.state(tab_id) {
             Some(WebSurfaceState::Ready(frame))
@@ -347,10 +340,7 @@ fn wait_for_ready_frame_at_scroll(
             {
                 if let Err(error) = validate_prd_frame(frame, case, expected_scroll_y) {
                     last_error = Some(error);
-                    thread::sleep(LIVE_SITE_WAIT_INTERVAL);
-                    continue;
-                }
-                if !frame.has_hardware_surface()
+                } else if !frame.has_hardware_surface()
                     && let Some(previous_sample_hash) = previous_sample_hash
                     && frame.sample_hash() == previous_sample_hash
                 {
@@ -358,16 +348,27 @@ fn wait_for_ready_frame_at_scroll(
                         "{} scroll y={expected_scroll_y} sample hash unchanged",
                         case.url
                     ));
-                    thread::sleep(LIVE_SITE_WAIT_INTERVAL);
-                    continue;
+                } else {
+                    return Ok(frame.clone());
                 }
-                return Ok(frame.clone());
             }
-            Some(WebSurfaceState::Ready(_)) => {}
+            Some(WebSurfaceState::Ready(frame)) => {
+                last_error = Some(format!(
+                    "{} expected scroll y={expected_scroll_y}, observed {}",
+                    case.url,
+                    frame.detail_label()
+                ));
+            }
             Some(WebSurfaceState::Failed { message, .. }) => {
                 return Err(format!("{} failed: {message}", case.url));
             }
             Some(WebSurfaceState::Loading { .. }) | None => {}
+        }
+
+        if started_at.elapsed() >= LIVE_SITE_WAIT_TIMEOUT {
+            return Err(last_error.unwrap_or_else(|| {
+                format!("timed out rendering {} at scroll y={expected_scroll_y}", case.url)
+            }));
         }
 
         thread::sleep(LIVE_SITE_WAIT_INTERVAL);
@@ -385,12 +386,6 @@ fn wait_for_ready_frame_at_size(
     let mut last_error = None;
 
     loop {
-        if started_at.elapsed() >= LIVE_SITE_WAIT_TIMEOUT {
-            return Err(last_error.unwrap_or_else(|| {
-                format!("timed out rendering {} at {expected_width}x{expected_height}", case.url)
-            }));
-        }
-
         store.tick(std::slice::from_ref(tab_id));
         match store.state(tab_id) {
             Some(WebSurfaceState::Ready(frame))
@@ -401,16 +396,21 @@ fn wait_for_ready_frame_at_size(
                     validate_prd_frame_at_size(frame, case, expected_width, expected_height)
                 {
                     last_error = Some(error);
-                    thread::sleep(LIVE_SITE_WAIT_INTERVAL);
-                    continue;
+                } else {
+                    return Ok(frame.clone());
                 }
-                return Ok(frame.clone());
             }
             Some(WebSurfaceState::Ready(_)) => {}
             Some(WebSurfaceState::Failed { message, .. }) => {
                 return Err(format!("{} failed: {message}", case.url));
             }
             Some(WebSurfaceState::Loading { .. }) | None => {}
+        }
+
+        if started_at.elapsed() >= LIVE_SITE_WAIT_TIMEOUT {
+            return Err(last_error.unwrap_or_else(|| {
+                format!("timed out rendering {} at {expected_width}x{expected_height}", case.url)
+            }));
         }
 
         thread::sleep(LIVE_SITE_WAIT_INTERVAL);
@@ -427,6 +427,25 @@ fn wait_for_ready_frame_at_css_size(
     let mut last_error = None;
 
     loop {
+        store.tick(std::slice::from_ref(tab_id));
+        match store.state(tab_id) {
+            Some(WebSurfaceState::Ready(frame))
+                if frame.size().width == expected.physical_width
+                    && frame.size().height == expected.physical_height =>
+            {
+                if let Err(error) = validate_prd_frame_at_css_size(frame, case, expected) {
+                    last_error = Some(error);
+                } else {
+                    return Ok(frame.clone());
+                }
+            }
+            Some(WebSurfaceState::Ready(_)) => {}
+            Some(WebSurfaceState::Failed { message, .. }) => {
+                return Err(format!("{} failed: {message}", case.url));
+            }
+            Some(WebSurfaceState::Loading { .. }) | None => {}
+        }
+
         if started_at.elapsed() >= LIVE_SITE_WAIT_TIMEOUT {
             return Err(last_error.unwrap_or_else(|| {
                 format!(
@@ -438,26 +457,6 @@ fn wait_for_ready_frame_at_css_size(
                     expected.css_height,
                 )
             }));
-        }
-
-        store.tick(std::slice::from_ref(tab_id));
-        match store.state(tab_id) {
-            Some(WebSurfaceState::Ready(frame))
-                if frame.size().width == expected.physical_width
-                    && frame.size().height == expected.physical_height =>
-            {
-                if let Err(error) = validate_prd_frame_at_css_size(frame, case, expected) {
-                    last_error = Some(error);
-                    thread::sleep(LIVE_SITE_WAIT_INTERVAL);
-                    continue;
-                }
-                return Ok(frame.clone());
-            }
-            Some(WebSurfaceState::Ready(_)) => {}
-            Some(WebSurfaceState::Failed { message, .. }) => {
-                return Err(format!("{} failed: {message}", case.url));
-            }
-            Some(WebSurfaceState::Loading { .. }) | None => {}
         }
 
         thread::sleep(LIVE_SITE_WAIT_INTERVAL);

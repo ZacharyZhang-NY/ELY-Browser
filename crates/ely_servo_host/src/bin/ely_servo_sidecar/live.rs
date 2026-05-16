@@ -6,11 +6,13 @@ use std::{
 };
 
 use ely_domain::{DEFAULT_ZOOM_PERCENT, ProfileId, TabId, UrlText};
+#[cfg(all(feature = "hardware-render", target_os = "macos"))]
+use ely_servo_host::WebViewState;
 use ely_servo_host::{
     IOSurfaceIdentity, KeyboardTextRequest, MouseClickRequest, MouseHoverRequest,
     NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest,
     RenderingContextKind, ResizeRequest, ScrollRequest, ServoHost, ServoSurfaceSize,
-    SoftwareServoHost, WebViewState,
+    SoftwareServoHost,
 };
 
 use super::args::LiveArgs;
@@ -361,7 +363,7 @@ fn poll_frame(
 ) -> Result<LiveOutcome, LiveSidecarError> {
     host.tick();
     let snapshot = host.snapshot(&session.webview_id)?;
-    if !snapshot.has_pending_frame() {
+    if !should_paint_live_frame(snapshot.has_pending_frame(), session.awaiting_visible_frame) {
         return Ok(LiveOutcome::empty());
     }
 
@@ -377,6 +379,10 @@ fn poll_frame(
     }
 
     Ok(LiveOutcome::empty())
+}
+
+fn should_paint_live_frame(has_pending_frame: bool, awaiting_visible_frame: bool) -> bool {
+    has_pending_frame || awaiting_visible_frame
 }
 
 fn paint_pending_frame(
@@ -419,21 +425,11 @@ fn paint_hardware_surface_frame(
     if !session.ever_visible_frame {
         return paint_initial_hardware_surface_frame(host, session);
     }
-
-    let paint_started_at = Instant::now();
-    host.paint_without_readback(&session.webview_id)?;
-    let snapshot = host.snapshot(&session.webview_id)?;
-    let paint_ns = elapsed_ns(paint_started_at);
-    let encode_started_at = Instant::now();
-    let report = LiveFrameReport::new_hardware_surface(
-        &snapshot,
-        session.width,
-        session.height,
-        session.device_pixel_ratio(),
-    );
-    let encode_ns = elapsed_ns(encode_started_at);
-    let timings = PartialFrameTimings { paint_ns, encode_ns };
-    Ok((LiveOutcome::from_report(report, timings), true))
+    // Cross-process IOSurface lookup can block the app-side worker for
+    // seconds on macOS. Live app frames use readback so scroll/click
+    // input stays bounded by the paint barrier instead of the surface
+    // import path.
+    paint_readback_frame(host, session)
 }
 
 #[cfg(all(feature = "hardware-render", target_os = "macos"))]
@@ -530,5 +526,16 @@ mod tests {
             session.height, 720,
             "first apply_layout must resize after hidpi has been pushed",
         );
+    }
+
+    #[test]
+    fn awaiting_visible_frame_forces_paint_without_pending_flag() {
+        assert!(should_paint_live_frame(false, true));
+    }
+
+    #[test]
+    fn idle_poll_waits_for_pending_frame() {
+        assert!(!should_paint_live_frame(false, false));
+        assert!(should_paint_live_frame(true, false));
     }
 }
