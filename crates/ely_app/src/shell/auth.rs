@@ -15,7 +15,8 @@ use gpui::Context;
 
 use crate::services::servo_profile_data::{default_profile_data_root, profile_data_dir};
 
-use super::{ElyShell, ShellState, SyncStateUpdate};
+use super::sync_state::{SyncStateUpdate, sync_platform_label};
+use super::{ElyShell, ShellState};
 
 /// Where the user is in the email OTP form. Tracked on `ElyShell` so
 /// the Sync settings page can pick the right widget cluster (only the
@@ -131,7 +132,7 @@ impl ElyShell {
             return;
         };
         let profile_dir = profile_data_dir(&profile_root, &active_profile_id);
-        match SyncEngine::for_profile_dir(&profile_dir, "ELY", super::sync_platform_label()) {
+        match SyncEngine::for_profile_dir(&profile_dir, "ELY", sync_platform_label()) {
             Ok(mut engine) => {
                 let _ = engine.install_bearer("");
             }
@@ -210,8 +211,7 @@ fn spawn_verify_otp(
                 }
             };
             let mut engine =
-                match SyncEngine::for_profile_dir(&profile_dir, "ELY", super::sync_platform_label())
-                {
+                match SyncEngine::for_profile_dir(&profile_dir, "ELY", sync_platform_label()) {
                     Ok(engine) => engine,
                     Err(error) => {
                         let _ = tx.send(SyncStateUpdate::AuthError {

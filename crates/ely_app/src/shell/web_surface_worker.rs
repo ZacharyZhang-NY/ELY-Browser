@@ -162,20 +162,27 @@ impl LiveRuntimeWorker {
         cvar.notify_one();
     }
 
-    pub(super) fn submit_poll(&self, tab_id: String) {
+    pub(super) fn submit_poll(&self, tab_id: String) -> bool {
         let (lock, cvar) = &*self.queue;
         let mut q = match lock.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
         if q.shutdown {
-            return;
+            return false;
         }
         // A pending Ensure already produces the latest frame after its
         // run; don't downgrade it to a Poll. Only insert if nothing is
         // queued.
-        q.pending.entry(tab_id.clone()).or_insert(WorkerRequest::Poll { tab_id });
+        let inserted = match q.pending.entry(tab_id.clone()) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(WorkerRequest::Poll { tab_id });
+                true
+            }
+            std::collections::btree_map::Entry::Occupied(_) => false,
+        };
         cvar.notify_one();
+        inserted
     }
 
     pub(super) fn submit_close(&self, tab_id: String) {

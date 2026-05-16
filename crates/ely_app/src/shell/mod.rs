@@ -16,19 +16,23 @@ mod plugins;
 mod reading_list;
 mod render;
 mod settings_actions;
+mod shell_actions;
 mod shortcut_files;
 mod sidebar;
 mod site_permissions;
 mod space_files;
 mod spaces;
 mod splits;
+mod sync_state;
 mod tab_groups;
 mod tab_lifecycle;
 mod web_surface;
+mod web_surface_cadence;
 mod web_surface_controller;
 mod web_surface_frame;
 mod web_surface_geometry;
 mod web_surface_keyboard;
+mod web_surface_metadata;
 mod web_surface_permissions;
 mod web_surface_runtime;
 mod web_surface_state;
@@ -51,13 +55,8 @@ use bookmarks::PendingBookmarkEdit;
 use downloads::PendingDownloadFileAction;
 use history::{PendingHistoryDomainClear, PendingHistoryTimeClear};
 use plugins::{PendingPluginInstall, PendingPluginUninstall};
+use sync_state::SyncStateUpdate;
 use web_surface::WebSurfaceStore;
-
-use crate::{
-    CloseCurrentTab, DownloadCurrentPage, FocusAddressBar, FocusCommandMode, OpenDownloads,
-    OpenHistory, OpenNewTab, OpenSettings, OpenTaskManager, ResetZoom, RestoreClosedTab,
-    SelectNextTab, SelectPreviousTab, ToggleFavoriteTab, TogglePinnedTab, ZoomIn, ZoomOut,
-};
 
 enum ShellState {
     Ready(Box<BrowserCore>),
@@ -111,36 +110,6 @@ pub struct ElyShell {
     pub(crate) auth_flow_phase: auth::AuthFlowPhase,
     _command_subscription: Subscription,
     _translucency_subscription: Subscription,
-}
-
-/// Messages the off-thread sync workers push back to the shell so
-/// `SyncConnectionState` on `BrowserCore` and the in-flight auth
-/// form reflect live state without the UI thread ever touching the
-/// network. `SignedIn` is the initial-probe state set synchronously
-/// on shell startup and does not flow through this channel.
-#[derive(Clone, Debug)]
-pub(crate) enum SyncStateUpdate {
-    SignedOut,
-    AwaitingDeviceApproval,
-    SyncReady { last_synced_at_secs: u64 },
-    SyncError { message: String },
-    AuthOtpSent { email: String },
-    AuthSucceeded { email: String },
-    AuthError { email: String, message: String },
-}
-
-/// Stable label for the current OS used by the device registration
-/// payload. Defined once here so every off-thread call site agrees.
-pub(crate) const fn sync_platform_label() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "macos"
-    } else if cfg!(target_os = "windows") {
-        "windows"
-    } else if cfg!(target_os = "linux") {
-        "linux"
-    } else {
-        "other"
-    }
 }
 
 impl ElyShell {
@@ -485,129 +454,6 @@ impl ElyShell {
         {
             cx.notify();
         }
-    }
-
-    fn on_close_current_tab(
-        &mut self,
-        _: &CloseCurrentTab,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.close_active_tab(window, cx);
-    }
-
-    fn on_focus_address_bar(
-        &mut self,
-        _: &FocusAddressBar,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.focus_address_bar(window, cx);
-    }
-
-    fn on_focus_command_mode(
-        &mut self,
-        _: &FocusCommandMode,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.focus_command_mode(window, cx);
-    }
-
-    fn on_open_new_tab(&mut self, _: &OpenNewTab, window: &mut Window, cx: &mut Context<Self>) {
-        self.open_new_tab(window, cx);
-    }
-
-    fn on_open_downloads(
-        &mut self,
-        _: &OpenDownloads,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.open_downloads(window, cx);
-    }
-
-    fn on_download_current_page(
-        &mut self,
-        _: &DownloadCurrentPage,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.download_active_tab(window, cx);
-    }
-
-    fn on_open_history(&mut self, _: &OpenHistory, window: &mut Window, cx: &mut Context<Self>) {
-        self.open_history(window, cx);
-    }
-
-    fn on_open_settings(&mut self, _: &OpenSettings, window: &mut Window, cx: &mut Context<Self>) {
-        self.open_settings(window, cx);
-    }
-
-    fn on_open_task_manager(
-        &mut self,
-        _: &OpenTaskManager,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.open_task_manager(window, cx);
-    }
-
-    fn on_restore_closed_tab(
-        &mut self,
-        _: &RestoreClosedTab,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.restore_closed_tab(window, cx);
-    }
-
-    fn on_reset_zoom(&mut self, _: &ResetZoom, _: &mut Window, cx: &mut Context<Self>) {
-        self.reset_active_tab_zoom(cx);
-    }
-
-    fn on_select_next_tab(
-        &mut self,
-        _: &SelectNextTab,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.select_next_tab(window, cx);
-    }
-
-    fn on_select_previous_tab(
-        &mut self,
-        _: &SelectPreviousTab,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.select_previous_tab(window, cx);
-    }
-
-    fn on_toggle_favorite_tab(
-        &mut self,
-        _: &ToggleFavoriteTab,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.toggle_active_tab_favorite(cx);
-    }
-
-    fn on_toggle_pinned_tab(
-        &mut self,
-        _: &TogglePinnedTab,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.toggle_active_tab_pinned(cx);
-    }
-
-    fn on_zoom_in(&mut self, _: &ZoomIn, _: &mut Window, cx: &mut Context<Self>) {
-        self.zoom_active_tab_in(cx);
-    }
-
-    fn on_zoom_out(&mut self, _: &ZoomOut, _: &mut Window, cx: &mut Context<Self>) {
-        self.zoom_active_tab_out(cx);
     }
 }
 

@@ -9,6 +9,7 @@ use gpui_component::slider::SliderValue;
 
 use crate::services::servo_profile_data::{default_profile_data_root, profile_data_dir};
 
+use super::sync_state::{SyncStateUpdate, sync_platform_label};
 use super::{ElyShell, ShellState};
 
 impl ElyShell {
@@ -316,25 +317,25 @@ fn run_sync_upload(
     profile_dir: std::path::PathBuf,
     device_name: String,
     bytes: Vec<u8>,
-    inbox: std::sync::mpsc::Sender<super::SyncStateUpdate>,
+    inbox: std::sync::mpsc::Sender<SyncStateUpdate>,
 ) {
     let mut engine = match SyncEngine::for_profile_dir(
         &profile_dir,
         device_name,
-        super::sync_platform_label(),
+        sync_platform_label(),
     ) {
         Ok(engine) => engine,
         Err(error) => {
             let message = error.to_string();
             tracing::warn!(target: "ely::sync", error = %message, "could not initialise sync engine");
-            let _ = inbox.send(super::SyncStateUpdate::SyncError { message });
+            let _ = inbox.send(SyncStateUpdate::SyncError { message });
             return;
         }
     };
     match engine.upload_bytes(bytes) {
         Ok(ely_browser_core::SyncOutcome::SignedOut) => {
             tracing::info!(target: "ely::sync", "no bearer token on disk; sync skipped");
-            let _ = inbox.send(super::SyncStateUpdate::SignedOut);
+            let _ = inbox.send(SyncStateUpdate::SignedOut);
         }
         Ok(ely_browser_core::SyncOutcome::Uploaded {
             snapshot_id,
@@ -354,15 +355,15 @@ fn run_sync_upload(
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            let _ = inbox.send(super::SyncStateUpdate::SyncReady { last_synced_at_secs });
+            let _ = inbox.send(SyncStateUpdate::SyncReady { last_synced_at_secs });
         }
         Err(error) => {
             let message = error.to_string();
             tracing::warn!(target: "ely::sync", error = %message, "snapshot upload failed");
             let update = if message.contains("device_not_approved") {
-                super::SyncStateUpdate::AwaitingDeviceApproval
+                SyncStateUpdate::AwaitingDeviceApproval
             } else {
-                super::SyncStateUpdate::SyncError { message }
+                SyncStateUpdate::SyncError { message }
             };
             let _ = inbox.send(update);
         }

@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use ely_domain::TabId;
 use gpui::{Bounds, Pixels};
@@ -116,6 +116,7 @@ pub(super) struct PerTabSurface {
     pub(super) viewport_size: Option<WebSurfaceSize>,
     pub(super) last_ensure_key: Option<WebSurfaceEnsureKey>,
     pub(super) hover_point: Option<WebSurfaceClickPoint>,
+    last_hover_enqueued_at: Option<Instant>,
     pub(super) click_point: Option<WebSurfaceClickState>,
     pub(super) pending_scroll_delta: Option<WebSurfaceScrollDelta>,
     pub(super) pending_scroll_point: Option<WebSurfaceClickPoint>,
@@ -132,6 +133,7 @@ impl PerTabSurface {
             viewport_size: None,
             last_ensure_key: None,
             hover_point: None,
+            last_hover_enqueued_at: None,
             click_point: None,
             pending_scroll_delta: None,
             pending_scroll_point: None,
@@ -144,6 +146,15 @@ impl PerTabSurface {
 
     pub(super) fn mark_pending_input_started(&mut self) {
         self.pending_input_started_at.get_or_insert_with(Instant::now);
+    }
+
+    pub(super) fn hover_is_throttled(&self, now: Instant) -> bool {
+        self.last_hover_enqueued_at
+            .is_some_and(|last| now.duration_since(last) < HOVER_INPUT_MIN_INTERVAL)
+    }
+
+    pub(super) fn mark_hover_enqueued(&mut self, now: Instant) {
+        self.last_hover_enqueued_at = Some(now);
     }
 
     pub(super) fn should_ensure(&self, key: &WebSurfaceEnsureKey) -> bool {
@@ -170,6 +181,8 @@ impl PerTabSurface {
             .unwrap_or_default()
     }
 }
+
+const HOVER_INPUT_MIN_INTERVAL: Duration = Duration::from_millis(32);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct WebSurfaceEnsureKey {

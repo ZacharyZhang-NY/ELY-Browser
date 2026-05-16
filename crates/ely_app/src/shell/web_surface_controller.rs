@@ -6,7 +6,7 @@ use crate::services::ProfileDataMode;
 
 use super::{
     ElyShell,
-    web_surface::WebSurfacePageMetadata,
+    web_surface_metadata::WebSurfacePageMetadata,
     web_surface_permissions::web_surface_site_permissions_for_tab,
     web_surface_runtime::{WebSurfaceUrlChange, WebSurfaceUrlChangeKind},
     web_surface_state::{WebSurfaceInputOutcome, WebSurfaceState},

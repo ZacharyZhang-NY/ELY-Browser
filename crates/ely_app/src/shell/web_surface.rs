@@ -1,10 +1,11 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Instant};
 
 use ely_domain::{BrowserTab, TabId};
 use gpui::{Bounds, Pixels, Point};
 
 use crate::services::ProfileDataMode;
 
+use super::web_surface_metadata::WebSurfacePageMetadata;
 use super::{
     web_surface_frame::WebSurfaceFrame,
     web_surface_geometry::{WebSurfaceClickPoint, WebSurfaceScrollDelta, WebSurfaceSize},
@@ -16,33 +17,6 @@ use super::{
         WebSurfaceState, WebSurfaceTextInputState,
     },
 };
-
-/// One page's worth of metadata observed in a Ready frame. The
-/// controller applies these to the `BrowserTab` (title / favicon_key)
-/// after the frame has been swapped into the surface state. Title and
-/// favicon are independent — a navigation typically settles the URL
-/// first, then Servo emits a title change a frame or two later, and
-/// the favicon URL is derived from the loaded URL.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct WebSurfacePageMetadata {
-    pub(super) tab_id: TabId,
-    pub(super) title: Option<String>,
-    pub(super) favicon_url: Option<String>,
-}
-
-impl WebSurfacePageMetadata {
-    fn from_frame(tab_id: &TabId, frame: &WebSurfaceFrame) -> Option<Self> {
-        let title = frame.title().map(str::to_string);
-        let favicon_url = frame
-            .loaded_url()
-            .and_then(|loaded| ely_domain::UrlText::parse(loaded).ok())
-            .and_then(|url| url.favicon_url());
-        if title.is_none() && favicon_url.is_none() {
-            return None;
-        }
-        Some(Self { tab_id: tab_id.clone(), title, favicon_url })
-    }
-}
 
 pub(super) struct WebSurfaceStore {
     runtime: WebSurfaceRuntime,
@@ -125,11 +99,6 @@ impl WebSurfaceStore {
                     match self.initial_display_gate_message(&tab_id, &frame, had_ready) {
                         Ok(()) => {}
                         Err(message) => {
-                            // Only transition to Failed when there is
-                            // nothing on screen yet — once a real frame
-                            // has rendered, transient gate failures
-                            // (e.g. a stray empty-paint pass) must not
-                            // wipe it out.
                             if !had_ready {
                                 self.surface_mut(&tab_id).state =
                                     Some(WebSurfaceState::Failed { message });
@@ -163,12 +132,6 @@ impl WebSurfaceStore {
                         Some(WebSurfaceState::Ready(_))
                     );
                     if had_ready {
-                        // Keep the last good frame on screen — the
-                        // worker emits Failed for any transient ensure
-                        // / poll error (parse glitch, momentary IPC
-                        // hiccup) and downgrading every one of them
-                        // strobes the page. The error still surfaces
-                        // through `tracing` for diagnostics.
                         tracing::warn!(
                             target: "ely::web_surface",
                             tab_id = %tab_id,
@@ -238,12 +201,6 @@ impl WebSurfaceStore {
         });
         surface.pending_scroll_point = Some(point);
         surface.mark_pending_input_started();
-        // Drop any buffered click — its viewport coordinates were
-        // captured against the pre-scroll page, so applying it after
-        // the scroll would land on the wrong DOM element. Keep
-        // `keyboard_focus` and `typed_text` though: Servo maintains
-        // its own DOM focus across scrolls, so a focused input keeps
-        // accepting the user's keystrokes after they wheel-scroll.
         surface.click_point = None;
         WebSurfaceInputOutcome::Applied
     }
@@ -279,6 +236,16 @@ impl WebSurfaceStore {
         position: Point<Pixels>,
         scale_factor: f32,
     ) -> WebSurfaceInputOutcome {
+        self.record_hover_point_at(tab_id, position, scale_factor, Instant::now())
+    }
+
+    fn record_hover_point_at(
+        &mut self,
+        tab_id: &TabId,
+        position: Point<Pixels>,
+        scale_factor: f32,
+        now: Instant,
+    ) -> WebSurfaceInputOutcome {
         let Some(surface) = self.surfaces.get_mut(tab_id) else {
             return WebSurfaceInputOutcome::DroppedNoViewportBounds;
         };
@@ -290,7 +257,14 @@ impl WebSurfaceStore {
         else {
             return WebSurfaceInputOutcome::DroppedOutOfBounds;
         };
+        if surface.hover_point == Some(point) {
+            return WebSurfaceInputOutcome::NoChange;
+        }
+        if surface.hover_is_throttled(now) {
+            return WebSurfaceInputOutcome::NoChange;
+        }
         surface.hover_point = Some(point);
+        surface.mark_hover_enqueued(now);
         WebSurfaceInputOutcome::Applied
     }
 

@@ -9,6 +9,7 @@ use crate::services::{
 };
 
 use super::{
+    web_surface_cadence::{WebSurfaceInputKind, WebSurfacePollCadence},
     web_surface_frame::WebSurfaceFrame,
     web_surface_geometry::{WebSurfaceScrollOffset, WebSurfaceSize},
     web_surface_permissions::WebSurfaceSitePermission,
@@ -69,6 +70,7 @@ impl WebSurfaceRuntime {
             session.size = size;
             session.zoom_percent = zoom_percent;
             session.scroll_offset = next_scroll_offset;
+            session.cadence.note_ensure(input_kind, started_loading, Instant::now());
             started_loading
         };
 
@@ -96,29 +98,16 @@ impl WebSurfaceRuntime {
             return Err("Servo worker was created but is no longer registered".to_string());
         };
         scoped.worker.submit_ensure(request);
-        log_ensure_submitted(tab, size, input_kind, enqueued_at, started_loading);
+        log_ensure_submitted(tab, size, input_kind.label(), enqueued_at, started_loading);
 
         Ok(WebSurfaceEnsureResult { requested_url, started_loading })
     }
 
     pub(super) fn tick(&mut self, visible_tab_ids: &[TabId]) -> Vec<WebSurfaceRuntimeFrame> {
-        // Submit a Poll for every visible tab whose session is live so
-        // animations / JS-driven content keep advancing without user
-        // input. The worker coalesces — a Poll never overrides a
-        // pending Ensure — so this stays cheap even at 120 Hz.
-        for tab_id in visible_tab_ids {
-            let Some(session) = self.sessions.get(tab_id) else {
-                continue;
-            };
-            let Some(scoped) = self.workers.get(&session.scope) else {
-                continue;
-            };
-            scoped.worker.submit_poll(tab_id.as_str().to_string());
-        }
-
         let mut frames = Vec::new();
         let mut dead_scopes = Vec::new();
         let scopes: Vec<WebSurfaceRuntimeScope> = self.workers.keys().cloned().collect();
+        let now = Instant::now();
         for scope in scopes {
             let responses = self
                 .workers
@@ -138,6 +127,7 @@ impl WebSurfaceRuntime {
                         let requested_url = session.requested_url.clone();
                         let scroll_offset = session.scroll_offset;
                         let zoom_percent = session.zoom_percent;
+                        session.cadence.note_frame(frame.render_state(), now);
                         match WebSurfaceFrame::from_live_frame(
                             requested_url.clone(),
                             scroll_offset,
@@ -174,6 +164,22 @@ impl WebSurfaceRuntime {
         }
         for scope in dead_scopes {
             self.workers.remove(&scope);
+        }
+
+        let poll_now = Instant::now();
+        for tab_id in visible_tab_ids {
+            let Some(session) = self.sessions.get_mut(tab_id) else {
+                continue;
+            };
+            if !session.cadence.should_poll(poll_now) {
+                continue;
+            }
+            let Some(scoped) = self.workers.get(&session.scope) else {
+                continue;
+            };
+            if scoped.worker.submit_poll(tab_id.as_str().to_string()) {
+                session.cadence.note_poll_submitted(poll_now);
+            }
         }
 
         frames
@@ -269,6 +275,7 @@ pub(super) struct WebSurfaceSession {
     pub(super) zoom_percent: u16,
     pub(super) scroll_offset: WebSurfaceScrollOffset,
     pub(super) pending_user_navigation: bool,
+    pub(super) cadence: WebSurfacePollCadence,
 }
 
 impl WebSurfaceSession {
@@ -280,6 +287,7 @@ impl WebSurfaceSession {
             zoom_percent: 0,
             scroll_offset: WebSurfaceScrollOffset::default(),
             pending_user_navigation: false,
+            cadence: WebSurfacePollCadence::default(),
         }
     }
 
@@ -394,17 +402,17 @@ fn input_requests_history_navigation(input: &WebSurfacePendingInput) -> bool {
         || input.typed_text.as_deref().is_some_and(|text| text.contains('\n'))
 }
 
-fn pending_input_kind(input: &WebSurfacePendingInput) -> &'static str {
+fn pending_input_kind(input: &WebSurfacePendingInput) -> WebSurfaceInputKind {
     if input.scroll_delta.is_some() {
-        "scroll"
+        WebSurfaceInputKind::Scroll
     } else if input.click_point.is_some() {
-        "click"
+        WebSurfaceInputKind::Click
     } else if input.typed_text.is_some() {
-        "text"
+        WebSurfaceInputKind::Text
     } else if input.hover_point.is_some() {
-        "hover"
+        WebSurfaceInputKind::Hover
     } else {
-        "idle"
+        WebSurfaceInputKind::Idle
     }
 }
 

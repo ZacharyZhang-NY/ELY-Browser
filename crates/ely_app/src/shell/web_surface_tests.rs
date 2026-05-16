@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, time::Duration};
 
 use ely_domain::{BrowserTab, ProfileId, SpaceId, TabId, UrlText};
 use gpui::{Bounds, point, px, size};
@@ -215,6 +215,36 @@ fn zero_wheel_delta_reports_zero_delta() -> Result<(), Box<dyn Error>> {
         ),
         WebSurfaceInputOutcome::DroppedZeroDelta,
     );
+    Ok(())
+}
+
+#[test]
+fn hover_input_is_rate_limited() -> Result<(), Box<dyn Error>> {
+    let mut store = WebSurfaceStore::new();
+    let tab = web_tab("https://example.com/hover")?;
+    let start = std::time::Instant::now();
+
+    assert_applied(store.record_viewport_size(tab.id(), web_bounds(), 1.0));
+    assert_applied(store.record_hover_point_at(tab.id(), point(px(10.0), px(10.0)), 1.0, start));
+    assert_eq!(
+        store.record_hover_point_at(
+            tab.id(),
+            point(px(12.0), px(12.0)),
+            1.0,
+            start + Duration::from_millis(8),
+        ),
+        WebSurfaceInputOutcome::NoChange,
+    );
+    assert_applied(store.record_hover_point_at(
+        tab.id(),
+        point(px(44.0), px(45.0)),
+        1.0,
+        start + Duration::from_millis(33),
+    ));
+
+    let input = store.take_pending_input(tab.id(), tab.url().as_str());
+
+    assert_eq!(input.hover_point.map(|point| (point.x(), point.y())), Some((44, 45)));
     Ok(())
 }
 
