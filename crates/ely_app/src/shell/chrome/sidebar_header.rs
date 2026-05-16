@@ -21,10 +21,6 @@ use crate::shell::chrome::animations::fade_in;
 const HEADER_PT: f32 = 8.0;
 /// Horizontal padding of the sidebar header column.
 const HEADER_PX: f32 = 10.0;
-/// Vertical gap between the title row and the picker row.
-const HEADER_ROW_GAP: f32 = 8.0;
-/// Height of the title row (`ELY Browser ⌄`).
-const TITLE_ROW_HEIGHT: f32 = 20.0;
 /// Vertical padding inside the picker row (top/bottom).
 const PICKER_ROW_PY: f32 = 4.0;
 /// Horizontal padding inside the picker row (left/right).
@@ -36,6 +32,10 @@ const PICKER_BUTTON_SIZE: f32 = 32.0;
 /// Visual lift applied to the popover so it nestles just below the
 /// picker pill instead of sitting flush on its bottom edge.
 const DISCLOSURE_LIFT: f32 = 6.0;
+/// Width reserved at the start of the sidebar's picker row for the
+/// macOS traffic lights so the workspaces tile never collides with
+/// the close / minimize / maximize circles.
+pub(crate) const TRAFFIC_LIGHT_RESERVE: f32 = 76.0;
 
 pub(crate) fn render_sidebar_header(
     shell: &ElyShell,
@@ -51,35 +51,10 @@ pub(crate) fn render_sidebar_header(
         .pt(px(HEADER_PT))
         .px(px(HEADER_PX))
         .pb(px(HEADER_PX))
-        .gap(px(HEADER_ROW_GAP))
         .flex_shrink_0()
-        .child(render_title_row())
         .child(render_workspace_picker(snapshot, active_space, picker_open, cx))
         .into_any_element()
 }
-
-fn render_title_row() -> AnyElement {
-    div()
-        .h(px(TITLE_ROW_HEIGHT))
-        .flex()
-        .items_center()
-        .gap(px(4.0))
-        // Reserve the macOS traffic-light group plus a calm title gap.
-        .pl(px(TRAFFIC_LIGHT_RESERVE))
-        .child(
-            div()
-                .text_size(px(12.5))
-                .font_weight(gpui::FontWeight(500.0))
-                .text_color(rgb(colors::ink_2()))
-                .child("ELY Browser"),
-        )
-        .child(div().text_color(rgb(colors::ink_3())).opacity(0.6).child(IconName::ChevronDown))
-        .into_any_element()
-}
-
-/// Width reserved at the start of the sidebar's top row for the macOS
-/// traffic lights plus visual breathing room.
-const TRAFFIC_LIGHT_RESERVE: f32 = 90.0;
 
 fn render_workspace_picker(
     _snapshot: &BrowserSnapshot,
@@ -90,13 +65,15 @@ fn render_workspace_picker(
     // The disclosure renders at the window root (see render.rs) so it can
     // sit above a fullscreen click-out backdrop and extend past the
     // sidebar's overflow_hidden clip. Picker row keeps just the tile, the
-    // pill, and the add button.
+    // pill, and the add button — and reserves space at the start for the
+    // macOS traffic lights that float in this same horizontal band.
     div()
         .flex()
         .items_center()
         .gap(px(PICKER_ROW_GAP))
         .py(px(PICKER_ROW_PY))
         .px(px(PICKER_ROW_PX))
+        .pl(px(TRAFFIC_LIGHT_RESERVE))
         .child(render_workspaces_tile(cx))
         .child(render_picker_pill(active_space, picker_open, cx))
         .child(render_add_workspace_button(cx))
@@ -190,13 +167,15 @@ impl WorkspaceDisclosureAnchor {
     /// upstream, so changing one of those constants moves the popover
     /// with it.
     pub(crate) fn solve(sidebar_width_px: f32) -> Self {
-        let left_px =
-            spacing::SHELL_INSET + HEADER_PX + PICKER_ROW_PX + PICKER_BUTTON_SIZE + PICKER_ROW_GAP;
+        let left_px = spacing::SHELL_INSET
+            + HEADER_PX
+            + PICKER_ROW_PX
+            + TRAFFIC_LIGHT_RESERVE
+            + PICKER_BUTTON_SIZE
+            + PICKER_ROW_GAP;
 
         let top_px = spacing::SHELL_INSET
             + HEADER_PT
-            + TITLE_ROW_HEIGHT
-            + HEADER_ROW_GAP
             + PICKER_ROW_PY
             + PICKER_BUTTON_SIZE
             + PICKER_ROW_PY
@@ -206,10 +185,13 @@ impl WorkspaceDisclosureAnchor {
         // padded picker row. So:
         //   pill_w = sidebar_w
         //          - 2 * (HEADER_PX + PICKER_ROW_PX)   (row insets)
+        //          - TRAFFIC_LIGHT_RESERVE             (left reserve)
         //          - 2 * PICKER_BUTTON_SIZE            (tile + add)
         //          - 2 * PICKER_ROW_GAP                (two gaps)
-        let chrome =
-            2.0 * (HEADER_PX + PICKER_ROW_PX) + 2.0 * PICKER_BUTTON_SIZE + 2.0 * PICKER_ROW_GAP;
+        let chrome = 2.0 * (HEADER_PX + PICKER_ROW_PX)
+            + TRAFFIC_LIGHT_RESERVE
+            + 2.0 * PICKER_BUTTON_SIZE
+            + 2.0 * PICKER_ROW_GAP;
         let width_px = (sidebar_width_px - chrome).max(0.0);
 
         Self { top_px, left_px, width_px }
@@ -424,10 +406,12 @@ mod tests {
     fn anchor_lines_up_with_default_sidebar_picker_pill() {
         // Default sidebar (280 px) should land the popover at the
         // window-relative position the visual design was tuned for.
+        // After the title-row removal the picker is the only header
+        // row, so the anchor sits closer to the top edge.
         let anchor = WorkspaceDisclosureAnchor::solve(280.0);
-        assert_eq!(anchor.left_px, 66.0);
-        assert_eq!(anchor.top_px, 98.0);
-        assert_eq!(anchor.width_px, 180.0);
+        assert_eq!(anchor.left_px, 142.0);
+        assert_eq!(anchor.top_px, 70.0);
+        assert_eq!(anchor.width_px, 104.0);
     }
 
     #[test]
@@ -438,8 +422,8 @@ mod tests {
         let wide = WorkspaceDisclosureAnchor::solve(360.0);
         assert_eq!(narrow.left_px, wide.left_px);
         assert_eq!(narrow.top_px, wide.top_px);
-        assert_eq!(narrow.width_px, 140.0);
-        assert_eq!(wide.width_px, 260.0);
+        assert_eq!(narrow.width_px, 64.0);
+        assert_eq!(wide.width_px, 184.0);
     }
 
     #[test]
