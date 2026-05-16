@@ -43,9 +43,13 @@ pub(super) enum LiveRequest {
         hover_y: Option<u32>,
         typed_text: Option<String>,
         site_permissions: Vec<LiveSitePermission>,
+        #[serde(default)]
+        ready_surface_ids: Vec<u64>,
     },
     Poll {
         tab_id: String,
+        #[serde(default)]
+        ready_surface_ids: Vec<u64>,
     },
     Close {
         tab_id: String,

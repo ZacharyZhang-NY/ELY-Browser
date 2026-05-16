@@ -73,33 +73,18 @@ impl IOSurfaceCache {
     /// dimensions: duplicate handles for the same sized IOSurface are
     /// discarded, while a resized IOSurface that reuses the same
     /// `surface_id` replaces the cached pixel buffer.
+    #[cfg(test)]
     pub fn import(
         &mut self,
         mach_port_name: u32,
         surface_id: u64,
     ) -> Result<(), SurfaceImportError> {
-        let Some(iosurface) = objc2_io_surface::IOSurfaceRef::lookup_from_mach_port(mach_port_name)
-        else {
-            return Err(SurfaceImportError::LookupFailed { port: mach_port_name });
-        };
+        let pixel_buffer = import_pixel_buffer_from_mach_port(mach_port_name)?;
+        self.insert_pixel_buffer(surface_id, pixel_buffer);
+        Ok(())
+    }
 
-        // Both objc2-io-surface and the legacy `io_surface` crate wrap
-        // the same C `__IOSurface` pointer. CVPixelBufferCreateWithIOSurface
-        // (via core-video) expects the legacy crate's wrapper. Reach for
-        // the raw pointer and let TCFType CFRetain it independently so
-        // both Rust handles can drop without double-freeing.
-        let raw_ptr: *const std::ffi::c_void =
-            (&*iosurface) as *const objc2_io_surface::IOSurfaceRef as *const std::ffi::c_void;
-        #[allow(deprecated)]
-        let io_surface_view: IOSurface = {
-            #[expect(unsafe_code)]
-            unsafe {
-                IOSurface::wrap_under_get_rule(raw_ptr as io_surface::IOSurfaceRef)
-            }
-        };
-
-        let pixel_buffer = CVPixelBuffer::from_io_surface(&io_surface_view, None)
-            .map_err(|status| SurfaceImportError::PixelBufferBuildFailed { status })?;
+    pub(crate) fn insert_pixel_buffer(&mut self, surface_id: u64, pixel_buffer: CVPixelBuffer) {
         let width = pixel_buffer.get_width() as u32;
         let height = pixel_buffer.get_height() as u32;
 
@@ -108,13 +93,10 @@ impl IOSurfaceCache {
             .get(&surface_id)
             .is_some_and(|cached| cached.width == width && cached.height == height)
         {
-            deallocate_mach_port(mach_port_name);
-            return Ok(());
+            return;
         }
 
         self.pixel_buffers.insert(surface_id, CachedPixelBuffer { pixel_buffer, width, height });
-        deallocate_mach_port(mach_port_name);
-        Ok(())
     }
 
     /// Look up an already-imported pixel buffer by `surface_id`. The
@@ -127,10 +109,49 @@ impl IOSurfaceCache {
         self.pixel_buffers.get(&surface_id).map(|cached| cached.pixel_buffer.clone())
     }
 
+    pub(crate) fn surface_ids(&self) -> Vec<u64> {
+        self.pixel_buffers.keys().copied().collect()
+    }
+
     #[cfg(test)]
     pub fn cached_surface_count(&self) -> usize {
         self.pixel_buffers.len()
     }
+}
+
+pub(crate) fn import_pixel_buffer_from_mach_port(
+    mach_port_name: u32,
+) -> Result<CVPixelBuffer, SurfaceImportError> {
+    let result = build_pixel_buffer_from_mach_port(mach_port_name);
+    deallocate_mach_port(mach_port_name);
+    result
+}
+
+fn build_pixel_buffer_from_mach_port(
+    mach_port_name: u32,
+) -> Result<CVPixelBuffer, SurfaceImportError> {
+    let Some(iosurface) = objc2_io_surface::IOSurfaceRef::lookup_from_mach_port(mach_port_name)
+    else {
+        return Err(SurfaceImportError::LookupFailed { port: mach_port_name });
+    };
+
+    // Both objc2-io-surface and the legacy `io_surface` crate wrap
+    // the same C `__IOSurface` pointer. CVPixelBufferCreateWithIOSurface
+    // (via core-video) expects the legacy crate's wrapper. Reach for
+    // the raw pointer and let TCFType CFRetain it independently so
+    // both Rust handles can drop without double-freeing.
+    let raw_ptr: *const std::ffi::c_void =
+        (&*iosurface) as *const objc2_io_surface::IOSurfaceRef as *const std::ffi::c_void;
+    #[allow(deprecated)]
+    let io_surface_view: IOSurface = {
+        #[expect(unsafe_code)]
+        unsafe {
+            IOSurface::wrap_under_get_rule(raw_ptr as io_surface::IOSurfaceRef)
+        }
+    };
+
+    CVPixelBuffer::from_io_surface(&io_surface_view, None)
+        .map_err(|status| SurfaceImportError::PixelBufferBuildFailed { status })
 }
 
 /// Release one send right against the mach port we received. The

@@ -1,36 +1,37 @@
 use std::{
-    io::{self, BufRead, BufReader, Read, Write},
+    io::{BufRead, BufReader, Read, Write},
     path::PathBuf,
     process::{Child, ChildStdin, ChildStdout, Stdio},
-    time::Duration,
 };
 
+#[cfg(target_os = "macos")]
+#[path = "servo_live_iosurface_importer.rs"]
+mod iosurface_importer;
+#[path = "servo_live_types.rs"]
+mod types;
 /// Environment variable that lets the user pick the rendering context
 /// kind used by the spawned sidecar. Accepted values: `software`
 /// and `hardware`. macOS defaults to the hardware path and receives
 /// IOSurface mach send rights over a side Mach channel.
-use ely_domain::SitePermissionDecision;
-use serde::Serialize;
-use thiserror::Error;
-
 #[path = "servo_live_wire.rs"]
 mod wire;
 
+pub(crate) use types::{
+    ServoLiveEnsureRequest, ServoLiveError, ServoLiveFrame, ServoLiveSitePermission,
+};
+
 use super::servo_sidecar_command::{
-    SidecarCommandError, SidecarRenderingContext, default_sidecar_command,
-    rendering_context_from_env,
+    SidecarRenderingContext, default_sidecar_command, rendering_context_from_env,
 };
 use wire::{
-    LiveFrameReport, LiveRequest, LiveResponse, LiveSurfaceHandle, log_frame_perf,
-    log_iosurface_current, log_iosurface_handle,
+    LiveRequest, LiveResponse, LiveSurfaceHandle, log_frame_perf, log_iosurface_current,
+    log_iosurface_handle,
 };
 
 #[cfg(target_os = "macos")]
-use super::iosurface_mach::{IOSurfaceMachError, IOSurfaceMachReceiver};
-#[cfg(target_os = "macos")]
 use super::iosurface_metal::IOSurfaceCache;
 #[cfg(target_os = "macos")]
-use core_video::pixel_buffer::CVPixelBuffer;
+use iosurface_importer::{IOSurfaceImportResult, IOSurfaceImportWorker};
 
 pub(crate) struct ServoLiveClient {
     child: Child,
@@ -42,7 +43,7 @@ pub(crate) struct ServoLiveClient {
     #[cfg(target_os = "macos")]
     iosurface_cache: IOSurfaceCache,
     #[cfg(target_os = "macos")]
-    iosurface_receiver: Option<IOSurfaceMachReceiver>,
+    iosurface_importer: Option<IOSurfaceImportWorker>,
 }
 
 impl ServoLiveClient {
@@ -57,10 +58,13 @@ impl ServoLiveClient {
         command.arg("live").arg("--profile-data-dir").arg(profile_data_dir);
         command.arg("--rendering-context").arg(rendering_context.cli_arg());
         #[cfg(target_os = "macos")]
-        let iosurface_receiver = if rendering_context == SidecarRenderingContext::Hardware {
-            let receiver = IOSurfaceMachReceiver::new()?;
+        let iosurface_importer = if rendering_context == SidecarRenderingContext::Hardware {
+            let receiver = super::iosurface_mach::IOSurfaceMachReceiver::new()?;
             command.arg("--iosurface-mach-service").arg(receiver.service_name());
-            Some(receiver)
+            Some(
+                IOSurfaceImportWorker::new(receiver)
+                    .map_err(ServoLiveError::IOSurfaceImportWorker)?,
+            )
         } else {
             None
         };
@@ -81,7 +85,7 @@ impl ServoLiveClient {
             #[cfg(target_os = "macos")]
             iosurface_cache: IOSurfaceCache::new(),
             #[cfg(target_os = "macos")]
-            iosurface_receiver,
+            iosurface_importer,
         })
     }
 
@@ -89,6 +93,9 @@ impl ServoLiveClient {
         &mut self,
         request: ServoLiveEnsureRequest,
     ) -> Result<Option<ServoLiveFrame>, ServoLiveError> {
+        #[cfg(target_os = "macos")]
+        self.drain_iosurface_imports()?;
+        let ready_surface_ids = self.ready_surface_ids();
         self.request(LiveRequest::Ensure {
             tab_id: request.tab_id,
             profile_id: request.profile_id,
@@ -107,11 +114,15 @@ impl ServoLiveClient {
             hover_y: request.hover_y,
             typed_text: request.typed_text,
             site_permissions: request.site_permissions,
+            ready_surface_ids,
         })
     }
 
     pub fn poll(&mut self, tab_id: String) -> Result<Option<ServoLiveFrame>, ServoLiveError> {
-        self.request(LiveRequest::Poll { tab_id })
+        #[cfg(target_os = "macos")]
+        self.drain_iosurface_imports()?;
+        let ready_surface_ids = self.ready_surface_ids();
+        self.request(LiveRequest::Poll { tab_id, ready_surface_ids })
     }
 
     pub fn close(&mut self, tab_id: String) -> Result<(), ServoLiveError> {
@@ -183,22 +194,87 @@ impl ServoLiveClient {
 
         #[cfg(target_os = "macos")]
         if let Some(handle) = surface_handle.as_ref() {
-            // Drain the stdout payload before IOSurface import so the
-            // sidecar cannot block writing RGBA bytes while this worker
-            // is inside IOSurfaceLookupFromMachPort.
-            self.import_iosurface_handle(handle)?;
+            self.queue_iosurface_handle(*handle)?;
+            self.drain_iosurface_imports()?;
         }
 
         #[cfg(target_os = "macos")]
         if let Some(surface_id) = current_surface_id {
             let pixel_buffer = self.iosurface_cache.pixel_buffer_for(surface_id);
             if pixel_buffer.is_none() && !has_software_payload {
-                return Err(ServoLiveError::IOSurfacePixelBufferMissing { surface_id });
+                return Ok(None);
             }
-            frame.pixel_buffer = pixel_buffer;
+            frame.set_pixel_buffer(pixel_buffer);
         }
 
         Ok(Some(frame))
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+impl ServoLiveClient {
+    fn ready_surface_ids(&self) -> Vec<u64> {
+        Vec::new()
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl ServoLiveClient {
+    fn ready_surface_ids(&self) -> Vec<u64> {
+        self.iosurface_cache.surface_ids()
+    }
+
+    fn queue_iosurface_handle(&mut self, handle: LiveSurfaceHandle) -> Result<(), ServoLiveError> {
+        let Some(importer) = self.iosurface_importer.as_ref() else {
+            return Err(ServoLiveError::IOSurfaceImportFailed {
+                surface_id: handle.surface_id,
+                mach_port_name: handle.mach_port_name,
+                message: "IOSurface import worker is unavailable".to_string(),
+            });
+        };
+        importer.submit(handle).map_err(|failure| ServoLiveError::IOSurfaceImportFailed {
+            surface_id: failure.surface_id,
+            mach_port_name: failure.mach_port_name,
+            message: failure.message,
+        })
+    }
+
+    fn drain_iosurface_imports(&mut self) -> Result<(), ServoLiveError> {
+        let Some(importer) = self.iosurface_importer.as_ref() else {
+            return Ok(());
+        };
+        for result in importer.drain() {
+            match result {
+                IOSurfaceImportResult::Imported(imported) => {
+                    self.iosurface_cache
+                        .insert_pixel_buffer(imported.surface_id, imported.pixel_buffer);
+                    tracing::info!(
+                        target: "ely::servo::iosurface",
+                        surface_id = imported.surface_id,
+                        width = imported.width,
+                        height = imported.height,
+                        "imported IOSurface into CVPixelBuffer cache",
+                    );
+                }
+                IOSurfaceImportResult::Failed(failure) => {
+                    tracing::warn!(
+                        target: "ely::servo::iosurface",
+                        surface_id = failure.surface_id,
+                        width = failure.width,
+                        height = failure.height,
+                        mach_port_name = failure.mach_port_name,
+                        message = %failure.message,
+                        "IOSurface import worker failed",
+                    );
+                    return Err(ServoLiveError::IOSurfaceImportFailed {
+                        surface_id: failure.surface_id,
+                        mach_port_name: failure.mach_port_name,
+                        message: failure.message,
+                    });
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -206,340 +282,5 @@ impl Drop for ServoLiveClient {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
-    }
-}
-
-#[cfg(target_os = "macos")]
-impl ServoLiveClient {
-    /// Convert the sidecar's `surface_handle` into a `CVPixelBuffer`
-    /// in the local cache. A later frame with a missing pixel buffer
-    /// becomes a web-surface error instead of a blank ready frame.
-    fn import_iosurface_handle(
-        &mut self,
-        handle: &LiveSurfaceHandle,
-    ) -> Result<(), ServoLiveError> {
-        let mach_port_name = match self.iosurface_receiver.as_mut() {
-            Some(receiver) => {
-                receiver.receive_port_for_surface(handle.surface_id, Duration::from_secs(1))?
-            }
-            None => handle.mach_port_name,
-        };
-        match self.iosurface_cache.import(mach_port_name, handle.surface_id) {
-            Ok(()) => tracing::info!(
-                target: "ely::servo::iosurface",
-                surface_id = handle.surface_id,
-                width = handle.width,
-                height = handle.height,
-                "imported IOSurface into CVPixelBuffer cache",
-            ),
-            Err(error) => {
-                tracing::warn!(
-                    target: "ely::servo::iosurface",
-                    error = %error,
-                    surface_id = handle.surface_id,
-                    "IOSurface→CVPixelBuffer import failed",
-                );
-                return Err(ServoLiveError::IOSurfaceImportFailed {
-                    surface_id: handle.surface_id,
-                    mach_port_name,
-                    message: error.to_string(),
-                });
-            }
-        }
-        Ok(())
-    }
-}
-
-pub(crate) struct ServoLiveEnsureRequest {
-    pub(crate) tab_id: String,
-    pub(crate) profile_id: String,
-    pub(crate) url: String,
-    pub(crate) width: u32,
-    pub(crate) height: u32,
-    pub(crate) page_zoom_percent: u16,
-    /// Display scale factor (1.0 standard, 2.0 Retina). Servo's
-    /// WebView lays out CSS pixels = device pixels / hidpi factor;
-    /// without this, a Retina viewport gets desktop-CSS-pixel layout
-    /// and every visible element renders at half its expected size.
-    pub(crate) device_pixel_ratio: f32,
-    pub(crate) scroll_delta_x: i32,
-    pub(crate) scroll_delta_y: i32,
-    pub(crate) scroll_point_x: Option<u32>,
-    pub(crate) scroll_point_y: Option<u32>,
-    pub(crate) click_x: Option<u32>,
-    pub(crate) click_y: Option<u32>,
-    pub(crate) hover_x: Option<u32>,
-    pub(crate) hover_y: Option<u32>,
-    pub(crate) typed_text: Option<String>,
-    pub(crate) site_permissions: Vec<ServoLiveSitePermission>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub(crate) struct ServoLiveSitePermission {
-    pub(crate) origin: String,
-    pub(crate) feature: String,
-    pub(crate) decision: String,
-}
-
-impl ServoLiveSitePermission {
-    pub fn new(
-        origin: impl Into<String>,
-        feature: impl Into<String>,
-        decision: SitePermissionDecision,
-    ) -> Self {
-        Self { origin: origin.into(), feature: feature.into(), decision: decision.as_str().into() }
-    }
-}
-
-pub(crate) struct ServoLiveFrame {
-    loaded_url: Option<String>,
-    title: Option<String>,
-    render_state: String,
-    width: u32,
-    height: u32,
-    device_pixel_ratio: f32,
-    css_viewport_width: u32,
-    css_viewport_height: u32,
-    #[cfg(all(test, feature = "live-site-smoke"))]
-    non_white_pixel_count: u64,
-    #[cfg(all(test, feature = "live-site-smoke"))]
-    content_pixel_count: u64,
-    #[cfg(all(test, feature = "live-site-smoke"))]
-    sample_hash: u64,
-    rgba_bytes: Vec<u8>,
-    /// Hardware-path surface: the imported IOSurface published by the
-    /// sidecar, wrapped as a CVPixelBuffer for GPUI's `surface(...)`.
-    #[cfg(target_os = "macos")]
-    pixel_buffer: Option<CVPixelBuffer>,
-}
-
-// SAFETY: CVPixelBuffer wraps CVPixelBufferRef, a CoreFoundation type
-// Apple documents as safe to share across threads. The Rust core-video
-// crate does not mark it Send, so the worker thread needs this opt-in
-// to ship hardware frames back to the UI thread via mpsc::Sender.
-#[cfg(target_os = "macos")]
-#[expect(unsafe_code)]
-unsafe impl Send for ServoLiveFrame {}
-
-impl ServoLiveFrame {
-    fn from_parts(report: LiveFrameReport, rgba_bytes: Vec<u8>) -> Self {
-        let (css_viewport_width, css_viewport_height) = css_viewport_size_from_report(&report);
-        Self {
-            loaded_url: report.loaded_url,
-            title: report.title,
-            render_state: report.state,
-            width: report.width,
-            height: report.height,
-            device_pixel_ratio: report.device_pixel_ratio,
-            css_viewport_width,
-            css_viewport_height,
-            #[cfg(all(test, feature = "live-site-smoke"))]
-            non_white_pixel_count: report.non_white_pixel_count,
-            #[cfg(all(test, feature = "live-site-smoke"))]
-            content_pixel_count: report.content_pixel_count,
-            #[cfg(all(test, feature = "live-site-smoke"))]
-            sample_hash: report.sample_hash,
-            rgba_bytes,
-            #[cfg(target_os = "macos")]
-            pixel_buffer: None,
-        }
-    }
-
-    /// Returns the imported `CVPixelBuffer` matching the frame's
-    /// current hardware surface.
-    #[cfg(target_os = "macos")]
-    #[must_use]
-    pub fn pixel_buffer(&self) -> Option<&CVPixelBuffer> {
-        self.pixel_buffer.as_ref()
-    }
-
-    #[must_use]
-    pub fn loaded_url(&self) -> Option<&str> {
-        self.loaded_url.as_deref()
-    }
-
-    #[must_use]
-    pub fn title(&self) -> Option<&str> {
-        self.title.as_deref()
-    }
-
-    #[must_use]
-    pub fn render_state(&self) -> &str {
-        self.render_state.as_str()
-    }
-
-    #[must_use]
-    pub fn width(&self) -> u32 {
-        self.width
-    }
-
-    #[must_use]
-    pub fn height(&self) -> u32 {
-        self.height
-    }
-
-    #[must_use]
-    pub fn device_pixel_ratio(&self) -> f32 {
-        self.device_pixel_ratio
-    }
-
-    #[must_use]
-    pub fn css_viewport_width(&self) -> u32 {
-        self.css_viewport_width
-    }
-
-    #[must_use]
-    pub fn css_viewport_height(&self) -> u32 {
-        self.css_viewport_height
-    }
-
-    #[cfg(all(test, feature = "live-site-smoke"))]
-    #[must_use]
-    pub fn non_white_pixel_count(&self) -> u64 {
-        self.non_white_pixel_count
-    }
-
-    #[cfg(all(test, feature = "live-site-smoke"))]
-    #[must_use]
-    pub fn content_pixel_count(&self) -> u64 {
-        self.content_pixel_count
-    }
-
-    #[cfg(all(test, feature = "live-site-smoke"))]
-    #[must_use]
-    pub fn sample_hash(&self) -> u64 {
-        self.sample_hash
-    }
-
-    #[must_use]
-    pub fn into_rgba_bytes(self) -> Vec<u8> {
-        self.rgba_bytes
-    }
-
-    #[cfg(test)]
-    pub(crate) fn for_test(width: u32, height: u32, rgba_bytes: Vec<u8>) -> Self {
-        Self {
-            loaded_url: Some("https://example.com/".to_string()),
-            title: Some("Example".to_string()),
-            render_state: "complete".to_string(),
-            width,
-            height,
-            device_pixel_ratio: 1.0,
-            css_viewport_width: width,
-            css_viewport_height: height,
-            #[cfg(all(test, feature = "live-site-smoke"))]
-            non_white_pixel_count: 0,
-            #[cfg(all(test, feature = "live-site-smoke"))]
-            content_pixel_count: 0,
-            #[cfg(all(test, feature = "live-site-smoke"))]
-            sample_hash: 0,
-            rgba_bytes,
-            #[cfg(target_os = "macos")]
-            pixel_buffer: None,
-        }
-    }
-
-    #[cfg(all(test, target_os = "macos"))]
-    pub(crate) fn for_test_with_pixel_buffer(
-        width: u32,
-        height: u32,
-        pixel_buffer: CVPixelBuffer,
-    ) -> Self {
-        Self {
-            loaded_url: Some("https://example.com/".to_string()),
-            title: Some("Example".to_string()),
-            render_state: "complete".to_string(),
-            width,
-            height,
-            device_pixel_ratio: 1.0,
-            css_viewport_width: width,
-            css_viewport_height: height,
-            #[cfg(all(test, feature = "live-site-smoke"))]
-            non_white_pixel_count: 0,
-            #[cfg(all(test, feature = "live-site-smoke"))]
-            content_pixel_count: 0,
-            #[cfg(all(test, feature = "live-site-smoke"))]
-            sample_hash: 0,
-            rgba_bytes: Vec::new(),
-            pixel_buffer: Some(pixel_buffer),
-        }
-    }
-}
-
-fn css_viewport_size_from_report(report: &LiveFrameReport) -> (u32, u32) {
-    let dpr = if report.device_pixel_ratio.is_finite() && report.device_pixel_ratio > 0.0 {
-        report.device_pixel_ratio
-    } else {
-        1.0
-    };
-    let fallback_width = ((report.width as f32) / dpr).round().max(1.0) as u32;
-    let fallback_height = ((report.height as f32) / dpr).round().max(1.0) as u32;
-    (
-        if report.css_viewport_width > 0 { report.css_viewport_width } else { fallback_width },
-        if report.css_viewport_height > 0 { report.css_viewport_height } else { fallback_height },
-    )
-}
-
-#[derive(Debug, Error)]
-pub(crate) enum ServoLiveError {
-    #[error("servo sidecar binary is unavailable at {path}")]
-    SidecarBinaryUnavailable { path: PathBuf },
-
-    #[error("failed to run servo live sidecar: {0}")]
-    Command(#[source] io::Error),
-
-    #[error("servo live sidecar pipe is unavailable: {name}")]
-    PipeUnavailable { name: &'static str },
-
-    #[error("servo live sidecar exited")]
-    SidecarExited,
-
-    #[error("servo live sidecar failed: {message}")]
-    SidecarFailed { message: String },
-
-    #[error("failed to read servo live frame bytes: {0}")]
-    FrameRead(#[source] io::Error),
-
-    #[error(
-        "servo live sidecar advertised {advertised} frame bytes which exceeds \
-         the {width}x{height} pixel budget ({pixel_budget} bytes)"
-    )]
-    FrameBudgetExceeded { advertised: usize, pixel_budget: u64, width: u32, height: u32 },
-
-    #[cfg(target_os = "macos")]
-    #[error(
-        "servo live IOSurface import failed for surface {surface_id:#x} \
-         mach port 0x{mach_port_name:x}: {message}"
-    )]
-    IOSurfaceImportFailed { surface_id: u64, mach_port_name: u32, message: String },
-
-    #[cfg(target_os = "macos")]
-    #[error("servo live IOSurface {surface_id:#x} was selected before its pixel buffer import")]
-    IOSurfacePixelBufferMissing { surface_id: u64 },
-
-    #[cfg(target_os = "macos")]
-    #[error(transparent)]
-    IOSurfaceMach(#[from] IOSurfaceMachError),
-
-    #[error(transparent)]
-    Json(#[from] serde_json::Error),
-
-    #[error(transparent)]
-    SidecarCommand(#[from] SidecarCommandError),
-}
-
-impl ServoLiveError {
-    pub(crate) fn is_sidecar_process_unusable(&self) -> bool {
-        match self {
-            Self::SidecarExited => true,
-            Self::Command(error) | Self::FrameRead(error) => matches!(
-                error.kind(),
-                io::ErrorKind::BrokenPipe
-                    | io::ErrorKind::ConnectionAborted
-                    | io::ErrorKind::ConnectionReset
-                    | io::ErrorKind::UnexpectedEof
-            ),
-            _ => false,
-        }
     }
 }

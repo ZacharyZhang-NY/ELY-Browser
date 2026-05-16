@@ -11,11 +11,10 @@ use ely_servo_host::{IOSurfaceIdentity, SoftwareServoHost};
 use super::live_protocol::{LiveOutcome, LiveSidecarError, PartialFrameTimings};
 use super::perf::{FramePerfAggregator, FramePerfSummary, FrameStageTimings, elapsed_ns};
 
-/// Populate the hardware surface protocol fields on `outcome`. Mach
-/// app clients keep readback frames free of surface fields because
-/// synchronous IOSurface import can block the live worker; the no-Mach
-/// bench path publishes readback warm-up handles so it can validate
-/// payloadless steady-state frames. Two pieces of state ride out
+/// Populate the hardware surface protocol fields on `outcome`. Readback
+/// warm-up frames publish IOSurface handles so the app can import them
+/// on its dedicated importer thread before steady-state payloadless
+/// frames select the rotating surface ids. Two pieces of state ride out
 /// together:
 ///
 ///   * `current_surface_id` — set on every payload-bearing hardware
