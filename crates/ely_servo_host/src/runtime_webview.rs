@@ -98,6 +98,25 @@ impl HostWebViewDelegate {
         self.title.borrow().clone()
     }
 
+    fn record_url_change(&self, url: String) {
+        self.url.replace(Some(url));
+        self.has_pending_frame.set(true);
+    }
+
+    fn record_title_change(&self, title: Option<String>) {
+        self.title.replace(title);
+        self.has_pending_frame.set(true);
+    }
+
+    fn record_load_status(&self, status: LoadStatus) {
+        let state = match status {
+            LoadStatus::Started | LoadStatus::HeadParsed => WebViewState::Loading,
+            LoadStatus::Complete => WebViewState::Complete,
+        };
+        self.set_state(state);
+        self.has_pending_frame.set(true);
+    }
+
     pub(super) fn has_pending_frame(&self) -> bool {
         self.has_pending_frame.get()
     }
@@ -109,19 +128,15 @@ impl HostWebViewDelegate {
 
 impl WebViewDelegate for HostWebViewDelegate {
     fn notify_url_changed(&self, _webview: WebView, url: Url) {
-        self.url.replace(Some(url.to_string()));
+        self.record_url_change(url.to_string());
     }
 
     fn notify_page_title_changed(&self, _webview: WebView, title: Option<String>) {
-        self.title.replace(title);
+        self.record_title_change(title);
     }
 
     fn notify_load_status_changed(&self, _webview: WebView, status: LoadStatus) {
-        let state = match status {
-            LoadStatus::Started | LoadStatus::HeadParsed => WebViewState::Loading,
-            LoadStatus::Complete => WebViewState::Complete,
-        };
-        self.set_state(state);
+        self.record_load_status(status);
     }
 
     fn notify_new_frame_ready(&self, _webview: WebView) {
@@ -151,5 +166,33 @@ impl WebViewDelegate for HostWebViewDelegate {
                 permission_request.deny();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, collections::HashMap, rc::Rc};
+
+    use ely_domain::ProfileId;
+
+    use super::HostWebViewDelegate;
+
+    #[test]
+    fn metadata_changes_mark_pending_frame() {
+        let delegate =
+            HostWebViewDelegate::new(ProfileId::new(), Rc::new(RefCell::new(HashMap::new())));
+
+        assert!(!delegate.has_pending_frame());
+
+        delegate.record_title_change(Some("Example Domain".to_string()));
+        assert_eq!(delegate.title().as_deref(), Some("Example Domain"));
+        assert!(delegate.has_pending_frame());
+
+        delegate.mark_frame_presented();
+        assert!(!delegate.has_pending_frame());
+
+        delegate.record_url_change("https://example.com/".to_string());
+        assert_eq!(delegate.url().as_deref(), Some("https://example.com/"));
+        assert!(delegate.has_pending_frame());
     }
 }
