@@ -9,7 +9,9 @@ use super::{
     web_surface_geometry::{
         WebSurfaceClickPoint, WebSurfaceScrollDelta, WebSurfaceScrollOffset, WebSurfaceSize,
     },
+    web_surface_metadata::WebSurfacePageMetadata,
     web_surface_permissions::WebSurfaceSitePermission,
+    web_surface_runtime::WebSurfaceUrlChange,
 };
 
 pub(super) struct WebSurfaceScrollState {
@@ -101,6 +103,13 @@ pub(super) enum WebSurfaceState {
     Failed { message: String },
 }
 
+#[derive(Default)]
+pub(super) struct WebSurfaceTickResult {
+    pub(super) changed: bool,
+    pub(super) url_changes: Vec<WebSurfaceUrlChange>,
+    pub(super) page_metadata: Vec<WebSurfacePageMetadata>,
+}
+
 /// All per-tab surface invariants in one owner.
 ///
 /// Replaces the previous 11 parallel `BTreeMap<TabId, _>` fields on
@@ -177,6 +186,13 @@ impl PerTabSurface {
 
     pub(super) fn mark_ensured(&mut self, key: WebSurfaceEnsureKey) {
         self.last_ensure_key = Some(key);
+    }
+
+    pub(super) fn matches_ready(&self, frame: &WebSurfaceFrame) -> bool {
+        match self.state.as_ref() {
+            Some(WebSurfaceState::Ready(current)) => current.has_same_software_render_as(frame),
+            _ => false,
+        }
     }
 
     fn has_pending_input(&self) -> bool {

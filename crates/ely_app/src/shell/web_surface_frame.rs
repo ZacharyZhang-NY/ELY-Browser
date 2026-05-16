@@ -14,24 +14,9 @@ use thiserror::Error;
 use crate::services::servo_live::ServoLiveFrame;
 
 thread_local! {
-    /// Single-slot cache of the most-recently-uploaded RGBA payload.
-    /// At 60 fps on a 1080p canvas the previous `from_parts` was
-    /// unconditionally building a fresh `Arc<RenderImage>` for every
-    /// tick — even when the bytes were bit-identical to the last
-    /// frame. The cache keys on a 64-bit hash of the raw bytes and
-    /// reuses the existing `Arc<RenderImage>` whenever the hash
-    /// matches, so steady-state idle pages no longer churn the GPUI
-    /// texture pool.
-    ///
-    /// Uses `AHasher` instead of std's `DefaultHasher`. SipHash13
-    /// (default) tops out around ~1.5 GB/s; an 8 MB 1080p frame
-    /// hashes in ~5 ms on a modern CPU, which eats roughly 30 % of
-    /// the 16 ms scroll budget on every cache-miss frame. AHash
-    /// runs ~10 GB/s on the same hardware, dropping the per-frame
-    /// hash cost to ~0.8 ms and giving the scroll path back most of
-    /// that budget. Hash collisions remain ~1 in 2^64; if they ever
-    /// matter we'll trade in length + first/last 32 bytes as a
-    /// disambiguator before paying the full memcmp.
+    /// Single-slot cache for byte-identical software frames.
+    /// AHash keeps the 1080p hash pass below the frame budget while
+    /// avoiding repeated GPUI texture allocation for idle pages.
     static LAST_FRAME_IMAGE: RefCell<Option<(u64, Arc<RenderImage>)>> =
         const { RefCell::new(None) };
 }
@@ -62,12 +47,9 @@ pub(super) struct WebSurfaceFrame {
     content_pixel_count: u64,
     #[cfg(all(test, feature = "live-site-smoke"))]
     sample_hash: u64,
-    /// Software-path image built from RGBA bytes when the sidecar runs
-    /// without hardware surface publication.
+    /// Software-path image built from RGBA bytes.
     pub(super) image: Option<Arc<RenderImage>>,
-    /// Hardware-path surface imported from the sidecar's IOSurface.
-    /// GPUI is patched locally to present BGRA CVPixelBuffers through
-    /// `surface(...)`, so hardware frames can skip the RGBA pipe.
+    /// Hardware-path IOSurface imported from the sidecar.
     #[cfg(target_os = "macos")]
     pub(super) pixel_buffer: Option<CVPixelBuffer>,
 }
@@ -231,10 +213,33 @@ impl WebSurfaceFrame {
         self.title.as_deref()
     }
 
+    pub(super) fn has_same_software_render_as(&self, other: &Self) -> bool {
+        #[cfg(target_os = "macos")]
+        if self.pixel_buffer.is_some() || other.pixel_buffer.is_some() {
+            return false;
+        }
+        let (Some(image), Some(other_image)) = (self.image.as_ref(), other.image.as_ref()) else {
+            return false;
+        };
+
+        Arc::ptr_eq(image, other_image)
+            && self.requested_url == other.requested_url
+            && self.loaded_url == other.loaded_url
+            && self.title == other.title
+            && self.render_state == other.render_state
+            && self.width == other.width
+            && self.height == other.height
+            && self.device_pixel_ratio == other.device_pixel_ratio
+            && self.css_viewport_width == other.css_viewport_width
+            && self.css_viewport_height == other.css_viewport_height
+            && self.scroll_offset == other.scroll_offset
+            && self.zoom_percent == other.zoom_percent
+            && self.click_point == other.click_point
+            && self.typed_text == other.typed_text
+    }
+
     pub(super) fn has_visible_content_for_initial_display(&self) -> Result<bool, WebSurfaceError> {
-        // The sidecar suppresses blank initial hardware frames with readback
-        // sampling before sending them. Keep this app-side gate metadata-only
-        // so GPUI's update path never locks or scans IOSurface memory.
+        // Sidecar readback suppresses blank initial frames before publication.
         #[cfg(all(test, feature = "live-site-smoke"))]
         {
             Ok(self.non_white_pixel_count > 0 && self.content_pixel_count > 0)

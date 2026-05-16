@@ -6,17 +6,17 @@ use gpui::{Bounds, Pixels, Point};
 
 use crate::services::ProfileDataMode;
 
-use super::web_surface_metadata::WebSurfacePageMetadata;
 use super::{
     web_surface_cadence::IDLE_POLL_INTERVAL,
     web_surface_frame::WebSurfaceFrame,
     web_surface_geometry::{WebSurfaceClickPoint, WebSurfaceScrollDelta, WebSurfaceSize},
+    web_surface_metadata::WebSurfacePageMetadata,
     web_surface_permissions::WebSurfaceSitePermission,
-    web_surface_runtime::{WebSurfaceRuntime, WebSurfaceRuntimeFrame, WebSurfaceUrlChange},
+    web_surface_runtime::{WebSurfaceRuntime, WebSurfaceRuntimeFrame},
     web_surface_state::{
         PerTabSurface, WebSurfaceClickState, WebSurfaceEnsureKey, WebSurfaceInputOutcome,
         WebSurfaceKeyboardFocusState, WebSurfacePendingInput, WebSurfaceScrollState,
-        WebSurfaceState, WebSurfaceTextInputState,
+        WebSurfaceState, WebSurfaceTextInputState, WebSurfaceTickResult,
     },
 };
 
@@ -118,14 +118,18 @@ impl WebSurfaceStore {
                         }
                         continue;
                     }
-                    if let Some(metadata) = WebSurfacePageMetadata::from_frame(&tab_id, &frame) {
-                        result.page_metadata.push(metadata);
+                    result
+                        .page_metadata
+                        .extend(WebSurfacePageMetadata::from_frame(&tab_id, &frame));
+                    if self
+                        .surfaces
+                        .get(&tab_id)
+                        .is_none_or(|surface| !surface.matches_ready(&frame))
+                    {
+                        self.surface_mut(&tab_id).state = Some(WebSurfaceState::Ready(*frame));
+                        result.changed = true;
                     }
-                    self.surface_mut(&tab_id).state = Some(WebSurfaceState::Ready(*frame));
-                    result.changed = true;
-                    if let Some(url_change) = url_change {
-                        result.url_changes.push(url_change);
-                    }
+                    result.url_changes.extend(url_change);
                 }
                 WebSurfaceRuntimeFrame::Failed { tab_id, message } => {
                     let had_ready = matches!(
@@ -481,13 +485,6 @@ impl WebSurfaceStore {
 
 pub(super) fn is_external_web_url(url: &str) -> bool {
     url.starts_with("https://") || url.starts_with("http://")
-}
-
-#[derive(Default)]
-pub(super) struct WebSurfaceTickResult {
-    pub(super) changed: bool,
-    pub(super) url_changes: Vec<WebSurfaceUrlChange>,
-    pub(super) page_metadata: Vec<WebSurfacePageMetadata>,
 }
 
 #[cfg(test)]

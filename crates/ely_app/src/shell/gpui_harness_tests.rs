@@ -1033,6 +1033,7 @@ fn identical_live_frames_share_render_image_arc() -> Result<(), String> {
         Arc::as_ptr(first_image),
         Arc::as_ptr(second_image),
     );
+    assert!(first.has_same_software_render_as(&second));
     Ok(())
 }
 

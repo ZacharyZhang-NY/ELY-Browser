@@ -26,6 +26,7 @@ static FAKE_ENSURE_COUNT: AtomicUsize = AtomicUsize::new(0);
 static IDLE_SKIP_ENSURE_COUNT: AtomicUsize = AtomicUsize::new(0);
 static RECOVERY_FACTORY_COUNT: AtomicUsize = AtomicUsize::new(0);
 static FAILING_ENSURE_COUNT: AtomicUsize = AtomicUsize::new(0);
+static REPEATED_FRAME_ENSURE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
 fn runtime_keeps_independent_clients_for_profile_scopes() -> Result<(), String> {
@@ -138,6 +139,48 @@ fn store_tick_delay_tracks_runtime_cadence() -> Result<(), String> {
 }
 
 #[test]
+fn identical_ready_software_frame_keeps_tick_unchanged() -> Result<(), String> {
+    REPEATED_FRAME_ENSURE_COUNT.store(0, Ordering::SeqCst);
+    let mut store = WebSurfaceStore::new_with_runtime(WebSurfaceRuntime::new_with_client_factory(
+        repeated_frame_client_factory,
+    ));
+    let tab = web_tab(TabId::new(), ProfileId::new(), "https://example.com/repeated")?;
+    let visible_tabs = vec![tab.id().clone()];
+
+    assert_eq!(
+        store.record_viewport_size(tab.id(), viewport_bounds(), 1.0),
+        WebSurfaceInputOutcome::Applied,
+    );
+    assert!(store.ensure_surface(&tab, ProfileDataMode::Transient, &[]));
+    store.flush_runtime_for_test();
+    let first_tick = store.tick(&visible_tabs);
+
+    assert!(first_tick.changed);
+    assert_eq!(first_tick.page_metadata.len(), 1);
+    assert_eq!(first_tick.url_changes.len(), 1);
+    assert_eq!(REPEATED_FRAME_ENSURE_COUNT.load(Ordering::SeqCst), 1);
+
+    assert_eq!(
+        store.record_click_point(
+            tab.id(),
+            tab.url().as_str(),
+            gpui::point(gpui::px(10.0), gpui::px(10.0)),
+            1.0,
+        ),
+        WebSurfaceInputOutcome::Applied,
+    );
+    let _ = store.ensure_surface(&tab, ProfileDataMode::Transient, &[]);
+    store.flush_runtime_for_test();
+    let second_tick = store.tick(&visible_tabs);
+
+    assert!(!second_tick.changed);
+    assert_eq!(second_tick.page_metadata.len(), 1);
+    assert_eq!(second_tick.url_changes.len(), 1);
+    assert_eq!(REPEATED_FRAME_ENSURE_COUNT.load(Ordering::SeqCst), 2);
+    Ok(())
+}
+
+#[test]
 fn sidecar_exit_removes_dead_runtime_client() -> Result<(), String> {
     RECOVERY_FACTORY_COUNT.store(0, Ordering::SeqCst);
     let mut runtime = WebSurfaceRuntime::new_with_client_factory(recovery_client_factory);
@@ -238,6 +281,7 @@ struct FakeLiveRuntimeClient;
 struct IdleSkipLiveRuntimeClient;
 struct SidecarExitLiveRuntimeClient;
 struct FailingLiveRuntimeClient;
+struct RepeatedFrameLiveRuntimeClient;
 
 impl LiveRuntimeClient for FakeLiveRuntimeClient {
     fn ensure(
@@ -311,6 +355,24 @@ impl LiveRuntimeClient for FailingLiveRuntimeClient {
     }
 }
 
+impl LiveRuntimeClient for RepeatedFrameLiveRuntimeClient {
+    fn ensure(
+        &mut self,
+        _request: ServoLiveEnsureRequest,
+    ) -> Result<Option<ServoLiveFrame>, LiveRuntimeClientError> {
+        REPEATED_FRAME_ENSURE_COUNT.fetch_add(1, Ordering::SeqCst);
+        Ok(Some(repeated_live_frame()))
+    }
+
+    fn poll(&mut self, _tab_id: String) -> Result<Option<ServoLiveFrame>, LiveRuntimeClientError> {
+        Ok(None)
+    }
+
+    fn close(&mut self, _tab_id: String) -> Result<(), LiveRuntimeClientError> {
+        Ok(())
+    }
+}
+
 fn fake_client_factory(
     _config_dir: std::path::PathBuf,
 ) -> Result<Box<dyn LiveRuntimeClient>, String> {
@@ -337,6 +399,16 @@ fn failing_client_factory(
     _config_dir: std::path::PathBuf,
 ) -> Result<Box<dyn LiveRuntimeClient>, String> {
     Ok(Box::new(FailingLiveRuntimeClient))
+}
+
+fn repeated_frame_client_factory(
+    _config_dir: std::path::PathBuf,
+) -> Result<Box<dyn LiveRuntimeClient>, String> {
+    Ok(Box::new(RepeatedFrameLiveRuntimeClient))
+}
+
+fn repeated_live_frame() -> ServoLiveFrame {
+    ServoLiveFrame::for_test(1, 1, vec![16, 32, 64, 255])
 }
 
 fn web_tab(tab_id: TabId, profile_id: ProfileId, url: &str) -> Result<BrowserTab, String> {
