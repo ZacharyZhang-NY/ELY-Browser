@@ -94,6 +94,13 @@ fn paused_profile_data_is_omitted_from_sync_snapshots() -> Result<(), Box<dyn Er
     assert_eq!(summary.updated(), 0);
     assert_eq!(summary.skipped(), 0);
     assert!(snapshot.profiles.iter().any(|profile| profile.name() == "Research"));
+    let imported_profile_id = snapshot
+        .profiles
+        .iter()
+        .find(|profile| profile.name() == "Research")
+        .ok_or("missing imported profile")?
+        .id()
+        .clone();
     assert!(
         snapshot.tabs.iter().all(|tab| tab.url().as_str() != "https://example.com/paused-profile")
     );
@@ -101,5 +108,7 @@ fn paused_profile_data_is_omitted_from_sync_snapshots() -> Result<(), Box<dyn Er
     assert!(snapshot.notes.is_empty());
     assert!(snapshot.reading_list.is_empty());
     assert!(snapshot.site_permissions.is_empty());
+    target.select_profile(&imported_profile_id)?;
+    assert!(target.snapshot()?.history_entries.is_empty());
     Ok(())
 }

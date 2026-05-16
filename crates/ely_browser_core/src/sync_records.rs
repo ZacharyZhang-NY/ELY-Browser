@@ -1,8 +1,9 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ely_domain::{
-    ArchivePolicy, BookmarkEntry, BrowserTab, NoteEntry, NoteTarget, Profile, ProfileKind,
-    ProfileSyncPolicy, ReadingListEntry, ReadingProgress, SitePermissionEntry, Space, TabFlags,
+    ArchivePolicy, BookmarkEntry, BrowserTab, HistoryEntry, NoteEntry, NoteTarget, Profile,
+    ProfileKind, ProfileSyncPolicy, ReadingListEntry, ReadingProgress, SitePermissionEntry, Space,
+    TabFlags,
 };
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +27,8 @@ pub(crate) struct SyncSnapshotBody {
     pub(crate) reading_list: Vec<ReadingListSyncRecord>,
     #[serde(default)]
     pub(crate) site_permissions: Vec<SitePermissionSyncRecord>,
+    #[serde(default)]
+    pub(crate) history: Vec<HistorySyncRecord>,
 }
 
 impl SyncSnapshotBody {
@@ -80,6 +83,13 @@ impl SyncSnapshotBody {
                 .visible_site_permissions_for_sync()
                 .into_iter()
                 .map(SitePermissionSyncRecord::from_entry)
+                .collect(),
+            history: core
+                .visible_history_for_sync()
+                .into_iter()
+                .map(|entry| {
+                    HistorySyncRecord::from_entry(entry, core.sync_space_name_for(entry.space_id()))
+                })
                 .collect(),
         }
     }
@@ -395,6 +405,37 @@ impl SitePermissionSyncRecord {
             origin: entry.origin().as_str().to_string(),
             feature: entry.feature().as_str().to_string(),
             decision: entry.decision().as_str().to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct HistorySyncRecord {
+    pub(crate) profile_id: String,
+    pub(crate) space_id: String,
+    #[serde(default)]
+    pub(crate) space_name: Option<String>,
+    pub(crate) source_tab_id: String,
+    pub(crate) title: String,
+    pub(crate) url: String,
+    #[serde(default)]
+    pub(crate) favicon_key: Option<String>,
+    pub(crate) visited_at_secs: u64,
+    pub(crate) visit_count: u32,
+}
+
+impl HistorySyncRecord {
+    fn from_entry(entry: &HistoryEntry, space_name: Option<String>) -> Self {
+        Self {
+            profile_id: entry.profile_id().as_str().to_string(),
+            space_id: entry.space_id().as_str().to_string(),
+            space_name,
+            source_tab_id: entry.source_tab_id().as_str().to_string(),
+            title: entry.title().to_string(),
+            url: entry.url().as_str().to_string(),
+            favicon_key: entry.favicon_key().map(str::to_string),
+            visited_at_secs: system_time_secs(entry.visited_at()),
+            visit_count: entry.visit_count(),
         }
     }
 }

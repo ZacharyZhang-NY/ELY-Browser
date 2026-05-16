@@ -18,6 +18,7 @@ fn sync_snapshot_imports_remote_reading_list_into_active_scope() -> Result<(), B
         &entry_id,
         ReadingProgress::InProgress(ReadingProgressPercent::new(42)?),
     )?;
+    pause_history_sync(&mut source);
     let bytes = source.build_sync_snapshot_bytes()?;
 
     let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
@@ -52,6 +53,7 @@ fn sync_snapshot_updates_existing_reading_list_entry() -> Result<(), Box<dyn Err
     source.set_tab_title(&source_tab_id, "Canonical Long Read")?;
     let source_entry_id = source.save_active_tab_to_reading_list()?;
     source.set_reading_list_progress(&source_entry_id, ReadingProgress::Finished)?;
+    pause_history_sync(&mut source);
     let bytes = source.build_sync_snapshot_bytes()?;
 
     let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
@@ -84,6 +86,7 @@ fn sync_snapshot_omits_paused_reading_list() -> Result<(), Box<dyn Error>> {
     source.set_tab_sync_enabled(&source_tab_id, false)?;
     source.save_active_tab_to_reading_list()?;
     source.set_sync_object_policy(SyncObjectKind::ReadingList, SyncObjectPolicy::Paused);
+    pause_history_sync(&mut source);
     let bytes = source.build_sync_snapshot_bytes()?;
 
     let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
@@ -95,4 +98,8 @@ fn sync_snapshot_omits_paused_reading_list() -> Result<(), Box<dyn Error>> {
     assert_eq!(summary.skipped(), 0);
     assert!(snapshot.reading_list.is_empty());
     Ok(())
+}
+
+fn pause_history_sync(core: &mut BrowserCore) {
+    core.set_sync_object_policy(SyncObjectKind::History, SyncObjectPolicy::Paused);
 }

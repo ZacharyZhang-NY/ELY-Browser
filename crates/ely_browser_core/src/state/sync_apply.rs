@@ -31,6 +31,9 @@ impl BrowserCore {
         for record in body.site_permissions {
             self.apply_site_permission_sync_record(record, &mut summary, &context)?;
         }
+        for record in body.history {
+            self.apply_history_sync_record(record, &mut summary, &context)?;
+        }
         Ok(summary)
     }
 }

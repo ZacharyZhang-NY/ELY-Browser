@@ -1,4 +1,4 @@
-use std::time::SystemTime;
+use std::{num::NonZeroU32, time::SystemTime};
 
 use crate::{ProfileId, SpaceId, TabId, UrlText};
 
@@ -51,6 +51,12 @@ impl HistoryEntry {
         }
         self.visited_at = visited_at;
         self.visit_count = self.visit_count.saturating_add(1);
+    }
+
+    #[must_use]
+    pub fn restore(mut entry: Self, visit_count: NonZeroU32) -> Self {
+        entry.visit_count = visit_count.get();
+        entry
     }
 
     #[must_use]

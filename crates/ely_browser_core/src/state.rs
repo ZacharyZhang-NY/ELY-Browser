@@ -32,6 +32,7 @@ mod splits;
 mod sync;
 mod sync_apply;
 mod sync_context;
+mod sync_history;
 mod sync_notes;
 mod sync_profiles;
 mod sync_reading_list;

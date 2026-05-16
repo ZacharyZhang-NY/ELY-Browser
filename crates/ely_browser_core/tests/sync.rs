@@ -98,6 +98,7 @@ fn sync_snapshot_imports_remote_bookmarks_into_active_scope() -> Result<(), Box<
     source.set_bookmark_collection_name(&bookmark_id, "Research")?;
     source.set_bookmark_tags(&bookmark_id, vec!["rust".to_string(), "gpui".to_string()])?;
     source.set_bookmark_note(&bookmark_id, "Read later")?;
+    pause_history_sync(&mut source);
     let bytes = source.build_sync_snapshot_bytes()?;
 
     let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
@@ -129,6 +130,7 @@ fn sync_snapshot_imports_remote_tabs_into_active_scope() -> Result<(), Box<dyn E
     source.toggle_active_tab_pinned()?;
     source.toggle_active_tab_favorite()?;
     source.set_active_tab_zoom_percent(125)?;
+    pause_history_sync(&mut source);
     let bytes = source.build_sync_snapshot_bytes()?;
 
     let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
@@ -166,6 +168,7 @@ fn sync_snapshot_imports_remote_spaces_before_tabs() -> Result<(), Box<dyn Error
     let research_home_tab_id = source.snapshot()?.active_tab_id;
     source.set_tab_sync_enabled(&research_home_tab_id, false)?;
     source.open_tab(UrlText::parse("https://example.com/research")?);
+    pause_history_sync(&mut source);
     let bytes = source.build_sync_snapshot_bytes()?;
 
     let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
@@ -203,6 +206,7 @@ fn sync_snapshot_updates_existing_tab_metadata() -> Result<(), Box<dyn Error>> {
     let source_tab_id = source.open_tab(UrlText::parse("https://example.com/research")?);
     source.set_tab_title(&source_tab_id, "Research Brief")?;
     source.set_tab_favicon_key(&source_tab_id, "https://example.com/favicon.ico")?;
+    pause_history_sync(&mut source);
     let bytes = source.build_sync_snapshot_bytes()?;
 
     let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
@@ -226,6 +230,7 @@ fn sync_snapshot_omits_paused_tabs() -> Result<(), Box<dyn Error>> {
     let mut source = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     source.open_tab(UrlText::parse("https://example.com/research")?);
     source.set_sync_object_policy(SyncObjectKind::Tabs, SyncObjectPolicy::Paused);
+    pause_history_sync(&mut source);
     let bytes = source.build_sync_snapshot_bytes()?;
 
     let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
@@ -250,6 +255,7 @@ fn sync_snapshot_updates_existing_bookmark_metadata() -> Result<(), Box<dyn Erro
     source.set_bookmark_collection_name(&source_bookmark_id, "Research")?;
     source.set_bookmark_tags(&source_bookmark_id, vec!["servo".to_string()])?;
     source.set_bookmark_note(&source_bookmark_id, "Canonical")?;
+    pause_history_sync(&mut source);
     let bytes = source.build_sync_snapshot_bytes()?;
 
     let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
@@ -279,6 +285,7 @@ fn sync_snapshot_omits_paused_bookmarks() -> Result<(), Box<dyn Error>> {
     source.set_tab_sync_enabled(&source_tab_id, false)?;
     source.bookmark_active_tab()?;
     source.set_sync_object_policy(SyncObjectKind::Bookmarks, SyncObjectPolicy::Paused);
+    pause_history_sync(&mut source);
     let bytes = source.build_sync_snapshot_bytes()?;
 
     let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
@@ -301,6 +308,7 @@ fn sync_snapshot_imports_remote_url_notes_into_active_scope() -> Result<(), Box<
     source.set_tab_sync_enabled(&source_tab_id, false)?;
     source.set_tab_title(&source_tab_id, "Research Brief")?;
     source.save_active_url_note(" # Finding\r\n- one ")?;
+    pause_history_sync(&mut source);
     let bytes = source.build_sync_snapshot_bytes()?;
 
     let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
@@ -332,6 +340,7 @@ fn sync_snapshot_imports_remote_tab_notes_after_tabs() -> Result<(), Box<dyn Err
     let source_tab_id = source.open_tab(UrlText::parse("https://example.com/research")?);
     source.set_tab_title(&source_tab_id, "Research Brief")?;
     source.save_active_tab_note("pinned tab context")?;
+    pause_history_sync(&mut source);
     let bytes = source.build_sync_snapshot_bytes()?;
 
     let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
@@ -365,6 +374,7 @@ fn sync_snapshot_updates_existing_note_body() -> Result<(), Box<dyn Error>> {
     source.set_tab_sync_enabled(&source_tab_id, false)?;
     source.set_tab_title(&source_tab_id, "Research Brief")?;
     source.save_active_url_note("canonical note")?;
+    pause_history_sync(&mut source);
     let bytes = source.build_sync_snapshot_bytes()?;
 
     let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
@@ -395,6 +405,7 @@ fn sync_snapshot_omits_paused_notes() -> Result<(), Box<dyn Error>> {
     source.set_tab_sync_enabled(&source_tab_id, false)?;
     source.save_active_url_note("local only")?;
     source.set_sync_object_policy(SyncObjectKind::Notes, SyncObjectPolicy::Paused);
+    pause_history_sync(&mut source);
     let bytes = source.build_sync_snapshot_bytes()?;
 
     let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
@@ -419,4 +430,8 @@ fn sync_snapshot_rejects_unknown_schema_rev() -> Result<(), Box<dyn Error>> {
 
     assert!(error.to_string().contains("unsupported schema_rev 999"));
     Ok(())
+}
+
+fn pause_history_sync(core: &mut BrowserCore) {
+    core.set_sync_object_policy(SyncObjectKind::History, SyncObjectPolicy::Paused);
 }
