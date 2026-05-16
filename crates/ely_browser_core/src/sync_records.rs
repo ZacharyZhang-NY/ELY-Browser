@@ -8,6 +8,7 @@ use ely_domain::{
 use serde::{Deserialize, Serialize};
 
 use crate::state::BrowserCore;
+use crate::state::InstalledPlugin;
 
 pub(crate) const SNAPSHOT_SCHEMA_REV: u32 = 1;
 
@@ -29,6 +30,8 @@ pub(crate) struct SyncSnapshotBody {
     pub(crate) site_permissions: Vec<SitePermissionSyncRecord>,
     #[serde(default)]
     pub(crate) history: Vec<HistorySyncRecord>,
+    #[serde(default)]
+    pub(crate) plugin_settings: Vec<PluginSettingsSyncRecord>,
 }
 
 impl SyncSnapshotBody {
@@ -90,6 +93,11 @@ impl SyncSnapshotBody {
                 .map(|entry| {
                     HistorySyncRecord::from_entry(entry, core.sync_space_name_for(entry.space_id()))
                 })
+                .collect(),
+            plugin_settings: core
+                .visible_plugin_settings_for_sync()
+                .into_iter()
+                .map(PluginSettingsSyncRecord::from_plugin)
                 .collect(),
         }
     }
@@ -436,6 +444,25 @@ impl HistorySyncRecord {
             favicon_key: entry.favicon_key().map(str::to_string),
             visited_at_secs: system_time_secs(entry.visited_at()),
             visit_count: entry.visit_count(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct PluginSettingsSyncRecord {
+    pub(crate) plugin_id: String,
+    pub(crate) checksum: String,
+    pub(crate) enabled: bool,
+    pub(crate) private_window_allowed: bool,
+}
+
+impl PluginSettingsSyncRecord {
+    fn from_plugin(plugin: &InstalledPlugin) -> Self {
+        Self {
+            plugin_id: plugin.id().as_str().to_string(),
+            checksum: plugin.manifest().checksum().to_string(),
+            enabled: plugin.enabled(),
+            private_window_allowed: plugin.private_window_allowed(),
         }
     }
 }

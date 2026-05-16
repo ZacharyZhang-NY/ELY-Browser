@@ -34,6 +34,7 @@ mod sync_apply;
 mod sync_context;
 mod sync_history;
 mod sync_notes;
+mod sync_plugin_settings;
 mod sync_profiles;
 mod sync_reading_list;
 mod sync_site_permissions;

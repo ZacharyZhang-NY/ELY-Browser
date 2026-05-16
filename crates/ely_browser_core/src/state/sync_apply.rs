@@ -34,6 +34,9 @@ impl BrowserCore {
         for record in body.history {
             self.apply_history_sync_record(record, &mut summary, &context)?;
         }
+        for record in body.plugin_settings {
+            self.apply_plugin_settings_sync_record(record, &mut summary)?;
+        }
         Ok(summary)
     }
 }

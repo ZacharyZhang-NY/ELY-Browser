@@ -51,6 +51,18 @@ impl InstalledPlugin {
         self.private_window_allowed = allowed;
     }
 
+    pub(super) fn apply_synced_settings(
+        &mut self,
+        enabled: bool,
+        private_window_allowed: bool,
+    ) -> bool {
+        let changed =
+            self.enabled != enabled || self.private_window_allowed != private_window_allowed;
+        self.enabled = enabled;
+        self.private_window_allowed = private_window_allowed;
+        changed
+    }
+
     #[must_use]
     pub fn manifest(&self) -> &PluginManifest {
         &self.manifest
