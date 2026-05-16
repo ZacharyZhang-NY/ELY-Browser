@@ -182,6 +182,24 @@ fn sync_snapshot_updates_existing_tab_metadata() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn sync_snapshot_omits_paused_tabs() -> Result<(), Box<dyn Error>> {
+    let mut source = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    source.open_tab(UrlText::parse("https://example.com/research")?);
+    source.set_sync_object_policy(SyncObjectKind::Tabs, SyncObjectPolicy::Paused);
+    let bytes = source.build_sync_snapshot_bytes()?;
+
+    let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let summary = target.apply_sync_snapshot_bytes(&bytes)?;
+    let snapshot = target.snapshot()?;
+
+    assert_eq!(summary.imported(), 0);
+    assert_eq!(summary.updated(), 0);
+    assert_eq!(summary.skipped(), 0);
+    assert!(snapshot.tabs.iter().all(|tab| tab.url().as_str() != "https://example.com/research"));
+    Ok(())
+}
+
+#[test]
 fn sync_snapshot_updates_existing_bookmark_metadata() -> Result<(), Box<dyn Error>> {
     let mut source = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let source_home_tab_id = source.snapshot()?.active_tab_id;
@@ -209,6 +227,28 @@ fn sync_snapshot_updates_existing_bookmark_metadata() -> Result<(), Box<dyn Erro
     assert_eq!(snapshot.bookmarks[0].collection_name(), "Research");
     assert_eq!(snapshot.bookmarks[0].tags(), &["servo".to_string()]);
     assert_eq!(snapshot.bookmarks[0].note(), Some("Canonical"));
+    Ok(())
+}
+
+#[test]
+fn sync_snapshot_omits_paused_bookmarks() -> Result<(), Box<dyn Error>> {
+    let mut source = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let source_home_tab_id = source.snapshot()?.active_tab_id;
+    source.set_tab_sync_enabled(&source_home_tab_id, false)?;
+    let source_tab_id = source.open_tab(UrlText::parse("https://example.com/research")?);
+    source.set_tab_sync_enabled(&source_tab_id, false)?;
+    source.bookmark_active_tab()?;
+    source.set_sync_object_policy(SyncObjectKind::Bookmarks, SyncObjectPolicy::Paused);
+    let bytes = source.build_sync_snapshot_bytes()?;
+
+    let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let summary = target.apply_sync_snapshot_bytes(&bytes)?;
+    let snapshot = target.snapshot()?;
+
+    assert_eq!(summary.imported(), 0);
+    assert_eq!(summary.updated(), 0);
+    assert_eq!(summary.skipped(), 0);
+    assert!(snapshot.bookmarks.is_empty());
     Ok(())
 }
 

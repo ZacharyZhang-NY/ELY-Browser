@@ -178,6 +178,9 @@ impl BrowserCore {
     }
 
     pub(crate) fn visible_tabs_for_sync(&self) -> Vec<&BrowserTab> {
+        if self.sync_object_policy(SyncObjectKind::Tabs) == SyncObjectPolicy::Paused {
+            return Vec::new();
+        }
         self.tabs
             .iter()
             .filter(|tab| {

@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, time::SystemTime};
 
-use ely_domain::{BookmarkEntry, BookmarkId, SpaceId, UrlText};
+use ely_domain::{BookmarkEntry, BookmarkId, SpaceId, SyncObjectKind, SyncObjectPolicy, UrlText};
 use serde::{Deserialize, Serialize};
 
 use crate::CoreError;
@@ -246,6 +246,9 @@ impl BrowserCore {
     /// used by the sync engine which mirrors the full state to the
     /// Cloudflare worker, not just the visible profile.
     pub fn visible_bookmarks_for_sync(&self) -> Vec<&BookmarkEntry> {
+        if self.sync_object_policy(SyncObjectKind::Bookmarks) == SyncObjectPolicy::Paused {
+            return Vec::new();
+        }
         self.bookmarks.iter().collect()
     }
 
