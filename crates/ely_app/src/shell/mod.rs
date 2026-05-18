@@ -37,6 +37,8 @@ mod web_surface_keyboard;
 mod web_surface_metadata;
 mod web_surface_permissions;
 mod web_surface_runtime;
+mod web_surface_runtime_session;
+mod web_surface_runtime_wire;
 mod web_surface_state;
 mod web_surface_view;
 mod web_surface_worker;

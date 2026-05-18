@@ -5,22 +5,31 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ely_domain::{BrowserTab, ProfileId, TabId};
+use ely_domain::{BrowserTab, TabId};
 use gpui::NativeSurfaceHandle;
 
 use crate::services::{
     ProfileDataMode,
     servo_live::{ServoLiveClient, ServoLiveEnsureRequest, ServoLiveSitePermission},
-    servo_profile_data::{default_profile_data_root, profile_data_dir, transient_profile_data_dir},
 };
 
 use super::{
-    web_surface_cadence::{WebSurfaceInputKind, WebSurfacePollCadence},
     web_surface_frame::WebSurfaceFrame,
-    web_surface_geometry::{WebSurfaceScrollOffset, WebSurfaceSize},
+    web_surface_geometry::WebSurfaceSize,
     web_surface_permissions::WebSurfaceSitePermission,
+    web_surface_runtime_session::{
+        WebSurfaceRuntimeScope, WebSurfaceSession, config_dir_for_scope, session_for_scope,
+    },
+    web_surface_runtime_wire::{
+        input_requests_history_navigation, log_ensure_submitted, pending_input_kind,
+        scroll_wire_fields,
+    },
     web_surface_state::WebSurfacePendingInput,
     web_surface_worker::{LiveRuntimeClient, LiveRuntimeWorker, WorkerResponse},
+};
+
+pub(super) use super::web_surface_runtime_session::{
+    WebSurfaceEnsureResult, WebSurfaceRuntimeFrame, WebSurfaceUrlChange, WebSurfaceUrlChangeKind,
 };
 
 pub(super) struct WebSurfaceRuntime {
@@ -425,202 +434,6 @@ struct ScopedWorker {
 struct ScopedDirectClient {
     client: Box<dyn LiveRuntimeClient>,
     transient_profile_data_dir: Option<PathBuf>,
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(super) struct WebSurfaceRuntimeScope {
-    profile_id: ProfileId,
-    profile_data_mode: ProfileDataMode,
-}
-
-impl WebSurfaceRuntimeScope {
-    pub(super) fn new(profile_id: ProfileId, profile_data_mode: ProfileDataMode) -> Self {
-        Self { profile_id, profile_data_mode }
-    }
-}
-
-#[derive(Clone)]
-pub(super) struct WebSurfaceSession {
-    pub(super) scope: WebSurfaceRuntimeScope,
-    pub(super) requested_url: String,
-    pub(super) size: WebSurfaceSize,
-    pub(super) zoom_percent: u16,
-    pub(super) scroll_offset: WebSurfaceScrollOffset,
-    pub(super) pending_user_navigation: bool,
-    pub(super) cadence: WebSurfacePollCadence,
-}
-
-impl WebSurfaceSession {
-    fn new(scope: WebSurfaceRuntimeScope) -> Self {
-        Self {
-            scope,
-            requested_url: String::new(),
-            size: WebSurfaceSize::default(),
-            zoom_percent: 0,
-            scroll_offset: WebSurfaceScrollOffset::default(),
-            pending_user_navigation: false,
-            cadence: WebSurfacePollCadence::default(),
-        }
-    }
-
-    fn started_loading(
-        &self,
-        requested_url: &str,
-        size: WebSurfaceSize,
-        zoom_percent: u16,
-    ) -> bool {
-        self.requested_url != requested_url
-            || self.size != size
-            || self.zoom_percent != zoom_percent
-    }
-
-    fn url_change_for(
-        &mut self,
-        tab_id: &TabId,
-        requested_url: &str,
-        frame: &WebSurfaceFrame,
-    ) -> Option<WebSurfaceUrlChange> {
-        let loaded_url = frame.loaded_url()?;
-        if loaded_url == requested_url {
-            return None;
-        }
-
-        let kind = if self.pending_user_navigation {
-            WebSurfaceUrlChangeKind::UserInitiated
-        } else {
-            WebSurfaceUrlChangeKind::Observed
-        };
-        self.pending_user_navigation = false;
-        Some(WebSurfaceUrlChange {
-            tab_id: tab_id.clone(),
-            loaded_url: loaded_url.to_string(),
-            kind,
-        })
-    }
-}
-
-pub(super) struct WebSurfaceEnsureResult {
-    pub(super) requested_url: String,
-    pub(super) started_loading: bool,
-}
-
-pub(super) enum WebSurfaceRuntimeFrame {
-    Ready { tab_id: TabId, frame: Box<WebSurfaceFrame>, url_change: Option<WebSurfaceUrlChange> },
-    Failed { tab_id: TabId, message: String },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct WebSurfaceUrlChange {
-    pub(super) tab_id: TabId,
-    pub(super) loaded_url: String,
-    pub(super) kind: WebSurfaceUrlChangeKind,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum WebSurfaceUrlChangeKind {
-    UserInitiated,
-    Observed,
-}
-
-fn config_dir_for_scope(
-    scope: &WebSurfaceRuntimeScope,
-) -> Result<(PathBuf, Option<PathBuf>), String> {
-    match scope.profile_data_mode {
-        ProfileDataMode::Persistent => {
-            let root = default_profile_data_root()
-                .ok_or_else(|| "Profile data root is unavailable".to_string())?;
-            let config_dir = profile_data_dir(&root, &scope.profile_id);
-            fs::create_dir_all(&config_dir).map_err(|error| error.to_string())?;
-            Ok((config_dir, None))
-        }
-        ProfileDataMode::Transient => {
-            let config_dir =
-                transient_profile_data_dir(&scope.profile_id).map_err(|error| error.to_string())?;
-            fs::create_dir_all(&config_dir).map_err(|error| error.to_string())?;
-            Ok((config_dir.clone(), Some(config_dir)))
-        }
-    }
-}
-
-pub(super) fn session_for_scope<'a>(
-    sessions: &'a mut BTreeMap<TabId, WebSurfaceSession>,
-    tab_id: &TabId,
-    scope: WebSurfaceRuntimeScope,
-) -> &'a mut WebSurfaceSession {
-    let session =
-        sessions.entry(tab_id.clone()).or_insert_with(|| WebSurfaceSession::new(scope.clone()));
-    if session.scope != scope {
-        *session = WebSurfaceSession::new(scope);
-    }
-    session
-}
-
-fn scroll_wire_fields(
-    delta: Option<super::web_surface_geometry::WebSurfaceScrollDelta>,
-    point: Option<super::web_surface_geometry::WebSurfaceClickPoint>,
-) -> Result<(i32, i32, Option<u32>, Option<u32>), String> {
-    match delta {
-        Some(delta) => {
-            let point = point
-                .ok_or_else(|| "Servo scroll input is missing a viewport point".to_string())?;
-            Ok((delta.x(), delta.y(), Some(point.x()), Some(point.y())))
-        }
-        None => Ok((0, 0, None, None)),
-    }
-}
-
-fn input_requests_history_navigation(input: &WebSurfacePendingInput) -> bool {
-    input.click_point.is_some()
-        || input.typed_text.as_deref().is_some_and(|text| text.contains('\n'))
-}
-
-fn pending_input_kind(input: &WebSurfacePendingInput) -> WebSurfaceInputKind {
-    if input.scroll_delta.is_some() {
-        WebSurfaceInputKind::Scroll
-    } else if input.click_point.is_some() {
-        WebSurfaceInputKind::Click
-    } else if input.typed_text.is_some() {
-        WebSurfaceInputKind::Text
-    } else if input.hover_point.is_some() {
-        WebSurfaceInputKind::Hover
-    } else {
-        WebSurfaceInputKind::Idle
-    }
-}
-
-fn log_ensure_submitted(
-    tab: &BrowserTab,
-    size: WebSurfaceSize,
-    input_kind: &'static str,
-    enqueued_at: Option<Instant>,
-    started_loading: bool,
-) {
-    if input_kind == "idle" && !started_loading {
-        return;
-    }
-    let queued_us = enqueued_at.map(|started_at| started_at.elapsed().as_micros());
-    tracing::info!(
-        target: "ely::web_surface::latency",
-        tab_id = %tab.id().as_str(),
-        url = %tab.url().as_str(),
-        input_kind,
-        queued_us,
-        started_loading,
-        width = size.width,
-        height = size.height,
-        device_pixel_ratio = size.device_pixel_ratio_f32(),
-        "web_surface_ensure_submitted",
-    );
-}
-
-impl From<&WebSurfaceSitePermission> for ServoLiveSitePermission {
-    fn from(permission: &WebSurfaceSitePermission) -> Self {
-        Self::new(
-            permission.origin().as_str(),
-            permission.feature().as_str(),
-            permission.decision(),
-        )
-    }
 }
 
 #[cfg(test)]
