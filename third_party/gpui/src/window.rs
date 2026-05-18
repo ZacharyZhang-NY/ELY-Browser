@@ -3208,8 +3208,20 @@ impl Window {
     }
 
     /// Synchronizes a native child surface to a GPUI layout box.
-    pub fn sync_native_surface(&self, surface: &NativeSurfaceHandle, bounds: Bounds<Pixels>) {
-        self.platform_window.sync_native_surface(surface, bounds);
+    ///
+    /// `corner_radii` carries each rounded-corner radius (top-left,
+    /// top-right, bottom-left, bottom-right) so the platform surface
+    /// can match the surrounding GPUI layout's clipping shape — e.g.
+    /// a browser canvas whose top edge butts flat against a toolbar
+    /// while its bottom edge follows the panel's rounded corners.
+    /// Pass `Corners::default()` for a flat-edged surface.
+    pub fn sync_native_surface(
+        &self,
+        surface: &NativeSurfaceHandle,
+        bounds: Bounds<Pixels>,
+        corner_radii: crate::Corners<Pixels>,
+    ) {
+        self.platform_window.sync_native_surface(surface, bounds, corner_radii);
     }
 
     /// Removes an image from the sprite atlas.

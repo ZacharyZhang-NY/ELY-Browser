@@ -747,7 +747,13 @@ pub(crate) trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn create_native_surface(&self) -> Option<NativeSurfaceHandle> {
         None
     }
-    fn sync_native_surface(&self, _surface: &NativeSurfaceHandle, _bounds: Bounds<Pixels>) {}
+    fn sync_native_surface(
+        &self,
+        _surface: &NativeSurfaceHandle,
+        _bounds: Bounds<Pixels>,
+        _corner_radii: crate::Corners<Pixels>,
+    ) {
+    }
 
     // macOS specific methods
     fn get_title(&self) -> String {

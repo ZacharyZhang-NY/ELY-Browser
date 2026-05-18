@@ -1,7 +1,7 @@
 use ely_domain::{BrowserTab, TabId};
 use gpui::{
     AnyElement, App, ElementId, Entity, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, Styled, Window, canvas, div, native_surface, px, rgb,
+    ParentElement, Pixels, Styled, Window, canvas, div, native_surface, px, rgb,
 };
 
 use super::{
@@ -14,15 +14,25 @@ pub(super) fn render_ready_web_surface(
     _frame: &WebSurfaceFrame,
     tab: &BrowserTab,
     state_entity: Entity<ElyShell>,
+    bottom_corner_radius: Pixels,
 ) -> AnyElement {
-    render_web_surface(tab, state_entity.clone(), render_native_web_surface(tab, state_entity))
+    render_web_surface(
+        tab,
+        state_entity.clone(),
+        render_native_web_surface(tab, state_entity, bottom_corner_radius),
+    )
 }
 
 pub(super) fn render_loading_web_surface(
     tab: &BrowserTab,
     state_entity: Entity<ElyShell>,
+    bottom_corner_radius: Pixels,
 ) -> AnyElement {
-    render_web_surface(tab, state_entity.clone(), render_native_web_surface(tab, state_entity))
+    render_web_surface(
+        tab,
+        state_entity.clone(),
+        render_native_web_surface(tab, state_entity, bottom_corner_radius),
+    )
 }
 
 pub(super) fn render_failed_web_surface(
@@ -75,9 +85,18 @@ fn render_web_surface(
         .into_any_element()
 }
 
-fn render_native_web_surface(tab: &BrowserTab, state_entity: Entity<ElyShell>) -> impl IntoElement {
+fn render_native_web_surface(
+    tab: &BrowserTab,
+    state_entity: Entity<ElyShell>,
+    bottom_corner_radius: Pixels,
+) -> impl IntoElement {
     let tab_id = tab.id().clone();
     let element_id = ElementId::Name(format!("web-surface-{}", tab_id.as_str()).into());
+    // `bottom_corner_radius` is wired through the GPUI `native_surface`
+    // patch to the AppKit overlay's `CALayer.cornerRadius`, so the
+    // canvas follows the same rounded edge as its containing panel
+    // instead of painting past it. The top corners stay flat because
+    // the topbar / pane header sits flush above the canvas.
     native_surface(element_id, move |surface, bounds, window: &mut Window, cx: &mut App| {
         let scale_factor = window.scale_factor();
         state_entity.update(cx, |shell, cx| {
@@ -85,6 +104,8 @@ fn render_native_web_surface(tab: &BrowserTab, state_entity: Entity<ElyShell>) -
         });
     })
     .size_full()
+    .rounded_bl(bottom_corner_radius)
+    .rounded_br(bottom_corner_radius)
 }
 
 fn render_input_overlay(

@@ -1539,7 +1539,12 @@ impl PlatformWindow for MacWindow {
         }
     }
 
-    fn sync_native_surface(&self, surface: &NativeSurfaceHandle, bounds: Bounds<Pixels>) {
+    fn sync_native_surface(
+        &self,
+        surface: &NativeSurfaceHandle,
+        bounds: Bounds<Pixels>,
+        corner_radii: crate::Corners<Pixels>,
+    ) {
         let this = self.0.lock();
         unsafe {
             let parent = this.native_view.as_ptr() as id;
@@ -1552,6 +1557,57 @@ impl PlatformWindow for MacWindow {
             let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(width, height));
             let _: () = msg_send![view, setFrame: frame];
             let _: () = msg_send![view, setHidden: NO];
+
+            // Clip the AppKit overlay to the same shape the surrounding
+            // GPUI layout uses for its rounded panel. Without this the
+            // overlay's CALayer paints square corners on top of GPUI's
+            // rounded mask — the canvas visibly overshoots the panel's
+            // rounded bottom edge.
+            //
+            // Core Animation's `cornerRadius` is a single scalar applied
+            // to all four corners in `maskedCorners`; we therefore use
+            // the *maximum* requested radius across non-zero corners and
+            // intersect the corner mask to the corners that asked for
+            // any rounding. That covers the common cases:
+            //
+            // - Uniform `rounded_*`     : all four corners get the same radius.
+            // - Bottom-only `rounded_b_*`: top stays flush against a toolbar.
+            //
+            // GPUI is Y-down while NSView (with the default `isFlipped:
+            // NO`) is Y-up, so a GPUI *top* corner maps to a CALayer
+            // *MaxY* corner and a GPUI *bottom* corner maps to a CALayer
+            // *MinY* corner.
+            let layer: id = msg_send![view, layer];
+            if !layer.is_null() {
+                const LAYER_MIN_X_MIN_Y: NSUInteger = 1 << 0; // bottom-left in NSView
+                const LAYER_MAX_X_MIN_Y: NSUInteger = 1 << 1; // bottom-right
+                const LAYER_MIN_X_MAX_Y: NSUInteger = 1 << 2; // top-left
+                const LAYER_MAX_X_MAX_Y: NSUInteger = 1 << 3; // top-right
+
+                let tl = corner_radii.top_left.0.max(0.0);
+                let tr = corner_radii.top_right.0.max(0.0);
+                let bl = corner_radii.bottom_left.0.max(0.0);
+                let br = corner_radii.bottom_right.0.max(0.0);
+                let max_radius = tl.max(tr).max(bl).max(br) as f64;
+
+                let mut mask: NSUInteger = 0;
+                if tl > 0.0 {
+                    mask |= LAYER_MIN_X_MAX_Y;
+                }
+                if tr > 0.0 {
+                    mask |= LAYER_MAX_X_MAX_Y;
+                }
+                if bl > 0.0 {
+                    mask |= LAYER_MIN_X_MIN_Y;
+                }
+                if br > 0.0 {
+                    mask |= LAYER_MAX_X_MIN_Y;
+                }
+
+                let _: () = msg_send![layer, setCornerRadius: max_radius];
+                let _: () = msg_send![layer, setMaskedCorners: mask];
+                let _: () = msg_send![layer, setMasksToBounds: YES];
+            }
         }
     }
 

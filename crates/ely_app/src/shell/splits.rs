@@ -16,6 +16,13 @@ use super::chrome::{
 use super::{ElyShell, ShellState};
 use crate::SplitRight;
 
+/// Bottom-corner radius applied to a split pane's canvas overlay so it
+/// follows the pane's rounded frame. Kept in lock-step with the
+/// `.rounded(px(10.0))` used in `render_pane`; bumping one without the
+/// other re-introduces the panel-bg sliver between the canvas and the
+/// pane's rounded edge.
+const SPLIT_PANE_RADIUS: f32 = 10.0;
+
 impl ElyShell {
     pub(super) fn render_content_area(
         &mut self,
@@ -24,11 +31,11 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let Some(layout) = active_split_layout(snapshot, active_tab) else {
-            return self.render_web_canvas(active_tab, snapshot, cx);
+            return self.render_web_canvas(active_tab, snapshot, px(spacing::RADIUS_CARD), cx);
         };
 
         if layout.pane_count() < 2 {
-            return self.render_web_canvas(active_tab, snapshot, cx);
+            return self.render_web_canvas(active_tab, snapshot, px(spacing::RADIUS_CARD), cx);
         }
 
         self.render_split_canvas(snapshot, active_tab, layout, cx)
@@ -126,7 +133,7 @@ impl ElyShell {
             .collect::<Vec<_>>();
 
         if panes.len() < 2 {
-            return self.render_web_canvas(active_tab, snapshot, cx);
+            return self.render_web_canvas(active_tab, snapshot, px(spacing::RADIUS_CARD), cx);
         }
 
         let body = div()
@@ -217,7 +224,11 @@ impl ElyShell {
             .child(div().flex_1().min_h_0().overflow_hidden().child(if compact_canvas {
                 render_compact_split_canvas(tab)
             } else {
-                self.render_web_canvas(tab, snapshot, cx)
+                // Split pane wraps the canvas in a `rounded(SPLIT_PANE_RADIUS)`
+                // container with its own header — the canvas's bottom
+                // corners follow the pane's rounded edge, top stays
+                // flush against the pane header.
+                self.render_web_canvas(tab, snapshot, px(SPLIT_PANE_RADIUS), cx)
             }))
             .into_any_element()
     }

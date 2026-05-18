@@ -40,7 +40,7 @@ use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
 use ely_domain::{ArchivedTab, BrowserTab, TabState};
 use gpui::{
-    AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
+    AnyElement, Context, InteractiveElement, IntoElement, ParentElement, Pixels, SharedString,
     StatefulInteractiveElement, Styled, div, px, rgb,
 };
 use gpui_component::{IconName, StyledExt, scroll::ScrollableElement};
@@ -54,6 +54,7 @@ impl ElyShell {
         &mut self,
         tab: &BrowserTab,
         snapshot: &BrowserSnapshot,
+        bottom_corner_radius: Pixels,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         if tab.state() == &TabState::Crashed {
@@ -145,7 +146,7 @@ impl ElyShell {
                 render_settings_shell(snapshot, "ely://settings/sync", content, cx)
             }
             url if super::web_surface::is_external_web_url(url) => {
-                self.render_external_web_canvas(tab, snapshot, cx)
+                self.render_external_web_canvas(tab, snapshot, bottom_corner_radius, cx)
             }
             _ => render_default_page(tab),
         }

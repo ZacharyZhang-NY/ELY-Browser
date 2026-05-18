@@ -1,6 +1,6 @@
 use crate::{
-    App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement, LayoutId,
-    NativeSurfaceHandle, Pixels, Style, StyleRefinement, Styled, Window,
+    App, Bounds, Corners, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement,
+    LayoutId, NativeSurfaceHandle, Pixels, Style, StyleRefinement, Styled, Window,
 };
 use refineable::Refineable;
 
@@ -71,6 +71,20 @@ impl Element for NativeSurface {
         let Some(on_surface) = self.on_surface.as_mut() else {
             return;
         };
+        // The platform overlay sits on its own AppKit/Compositor layer
+        // and is not clipped by GPUI's rounded `overflow: hidden`.
+        // Resolve every corner radius from the element's style so a
+        // caller that attaches `.rounded_bl(...)` / `.rounded_br(...)`
+        // gets exactly those corners rounded on the platform surface.
+        let rem_size = window.rem_size();
+        let mut style = Style::default();
+        style.refine(&self.style);
+        let corner_radii = Corners {
+            top_left: style.corner_radii.top_left.to_pixels(rem_size),
+            top_right: style.corner_radii.top_right.to_pixels(rem_size),
+            bottom_left: style.corner_radii.bottom_left.to_pixels(rem_size),
+            bottom_right: style.corner_radii.bottom_right.to_pixels(rem_size),
+        };
         let Some(surface) = window.with_element_state::<NativeSurfaceState, _>(
             global_id,
             |state, window| {
@@ -78,7 +92,7 @@ impl Element for NativeSurface {
                     .and_then(|state| state.surface)
                     .or_else(|| window.create_native_surface());
                 if let Some(surface) = surface {
-                    window.sync_native_surface(&surface, bounds);
+                    window.sync_native_surface(&surface, bounds, corner_radii);
                     return (Some(surface.clone()), NativeSurfaceState { surface: Some(surface) });
                 }
                 (None, NativeSurfaceState { surface: None })

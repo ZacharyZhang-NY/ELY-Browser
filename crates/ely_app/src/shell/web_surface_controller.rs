@@ -22,6 +22,7 @@ impl ElyShell {
         &mut self,
         tab: &BrowserTab,
         snapshot: &BrowserSnapshot,
+        bottom_corner_radius: Pixels,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let state_entity = cx.entity().clone();
@@ -31,16 +32,16 @@ impl ElyShell {
 
         match self.web_surfaces.state(tab.id()) {
             Some(WebSurfaceState::Ready(frame)) => {
-                render_ready_web_surface(frame, tab, state_entity)
+                render_ready_web_surface(frame, tab, state_entity, bottom_corner_radius)
             }
             Some(WebSurfaceState::Failed { message, .. }) => {
                 render_failed_web_surface(tab, message.as_str(), state_entity)
             }
             Some(WebSurfaceState::Loading { previous_frame: Some(frame), .. }) => {
-                render_ready_web_surface(frame, tab, state_entity)
+                render_ready_web_surface(frame, tab, state_entity, bottom_corner_radius)
             }
             Some(WebSurfaceState::Loading { previous_frame: None, .. }) | None => {
-                render_loading_web_surface(tab, state_entity)
+                render_loading_web_surface(tab, state_entity, bottom_corner_radius)
             }
         }
     }
