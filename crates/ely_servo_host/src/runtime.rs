@@ -270,8 +270,24 @@ impl ServoHost for SoftwareServoHost {
             .get(&request.webview_id)
             .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
 
+        // `WebView::resize` is the single entry point — it routes through
+        // `paint().resize_rendering_context`, which:
+        //   1. early-returns if `rendering_context.size() == new_size`;
+        //   2. calls `rendering_context.resize` itself;
+        //   3. calls `webview_renderer.set_rect(new_viewport_rect)` so the
+        //      compositor relays out the page at the new size; and
+        //   4. sends `transaction.set_document_view(...)` so WebRender's
+        //      document viewport matches the surface.
+        //
+        // Calling `rendering_context.resize` *ourselves* before that path
+        // is what produced the original bug: surfman saw the new size,
+        // Servo's early-return then skipped steps 3 and 4, and the page
+        // stayed laid out at the original size while we presented a
+        // larger surface — content collapsed to the top-left of a giant
+        // viewport (StableLance) or rendered nothing at all (Google).
+        // The Servo `winit_minimal` reference embedder calls
+        // `webview.resize` and nothing else; mirror that exactly.
         let size = PhysicalSize::new(request.width, request.height);
-        webview.rendering_context.resize(size);
         webview.webview.resize(size);
         Ok(())
     }
