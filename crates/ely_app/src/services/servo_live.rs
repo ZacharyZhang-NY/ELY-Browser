@@ -16,6 +16,16 @@ pub(crate) use types::{
     ServoLiveEnsureRequest, ServoLiveError, ServoLiveFrame, ServoLiveSitePermission,
 };
 
+/// Servo's `WebViewBuilder` defaults the hidpi (device → CSS) scale to
+/// 1.0 — see the contract documented on
+/// [`ely_servo_host::HidpiScaleRequest`]. Mirroring the post-build state
+/// in [`DirectWebViewSession`] makes the diff inside `apply_viewport`
+/// the source of truth for whether `set_hidpi_scale` has to run.
+const SERVO_DEFAULT_DEVICE_PIXEL_RATIO: f32 = 1.0;
+
+/// Servo's `WebViewBuilder` likewise defaults page zoom to 1.0 (100%).
+const SERVO_DEFAULT_PAGE_ZOOM_PERCENT: u16 = 100;
+
 pub(crate) struct ServoLiveClient {
     host: SoftwareServoHost,
     sessions: BTreeMap<String, DirectWebViewSession>,
@@ -132,8 +142,16 @@ impl ServoLiveClient {
                 requested_url: None,
                 width: request.width,
                 height: request.height,
-                page_zoom_percent: request.page_zoom_percent,
-                device_pixel_ratio: request.device_pixel_ratio,
+                // Servo's WebViewBuilder defaults page zoom to 1.0 (100%) and
+                // hidpi scale to 1.0; record both as Servo's actual post-build
+                // state so `apply_viewport` pushes the embedder-requested
+                // values on the first ensure. Without this, a request whose
+                // zoom/DPR happens to equal the cached request value would
+                // bypass `set_page_zoom` / `set_hidpi_scale` and leave the
+                // WebView at Servo's defaults — on Retina that collapses CSS
+                // pixels onto device pixels and renders pages at half size.
+                page_zoom_percent: SERVO_DEFAULT_PAGE_ZOOM_PERCENT,
+                device_pixel_ratio: SERVO_DEFAULT_DEVICE_PIXEL_RATIO,
                 native_surface_id,
             },
         );
