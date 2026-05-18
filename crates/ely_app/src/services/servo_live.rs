@@ -53,11 +53,22 @@ impl ServoLiveClient {
         self.apply_permissions(&request, &webview_id, &profile_id)?;
         self.apply_navigation(&request, &webview_id, tab_id, requested_url)?;
         self.apply_input(&request, &webview_id)?;
+        // Match Servo's `examples/winit_minimal.rs`: spin the event loop on
+        // the embedder-side hot path, never paint. Painting is reactive in
+        // Servo — `notify_new_frame_ready` on the delegate flags the
+        // session, and the next `poll` (gated on `has_pending_frame`)
+        // performs the single paint + present for that frame. Forcing a
+        // paint here would clear the surface to the WebRender background
+        // and present it *before* Servo has composited the navigated
+        // page, which is what produced the per-redirect white-flash on
+        // sites that perform a chain of redirects (google.com → /
+        // → /?zx=…). The `ServoLiveFrame` we return only carries the
+        // snapshot metadata; the on-screen surface is owned by Servo via
+        // the native NSView and updated through `poll`.
         self.host.tick();
         if !self.session_uses_native_surface(&request.tab_id) {
             return Err(ServoLiveError::NativeSurfaceUnavailable);
         }
-        self.host.paint_without_readback_with_completion(&webview_id, false)?;
 
         let frame = self.frame_from_session(&request.tab_id, &webview_id)?;
         Ok(Some(frame))
