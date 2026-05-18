@@ -48,15 +48,25 @@ use async_task::Runnable;
 use futures::channel::oneshot;
 use image::codecs::gif::GifDecoder;
 use image::{AnimationDecoder as _, Frame};
-use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+#[cfg(target_os = "macos")]
+use objc::sel;
+#[cfg(target_os = "macos")]
+use objc::sel_impl;
+use raw_window_handle::{HandleError, HasDisplayHandle, HasWindowHandle};
 use schemars::JsonSchema;
 use seahash::SeaHasher;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::borrow::Cow;
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+use std::ffi::c_void;
 use std::hash::{Hash, Hasher};
 use std::io::Cursor;
+#[cfg(target_os = "windows")]
+use std::num::NonZeroIsize;
 use std::ops;
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "freebsd"))]
+use std::ptr::NonNull;
 use std::time::{Duration, Instant};
 use std::{
     fmt::{self, Debug},
@@ -457,6 +467,240 @@ pub(crate) struct RequestFrameOptions {
     pub(crate) force_render: bool,
 }
 
+/// A platform child surface that can be handed to an embedded renderer.
+#[derive(Clone, Debug)]
+pub struct NativeSurfaceHandle {
+    inner: Arc<NativeSurfaceHandleInner>,
+}
+
+#[derive(Debug)]
+enum NativeSurfaceHandleInner {
+    #[cfg(target_os = "macos")]
+    MacOS { appkit_ns_view: NonNull<c_void> },
+    #[cfg(target_os = "windows")]
+    Windows { hwnd: isize },
+    #[cfg(all(any(target_os = "linux", target_os = "freebsd"), feature = "x11"))]
+    X11 {
+        connection: usize,
+        screen_id: i32,
+        window_id: u32,
+        visual_id: u32,
+    },
+    #[cfg(all(any(target_os = "linux", target_os = "freebsd"), feature = "wayland"))]
+    Wayland { surface: usize, display: usize },
+}
+
+impl NativeSurfaceHandle {
+    #[cfg(target_os = "macos")]
+    pub(crate) fn from_appkit_ns_view(appkit_ns_view: NonNull<c_void>) -> Self {
+        Self { inner: Arc::new(NativeSurfaceHandleInner::MacOS { appkit_ns_view }) }
+    }
+
+    #[cfg(target_os = "windows")]
+    pub(crate) fn from_win32_hwnd(hwnd: isize) -> Self {
+        Self { inner: Arc::new(NativeSurfaceHandleInner::Windows { hwnd }) }
+    }
+
+    #[cfg(all(any(target_os = "linux", target_os = "freebsd"), feature = "x11"))]
+    pub(crate) fn from_xcb_window(
+        connection: usize,
+        screen_id: i32,
+        window_id: u32,
+        visual_id: u32,
+    ) -> Self {
+        Self {
+            inner: Arc::new(NativeSurfaceHandleInner::X11 {
+                connection,
+                screen_id,
+                window_id,
+                visual_id,
+            }),
+        }
+    }
+
+    #[cfg(all(any(target_os = "linux", target_os = "freebsd"), feature = "wayland"))]
+    pub(crate) fn from_wayland_surface(surface: usize, display: usize) -> Self {
+        Self { inner: Arc::new(NativeSurfaceHandleInner::Wayland { surface, display }) }
+    }
+
+    /// Returns the backing `NSView` pointer on macOS.
+    #[cfg(target_os = "macos")]
+    #[must_use]
+    pub fn appkit_ns_view(&self) -> NonNull<c_void> {
+        match self.inner.as_ref() {
+            NativeSurfaceHandleInner::MacOS { appkit_ns_view } => *appkit_ns_view,
+        }
+    }
+
+    /// Returns the backing Win32 `HWND` value on Windows.
+    #[cfg(target_os = "windows")]
+    #[must_use]
+    pub fn win32_hwnd(&self) -> isize {
+        match self.inner.as_ref() {
+            NativeSurfaceHandleInner::Windows { hwnd } => *hwnd,
+        }
+    }
+
+    /// Returns the backing XCB window id on X11.
+    #[cfg(all(any(target_os = "linux", target_os = "freebsd"), feature = "x11"))]
+    #[must_use]
+    pub(crate) fn xcb_window_id(&self) -> u32 {
+        match self.inner.as_ref() {
+            NativeSurfaceHandleInner::X11 { window_id, .. } => *window_id,
+            #[cfg(feature = "wayland")]
+            NativeSurfaceHandleInner::Wayland { .. } => 0,
+        }
+    }
+
+    /// Returns a stable identity for the lifetime of this native surface.
+    #[must_use]
+    pub fn identity(&self) -> usize {
+        match self.inner.as_ref() {
+            #[cfg(target_os = "macos")]
+            NativeSurfaceHandleInner::MacOS { appkit_ns_view } => appkit_ns_view.as_ptr() as usize,
+            #[cfg(target_os = "windows")]
+            NativeSurfaceHandleInner::Windows { hwnd } => *hwnd as usize,
+            #[cfg(all(any(target_os = "linux", target_os = "freebsd"), feature = "x11"))]
+            NativeSurfaceHandleInner::X11 { window_id, .. } => *window_id as usize,
+            #[cfg(all(any(target_os = "linux", target_os = "freebsd"), feature = "wayland"))]
+            NativeSurfaceHandleInner::Wayland { surface, .. } => *surface,
+        }
+    }
+}
+
+impl Drop for NativeSurfaceHandleInner {
+    fn drop(&mut self) {
+        match self {
+            #[cfg(target_os = "macos")]
+            Self::MacOS { appkit_ns_view } => unsafe {
+                let view = appkit_ns_view.as_ptr() as *mut objc::runtime::Object;
+                let _: () = objc::msg_send![view, removeFromSuperview];
+                let _: () = objc::msg_send![view, release];
+            },
+            #[cfg(target_os = "windows")]
+            Self::Windows { hwnd } => unsafe {
+                let _ = ::windows::Win32::UI::WindowsAndMessaging::DestroyWindow(
+                    ::windows::Win32::Foundation::HWND(*hwnd as *mut c_void),
+                );
+            },
+            #[cfg(all(any(target_os = "linux", target_os = "freebsd"), feature = "x11"))]
+            Self::X11 { connection, window_id, .. } => {
+                if let Some(connection) = NonNull::new(*connection as *mut c_void) {
+                    use x11rb::connection::Connection as _;
+                    use x11rb::protocol::xproto::ConnectionExt as _;
+
+                    if let Ok(xcb) = unsafe {
+                        x11rb::xcb_ffi::XCBConnection::from_raw_xcb_connection(
+                            connection.as_ptr(),
+                            false,
+                        )
+                    } {
+                        let _ = xcb.destroy_window(*window_id);
+                        let _ = xcb.flush();
+                    }
+                }
+            }
+            #[cfg(all(any(target_os = "linux", target_os = "freebsd"), feature = "wayland"))]
+            Self::Wayland { .. } => {}
+        }
+    }
+}
+
+unsafe impl Send for NativeSurfaceHandle {}
+
+unsafe impl Sync for NativeSurfaceHandle {}
+
+impl HasWindowHandle for NativeSurfaceHandle {
+    fn window_handle(&self) -> Result<raw_window_handle::WindowHandle<'_>, HandleError> {
+        match self.inner.as_ref() {
+            #[cfg(target_os = "macos")]
+            NativeSurfaceHandleInner::MacOS { appkit_ns_view } => unsafe {
+                Ok(raw_window_handle::WindowHandle::borrow_raw(
+                    raw_window_handle::RawWindowHandle::AppKit(
+                        raw_window_handle::AppKitWindowHandle::new(*appkit_ns_view),
+                    ),
+                ))
+            },
+            #[cfg(target_os = "windows")]
+            NativeSurfaceHandleInner::Windows { hwnd } => {
+                let Some(hwnd) = NonZeroIsize::new(*hwnd) else {
+                    return Err(HandleError::Unavailable);
+                };
+                let handle = raw_window_handle::Win32WindowHandle::new(hwnd);
+                unsafe {
+                    Ok(raw_window_handle::WindowHandle::borrow_raw(
+                        raw_window_handle::RawWindowHandle::Win32(handle),
+                    ))
+                }
+            }
+            #[cfg(all(any(target_os = "linux", target_os = "freebsd"), feature = "x11"))]
+            NativeSurfaceHandleInner::X11 { window_id, visual_id, .. } => {
+                let Some(window_id) = std::num::NonZeroU32::new(*window_id) else {
+                    return Err(HandleError::Unavailable);
+                };
+                let mut handle = raw_window_handle::XcbWindowHandle::new(window_id);
+                handle.visual_id = std::num::NonZeroU32::new(*visual_id);
+                unsafe {
+                    Ok(raw_window_handle::WindowHandle::borrow_raw(
+                        raw_window_handle::RawWindowHandle::Xcb(handle),
+                    ))
+                }
+            }
+            #[cfg(all(any(target_os = "linux", target_os = "freebsd"), feature = "wayland"))]
+            NativeSurfaceHandleInner::Wayland { surface, .. } => {
+                let Some(surface) = NonNull::new(*surface as *mut c_void) else {
+                    return Err(HandleError::Unavailable);
+                };
+                let handle = raw_window_handle::WaylandWindowHandle::new(surface);
+                unsafe {
+                    Ok(raw_window_handle::WindowHandle::borrow_raw(
+                        raw_window_handle::RawWindowHandle::Wayland(handle),
+                    ))
+                }
+            }
+        }
+    }
+}
+
+impl HasDisplayHandle for NativeSurfaceHandle {
+    fn display_handle(&self) -> Result<raw_window_handle::DisplayHandle<'_>, HandleError> {
+        match self.inner.as_ref() {
+            #[cfg(target_os = "macos")]
+            NativeSurfaceHandleInner::MacOS { .. } => unsafe {
+                Ok(raw_window_handle::DisplayHandle::borrow_raw(
+                    raw_window_handle::AppKitDisplayHandle::new().into(),
+                ))
+            },
+            #[cfg(target_os = "windows")]
+            NativeSurfaceHandleInner::Windows { .. } => Ok(raw_window_handle::DisplayHandle::windows()),
+            #[cfg(all(any(target_os = "linux", target_os = "freebsd"), feature = "x11"))]
+            NativeSurfaceHandleInner::X11 { connection, screen_id, .. } => {
+                let Some(connection) = NonNull::new(*connection as *mut c_void) else {
+                    return Err(HandleError::Unavailable);
+                };
+                let handle = raw_window_handle::XcbDisplayHandle::new(Some(connection), *screen_id);
+                unsafe {
+                    Ok(raw_window_handle::DisplayHandle::borrow_raw(
+                        raw_window_handle::RawDisplayHandle::Xcb(handle),
+                    ))
+                }
+            }
+            #[cfg(all(any(target_os = "linux", target_os = "freebsd"), feature = "wayland"))]
+            NativeSurfaceHandleInner::Wayland { display, .. } => {
+                let Some(display) = NonNull::new(*display as *mut c_void) else {
+                    return Err(HandleError::Unavailable);
+                };
+                let handle = raw_window_handle::WaylandDisplayHandle::new(display);
+                unsafe {
+                    Ok(raw_window_handle::DisplayHandle::borrow_raw(
+                        raw_window_handle::RawDisplayHandle::Wayland(handle),
+                    ))
+                }
+            }
+        }
+    }
+}
+
 pub(crate) trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn bounds(&self) -> Bounds<Pixels>;
     fn is_maximized(&self) -> bool;
@@ -500,6 +744,10 @@ pub(crate) trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn draw(&self, scene: &Scene);
     fn completed_frame(&self) {}
     fn sprite_atlas(&self) -> Arc<dyn PlatformAtlas>;
+    fn create_native_surface(&self) -> Option<NativeSurfaceHandle> {
+        None
+    }
+    fn sync_native_surface(&self, _surface: &NativeSurfaceHandle, _bounds: Bounds<Pixels>) {}
 
     // macOS specific methods
     fn get_title(&self) -> String {

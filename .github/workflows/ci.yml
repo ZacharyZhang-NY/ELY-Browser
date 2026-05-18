@@ -38,7 +38,7 @@ jobs:
       - name: Test Servo engine host
         run: cargo test -p ely_servo_host --features servo-engine --test software_host
 
-      - name: Test PRD site compatibility
+      - name: Test embedded PRD site compatibility
         run: scripts/verify_prd_site_rendering.sh
 
       - name: Audit source file size

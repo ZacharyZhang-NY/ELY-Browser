@@ -1,6 +1,6 @@
 use ely_browser_core::{BrowserCore, BrowserSnapshot};
 use ely_domain::{BrowserTab, ProfileKind, TabId, UrlText};
-use gpui::{AnyElement, Bounds, Context, Pixels, Point};
+use gpui::{AnyElement, Bounds, Context, NativeSurfaceHandle, Pixels, Point};
 
 use crate::services::ProfileDataMode;
 
@@ -97,6 +97,25 @@ impl ElyShell {
         if self.web_surfaces.record_viewport_size(&tab_id, bounds, scale_factor)
             == WebSurfaceInputOutcome::Applied
         {
+            self.flush_external_web_surface_tick(cx);
+        }
+    }
+
+    pub(super) fn record_external_web_surface(
+        &mut self,
+        tab_id: TabId,
+        bounds: Bounds<Pixels>,
+        scale_factor: f32,
+        native_surface: NativeSurfaceHandle,
+        cx: &mut Context<Self>,
+    ) {
+        let viewport_changed =
+            self.web_surfaces.record_viewport_size(&tab_id, bounds, scale_factor)
+                == WebSurfaceInputOutcome::Applied;
+        let surface_changed = self.web_surfaces.record_native_surface(&tab_id, native_surface)
+            == WebSurfaceInputOutcome::Applied;
+
+        if viewport_changed || surface_changed {
             self.flush_external_web_surface_tick(cx);
         }
     }

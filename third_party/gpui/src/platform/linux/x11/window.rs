@@ -4,10 +4,11 @@ use x11rb::connection::RequestConnection;
 use crate::platform::blade::{BladeContext, BladeRenderer, BladeSurfaceConfig};
 use crate::{
     AnyWindowHandle, Bounds, Decorations, DevicePixels, ForegroundExecutor, GpuSpecs, Modifiers,
-    Pixels, PlatformAtlas, PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow,
-    Point, PromptButton, PromptLevel, RequestFrameOptions, ResizeEdge, ScaledPixels, Scene, Size,
-    Tiling, WindowAppearance, WindowBackgroundAppearance, WindowBounds, WindowControlArea,
-    WindowDecorations, WindowKind, WindowParams, X11ClientStatePtr, px, size,
+    NativeSurfaceHandle, Pixels, PlatformAtlas, PlatformDisplay, PlatformInput,
+    PlatformInputHandler, PlatformWindow, Point, PromptButton, PromptLevel, RequestFrameOptions,
+    ResizeEdge, ScaledPixels, Scene, Size, Tiling, WindowAppearance, WindowBackgroundAppearance,
+    WindowBounds, WindowControlArea, WindowDecorations, WindowKind, WindowParams,
+    X11ClientStatePtr, px, size,
 };
 
 use blade_graphics as gpu;
@@ -253,6 +254,8 @@ pub struct X11WindowState {
     executor: ForegroundExecutor,
     atoms: XcbAtoms,
     x_root_window: xproto::Window,
+    x_screen_id: usize,
+    x_visual_id: u32,
     pub(crate) counter_id: sync::Counter,
     pub(crate) last_sync_counter: Option<sync::Int64>,
     bounds: Bounds<Pixels>,
@@ -671,6 +674,8 @@ impl X11WindowState {
                 executor,
                 display,
                 x_root_window: visual_set.root,
+                x_screen_id: x_screen_index,
+                x_visual_id: visual.id,
                 bounds: bounds.to_pixels(scale_factor),
                 scale_factor,
                 renderer,
@@ -1478,6 +1483,61 @@ impl PlatformWindow for X11Window {
     fn sprite_atlas(&self) -> Arc<dyn PlatformAtlas> {
         let inner = self.0.state.borrow();
         inner.renderer.sprite_atlas().clone()
+    }
+
+    fn create_native_surface(&self) -> Option<NativeSurfaceHandle> {
+        let state = self.0.state.borrow();
+        let window_id = self.0.xcb.generate_id().log_err()?;
+        let aux = xproto::CreateWindowAux::new().event_mask(xproto::EventMask::NO_EVENT);
+        check_reply(
+            || "X11 CreateWindow failed for native surface.",
+            self.0.xcb.create_window(
+                0,
+                window_id,
+                self.0.x_window,
+                0,
+                0,
+                1,
+                1,
+                0,
+                xproto::WindowClass::INPUT_OUTPUT,
+                0,
+                &aux,
+            ),
+        )
+        .log_err()?;
+        check_reply(
+            || "X11 MapWindow failed for native surface.",
+            self.0.xcb.map_window(window_id),
+        )
+        .log_err()?;
+        xcb_flush(&self.0.xcb);
+        Some(NativeSurfaceHandle::from_xcb_window(
+            as_raw_xcb_connection::AsRawXcbConnection::as_raw_xcb_connection(&*self.0.xcb)
+                as usize,
+            state.x_screen_id as i32,
+            window_id,
+            state.x_visual_id,
+        ))
+    }
+
+    fn sync_native_surface(&self, surface: &NativeSurfaceHandle, bounds: Bounds<Pixels>) {
+        let state = self.0.state.borrow();
+        let bounds = bounds.to_device_pixels(state.scale_factor);
+        drop(state);
+        check_reply(
+            || "X11 ConfigureWindow failed for native surface.",
+            self.0.xcb.configure_window(
+                surface.xcb_window_id(),
+                &xproto::ConfigureWindowAux::new()
+                    .x(bounds.origin.x.0)
+                    .y(bounds.origin.y.0)
+                    .width(bounds.size.width.0.max(1) as u32)
+                    .height(bounds.size.height.0.max(1) as u32),
+            ),
+        )
+        .log_err();
+        xcb_flush(&self.0.xcb);
     }
 
     fn show_window_menu(&self, position: Point<Pixels>) {

@@ -7,41 +7,30 @@ rust-version.workspace = true
 
 [features]
 default = []
-servo-engine = ["dep:dpi", "dep:euclid", "dep:serde", "dep:serde_json", "dep:servo", "dep:url"]
-hardware-render = [
-    "servo-engine",
-    "dep:gleam",
-    "dep:glow",
-    "dep:image",
-    "dep:log",
-    "dep:mach2",
-    "dep:surfman",
-    "dep:objc2-io-surface",
+servo-engine = [
+    "dep:dpi",
+    "dep:euclid",
+    "dep:naga",
+    "dep:raw-window-handle",
+    "dep:rustls",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:servo",
+    "dep:url",
 ]
-
-[[bin]]
-name = "ely_servo_sidecar"
-path = "src/bin/ely_servo_sidecar.rs"
-required-features = ["servo-engine"]
 
 [dependencies]
 dpi = { workspace = true, optional = true }
 ely_domain = { path = "../ely_domain" }
 euclid = { version = "0.22", optional = true }
-gleam = { version = "0.15", optional = true }
-glow = { version = "0.16", optional = true }
-image = { workspace = true, optional = true }
-log = { version = "0.4", optional = true }
+naga = { version = "26.0.0", features = ["termcolor"], optional = true }
+raw-window-handle = { version = "0.6", optional = true }
+rustls = { version = "0.23.40", default-features = false, features = ["std", "aws_lc_rs"], optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 servo = { workspace = true, optional = true }
-surfman = { version = "0.11", optional = true }
 thiserror.workspace = true
 url = { workspace = true, optional = true }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-mach2 = { version = "0.6", optional = true }
-objc2-io-surface = { version = "0.3.2", optional = true }
 
 [lints]
 workspace = true

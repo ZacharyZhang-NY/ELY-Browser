@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use ely_domain::TabId;
-use gpui::{Bounds, Pixels};
+use gpui::{Bounds, NativeSurfaceHandle, Pixels};
 
 use super::{
     web_surface_cadence::ACTIVE_POLL_INTERVAL,
@@ -126,6 +126,7 @@ pub(super) struct WebSurfaceTickResult {
 pub(super) struct PerTabSurface {
     pub(super) viewport_bounds: Option<Bounds<Pixels>>,
     pub(super) viewport_size: Option<WebSurfaceSize>,
+    pub(super) native_surface: Option<NativeSurfaceHandle>,
     pub(super) last_ensure_key: Option<WebSurfaceEnsureKey>,
     pub(super) hover_point: Option<WebSurfaceClickPoint>,
     last_hover_enqueued_at: Option<Instant>,
@@ -145,6 +146,7 @@ impl PerTabSurface {
         Self {
             viewport_bounds: None,
             viewport_size: None,
+            native_surface: None,
             last_ensure_key: None,
             hover_point: None,
             last_hover_enqueued_at: None,
@@ -228,6 +230,7 @@ const HOVER_INPUT_MIN_INTERVAL: Duration = Duration::from_millis(32);
 pub(super) struct WebSurfaceEnsureKey {
     requested_url: String,
     size: WebSurfaceSize,
+    native_surface_id: Option<usize>,
     zoom_percent: u16,
     permissions: Vec<WebSurfaceSitePermission>,
 }
@@ -236,10 +239,17 @@ impl WebSurfaceEnsureKey {
     pub(super) fn new(
         requested_url: String,
         size: WebSurfaceSize,
+        native_surface: Option<&NativeSurfaceHandle>,
         zoom_percent: u16,
         permissions: &[WebSurfaceSitePermission],
     ) -> Self {
-        Self { requested_url, size, zoom_percent, permissions: permissions.to_vec() }
+        Self {
+            requested_url,
+            size,
+            native_surface_id: native_surface.map(NativeSurfaceHandle::identity),
+            zoom_percent,
+            permissions: permissions.to_vec(),
+        }
     }
 }
 
@@ -297,6 +307,7 @@ mod tests {
         WebSurfaceEnsureKey::new(
             url.to_string(),
             WebSurfaceSize { width, height, device_pixel_ratio_percent: 100 },
+            None,
             100,
             &[],
         )

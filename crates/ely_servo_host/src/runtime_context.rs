@@ -8,6 +8,7 @@ use std::{
 
 use dpi::PhysicalSize;
 use euclid::Scale;
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use servo::{
     DeviceIndependentPixel, DeviceIntPoint, DeviceIntRect, DeviceIntSize, DevicePixel,
     RenderingContext,
@@ -62,31 +63,16 @@ impl ServoSurfaceSize {
 }
 
 /// Selects the `RenderingContext` implementation each webview gets.
-///
-/// `Software` uses Servo's built-in `SoftwareRenderingContext`, which
-/// rasterises on the CPU. `Hardware` uses the vendored
-/// [`HardwareOffscreenContext`](crate::HardwareOffscreenContext),
-/// which rasterises through the real GPU adapter against a
-/// `SurfaceType::Generic` offscreen surface. The `Hardware` variant
-/// is only available when the `hardware-render` feature is enabled;
-/// requesting it without the feature is a configuration error
-/// surfaced via `ServoHostError::HardwareRenderUnavailable`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum RenderingContextKind {
     #[default]
     Software,
-    Hardware,
 }
 
 /// Pair of rendering-context handles produced by
-/// [`SoftwareServoHost::new_rendering_context`]. The trait-object
-/// handle drives Servo's compositor; the concrete hardware handle is
-/// kept on the side so the host can call macOS-specific methods
-/// (IOSurface mach port extraction) without downcasting.
+/// [`SoftwareServoHost::new_rendering_context`].
 pub(super) struct RenderingContextHandles {
     pub(super) rendering_context: Rc<dyn RenderingContext>,
-    #[cfg(feature = "hardware-render")]
-    pub(super) hardware_context: Option<Rc<crate::HardwareOffscreenContext>>,
 }
 
 impl SoftwareServoHost {
@@ -103,27 +89,31 @@ impl SoftwareServoHost {
                 rendering_context
                     .make_current()
                     .map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
-                Ok(RenderingContextHandles {
-                    rendering_context,
-                    #[cfg(feature = "hardware-render")]
-                    hardware_context: None,
-                })
+                Ok(RenderingContextHandles { rendering_context })
             }
-            #[cfg(feature = "hardware-render")]
-            RenderingContextKind::Hardware => {
-                let hardware = Rc::new(
-                    crate::HardwareOffscreenContext::new(size.physical())
-                        .map_err(|_| ServoHostError::RenderingContextUnavailable)?,
-                );
-                hardware.make_current().map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
-                Ok(RenderingContextHandles {
-                    rendering_context: hardware.clone(),
-                    hardware_context: Some(hardware),
-                })
-            }
-            #[cfg(not(feature = "hardware-render"))]
-            RenderingContextKind::Hardware => Err(ServoHostError::HardwareRenderUnavailable),
         }
+    }
+
+    pub(super) fn new_rendering_context_for_native_surface<S>(
+        &self,
+        size: ServoSurfaceSize,
+        native_surface: &S,
+    ) -> Result<RenderingContextHandles, ServoHostError>
+    where
+        S: HasDisplayHandle + HasWindowHandle + ?Sized,
+    {
+        let display_handle = native_surface
+            .display_handle()
+            .map_err(|_| ServoHostError::RenderingContextUnavailable)?;
+        let window_handle = native_surface
+            .window_handle()
+            .map_err(|_| ServoHostError::RenderingContextUnavailable)?;
+        let rendering_context = Rc::new(
+            servo::WindowRenderingContext::new(display_handle, window_handle, size.physical())
+                .map_err(|_| ServoHostError::RenderingContextUnavailable)?,
+        );
+        rendering_context.make_current().map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
+        Ok(RenderingContextHandles { rendering_context })
     }
 
     /// Spin Servo's event loop until the webview's delegate observes a

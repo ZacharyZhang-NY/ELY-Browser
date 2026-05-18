@@ -1,51 +1,28 @@
 use ely_domain::{BrowserTab, TabId};
 use gpui::{
-    AnyElement, App, Corners, Entity, ImageSource, InteractiveElement, IntoElement, MouseButton,
-    ObjectFit, ParentElement, Styled, StyledImage, Window, canvas, div, img, px, rgb, surface,
+    AnyElement, App, ElementId, Entity, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, Styled, Window, canvas, div, native_surface, px, rgb,
 };
 
 use super::{
     ElyShell, web_surface_frame::WebSurfaceFrame,
     web_surface_geometry::servo_scroll_delta_from_wheel_delta,
 };
-use ely_design_system::{colors, spacing};
+use ely_design_system::colors;
 
 pub(super) fn render_ready_web_surface(
-    frame: &WebSurfaceFrame,
+    _frame: &WebSurfaceFrame,
     tab: &BrowserTab,
     state_entity: Entity<ElyShell>,
 ) -> AnyElement {
-    #[cfg(target_os = "macos")]
-    if let Some(pixel_buffer) = frame.pixel_buffer.as_ref() {
-        return render_web_surface(
-            tab,
-            state_entity,
-            surface(pixel_buffer.clone())
-                .size_full()
-                .corner_radii(web_surface_corner_radii())
-                .object_fit(ObjectFit::Fill),
-        );
-    }
-
-    if let Some(image) = frame.image.as_ref() {
-        return render_web_surface(
-            tab,
-            state_entity,
-            img(ImageSource::Render(image.clone())).size_full().object_fit(ObjectFit::Fill),
-        );
-    }
-    render_web_surface(
-        tab,
-        state_entity,
-        error_page("Web surface frame did not include renderable pixels."),
-    )
+    render_web_surface(tab, state_entity.clone(), render_native_web_surface(tab, state_entity))
 }
 
 pub(super) fn render_loading_web_surface(
     tab: &BrowserTab,
     state_entity: Entity<ElyShell>,
 ) -> AnyElement {
-    render_web_surface(tab, state_entity, div().size_full())
+    render_web_surface(tab, state_entity.clone(), render_native_web_surface(tab, state_entity))
 }
 
 pub(super) fn render_failed_web_surface(
@@ -54,15 +31,6 @@ pub(super) fn render_failed_web_surface(
     state_entity: Entity<ElyShell>,
 ) -> AnyElement {
     render_web_surface(tab, state_entity, error_page(message))
-}
-
-fn web_surface_corner_radii() -> Corners<gpui::Pixels> {
-    Corners {
-        top_left: px(0.0),
-        top_right: px(0.0),
-        bottom_right: px(spacing::RADIUS_CARD),
-        bottom_left: px(spacing::RADIUS_CARD),
-    }
 }
 
 fn error_page(message: &str) -> impl IntoElement {
@@ -105,6 +73,18 @@ fn render_web_surface(
         .child(render_viewport_tracker(tab.id().clone(), tracker_entity))
         .child(render_input_overlay(input_tab_id, input_url, input_entity))
         .into_any_element()
+}
+
+fn render_native_web_surface(tab: &BrowserTab, state_entity: Entity<ElyShell>) -> impl IntoElement {
+    let tab_id = tab.id().clone();
+    let element_id = ElementId::Name(format!("web-surface-{}", tab_id.as_str()).into());
+    native_surface(element_id, move |surface, bounds, window: &mut Window, cx: &mut App| {
+        let scale_factor = window.scale_factor();
+        state_entity.update(cx, |shell, cx| {
+            shell.record_external_web_surface(tab_id.clone(), bounds, scale_factor, surface, cx);
+        });
+    })
+    .size_full()
 }
 
 fn render_input_overlay(

@@ -11,9 +11,8 @@ use std::{
 use ely_domain::{ProfileId, SiteOrigin, SitePermissionFeature, TabId, UrlText};
 use ely_servo_host::{
     HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest,
-    PageZoomRequest, PermissionDecision, PermissionRequest, ResizeRequest, ScreenshotRequest,
-    ScrollRequest, ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, TouchTapRequest,
-    WebViewState,
+    PageZoomRequest, PermissionDecision, PermissionRequest, ResizeRequest, ScrollRequest,
+    ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, TouchTapRequest, WebViewState,
 };
 
 const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
@@ -336,17 +335,6 @@ fn exercise_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
             site.url
         );
         assert_rendered_frame_has_content(&host, site.url, MINIMUM_CONTENT_PIXELS)?;
-        if site.url == "https://example.com" {
-            let screenshot =
-                host.capture_screenshot(ScreenshotRequest { webview_id: webview_id.clone() })?;
-            assert_frame_has_dimensions_and_content(
-                &screenshot,
-                "https://example.com screenshot",
-                INITIAL_WIDTH,
-                INITIAL_HEIGHT,
-                MINIMUM_CONTENT_PIXELS,
-            );
-        }
         previous_frame_hash = Some(host.last_rendered_frame()?.sample_hash());
     }
 

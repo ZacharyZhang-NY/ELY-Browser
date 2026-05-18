@@ -13,12 +13,6 @@ pub(super) struct HostWebView {
     pub(super) tab_id: TabId,
     pub(super) profile_id: ProfileId,
     pub(super) rendering_context: Rc<dyn RenderingContext>,
-    /// Parallel concrete handle when the rendering context is the
-    /// vendored hardware path. `None` for software webviews. Lets the
-    /// host call macOS-specific methods (IOSurface mach port
-    /// extraction) without downcasting `dyn RenderingContext`.
-    #[cfg(feature = "hardware-render")]
-    pub(super) hardware_context: Option<Rc<crate::HardwareOffscreenContext>>,
     pub(super) webview: WebView,
     pub(super) delegate: Rc<HostWebViewDelegate>,
     pub(super) requested_url: Option<String>,

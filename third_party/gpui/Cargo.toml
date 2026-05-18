@@ -167,10 +167,6 @@ version = "0.2"
 
 [dependencies.log]
 version = "0.4.16"
-features = [
-    "kv_unstable_serde",
-    "serde",
-]
 
 [dependencies.lyon]
 version = "1.0"
@@ -499,10 +495,6 @@ version = "0.5"
 
 [target.'cfg(target_os = "macos")'.dependencies.log]
 version = "0.4.16"
-features = [
-    "kv_unstable_serde",
-    "serde",
-]
 
 [target.'cfg(target_os = "macos")'.dependencies.media]
 version = "0.2.2"

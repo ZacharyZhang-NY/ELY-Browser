@@ -9,13 +9,12 @@ use crate::services::servo_live::{
     ServoLiveClient, ServoLiveEnsureRequest, ServoLiveError, ServoLiveFrame,
 };
 
-/// IPC surface for the per-profile Servo sidecar.
+/// Blocking surface for the embedded Servo runtime.
 ///
 /// Production wraps [`ServoLiveClient`] directly; tests substitute a
 /// fake. The contract: every call is blocking and may run for tens of
-/// milliseconds. Implementations live on the worker thread, never the
-/// UI thread.
-pub(super) trait LiveRuntimeClient: Send {
+/// milliseconds. Implementations live on the worker thread.
+pub(super) trait LiveRuntimeClient {
     fn ensure(
         &mut self,
         request: ServoLiveEnsureRequest,
@@ -45,20 +44,20 @@ impl LiveRuntimeClient for ServoLiveClient {
 
 #[derive(Debug)]
 pub(super) enum LiveRuntimeClientError {
-    SidecarExited,
+    RuntimeUnavailable,
     Message(String),
 }
 
 impl LiveRuntimeClientError {
-    pub(super) fn is_sidecar_exited(&self) -> bool {
-        matches!(self, Self::SidecarExited)
+    pub(super) fn is_runtime_unavailable(&self) -> bool {
+        matches!(self, Self::RuntimeUnavailable)
     }
 }
 
 impl std::fmt::Display for LiveRuntimeClientError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::SidecarExited => formatter.write_str("servo live sidecar exited"),
+            Self::RuntimeUnavailable => formatter.write_str("servo live runtime is unavailable"),
             Self::Message(message) => formatter.write_str(message),
         }
     }
@@ -72,8 +71,8 @@ impl From<String> for LiveRuntimeClientError {
 
 impl From<ServoLiveError> for LiveRuntimeClientError {
     fn from(error: ServoLiveError) -> Self {
-        if error.is_sidecar_process_unusable() {
-            return Self::SidecarExited;
+        if error.is_runtime_unavailable() {
+            return Self::RuntimeUnavailable;
         }
         Self::Message(error.to_string())
     }
@@ -89,7 +88,7 @@ impl From<io::Error> for LiveRuntimeClientError {
 pub(super) enum WorkerResponse {
     Frame { tab_id: String, frame: ServoLiveFrame },
     Failed { tab_id: String, message: String },
-    SidecarExited,
+    RuntimeUnavailable,
 }
 
 enum WorkerRequest {
@@ -116,9 +115,9 @@ struct WorkerQueue {
 /// Owns a [`LiveRuntimeClient`] on a dedicated OS thread and exposes
 /// a non-blocking API: submit ensure/poll/close, then drain responses.
 ///
-/// The UI thread never blocks on Servo IPC. Submissions push into a
+/// The UI thread never blocks on Servo. Submissions push into a
 /// coalescing queue (latest request per tab wins). The worker thread
-/// drains the queue, runs the blocking IPC, and emits responses on a
+/// drains the queue, runs the blocking calls, and emits responses on a
 /// `std::sync::mpsc` channel that the UI thread reads with `try_recv`.
 pub(super) struct LiveRuntimeWorker {
     queue: Arc<(Mutex<WorkerQueue>, Condvar)>,
@@ -127,7 +126,9 @@ pub(super) struct LiveRuntimeWorker {
 }
 
 impl LiveRuntimeWorker {
-    pub(super) fn new(client: Box<dyn LiveRuntimeClient>) -> Result<Self, String> {
+    pub(super) fn new(
+        client_factory: impl FnOnce() -> Result<Box<dyn LiveRuntimeClient>, String> + Send + 'static,
+    ) -> Result<Self, String> {
         let queue = Arc::new((
             Mutex::new(WorkerQueue {
                 pending: BTreeMap::new(),
@@ -138,13 +139,35 @@ impl LiveRuntimeWorker {
             Condvar::new(),
         ));
         let (response_tx, response_rx) = mpsc::channel();
+        let (init_tx, init_rx) = mpsc::channel();
         let queue_for_thread = queue.clone();
         let thread = std::thread::Builder::new()
-            .name("ely-servo-live".to_string())
+            .name("ely-servo-runtime".to_string())
             .spawn(move || {
+                let client = match client_factory() {
+                    Ok(client) => {
+                        let _ = init_tx.send(Ok(()));
+                        client
+                    }
+                    Err(error) => {
+                        let _ = init_tx.send(Err(error));
+                        return;
+                    }
+                };
                 run_worker(client, queue_for_thread, response_tx);
             })
             .map_err(|error| format!("failed to spawn servo live worker thread: {error}"))?;
+        match init_rx.recv() {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                let _ = thread.join();
+                return Err(error);
+            }
+            Err(error) => {
+                let _ = thread.join();
+                return Err(format!("servo live worker initialization failed: {error}"));
+            }
+        }
         Ok(Self { queue, response_rx, thread: Some(thread) })
     }
 
@@ -317,7 +340,7 @@ enum Work {
 }
 
 /// Forward a single client result to the response channel. Returns
-/// `true` when the worker should exit (sidecar process died).
+/// `true` when the worker should exit.
 fn dispatch_result(
     response_tx: &mpsc::Sender<WorkerResponse>,
     tab_id: String,
@@ -330,11 +353,11 @@ fn dispatch_result(
         }
         Ok(None) => false,
         Err(error) => {
-            let exited = error.is_sidecar_exited();
+            let unavailable = error.is_runtime_unavailable();
             let message = error.to_string();
             let _ = response_tx.send(WorkerResponse::Failed { tab_id, message });
-            if exited {
-                let _ = response_tx.send(WorkerResponse::SidecarExited);
+            if unavailable {
+                let _ = response_tx.send(WorkerResponse::RuntimeUnavailable);
                 return true;
             }
             false

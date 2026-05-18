@@ -849,6 +849,46 @@ impl PlatformWindow for WindowsWindow {
         self.0.state.borrow().renderer.sprite_atlas()
     }
 
+    fn create_native_surface(&self) -> Option<NativeSurfaceHandle> {
+        register_native_surface_window_class();
+        let hwnd = unsafe {
+            CreateWindowExW(
+                WS_EX_NOACTIVATE,
+                NATIVE_SURFACE_CLASS_NAME,
+                w!(""),
+                WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_DISABLED,
+                0,
+                0,
+                1,
+                1,
+                Some(self.0.hwnd),
+                None,
+                Some(get_module_handle().into()),
+                None,
+            )
+        }
+        .ok()?;
+        Some(NativeSurfaceHandle::from_win32_hwnd(hwnd.0 as isize))
+    }
+
+    fn sync_native_surface(&self, surface: &NativeSurfaceHandle, bounds: Bounds<Pixels>) {
+        let bounds = bounds.to_device_pixels(self.scale_factor());
+        let hwnd = HWND(surface.win32_hwnd() as _);
+        unsafe {
+            SetWindowPos(
+                hwnd,
+                None,
+                bounds.origin.x.0,
+                bounds.origin.y.0,
+                bounds.size.width.0.max(1),
+                bounds.size.height.0.max(1),
+                SWP_NOZORDER | SWP_NOACTIVATE,
+            )
+            .log_err();
+            ShowWindow(hwnd, SW_SHOW).ok().log_err();
+        }
+    }
+
     fn get_raw_handle(&self) -> HWND {
         self.0.hwnd
     }
@@ -1145,6 +1185,7 @@ enum WindowOpenState {
 }
 
 const WINDOW_CLASS_NAME: PCWSTR = w!("Zed::Window");
+const NATIVE_SURFACE_CLASS_NAME: PCWSTR = w!("Zed::NativeSurface");
 
 fn register_window_class(icon_handle: HICON) {
     static ONCE: Once = Once::new();
@@ -1160,6 +1201,30 @@ fn register_window_class(icon_handle: HICON) {
         };
         unsafe { RegisterClassW(&wc) };
     });
+}
+
+fn register_native_surface_window_class() {
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let wc = WNDCLASSW {
+            lpfnWndProc: Some(native_surface_window_procedure),
+            lpszClassName: PCWSTR(NATIVE_SURFACE_CLASS_NAME.as_ptr()),
+            style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
+            hInstance: get_module_handle().into(),
+            hbrBackground: unsafe { CreateSolidBrush(COLORREF(0x00000000)) },
+            ..Default::default()
+        };
+        unsafe { RegisterClassW(&wc) };
+    });
+}
+
+unsafe extern "system" fn native_surface_window_procedure(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
 }
 
 unsafe extern "system" fn window_procedure(

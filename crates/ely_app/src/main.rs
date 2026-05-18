@@ -324,15 +324,17 @@ fn quit(_: &Quit, cx: &mut App) {
     cx.quit();
 }
 
+const DEFAULT_TRACING_FILTER: &str = "ely_app=info,ely_servo_host=warn,ely=info";
+
 /// Install the global tracing subscriber. `RUST_LOG` drives the
-/// filter; absent it, only `warn` and above leak through so day-to-day
-/// runs stay quiet. The perf target is silent by default —
-/// `RUST_LOG=ely::servo::perf=info` flips on the frame-time stream
-/// without touching the rest of the app. We swallow re-init errors so
-/// tests that share the process state with main don't blow up.
+/// filter; absent it, app-owned targets stay visible and Servo internals
+/// stay opt-in. `RUST_LOG=ely::servo::perf=info` flips on the frame-time
+/// stream. We swallow re-init errors so tests that share process state
+/// with main can reuse this path.
 fn init_tracing() {
     use tracing_subscriber::{EnvFilter, fmt};
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(DEFAULT_TRACING_FILTER));
     let _ = fmt().with_env_filter(filter).with_target(true).try_init();
 }
 

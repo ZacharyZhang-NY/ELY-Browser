@@ -108,7 +108,7 @@ fn scroll_after_click_keeps_keyboard_focus_and_typed_text() -> Result<(), Box<dy
     assert_eq!(
         input.scroll_delta.map(|delta| (delta.x(), delta.y())),
         Some((0, 140)),
-        "scroll delta should reach the sidecar",
+        "scroll delta should reach the Servo runtime",
     );
     assert_eq!(input.scroll_offset.y(), 140);
     assert!(
@@ -118,7 +118,7 @@ fn scroll_after_click_keeps_keyboard_focus_and_typed_text() -> Result<(), Box<dy
     assert_eq!(
         input.typed_text.as_deref(),
         Some("hi"),
-        "buffered keystrokes from before AND after the scroll must reach the sidecar",
+        "buffered keystrokes from before AND after the scroll must reach the Servo runtime",
     );
     Ok(())
 }
@@ -421,141 +421,7 @@ fn empty_live_frame_payload_is_rejected() -> Result<(), String> {
         Ok(_) => return Err("empty Servo frame payload reached Ready state".to_string()),
         Err(error) => error,
     };
-    assert_eq!(
-        error.to_string(),
-        "servo live frame did not include a software image or hardware IOSurface",
-    );
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-#[test]
-fn hardware_live_frame_with_pixel_buffer_skips_software_image() -> Result<(), String> {
-    use core_video::pixel_buffer::{CVPixelBuffer, kCVPixelFormatType_32BGRA};
-
-    use crate::services::servo_live::ServoLiveFrame;
-    use crate::shell::web_surface_frame::WebSurfaceFrame;
-    use crate::shell::web_surface_geometry::WebSurfaceScrollOffset;
-
-    let pixel_buffer = CVPixelBuffer::new(kCVPixelFormatType_32BGRA, 1, 1, None)
-        .map_err(|status| format!("CVPixelBufferCreate returned status {status}"))?;
-    let live = ServoLiveFrame::for_test_with_pixel_buffer(1, 1, pixel_buffer);
-    let frame = WebSurfaceFrame::from_live_frame(
-        "https://example.com/".to_string(),
-        WebSurfaceScrollOffset::default(),
-        100,
-        live,
-    )
-    .map_err(|error| error.to_string())?;
-
-    assert!(frame.image.is_none(), "hardware frame should use the CVPixelBuffer surface path");
-    assert!(frame.pixel_buffer.is_some(), "hardware frame should carry the imported CVPixelBuffer");
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-#[test]
-fn hardware_live_frame_rejects_mismatched_surface_size() -> Result<(), String> {
-    use core_video::pixel_buffer::{CVPixelBuffer, kCVPixelFormatType_32BGRA};
-
-    use crate::services::servo_live::ServoLiveFrame;
-    use crate::shell::web_surface_frame::WebSurfaceFrame;
-    use crate::shell::web_surface_geometry::WebSurfaceScrollOffset;
-
-    let pixel_buffer = CVPixelBuffer::new(kCVPixelFormatType_32BGRA, 2, 1, None)
-        .map_err(|status| format!("CVPixelBufferCreate returned status {status}"))?;
-    let live = ServoLiveFrame::for_test_with_pixel_buffer(1, 1, pixel_buffer);
-    let result = WebSurfaceFrame::from_live_frame(
-        "https://example.com/".to_string(),
-        WebSurfaceScrollOffset::default(),
-        100,
-        live,
-    );
-
-    let error = match result {
-        Ok(_) => return Err("mismatched hardware surface reached Ready state".to_string()),
-        Err(error) => error,
-    };
-    assert_eq!(error.to_string(), "servo hardware surface size 2x1 did not match frame report 1x1",);
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-#[test]
-fn hardware_live_frame_rejects_unsupported_surface_format() -> Result<(), String> {
-    use core_video::pixel_buffer::{CVPixelBuffer, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange};
-
-    use crate::services::servo_live::ServoLiveFrame;
-    use crate::shell::web_surface_frame::WebSurfaceFrame;
-    use crate::shell::web_surface_geometry::WebSurfaceScrollOffset;
-
-    let pixel_buffer =
-        CVPixelBuffer::new(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange, 2, 2, None)
-            .map_err(|status| format!("CVPixelBufferCreate returned status {status}"))?;
-    let live = ServoLiveFrame::for_test_with_pixel_buffer(2, 2, pixel_buffer);
-    let result = WebSurfaceFrame::from_live_frame(
-        "https://example.com/".to_string(),
-        WebSurfaceScrollOffset::default(),
-        100,
-        live,
-    );
-
-    let error = match result {
-        Ok(_) => return Err("unsupported hardware surface format reached Ready state".to_string()),
-        Err(error) => error,
-    };
-    assert_eq!(
-        error.to_string(),
-        "servo hardware surface pixel format 0x34323066 is unsupported; expected 32BGRA",
-    );
-    Ok(())
-}
-
-#[cfg(all(target_os = "macos", feature = "live-site-smoke"))]
-#[test]
-fn hardware_live_frame_samples_bgra_surface_pixels() -> Result<(), String> {
-    use core_video::{
-        pixel_buffer::{CVPixelBuffer, kCVPixelFormatType_32BGRA},
-        r#return::kCVReturnSuccess,
-    };
-
-    use crate::services::servo_live::ServoLiveFrame;
-    use crate::shell::web_surface_frame::WebSurfaceFrame;
-    use crate::shell::web_surface_geometry::WebSurfaceScrollOffset;
-
-    let pixel_buffer = CVPixelBuffer::new(kCVPixelFormatType_32BGRA, 2, 1, None)
-        .map_err(|status| format!("CVPixelBufferCreate returned status {status}"))?;
-    let lock_status = pixel_buffer.lock_base_address(0);
-    if lock_status != kCVReturnSuccess {
-        return Err(format!("CVPixelBufferLockBaseAddress returned status {lock_status}"));
-    }
-    let bytes_per_row = pixel_buffer.get_bytes_per_row();
-    #[expect(unsafe_code)]
-    unsafe {
-        let base_address = pixel_buffer.get_base_address().cast::<u8>();
-        let bytes = std::slice::from_raw_parts_mut(base_address, bytes_per_row);
-        bytes[0..8].copy_from_slice(&[
-            0, 0, 255, 255, // red in BGRA memory order
-            255, 255, 255, 255,
-        ]);
-    }
-    let unlock_status = pixel_buffer.unlock_base_address(0);
-    if unlock_status != kCVReturnSuccess {
-        return Err(format!("CVPixelBufferUnlockBaseAddress returned status {unlock_status}"));
-    }
-
-    let live = ServoLiveFrame::for_test_with_pixel_buffer(2, 1, pixel_buffer);
-    let frame = WebSurfaceFrame::from_live_frame(
-        "https://example.com/".to_string(),
-        WebSurfaceScrollOffset::default(),
-        100,
-        live,
-    )
-    .map_err(|error| error.to_string())?;
-
-    assert_eq!(frame.non_white_pixel_count(), 1);
-    assert_eq!(frame.content_pixel_count(), 1);
-    assert_ne!(frame.sample_hash(), 0);
+    assert_eq!(error.to_string(), "servo live frame did not include renderable pixels",);
     Ok(())
 }
 

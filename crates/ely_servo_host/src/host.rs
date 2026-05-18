@@ -285,11 +285,6 @@ pub struct KeyboardTextRequest {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ScreenshotRequest {
-    pub webview_id: WebViewId,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PermissionRequest {
     pub webview_id: WebViewId,
     pub profile_id: ProfileId,
@@ -340,11 +335,6 @@ pub trait ServoHost {
     fn touch_tap(&mut self, request: TouchTapRequest) -> Result<(), ServoHostError>;
 
     fn type_text(&mut self, request: KeyboardTextRequest) -> Result<(), ServoHostError>;
-
-    fn capture_screenshot(
-        &mut self,
-        request: ScreenshotRequest,
-    ) -> Result<RenderedFrame, ServoHostError>;
 
     fn set_permission(
         &mut self,

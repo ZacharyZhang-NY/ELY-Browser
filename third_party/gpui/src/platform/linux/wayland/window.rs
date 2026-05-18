@@ -13,7 +13,10 @@ use futures::channel::oneshot::Receiver;
 use raw_window_handle as rwh;
 use wayland_backend::client::ObjectId;
 use wayland_client::WEnum;
-use wayland_client::{Proxy, protocol::wl_surface};
+use wayland_client::{
+    Proxy,
+    protocol::{wl_subsurface, wl_surface},
+};
 use wayland_protocols::wp::viewporter::client::wp_viewport;
 use wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1;
 use wayland_protocols::xdg::shell::client::xdg_surface;
@@ -92,6 +95,7 @@ pub struct WaylandWindowState {
     blur: Option<org_kde_kwin_blur::OrgKdeKwinBlur>,
     toplevel: xdg_toplevel::XdgToplevel,
     viewport: Option<wp_viewport::WpViewport>,
+    native_surfaces: HashMap<usize, WaylandNativeSurface>,
     outputs: HashMap<ObjectId, Output>,
     display: Option<(ObjectId, Output)>,
     globals: Globals,
@@ -166,6 +170,7 @@ impl WaylandWindowState {
             blur: None,
             toplevel,
             viewport,
+            native_surfaces: HashMap::default(),
             globals,
             outputs: HashMap::default(),
             display: None,
@@ -222,6 +227,22 @@ impl WaylandWindowState {
     }
 }
 
+struct WaylandNativeSurface {
+    surface: wl_surface::WlSurface,
+    subsurface: wl_subsurface::WlSubsurface,
+    viewport: Option<wp_viewport::WpViewport>,
+}
+
+impl WaylandNativeSurface {
+    fn destroy(self) {
+        if let Some(viewport) = self.viewport {
+            viewport.destroy();
+        }
+        self.subsurface.destroy();
+        self.surface.destroy();
+    }
+}
+
 pub(crate) struct WaylandWindow(pub WaylandWindowStatePtr);
 pub enum ImeInput {
     InsertText(String),
@@ -246,6 +267,9 @@ impl Drop for WaylandWindow {
         state.toplevel.destroy();
         if let Some(viewport) = &state.viewport {
             viewport.destroy();
+        }
+        for (_, native_surface) in state.native_surfaces.drain() {
+            native_surface.destroy();
         }
         state.xdg_surface.destroy();
         state.surface.destroy();
@@ -1030,6 +1054,52 @@ impl PlatformWindow for WaylandWindow {
     fn sprite_atlas(&self) -> Arc<dyn PlatformAtlas> {
         let state = self.borrow();
         state.renderer.sprite_atlas().clone()
+    }
+
+    fn create_native_surface(&self) -> Option<crate::NativeSurfaceHandle> {
+        let mut state = self.borrow_mut();
+        let subcompositor = state.globals.subcompositor.as_ref()?;
+        let surface = state.globals.compositor.create_surface(&state.globals.qh, ());
+        let subsurface =
+            subcompositor.get_subsurface(&surface, &state.surface, &state.globals.qh, ());
+        subsurface.set_desync();
+        let viewport = state
+            .globals
+            .viewporter
+            .as_ref()
+            .map(|viewporter| viewporter.get_viewport(&surface, &state.globals.qh, ()));
+        let display = surface.backend().upgrade()?.display_ptr().cast::<c_void>() as usize;
+        let surface_id = surface.id().as_ptr().cast::<c_void>() as usize;
+        surface.commit();
+        state.native_surfaces.insert(
+            surface_id,
+            WaylandNativeSurface {
+                surface,
+                subsurface,
+                viewport,
+            },
+        );
+        Some(crate::NativeSurfaceHandle::from_wayland_surface(
+            surface_id, display,
+        ))
+    }
+
+    fn sync_native_surface(&self, surface: &crate::NativeSurfaceHandle, bounds: Bounds<Pixels>) {
+        let state = self.borrow();
+        let bounds = bounds.to_device_pixels(state.scale);
+        if let Some(native_surface) = state.native_surfaces.get(&surface.identity()) {
+            native_surface
+                .subsurface
+                .set_position(bounds.origin.x.0, bounds.origin.y.0);
+            if let Some(viewport) = native_surface.viewport.as_ref() {
+                viewport.set_destination(
+                    bounds.size.width.0.max(1),
+                    bounds.size.height.0.max(1),
+                );
+            }
+            native_surface.surface.commit();
+            state.surface.commit();
+        }
     }
 
     fn show_window_menu(&self, position: Point<Pixels>) {

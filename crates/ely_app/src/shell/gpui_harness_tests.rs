@@ -1,9 +1,9 @@
 //! GPUI test harness for the input pipeline.
 //!
-//! Twelve sidecar-side commits and one shell-side commit had all claimed to
+//! Twelve renderer-side commits and one shell-side commit had all claimed to
 //! fix "click does nothing" while the user kept reporting the same symptom.
 //! The roundtable consensus: every store-layer test passed GREEN, every
-//! sidecar integration test passed GREEN, but nothing in the repo exercised
+//! renderer integration test passed GREEN, but nothing in the repo exercised
 //! the real GPUI event tree (`render_input_overlay` + window-level mouse
 //! handlers + sidebar capture interactions). This module is that missing
 //! holdout set.
@@ -984,8 +984,7 @@ async fn baseline_overlay_div_receives_simulated_click(cx: &mut TestAppContext) 
 /// **byte-identical RGBA payloads must produce the same underlying
 /// `Arc<RenderImage>`**. Today they do not — every `from_live_frame`
 /// blindly reallocates. The fix path is either dedup the upload
-/// against the last bytes or switch to `OffscreenRenderingContext` +
-/// IOSurface so the GPU texture is the source of truth.
+/// against the last bytes or switch to direct platform-surface presentation.
 ///
 /// Regression guard: with the single-slot `LAST_FRAME_IMAGE` cache in
 /// `web_surface_frame.rs`, two `ServoLiveFrame` inputs carrying
@@ -1028,7 +1027,7 @@ fn identical_live_frames_share_render_image_arc() -> Result<(), String> {
          distinct Arc<RenderImage> instances (first={:p}, second={:p}). \
          WebSurfaceFrame::from_parts must dedup the upload against the \
          previous frame's bytes, or the rendering pipeline must switch \
-         to a GPU-side source of truth (IOSurface) so per-frame host \
+         to direct platform-surface presentation so per-frame host \
          allocations stop entirely.",
         Arc::as_ptr(first_image),
         Arc::as_ptr(second_image),

@@ -2,11 +2,12 @@ use super::{BoolExt, MacDisplay, NSRange, NSStringExt, ns_string, renderer};
 use crate::{
     AnyWindowHandle, Bounds, Capslock, DisplayLink, ExternalPaths, FileDropEvent,
     ForegroundExecutor, KeyDownEvent, Keystroke, Modifiers, ModifiersChangedEvent, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, PlatformAtlas, PlatformDisplay,
-    PlatformInput, PlatformWindow, Point, PromptButton, PromptLevel, RequestFrameOptions,
-    SharedString, Size, SystemWindowTab, Timer, WindowAppearance, WindowBackgroundAppearance,
-    WindowBounds, WindowControlArea, WindowKind, WindowParams, dispatch_get_main_queue,
-    dispatch_sys::dispatch_async_f, platform::PlatformInputHandler, point, px, size,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, NativeSurfaceHandle, Pixels, PlatformAtlas,
+    PlatformDisplay, PlatformInput, PlatformWindow, Point, PromptButton, PromptLevel,
+    RequestFrameOptions, SharedString, Size, SystemWindowTab, Timer, WindowAppearance,
+    WindowBackgroundAppearance, WindowBounds, WindowControlArea, WindowKind, WindowParams,
+    dispatch_get_main_queue, dispatch_sys::dispatch_async_f, platform::PlatformInputHandler, point,
+    px, size,
 };
 use block::ConcreteBlock;
 use cocoa::{
@@ -57,6 +58,7 @@ const WINDOW_STATE_IVAR: &str = "windowState";
 static mut WINDOW_CLASS: *const Class = ptr::null();
 static mut PANEL_CLASS: *const Class = ptr::null();
 static mut VIEW_CLASS: *const Class = ptr::null();
+static mut NATIVE_SURFACE_VIEW_CLASS: *const Class = ptr::null();
 static mut BLURRED_VIEW_CLASS: *const Class = ptr::null();
 
 #[allow(non_upper_case_globals)]
@@ -251,6 +253,16 @@ unsafe fn build_classes() {
                 );
             }
             decl.register()
+        };
+        NATIVE_SURFACE_VIEW_CLASS = {
+            let mut decl = ClassDecl::new("GPUINativeSurfaceView", class!(NSView)).unwrap();
+            unsafe {
+                decl.add_method(
+                    sel!(hitTest:),
+                    native_surface_hit_test as extern "C" fn(&Object, Sel, NSPoint) -> id,
+                );
+                decl.register()
+            }
         };
         BLURRED_VIEW_CLASS = {
             let mut decl = ClassDecl::new("BlurredView", class!(NSVisualEffectView)).unwrap();
@@ -1504,6 +1516,45 @@ impl PlatformWindow for MacWindow {
         self.0.lock().renderer.sprite_atlas().clone()
     }
 
+    fn create_native_surface(&self) -> Option<NativeSurfaceHandle> {
+        let this = self.0.lock();
+        unsafe {
+            let parent = this.native_view.as_ptr() as id;
+            let native_surface: id = msg_send![NATIVE_SURFACE_VIEW_CLASS, alloc];
+            let native_surface = NSView::initWithFrame_(
+                native_surface,
+                NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1.0, 1.0)),
+            );
+            if native_surface.is_null() {
+                return None;
+            }
+            native_surface.setWantsBestResolutionOpenGLSurface_(YES);
+            native_surface.setWantsLayer(YES);
+            let _: () = msg_send![
+                native_surface,
+                setLayerContentsRedrawPolicy: NSViewLayerContentsRedrawDuringViewResize
+            ];
+            let _: () = msg_send![parent, addSubview: native_surface];
+            NonNull::new(native_surface as *mut c_void).map(NativeSurfaceHandle::from_appkit_ns_view)
+        }
+    }
+
+    fn sync_native_surface(&self, surface: &NativeSurfaceHandle, bounds: Bounds<Pixels>) {
+        let this = self.0.lock();
+        unsafe {
+            let parent = this.native_view.as_ptr() as id;
+            let parent_frame: NSRect = msg_send![parent, frame];
+            let view = surface.appkit_ns_view().as_ptr() as id;
+            let width = bounds.size.width.0.max(1.0) as f64;
+            let height = bounds.size.height.0.max(1.0) as f64;
+            let x = bounds.origin.x.0 as f64;
+            let y = (parent_frame.size.height - bounds.origin.y.0 as f64 - height).max(0.0);
+            let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(width, height));
+            let _: () = msg_send![view, setFrame: frame];
+            let _: () = msg_send![view, setHidden: NO];
+        }
+    }
+
     fn gpu_specs(&self) -> Option<crate::GpuSpecs> {
         None
     }
@@ -1630,6 +1681,10 @@ unsafe fn drop_window_state(object: &Object) {
 
 extern "C" fn yes(_: &Object, _: Sel) -> BOOL {
     YES
+}
+
+extern "C" fn native_surface_hit_test(_: &Object, _: Sel, _: NSPoint) -> id {
+    nil
 }
 
 extern "C" fn dealloc_window(this: &Object, _: Sel) {

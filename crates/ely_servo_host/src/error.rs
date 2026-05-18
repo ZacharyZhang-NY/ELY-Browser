@@ -24,21 +24,6 @@ pub enum ServoHostError {
     #[error("servo rendering context could not be made current")]
     RenderingContextNotCurrent,
 
-    #[error(
-        "hardware rendering context requested but the `hardware-render` feature \
-         was not compiled in; rebuild with --features servo-engine,hardware-render"
-    )]
-    HardwareRenderUnavailable,
-
     #[error("servo rendered frame is unavailable")]
     RenderedFrameUnavailable,
-
-    #[error("servo hardware surface is unavailable for {id}")]
-    HardwareSurfaceUnavailable { id: WebViewId },
-
-    #[error("servo screenshot capture timed out for {id}")]
-    ScreenshotTimedOut { id: WebViewId },
-
-    #[error("servo screenshot capture failed: {reason}")]
-    ScreenshotUnavailable { reason: String },
 }

@@ -33,7 +33,7 @@ use wayland_client::{
     Connection, Dispatch, Proxy, QueueHandle, delegate_noop,
     protocol::{
         wl_buffer, wl_compositor, wl_keyboard, wl_pointer, wl_registry, wl_seat, wl_shm,
-        wl_shm_pool, wl_surface,
+        wl_shm_pool, wl_subcompositor, wl_subsurface, wl_surface,
     },
 };
 use wayland_protocols::wp::cursor_shape::v1::client::{
@@ -111,6 +111,7 @@ pub struct Globals {
     pub wm_base: xdg_wm_base::XdgWmBase,
     pub shm: wl_shm::WlShm,
     pub seat: wl_seat::WlSeat,
+    pub subcompositor: Option<wl_subcompositor::WlSubcompositor>,
     pub viewporter: Option<wp_viewporter::WpViewporter>,
     pub fractional_scale_manager:
         Option<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1>,
@@ -149,6 +150,7 @@ impl Globals {
             shm: globals.bind(&qh, 1..=1, ()).unwrap(),
             seat,
             wm_base: globals.bind(&qh, 2..=5, ()).unwrap(),
+            subcompositor: globals.bind(&qh, 1..=1, ()).ok(),
             viewporter: globals.bind(&qh, 1..=1, ()).ok(),
             fractional_scale_manager: globals.bind(&qh, 1..=1, ()).ok(),
             decoration_manager: globals.bind(&qh, 1..=1, ()).ok(),
@@ -943,6 +945,8 @@ delegate_noop!(WaylandClientStatePtr: ignore wl_shm::WlShm);
 delegate_noop!(WaylandClientStatePtr: ignore wl_shm_pool::WlShmPool);
 delegate_noop!(WaylandClientStatePtr: ignore wl_buffer::WlBuffer);
 delegate_noop!(WaylandClientStatePtr: ignore wl_region::WlRegion);
+delegate_noop!(WaylandClientStatePtr: wl_subcompositor::WlSubcompositor);
+delegate_noop!(WaylandClientStatePtr: wl_subsurface::WlSubsurface);
 delegate_noop!(WaylandClientStatePtr: ignore wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1);
 delegate_noop!(WaylandClientStatePtr: ignore zxdg_decoration_manager_v1::ZxdgDecorationManagerV1);
 delegate_noop!(WaylandClientStatePtr: ignore org_kde_kwin_blur_manager::OrgKdeKwinBlurManager);

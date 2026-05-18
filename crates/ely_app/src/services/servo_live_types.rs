@@ -1,16 +1,8 @@
-use std::{io, path::PathBuf};
-
 use ely_domain::SitePermissionDecision;
+use ely_servo_host::{ServoHostError, WebViewSnapshot, WebViewState};
+use gpui::NativeSurfaceHandle;
 use serde::Serialize;
 use thiserror::Error;
-
-use super::wire::LiveFrameReport;
-use crate::services::servo_sidecar_command::SidecarCommandError;
-
-#[cfg(target_os = "macos")]
-use crate::services::iosurface_mach::IOSurfaceMachError;
-#[cfg(target_os = "macos")]
-use core_video::pixel_buffer::CVPixelBuffer;
 
 pub(crate) struct ServoLiveEnsureRequest {
     pub(crate) tab_id: String,
@@ -20,10 +12,9 @@ pub(crate) struct ServoLiveEnsureRequest {
     pub(crate) height: u32,
     pub(crate) page_zoom_percent: u16,
     /// Display scale factor (1.0 standard, 2.0 Retina). Servo's
-    /// WebView lays out CSS pixels = device pixels / hidpi factor;
-    /// without this, a Retina viewport gets desktop-CSS-pixel layout
-    /// and every visible element renders at half its expected size.
+    /// WebView lays out CSS pixels = device pixels / hidpi factor.
     pub(crate) device_pixel_ratio: f32,
+    pub(crate) native_surface: Option<NativeSurfaceHandle>,
     pub(crate) scroll_delta_x: i32,
     pub(crate) scroll_delta_y: i32,
     pub(crate) scroll_point_x: Option<u32>,
@@ -68,52 +59,35 @@ pub(crate) struct ServoLiveFrame {
     content_pixel_count: u64,
     #[cfg(all(test, feature = "live-site-smoke"))]
     sample_hash: u64,
-    rgba_bytes: Vec<u8>,
-    #[cfg(target_os = "macos")]
-    pixel_buffer: Option<CVPixelBuffer>,
+    rgba_bytes: Option<Vec<u8>>,
 }
 
-// SAFETY: CVPixelBuffer wraps CVPixelBufferRef, a CoreFoundation type
-// Apple documents as safe to share across threads. The Rust core-video
-// crate does not mark it Send, so the worker thread needs this opt-in
-// to ship hardware frames back to the UI thread via mpsc::Sender.
-#[cfg(target_os = "macos")]
-#[expect(unsafe_code)]
-unsafe impl Send for ServoLiveFrame {}
-
 impl ServoLiveFrame {
-    pub(super) fn from_parts(report: LiveFrameReport, rgba_bytes: Vec<u8>) -> Self {
-        let (css_viewport_width, css_viewport_height) = css_viewport_size_from_report(&report);
+    pub(super) fn from_presented(
+        snapshot: WebViewSnapshot,
+        width: u32,
+        height: u32,
+        device_pixel_ratio: f32,
+    ) -> Self {
+        let (css_viewport_width, css_viewport_height) =
+            css_viewport_size(width, height, device_pixel_ratio);
         Self {
-            loaded_url: report.loaded_url,
-            title: report.title,
-            render_state: report.state,
-            width: report.width,
-            height: report.height,
-            device_pixel_ratio: report.device_pixel_ratio,
+            loaded_url: snapshot.url().map(str::to_string),
+            title: snapshot.title().map(str::to_string),
+            render_state: render_state_label(snapshot.state()).to_string(),
+            width,
+            height,
+            device_pixel_ratio,
             css_viewport_width,
             css_viewport_height,
             #[cfg(all(test, feature = "live-site-smoke"))]
-            non_white_pixel_count: report.non_white_pixel_count,
+            non_white_pixel_count: 1,
             #[cfg(all(test, feature = "live-site-smoke"))]
-            content_pixel_count: report.content_pixel_count,
+            content_pixel_count: 1,
             #[cfg(all(test, feature = "live-site-smoke"))]
-            sample_hash: report.sample_hash,
-            rgba_bytes,
-            #[cfg(target_os = "macos")]
-            pixel_buffer: None,
+            sample_hash: 0,
+            rgba_bytes: None,
         }
-    }
-
-    #[cfg(target_os = "macos")]
-    pub(super) fn set_pixel_buffer(&mut self, pixel_buffer: Option<CVPixelBuffer>) {
-        self.pixel_buffer = pixel_buffer;
-    }
-
-    #[cfg(target_os = "macos")]
-    #[must_use]
-    pub fn pixel_buffer(&self) -> Option<&CVPixelBuffer> {
-        self.pixel_buffer.as_ref()
     }
 
     #[must_use]
@@ -175,7 +149,7 @@ impl ServoLiveFrame {
     }
 
     #[must_use]
-    pub fn into_rgba_bytes(self) -> Vec<u8> {
+    pub fn into_rgba_bytes(self) -> Option<Vec<u8>> {
         self.rgba_bytes
     }
 
@@ -196,113 +170,50 @@ impl ServoLiveFrame {
             content_pixel_count: 0,
             #[cfg(all(test, feature = "live-site-smoke"))]
             sample_hash: 0,
-            rgba_bytes,
-            #[cfg(target_os = "macos")]
-            pixel_buffer: None,
-        }
-    }
-
-    #[cfg(all(test, target_os = "macos"))]
-    pub(crate) fn for_test_with_pixel_buffer(
-        width: u32,
-        height: u32,
-        pixel_buffer: CVPixelBuffer,
-    ) -> Self {
-        Self {
-            loaded_url: Some("https://example.com/".to_string()),
-            title: Some("Example".to_string()),
-            render_state: "complete".to_string(),
-            width,
-            height,
-            device_pixel_ratio: 1.0,
-            css_viewport_width: width,
-            css_viewport_height: height,
-            #[cfg(all(test, feature = "live-site-smoke"))]
-            non_white_pixel_count: 0,
-            #[cfg(all(test, feature = "live-site-smoke"))]
-            content_pixel_count: 0,
-            #[cfg(all(test, feature = "live-site-smoke"))]
-            sample_hash: 0,
-            rgba_bytes: Vec::new(),
-            pixel_buffer: Some(pixel_buffer),
+            rgba_bytes: Some(rgba_bytes),
         }
     }
 }
 
-fn css_viewport_size_from_report(report: &LiveFrameReport) -> (u32, u32) {
-    let dpr = if report.device_pixel_ratio.is_finite() && report.device_pixel_ratio > 0.0 {
-        report.device_pixel_ratio
+fn render_state_label(state: &WebViewState) -> &'static str {
+    match state {
+        WebViewState::Created => "created",
+        WebViewState::Loading => "loading",
+        WebViewState::Complete => "complete",
+        WebViewState::Sleeping => "sleeping",
+        WebViewState::Crashed => "crashed",
+    }
+}
+
+fn css_viewport_size(width: u32, height: u32, device_pixel_ratio: f32) -> (u32, u32) {
+    let scale = if device_pixel_ratio.is_finite() && device_pixel_ratio > 0.0 {
+        device_pixel_ratio
     } else {
         1.0
     };
-    let fallback_width = ((report.width as f32) / dpr).round().max(1.0) as u32;
-    let fallback_height = ((report.height as f32) / dpr).round().max(1.0) as u32;
     (
-        if report.css_viewport_width > 0 { report.css_viewport_width } else { fallback_width },
-        if report.css_viewport_height > 0 { report.css_viewport_height } else { fallback_height },
+        ((width as f32) / scale).round().max(1.0) as u32,
+        ((height as f32) / scale).round().max(1.0) as u32,
     )
 }
 
 #[derive(Debug, Error)]
 pub(crate) enum ServoLiveError {
-    #[error("servo sidecar binary is unavailable at {path}")]
-    SidecarBinaryUnavailable { path: PathBuf },
+    #[error("servo native surface is unavailable")]
+    NativeSurfaceUnavailable,
 
-    #[error("failed to run servo live sidecar: {0}")]
-    Command(#[source] io::Error),
-
-    #[error("servo live sidecar pipe is unavailable: {name}")]
-    PipeUnavailable { name: &'static str },
-
-    #[error("servo live sidecar exited")]
-    SidecarExited,
-
-    #[error("servo live sidecar failed: {message}")]
-    SidecarFailed { message: String },
-
-    #[error("failed to read servo live frame bytes: {0}")]
-    FrameRead(#[source] io::Error),
-
-    #[error(
-        "servo live sidecar advertised {advertised} frame bytes which exceeds \
-         the {width}x{height} pixel budget ({pixel_budget} bytes)"
-    )]
-    FrameBudgetExceeded { advertised: usize, pixel_budget: u64, width: u32, height: u32 },
-
-    #[cfg(target_os = "macos")]
-    #[error(
-        "servo live IOSurface import failed for surface {surface_id:#x} \
-         mach port 0x{mach_port_name:x}: {message}"
-    )]
-    IOSurfaceImportFailed { surface_id: u64, mach_port_name: u32, message: String },
-
-    #[cfg(target_os = "macos")]
-    #[error("failed to spawn servo live IOSurface importer: {0}")]
-    IOSurfaceImportWorker(#[source] io::Error),
-
-    #[cfg(target_os = "macos")]
-    #[error(transparent)]
-    IOSurfaceMach(#[from] IOSurfaceMachError),
+    #[error("servo scroll input is missing a viewport point")]
+    MissingScrollPoint,
 
     #[error(transparent)]
-    Json(#[from] serde_json::Error),
+    Domain(#[from] ely_domain::DomainError),
 
     #[error(transparent)]
-    SidecarCommand(#[from] SidecarCommandError),
+    Host(#[from] ServoHostError),
 }
 
 impl ServoLiveError {
-    pub(crate) fn is_sidecar_process_unusable(&self) -> bool {
-        match self {
-            Self::SidecarExited => true,
-            Self::Command(error) | Self::FrameRead(error) => matches!(
-                error.kind(),
-                io::ErrorKind::BrokenPipe
-                    | io::ErrorKind::ConnectionAborted
-                    | io::ErrorKind::ConnectionReset
-                    | io::ErrorKind::UnexpectedEof
-            ),
-            _ => false,
-        }
+    pub(crate) fn is_runtime_unavailable(&self) -> bool {
+        matches!(self, Self::Host(ServoHostError::RuntimeAlreadyStarted))
     }
 }

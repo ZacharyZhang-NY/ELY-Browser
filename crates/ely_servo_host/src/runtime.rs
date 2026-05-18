@@ -4,18 +4,17 @@ use std::{
     path::PathBuf,
     rc::Rc,
     sync::{
-        Arc,
+        Arc, Once,
         atomic::{AtomicBool, Ordering},
     },
-    thread,
-    time::{Duration, Instant},
 };
 
 use dpi::PhysicalSize;
 use ely_domain::{ProfileId, TabId, WebViewId};
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use servo::{
-    DevicePoint, DeviceVector2D, Opts, Scroll, Servo, ServoBuilder, WebViewBuilder, WebViewPoint,
-    WebViewVector,
+    DevicePoint, DeviceVector2D, Opts, Preferences, Scroll, Servo, ServoBuilder, WebViewBuilder,
+    WebViewPoint, WebViewVector,
 };
 
 #[path = "runtime_context.rs"]
@@ -28,8 +27,8 @@ use url::Url;
 use crate::{
     HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest, MouseDragRequest, MouseHoverRequest,
     NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest, RenderedFrame,
-    ResizeRequest, ScreenshotRequest, ScrollRequest, ServoHost, ServoHostError, TouchTapRequest,
-    WebViewSnapshot, WebViewState,
+    ResizeRequest, ScrollRequest, ServoHost, ServoHostError, TouchTapRequest, WebViewSnapshot,
+    WebViewState,
     runtime_input::{
         send_keyboard_text, send_mouse_click, send_mouse_drag, send_mouse_hover, send_touch_tap,
     },
@@ -39,8 +38,7 @@ use crate::{
 };
 
 static SERVO_RUNTIME_STARTED: AtomicBool = AtomicBool::new(false);
-const SCREENSHOT_TIMEOUT: Duration = Duration::from_secs(20);
-const SCREENSHOT_POLL_INTERVAL: Duration = Duration::from_millis(2);
+static RUSTLS_PROVIDER: Once = Once::new();
 
 pub struct SoftwareServoHost {
     servo: Servo,
@@ -70,12 +68,6 @@ impl SoftwareServoHost {
         config_dir: Option<PathBuf>,
         rendering_context_kind: RenderingContextKind,
     ) -> Result<Self, ServoHostError> {
-        if rendering_context_kind == RenderingContextKind::Hardware
-            && !cfg!(feature = "hardware-render")
-        {
-            return Err(ServoHostError::HardwareRenderUnavailable);
-        }
-
         if SERVO_RUNTIME_STARTED
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
@@ -96,7 +88,22 @@ impl SoftwareServoHost {
         profile_id: ProfileId,
         size: ServoSurfaceSize,
     ) -> Result<WebViewId, ServoHostError> {
-        self.create_webview_in_context(tab_id, profile_id, size)
+        let handles = self.new_rendering_context(size)?;
+        self.create_webview_in_context(tab_id, profile_id, handles)
+    }
+
+    pub fn create_webview_with_native_surface<S>(
+        &mut self,
+        tab_id: TabId,
+        profile_id: ProfileId,
+        size: ServoSurfaceSize,
+        native_surface: &S,
+    ) -> Result<WebViewId, ServoHostError>
+    where
+        S: HasDisplayHandle + HasWindowHandle + ?Sized,
+    {
+        let handles = self.new_rendering_context_for_native_surface(size, native_surface)?;
+        self.create_webview_in_context(tab_id, profile_id, handles)
     }
 
     /// Paint and present the current surface without RGBA readback.
@@ -121,8 +128,10 @@ impl SoftwareServoHost {
         config_dir: Option<PathBuf>,
         rendering_context_kind: RenderingContextKind,
     ) -> Result<Self, ServoHostError> {
+        install_rustls_provider();
         let wake_requested = Arc::new(AtomicBool::new(false));
         let mut builder = ServoBuilder::default()
+            .preferences(ely_servo_preferences())
             .event_loop_waker(Box::new(ServoWakeFlag::new(wake_requested.clone())));
         if let Some(config_dir) = config_dir {
             builder = builder.opts(Opts { config_dir: Some(config_dir), ..Opts::default() });
@@ -183,13 +192,24 @@ impl SoftwareServoHost {
     }
 }
 
+fn install_rustls_provider() {
+    RUSTLS_PROVIDER.call_once(|| {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    });
+}
+
+fn ely_servo_preferences() -> Preferences {
+    Preferences { dom_intersection_observer_enabled: true, ..Preferences::default() }
+}
+
 impl ServoHost for SoftwareServoHost {
     fn create_webview(
         &mut self,
         tab_id: TabId,
         profile_id: ProfileId,
     ) -> Result<WebViewId, ServoHostError> {
-        self.create_webview_in_context(tab_id, profile_id, self.default_surface_size)
+        let handles = self.new_rendering_context(self.default_surface_size)?;
+        self.create_webview_in_context(tab_id, profile_id, handles)
     }
 
     fn navigate(&mut self, request: NavigationRequest) -> Result<(), ServoHostError> {
@@ -313,41 +333,6 @@ impl ServoHost for SoftwareServoHost {
         Ok(())
     }
 
-    fn capture_screenshot(
-        &mut self,
-        request: ScreenshotRequest,
-    ) -> Result<RenderedFrame, ServoHostError> {
-        let webview = self.webview(&request.webview_id)?.webview.clone();
-        let captured_image = Rc::new(RefCell::new(None));
-        let callback_image = captured_image.clone();
-        webview.take_screenshot(None, move |result| {
-            callback_image.replace(Some(result));
-        });
-
-        let started_at = Instant::now();
-        while captured_image.borrow().is_none() {
-            if started_at.elapsed() >= SCREENSHOT_TIMEOUT {
-                return Err(ServoHostError::ScreenshotTimedOut { id: request.webview_id.clone() });
-            }
-
-            self.tick();
-            if self.snapshot(&request.webview_id)?.has_pending_frame() {
-                self.paint(&request.webview_id)?;
-            }
-            thread::sleep(SCREENSHOT_POLL_INTERVAL);
-        }
-
-        let Some(result) = captured_image.borrow_mut().take() else {
-            return Err(ServoHostError::RenderedFrameUnavailable);
-        };
-        let image = result.map_err(|error| ServoHostError::ScreenshotUnavailable {
-            reason: format!("{error:?}"),
-        })?;
-        let frame = RenderedFrame::from_rgba_bytes(image.width(), image.height(), image.into_raw());
-        self.last_rendered_frame = Some(frame.clone());
-        Ok(frame)
-    }
-
     fn set_permission(
         &mut self,
         request: PermissionRequest,
@@ -392,15 +377,20 @@ impl ServoHost for SoftwareServoHost {
     }
 }
 
+impl Drop for SoftwareServoHost {
+    fn drop(&mut self) {
+        SERVO_RUNTIME_STARTED.store(false, Ordering::Release);
+    }
+}
+
 impl SoftwareServoHost {
     fn create_webview_in_context(
         &mut self,
         tab_id: TabId,
         profile_id: ProfileId,
-        size: ServoSurfaceSize,
+        handles: runtime_context::RenderingContextHandles,
     ) -> Result<WebViewId, ServoHostError> {
         let webview_id = WebViewId::new();
-        let handles = self.new_rendering_context(size)?;
         let delegate =
             Rc::new(HostWebViewDelegate::new(profile_id.clone(), self.permissions.clone()));
         let webview = WebViewBuilder::new(&self.servo, handles.rendering_context.clone())
@@ -420,8 +410,6 @@ impl SoftwareServoHost {
                 tab_id,
                 profile_id,
                 rendering_context: handles.rendering_context,
-                #[cfg(feature = "hardware-render")]
-                hardware_context: handles.hardware_context,
                 webview,
                 delegate,
                 requested_url: None,
@@ -429,42 +417,6 @@ impl SoftwareServoHost {
         );
 
         Ok(webview_id)
-    }
-
-    /// Cheap peek at the IOSurface identity bound to this webview's
-    /// hardware context. Returns `None` for software webviews and on
-    /// non-macOS hosts; otherwise the surfman `SurfaceID`-derived
-    /// identity plus dimensions. Used by the sidecar's live loop to
-    /// dedup mach port creation.
-    #[cfg(all(feature = "hardware-render", target_os = "macos"))]
-    pub fn peek_iosurface_identity(
-        &self,
-        webview_id: &WebViewId,
-    ) -> Result<Option<crate::IOSurfaceIdentity>, ServoHostError> {
-        let webview = self.webview(webview_id)?;
-        let Some(hardware) = webview.hardware_context.as_ref() else {
-            return Ok(None);
-        };
-        hardware.peek_iosurface_identity().map_err(|_| ServoHostError::RenderingContextUnavailable)
-    }
-
-    /// Mint a fresh mach port for the IOSurface bound to this
-    /// webview's hardware context. The caller is responsible for
-    /// transferring the port to the receiving process; if no transfer
-    /// happens, the port leaks. Software webviews return `None`.
-    #[cfg(all(feature = "hardware-render", target_os = "macos"))]
-    pub fn current_iosurface_handle(
-        &self,
-        webview_id: &WebViewId,
-    ) -> Result<Option<crate::IOSurfaceHandle>, ServoHostError> {
-        let webview = self.webview(webview_id)?;
-        let Some(hardware) = webview.hardware_context.as_ref() else {
-            return Ok(None);
-        };
-        hardware
-            .current_iosurface_mach_port()
-            .map(Some)
-            .map_err(|_| ServoHostError::RenderingContextUnavailable)
     }
 
     fn webview(&self, webview_id: &WebViewId) -> Result<&HostWebView, ServoHostError> {

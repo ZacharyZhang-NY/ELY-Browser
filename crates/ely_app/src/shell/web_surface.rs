@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use ely_domain::{BrowserTab, TabId};
-use gpui::{Bounds, Pixels, Point};
+use gpui::{Bounds, NativeSurfaceHandle, Pixels, Point};
 
 use crate::services::ProfileDataMode;
 
@@ -56,8 +56,22 @@ impl WebSurfaceStore {
         else {
             return false;
         };
-        let ensure_key =
-            WebSurfaceEnsureKey::new(requested_url.clone(), size, tab.zoom_percent(), permissions);
+        let native_surface =
+            self.surfaces.get(tab.id()).and_then(|surface| surface.native_surface.clone());
+        #[cfg(not(test))]
+        let Some(native_surface) = native_surface else {
+            return false;
+        };
+        let ensure_key = WebSurfaceEnsureKey::new(
+            requested_url.clone(),
+            size,
+            #[cfg(test)]
+            native_surface.as_ref(),
+            #[cfg(not(test))]
+            Some(&native_surface),
+            tab.zoom_percent(),
+            permissions,
+        );
         if self.surfaces.get(tab.id()).is_some_and(|surface| !surface.should_ensure(&ensure_key)) {
             return false;
         }
@@ -65,7 +79,29 @@ impl WebSurfaceStore {
         let previous_frame =
             self.previous_ready_frame(tab.id(), requested_url.as_str(), tab.zoom_percent());
 
-        match self.runtime.ensure_tab(tab, size, profile_data_mode, permissions, input) {
+        #[cfg(test)]
+        let ensure_result = match native_surface {
+            Some(native_surface) => self.runtime.ensure_tab_with_native_surface(
+                tab,
+                size,
+                native_surface,
+                profile_data_mode,
+                permissions,
+                input,
+            ),
+            None => self.runtime.ensure_tab(tab, size, profile_data_mode, permissions, input),
+        };
+        #[cfg(not(test))]
+        let ensure_result = self.runtime.ensure_tab_with_native_surface(
+            tab,
+            size,
+            native_surface,
+            profile_data_mode,
+            permissions,
+            input,
+        );
+
+        match ensure_result {
             Ok(result) => {
                 self.surface_mut(tab.id()).mark_ensured(ensure_key);
                 if result.started_loading {
@@ -238,6 +274,24 @@ impl WebSurfaceStore {
         }
 
         surface.viewport_size = Some(size);
+        WebSurfaceInputOutcome::Applied
+    }
+
+    pub(super) fn record_native_surface(
+        &mut self,
+        tab_id: &TabId,
+        native_surface: NativeSurfaceHandle,
+    ) -> WebSurfaceInputOutcome {
+        let surface = self.surface_mut(tab_id);
+        if surface
+            .native_surface
+            .as_ref()
+            .is_some_and(|current| current.identity() == native_surface.identity())
+        {
+            return WebSurfaceInputOutcome::NoChange;
+        }
+        surface.native_surface = Some(native_surface);
+        surface.last_ensure_key = None;
         WebSurfaceInputOutcome::Applied
     }
 

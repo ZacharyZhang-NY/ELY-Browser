@@ -3,10 +3,6 @@ use std::hash::Hasher;
 use std::sync::Arc;
 
 use ahash::AHasher;
-#[cfg(target_os = "macos")]
-use core_video::pixel_buffer::{CVPixelBuffer, kCVPixelFormatType_32BGRA};
-#[cfg(all(test, feature = "live-site-smoke", target_os = "macos"))]
-use core_video::{pixel_buffer::kCVPixelBufferLock_ReadOnly, r#return::kCVReturnSuccess};
 use gpui::RenderImage;
 use image::{ImageBuffer, Rgba};
 use thiserror::Error;
@@ -47,11 +43,7 @@ pub(super) struct WebSurfaceFrame {
     content_pixel_count: u64,
     #[cfg(all(test, feature = "live-site-smoke"))]
     sample_hash: u64,
-    /// Software-path image built from RGBA bytes.
     pub(super) image: Option<Arc<RenderImage>>,
-    /// Hardware-path IOSurface imported from the sidecar.
-    #[cfg(target_os = "macos")]
-    pub(super) pixel_buffer: Option<CVPixelBuffer>,
 }
 
 impl WebSurfaceFrame {
@@ -61,8 +53,6 @@ impl WebSurfaceFrame {
         zoom_percent: u16,
         frame: ServoLiveFrame,
     ) -> Result<Self, WebSurfaceError> {
-        #[cfg(target_os = "macos")]
-        let pixel_buffer = frame.pixel_buffer().cloned();
         Self::from_parts(WebSurfaceFrameParts {
             requested_url,
             loaded_url: frame.loaded_url().map(str::to_string),
@@ -84,45 +74,24 @@ impl WebSurfaceFrame {
             #[cfg(all(test, feature = "live-site-smoke"))]
             sample_hash: frame.sample_hash(),
             rgba_bytes: frame.into_rgba_bytes(),
-            #[cfg(target_os = "macos")]
-            pixel_buffer,
         })
     }
 
     fn from_parts(parts: WebSurfaceFrameParts) -> Result<Self, WebSurfaceError> {
-        #[cfg(target_os = "macos")]
-        let has_pixel_buffer = parts.pixel_buffer.is_some();
-        #[cfg(not(target_os = "macos"))]
-        let has_pixel_buffer = false;
-
-        if parts.rgba_bytes.is_empty() && !has_pixel_buffer {
-            return Err(WebSurfaceError::MissingRenderablePayload);
-        }
-
-        #[cfg(target_os = "macos")]
-        if let Some(pixel_buffer) = parts.pixel_buffer.as_ref() {
-            validate_hardware_pixel_buffer(pixel_buffer, parts.width, parts.height)?;
-        }
-
         #[cfg(all(test, feature = "live-site-smoke"))]
         let pixel_sample = pixel_sample_for_parts(&parts)?;
 
-        let image = if parts.rgba_bytes.is_empty() {
-            None
-        } else {
-            // Servo's `read_pixels(gl::RGBA, gl::UNSIGNED_BYTE)` writes
-            // R-G-B-A in memory order. GPUI's `RenderImage` is documented
-            // as "in BGRA format" and uploads via
-            // `MTLPixelFormat::BGRA8Unorm`, which reads B-G-R-A. Hand the bytes across
-            // unchanged and the Metal sampler treats R as B (and vice
-            // versa) — every coloured pixel renders with R and B swapped.
-            // Swap once here so the rest of the pipeline (dedup hash,
-            // image buffer, GPU upload) all operate on the same BGRA
-            // representation.
-            let mut bytes = parts.rgba_bytes;
-            swap_red_blue_in_place(&mut bytes);
-            let bytes_hash = rgba_hash(&bytes);
-            Some(resolve_render_image(parts.width, parts.height, bytes, bytes_hash)?)
+        let image = match parts.rgba_bytes {
+            Some(mut bytes) => {
+                if bytes.is_empty() {
+                    return Err(WebSurfaceError::MissingRenderablePayload);
+                }
+                // Servo's RGBA8 readback is converted once for GPUI's BGRA upload path.
+                swap_red_blue_in_place(&mut bytes);
+                let bytes_hash = rgba_hash(&bytes);
+                Some(resolve_render_image(parts.width, parts.height, bytes, bytes_hash)?)
+            }
+            None => None,
         };
 
         Ok(Self {
@@ -146,8 +115,6 @@ impl WebSurfaceFrame {
             #[cfg(all(test, feature = "live-site-smoke"))]
             sample_hash: pixel_sample.sample_hash,
             image,
-            #[cfg(target_os = "macos")]
-            pixel_buffer: parts.pixel_buffer,
         })
     }
 
@@ -214,15 +181,13 @@ impl WebSurfaceFrame {
     }
 
     pub(super) fn has_same_software_render_as(&self, other: &Self) -> bool {
-        #[cfg(target_os = "macos")]
-        if self.pixel_buffer.is_some() || other.pixel_buffer.is_some() {
-            return false;
-        }
-        let (Some(image), Some(other_image)) = (self.image.as_ref(), other.image.as_ref()) else {
-            return false;
+        let image_matches = match (self.image.as_ref(), other.image.as_ref()) {
+            (Some(image), Some(other_image)) => Arc::ptr_eq(image, other_image),
+            (None, None) => true,
+            _ => false,
         };
 
-        Arc::ptr_eq(image, other_image)
+        image_matches
             && self.requested_url == other.requested_url
             && self.loaded_url == other.loaded_url
             && self.title == other.title
@@ -239,7 +204,6 @@ impl WebSurfaceFrame {
     }
 
     pub(super) fn has_visible_content_for_initial_display(&self) -> Result<bool, WebSurfaceError> {
-        // Sidecar readback suppresses blank initial frames before publication.
         #[cfg(all(test, feature = "live-site-smoke"))]
         {
             Ok(self.non_white_pixel_count > 0 && self.content_pixel_count > 0)
@@ -267,14 +231,7 @@ impl WebSurfaceFrame {
 
     #[cfg(all(test, feature = "live-site-smoke"))]
     pub(super) fn has_hardware_surface(&self) -> bool {
-        #[cfg(target_os = "macos")]
-        {
-            self.pixel_buffer.is_some()
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            false
-        }
+        false
     }
 }
 
@@ -298,67 +255,15 @@ struct WebSurfaceFrameParts {
     content_pixel_count: u64,
     #[cfg(all(test, feature = "live-site-smoke"))]
     sample_hash: u64,
-    rgba_bytes: Vec<u8>,
-    #[cfg(target_os = "macos")]
-    pixel_buffer: Option<CVPixelBuffer>,
+    rgba_bytes: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Error)]
 pub(super) enum WebSurfaceError {
     #[error("invalid servo frame buffer for {width}x{height}")]
     InvalidFrameBuffer { width: u32, height: u32 },
-    #[error("servo live frame did not include a software image or hardware IOSurface")]
+    #[error("servo live frame did not include renderable pixels")]
     MissingRenderablePayload,
-    #[cfg(target_os = "macos")]
-    #[error(
-        "servo hardware surface size {actual_width}x{actual_height} did not match frame report {expected_width}x{expected_height}"
-    )]
-    HardwareSurfaceSizeMismatch {
-        expected_width: u32,
-        expected_height: u32,
-        actual_width: usize,
-        actual_height: usize,
-    },
-    #[cfg(target_os = "macos")]
-    #[error("servo hardware surface pixel format 0x{actual:x} is unsupported; expected 32BGRA")]
-    UnsupportedHardwareSurfaceFormat { actual: u32 },
-    #[cfg(all(test, feature = "live-site-smoke", target_os = "macos"))]
-    #[error("servo hardware surface lock failed with status {status}")]
-    HardwareSurfaceLockFailed { status: i32 },
-    #[cfg(all(test, feature = "live-site-smoke", target_os = "macos"))]
-    #[error("servo hardware surface unlock failed with status {status}")]
-    HardwareSurfaceUnlockFailed { status: i32 },
-    #[cfg(all(test, feature = "live-site-smoke", target_os = "macos"))]
-    #[error("servo hardware surface base address is unavailable")]
-    HardwareSurfaceBaseAddressUnavailable,
-    #[cfg(all(test, feature = "live-site-smoke", target_os = "macos"))]
-    #[error("servo hardware surface row stride {bytes_per_row} is too small for width {width}")]
-    HardwareSurfaceRowStrideTooSmall { width: usize, bytes_per_row: usize },
-}
-
-#[cfg(target_os = "macos")]
-fn validate_hardware_pixel_buffer(
-    pixel_buffer: &CVPixelBuffer,
-    expected_width: u32,
-    expected_height: u32,
-) -> Result<(), WebSurfaceError> {
-    let actual_width = pixel_buffer.get_width();
-    let actual_height = pixel_buffer.get_height();
-    if actual_width != expected_width as usize || actual_height != expected_height as usize {
-        return Err(WebSurfaceError::HardwareSurfaceSizeMismatch {
-            expected_width,
-            expected_height,
-            actual_width,
-            actual_height,
-        });
-    }
-
-    let actual_format = pixel_buffer.get_pixel_format();
-    if actual_format != kCVPixelFormatType_32BGRA {
-        return Err(WebSurfaceError::UnsupportedHardwareSurfaceFormat { actual: actual_format });
-    }
-
-    Ok(())
 }
 
 /// Swap byte 0 and byte 2 of every 4-byte pixel, converting Servo's
@@ -387,92 +292,11 @@ struct WebSurfacePixelSample {
 fn pixel_sample_for_parts(
     parts: &WebSurfaceFrameParts,
 ) -> Result<WebSurfacePixelSample, WebSurfaceError> {
-    #[cfg(target_os = "macos")]
-    if let Some(pixel_buffer) = parts.pixel_buffer.as_ref() {
-        return sample_hardware_pixel_buffer(pixel_buffer);
-    }
-
     Ok(WebSurfacePixelSample {
         non_white_pixel_count: parts.non_white_pixel_count,
         content_pixel_count: parts.content_pixel_count,
         sample_hash: parts.sample_hash,
     })
-}
-
-#[cfg(all(test, feature = "live-site-smoke", target_os = "macos"))]
-fn sample_hardware_pixel_buffer(
-    pixel_buffer: &CVPixelBuffer,
-) -> Result<WebSurfacePixelSample, WebSurfaceError> {
-    let lock_status = pixel_buffer.lock_base_address(kCVPixelBufferLock_ReadOnly);
-    if lock_status != kCVReturnSuccess {
-        return Err(WebSurfaceError::HardwareSurfaceLockFailed { status: lock_status });
-    }
-
-    let sample = sample_locked_hardware_pixel_buffer(pixel_buffer);
-    let unlock_status = pixel_buffer.unlock_base_address(kCVPixelBufferLock_ReadOnly);
-    if unlock_status != kCVReturnSuccess {
-        return Err(WebSurfaceError::HardwareSurfaceUnlockFailed { status: unlock_status });
-    }
-
-    sample
-}
-
-#[cfg(all(test, feature = "live-site-smoke", target_os = "macos"))]
-fn sample_locked_hardware_pixel_buffer(
-    pixel_buffer: &CVPixelBuffer,
-) -> Result<WebSurfacePixelSample, WebSurfaceError> {
-    let width = pixel_buffer.get_width();
-    let height = pixel_buffer.get_height();
-    let bytes_per_row = pixel_buffer.get_bytes_per_row();
-    let row_width = width.saturating_mul(4);
-    if bytes_per_row < row_width {
-        return Err(WebSurfaceError::HardwareSurfaceRowStrideTooSmall { width, bytes_per_row });
-    }
-
-    #[expect(unsafe_code)]
-    let base_address = unsafe { pixel_buffer.get_base_address() };
-    if base_address.is_null() {
-        return Err(WebSurfaceError::HardwareSurfaceBaseAddressUnavailable);
-    }
-
-    let byte_len = bytes_per_row.saturating_mul(height);
-    #[expect(unsafe_code)]
-    let bytes = unsafe { std::slice::from_raw_parts(base_address.cast::<u8>(), byte_len) };
-    Ok(sample_bgra_rows(bytes, width, height, bytes_per_row))
-}
-
-#[cfg(all(test, feature = "live-site-smoke", target_os = "macos"))]
-fn sample_bgra_rows(
-    bytes: &[u8],
-    width: usize,
-    height: usize,
-    bytes_per_row: usize,
-) -> WebSurfacePixelSample {
-    let mut non_white_pixel_count = 0;
-    let mut content_pixel_count = 0;
-    let mut sample_hash = 0xcbf29ce484222325_u64;
-
-    for y in 0..height {
-        let row_start = y * bytes_per_row;
-        let row = &bytes[row_start..row_start + width * 4];
-        for (x, pixel) in row.chunks_exact(4).enumerate() {
-            let [blue, green, red, alpha] = [pixel[0], pixel[1], pixel[2], pixel[3]];
-            if alpha > 0 && (red < 245 || green < 245 || blue < 245) {
-                non_white_pixel_count += 1;
-            }
-            if alpha > 0 && (red < 220 || green < 220 || blue < 220) {
-                content_pixel_count += 1;
-            }
-            if (y * width + x).is_multiple_of(97) {
-                for byte in [red, green, blue, alpha] {
-                    sample_hash ^= u64::from(byte);
-                    sample_hash = sample_hash.wrapping_mul(0x100000001b3);
-                }
-            }
-        }
-    }
-
-    WebSurfacePixelSample { non_white_pixel_count, content_pixel_count, sample_hash }
 }
 
 fn resolve_render_image(

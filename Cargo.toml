@@ -37,8 +37,12 @@ url = "2.5.4"
 uuid = { version = "1.12.1", features = ["v7"] }
 
 [patch.crates-io]
-# Local GPUI 0.2.2 patch: macOS `surface(CVPixelBuffer)` accepts Servo's BGRA IOSurfaces.
+# Local GPUI 0.2.2 patch used by the native shell while the upstream crate is pinned.
 gpui = { path = "third_party/gpui" }
+gpui_http_client = { path = "third_party/gpui_support/gpui_http_client" }
+gpui_sum_tree = { path = "third_party/gpui_support/gpui_sum_tree" }
+gpui_util = { path = "third_party/gpui_support/gpui_util" }
+zed-sum-tree = { path = "third_party/gpui_support/zed-sum-tree" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

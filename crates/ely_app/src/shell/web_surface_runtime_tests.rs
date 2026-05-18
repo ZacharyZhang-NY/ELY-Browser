@@ -29,7 +29,7 @@ static FAILING_ENSURE_COUNT: AtomicUsize = AtomicUsize::new(0);
 static REPEATED_FRAME_ENSURE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
-fn runtime_keeps_independent_clients_for_profile_scopes() -> Result<(), String> {
+fn runtime_shares_direct_servo_client_across_profile_scopes() -> Result<(), String> {
     let mut runtime = WebSurfaceRuntime::new_with_client_factory(fake_client_factory);
     let first_profile = ProfileId::new();
     let second_profile = ProfileId::new();
@@ -60,7 +60,7 @@ fn runtime_keeps_independent_clients_for_profile_scopes() -> Result<(), String> 
 
     runtime.flush_for_test();
 
-    assert_eq!(runtime.client_count_for_test(), 2);
+    assert_eq!(runtime.client_count_for_test(), 1);
     assert_eq!(
         runtime.session_scope_for_test(first_tab.id()),
         Some(&WebSurfaceRuntimeScope::new(first_profile, ProfileDataMode::Transient)),
@@ -183,7 +183,7 @@ fn identical_ready_software_frame_keeps_tick_unchanged() -> Result<(), String> {
 }
 
 #[test]
-fn sidecar_exit_removes_dead_runtime_client() -> Result<(), String> {
+fn runtime_unavailable_removes_dead_runtime_client() -> Result<(), String> {
     RECOVERY_FACTORY_COUNT.store(0, Ordering::SeqCst);
     let mut runtime = WebSurfaceRuntime::new_with_client_factory(recovery_client_factory);
     let profile = ProfileId::new();
@@ -281,7 +281,7 @@ fn session_scope_change_resets_tab_state() {
 
 struct FakeLiveRuntimeClient;
 struct IdleSkipLiveRuntimeClient;
-struct SidecarExitLiveRuntimeClient;
+struct RuntimeUnavailableLiveRuntimeClient;
 struct FailingLiveRuntimeClient;
 struct RepeatedFrameLiveRuntimeClient;
 
@@ -322,20 +322,20 @@ impl LiveRuntimeClient for IdleSkipLiveRuntimeClient {
     }
 }
 
-impl LiveRuntimeClient for SidecarExitLiveRuntimeClient {
+impl LiveRuntimeClient for RuntimeUnavailableLiveRuntimeClient {
     fn ensure(
         &mut self,
         _request: ServoLiveEnsureRequest,
     ) -> Result<Option<ServoLiveFrame>, LiveRuntimeClientError> {
-        Err(LiveRuntimeClientError::SidecarExited)
+        Err(LiveRuntimeClientError::RuntimeUnavailable)
     }
 
     fn poll(&mut self, _tab_id: String) -> Result<Option<ServoLiveFrame>, LiveRuntimeClientError> {
-        Err(LiveRuntimeClientError::SidecarExited)
+        Err(LiveRuntimeClientError::RuntimeUnavailable)
     }
 
     fn close(&mut self, _tab_id: String) -> Result<(), LiveRuntimeClientError> {
-        Err(LiveRuntimeClientError::SidecarExited)
+        Err(LiveRuntimeClientError::RuntimeUnavailable)
     }
 }
 
@@ -345,7 +345,7 @@ impl LiveRuntimeClient for FailingLiveRuntimeClient {
         _request: ServoLiveEnsureRequest,
     ) -> Result<Option<ServoLiveFrame>, LiveRuntimeClientError> {
         FAILING_ENSURE_COUNT.fetch_add(1, Ordering::SeqCst);
-        Err(LiveRuntimeClientError::SidecarExited)
+        Err(LiveRuntimeClientError::RuntimeUnavailable)
     }
 
     fn poll(&mut self, _tab_id: String) -> Result<Option<ServoLiveFrame>, LiveRuntimeClientError> {
@@ -392,7 +392,7 @@ fn recovery_client_factory(
 ) -> Result<Box<dyn LiveRuntimeClient>, String> {
     let factory_call = RECOVERY_FACTORY_COUNT.fetch_add(1, Ordering::SeqCst);
     if factory_call == 0 {
-        return Ok(Box::new(SidecarExitLiveRuntimeClient));
+        return Ok(Box::new(RuntimeUnavailableLiveRuntimeClient));
     }
     Ok(Box::new(FakeLiveRuntimeClient))
 }

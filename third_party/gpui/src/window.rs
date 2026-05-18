@@ -10,13 +10,14 @@ use crate::{
     LineLayoutIndex, Modifiers, ModifiersChangedEvent, MonochromeSprite, MouseButton, MouseEvent,
     MouseMoveEvent, MouseUpEvent, Path, Pixels, PlatformAtlas, PlatformDisplay, PlatformInput,
     PlatformInputHandler, PlatformWindow, Point, PolychromeSprite, PromptButton, PromptLevel, Quad,
-    Render, RenderGlyphParams, RenderImage, RenderImageParams, RenderSvgParams, Replay, ResizeEdge,
-    SMOOTH_SVG_SCALE_FACTOR, SUBPIXEL_VARIANTS_X, SUBPIXEL_VARIANTS_Y, ScaledPixels, Scene, Shadow,
-    SharedString, Size, StrikethroughStyle, Style, SubscriberSet, Subscription, SystemWindowTab,
-    SystemWindowTabController, TabStopMap, TaffyLayoutEngine, Task, TextStyle, TextStyleRefinement,
-    TransformationMatrix, Underline, UnderlineStyle, WindowAppearance, WindowBackgroundAppearance,
-    WindowBounds, WindowControls, WindowDecorations, WindowOptions, WindowParams, WindowTextSystem,
-    point, prelude::*, px, rems, size, transparent_black,
+    NativeSurfaceHandle, Render, RenderGlyphParams, RenderImage, RenderImageParams,
+    RenderSvgParams, Replay, ResizeEdge, SMOOTH_SVG_SCALE_FACTOR, SUBPIXEL_VARIANTS_X,
+    SUBPIXEL_VARIANTS_Y, ScaledPixels, Scene, Shadow, SharedString, Size, StrikethroughStyle,
+    Style, SubscriberSet, Subscription, SystemWindowTab, SystemWindowTabController, TabStopMap,
+    TaffyLayoutEngine, Task, TextStyle, TextStyleRefinement, TransformationMatrix, Underline,
+    UnderlineStyle, WindowAppearance, WindowBackgroundAppearance, WindowBounds, WindowControls,
+    WindowDecorations, WindowOptions, WindowParams, WindowTextSystem, point, prelude::*, px, rems,
+    size, transparent_black,
 };
 use anyhow::{Context as _, Result, anyhow};
 use collections::{FxHashMap, FxHashSet};
@@ -3199,6 +3200,16 @@ impl Window {
             corner_radii,
             image_buffer,
         });
+    }
+
+    /// Creates a native child surface hosted by this window.
+    pub fn create_native_surface(&self) -> Option<NativeSurfaceHandle> {
+        self.platform_window.create_native_surface()
+    }
+
+    /// Synchronizes a native child surface to a GPUI layout box.
+    pub fn sync_native_surface(&self, surface: &NativeSurfaceHandle, bounds: Bounds<Pixels>) {
+        self.platform_window.sync_native_surface(surface, bounds);
     }
 
     /// Removes an image from the sprite atlas.
