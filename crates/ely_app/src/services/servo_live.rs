@@ -234,6 +234,33 @@ impl ServoLiveClient {
         tab_id: TabId,
         requested_url: UrlText,
     ) -> Result<(), ServoLiveError> {
+        // Servo's `set_history` fires `notify_url_changed` on *every*
+        // history mutation — full navigations, redirects, in-page
+        // links, and JS-driven `history.pushState` / `replaceState`.
+        // Our embedder fans that back through `WebSurfaceUrlChange`
+        // into `tab.url`, which makes the next `ensure_surface` see a
+        // "different" URL and call back into this method. Without a
+        // guard we then send Servo `WebView::load(new_url)` for a URL
+        // Servo just informed us it is *already* at — and `load` is a
+        // hard navigation that aborts the live document, clears the
+        // surface, and refetches.
+        //
+        // The google.com homepage `replaceState`s a `?zx=<timestamp>`
+        // every second; under the unguarded path that turned into a
+        // load-clear-refetch cycle per second, i.e. the continuous
+        // white flash. Servo's own `webview.url()` (driven by
+        // `set_history`) is the source of truth — if it already
+        // matches the requested URL, this URL change came *from*
+        // Servo and only needs an embedder-side bookkeeping sync.
+        let servo_current_url =
+            self.host.snapshot(webview_id)?.url().map(str::to_string);
+        if servo_current_url.as_deref() == Some(requested_url.as_str()) {
+            if let Some(session) = self.sessions.get_mut(&request.tab_id) {
+                session.requested_url = Some(requested_url.as_str().to_string());
+            }
+            return Ok(());
+        }
+
         let should_navigate = self
             .sessions
             .get(&request.tab_id)
