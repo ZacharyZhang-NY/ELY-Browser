@@ -6,7 +6,7 @@ use ely_domain::{BrowserTab, TabId};
 use crate::services::ProfileDataMode;
 
 use super::{
-    web_surface_cadence::IDLE_POLL_INTERVAL,
+    web_surface_cadence::{ACTIVE_POLL_INTERVAL, IDLE_POLL_INTERVAL},
     web_surface_frame::WebSurfaceFrame,
     web_surface_permissions::WebSurfaceSitePermission,
     web_surface_runtime::{WebSurfaceRuntime, WebSurfaceRuntimeFrame},
@@ -70,6 +70,25 @@ impl WebSurfaceStore {
             permissions,
         );
         if self.surfaces.get(tab.id()).is_some_and(|surface| !surface.should_ensure(&ensure_key)) {
+            return false;
+        }
+        // Once the page has ensured at least once, defer further ensures
+        // while the viewport is still being animated. Without this, a
+        // sidebar slide or window-edge drag fires `ensure_surface` per
+        // GPUI paint, each call hitting Servo's `rendering_context.resize`
+        // which destroys and reallocates the framebuffer — the source of
+        // the per-frame blank flash. The first ensure (when no prior
+        // `last_ensure_key` is set) always fires so the page can load.
+        let already_ensured = self
+            .surfaces
+            .get(tab.id())
+            .is_some_and(|surface| surface.last_ensure_key.is_some());
+        if already_ensured
+            && self
+                .surfaces
+                .get(tab.id())
+                .is_some_and(|surface| surface.viewport_size_is_settling(Instant::now()))
+        {
             return false;
         }
         let input = self.take_pending_input(tab.id(), requested_url.as_str());
@@ -186,8 +205,20 @@ impl WebSurfaceStore {
     }
 
     pub(super) fn next_tick_delay(&self, visible_tab_ids: &[TabId]) -> Duration {
+        let now = Instant::now();
+        // While any visible tab's viewport is mid-animation, poll at the
+        // active 120 Hz cadence so the trailing-edge resize fires within
+        // one frame of the gesture settling. Without this boost the
+        // idle 80 ms polling adds a noticeable lag between letting go
+        // of a resize and the page re-laying-out at the final size.
+        let any_settling = visible_tab_ids
+            .iter()
+            .any(|tab_id| self.surfaces.get(tab_id).is_some_and(|s| s.viewport_size_is_settling(now)));
+        if any_settling {
+            return ACTIVE_POLL_INTERVAL;
+        }
         self.runtime
-            .next_poll_delay(visible_tab_ids, Instant::now())
+            .next_poll_delay(visible_tab_ids, now)
             .unwrap_or(IDLE_POLL_INTERVAL)
             .min(IDLE_POLL_INTERVAL)
     }
@@ -317,6 +348,13 @@ impl WebSurfaceStore {
     #[cfg(test)]
     pub(super) fn surface_for_test(&self, tab_id: &TabId) -> Option<&PerTabSurface> {
         self.surfaces.get(tab_id)
+    }
+
+    #[cfg(test)]
+    pub(super) fn clear_viewport_resize_debounce_for_test(&mut self, tab_id: &TabId) {
+        if let Some(surface) = self.surfaces.get_mut(tab_id) {
+            surface.clear_viewport_resize_debounce_for_test();
+        }
     }
 
     #[cfg(test)]

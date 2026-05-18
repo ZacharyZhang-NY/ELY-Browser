@@ -126,6 +126,13 @@ pub(super) struct WebSurfaceTickResult {
 pub(super) struct PerTabSurface {
     pub(super) viewport_bounds: Option<Bounds<Pixels>>,
     pub(super) viewport_size: Option<WebSurfaceSize>,
+    /// When [`viewport_size`] last *transitioned* to a new value. The
+    /// initial measurement does not update this; only subsequent
+    /// genuine size changes do. Drives [`viewport_size_is_settling`]
+    /// so a sidebar / window animation that emits a viewport bounds on
+    /// every GPUI paint does not translate into a Servo framebuffer
+    /// destroy/recreate every frame (the "page flashing" symptom).
+    viewport_size_changed_at: Option<Instant>,
     pub(super) native_surface: Option<NativeSurfaceHandle>,
     pub(super) last_ensure_key: Option<WebSurfaceEnsureKey>,
     pub(super) hover_point: Option<WebSurfaceClickPoint>,
@@ -146,6 +153,7 @@ impl PerTabSurface {
         Self {
             viewport_bounds: None,
             viewport_size: None,
+            viewport_size_changed_at: None,
             native_surface: None,
             last_ensure_key: None,
             hover_point: None,
@@ -188,6 +196,37 @@ impl PerTabSurface {
         self.last_ensure_key.as_ref() != Some(key) || self.has_pending_input()
     }
 
+    /// True when the viewport bounds have changed within the last
+    /// [`VIEWPORT_RESIZE_DEBOUNCE`] window. The renderer treats this
+    /// as "the user is mid-animation" and holds off telling Servo to
+    /// resize its rendering context until the gesture settles —
+    /// Servo's surfman backend recreates the framebuffer on every
+    /// `rendering_context.resize`, which would otherwise flash a
+    /// blank surface for every animation frame.
+    pub(super) fn viewport_size_is_settling(&self, now: Instant) -> bool {
+        self.viewport_size_changed_at
+            .is_some_and(|last| now.duration_since(last) < VIEWPORT_RESIZE_DEBOUNCE)
+    }
+
+    /// Stamp the moment a genuine viewport size transition happened.
+    /// Only called when [`viewport_size`] is actually moving to a new
+    /// value — the very first measurement does *not* invoke this so
+    /// `viewport_size_is_settling` stays false at page-load time and
+    /// the initial `ensure_surface` is allowed to fire immediately.
+    pub(super) fn mark_viewport_size_changed(&mut self, now: Instant) {
+        self.viewport_size_changed_at = Some(now);
+    }
+
+    /// Test-only escape hatch: simulate the trailing edge of a resize
+    /// animation by clearing the debounce timestamp, so a synchronous
+    /// `record + ensure` sequence in tests behaves as if the gesture
+    /// has fully settled. Production code drives this via the poll
+    /// cadence and time elapsing — tests can't advance an `Instant`.
+    #[cfg(test)]
+    pub(super) fn clear_viewport_resize_debounce_for_test(&mut self) {
+        self.viewport_size_changed_at = None;
+    }
+
     pub(super) fn mark_ensured(&mut self, key: WebSurfaceEnsureKey) {
         self.last_ensure_key = Some(key);
     }
@@ -225,6 +264,12 @@ impl PerTabSurface {
 }
 
 const HOVER_INPUT_MIN_INTERVAL: Duration = Duration::from_millis(32);
+
+/// How long the viewport must hold its new size before we propagate
+/// the resize down to Servo. 80 ms is short enough that a user-driven
+/// drag still feels live, and long enough to collapse a 60 Hz sidebar
+/// animation (~17 ms per frame) into a single trailing-edge resize.
+const VIEWPORT_RESIZE_DEBOUNCE: Duration = Duration::from_millis(80);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct WebSurfaceEnsureKey {

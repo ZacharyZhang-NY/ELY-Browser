@@ -67,10 +67,14 @@ impl WebSurfaceStore {
         let Some(size) = WebSurfaceSize::from_bounds(bounds, scale_factor) else {
             return WebSurfaceInputOutcome::DroppedInvalidBounds;
         };
+        let now = Instant::now();
         let surface = self.surface_mut(tab_id);
         surface.viewport_bounds = Some(bounds);
 
         let Some(current_size) = surface.viewport_size else {
+            // First measurement: hand it to the runtime immediately so the
+            // page can start loading. Don't mark a transition timestamp —
+            // there's nothing to debounce yet.
             surface.viewport_size = Some(size);
             return WebSurfaceInputOutcome::Applied;
         };
@@ -79,8 +83,25 @@ impl WebSurfaceStore {
             return WebSurfaceInputOutcome::NoChange;
         }
 
+        // Genuine size transition. Stamp the moment regardless of
+        // outcome so `viewport_size_is_settling` keeps stretching the
+        // debounce as the animation emits more frames; the latest size
+        // always wins in the cadence-driven retry.
+        let was_settling = surface.viewport_size_is_settling(now);
         surface.viewport_size = Some(size);
-        WebSurfaceInputOutcome::Applied
+        surface.mark_viewport_size_changed(now);
+
+        if was_settling {
+            // Inside the debounce window — drop the synchronous flush
+            // so the GPUI paint that emitted this bounds doesn't pay a
+            // Servo resize. The poll cadence already scheduled by the
+            // first frame of this animation re-runs `ensure_surface`,
+            // which will pick up the trailing size once the gesture
+            // settles past [`VIEWPORT_RESIZE_DEBOUNCE`].
+            WebSurfaceInputOutcome::Buffered
+        } else {
+            WebSurfaceInputOutcome::Applied
+        }
     }
 
     pub(super) fn record_native_surface(

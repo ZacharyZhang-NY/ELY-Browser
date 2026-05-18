@@ -71,6 +71,36 @@ fn viewport_size_changes_on_first_clean_measurement() -> Result<(), Box<dyn Erro
     Ok(())
 }
 
+/// A sidebar / window animation emits a new viewport bounds on every
+/// GPUI paint — without this debounce the renderer would call Servo's
+/// `rendering_context.resize` per frame, which destroys and reallocates
+/// the framebuffer and flashes a blank surface for every animation
+/// tick. `record_viewport_size` keeps the latest size in the store so
+/// the cadence-driven retry will pick it up once the gesture settles,
+/// but returns `Buffered` so the synchronous flush is skipped.
+#[test]
+fn rapid_viewport_changes_buffer_until_gesture_settles() -> Result<(), Box<dyn Error>> {
+    let mut store = WebSurfaceStore::new();
+    let tab = web_tab("https://example.com/animation")?;
+
+    assert_eq!(
+        store.record_viewport_size(tab.id(), web_bounds(), 1.0),
+        WebSurfaceInputOutcome::Applied,
+        "first measurement always fires immediately so the page can load",
+    );
+    assert_eq!(
+        store.record_viewport_size(tab.id(), resized_once_bounds(), 1.0),
+        WebSurfaceInputOutcome::Applied,
+        "the first transition after an untimed measurement still fires once",
+    );
+    assert_eq!(
+        store.record_viewport_size(tab.id(), web_bounds(), 1.0),
+        WebSurfaceInputOutcome::Buffered,
+        "a rapid second transition collapses into the trailing-edge resize",
+    );
+    Ok(())
+}
+
 /// Regression — a wheel scroll between focusing a field and typing
 /// must not erase keyboard focus or buffered keystrokes.
 ///

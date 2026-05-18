@@ -248,6 +248,12 @@ fn failed_surface_ensure_waits_for_a_new_key_before_retrying() -> Result<(), Str
         store.record_viewport_size(tab.id(), resized_viewport_bounds(), 1.0),
         WebSurfaceInputOutcome::Applied,
     );
+    // `record_viewport_size` stamps the viewport-resize debounce on a
+    // genuine size transition; in production the poll cadence retries
+    // `ensure_surface` once the gesture settles, but a synchronous
+    // unit test can't advance the clock — clear the timestamp so we
+    // exercise the retry-on-new-key business rule in isolation.
+    store.clear_viewport_resize_debounce_for_test(tab.id());
     assert!(store.ensure_surface(&tab, ProfileDataMode::Transient, &[]));
     store.flush_runtime_for_test();
     let _ = store.tick(&[tab.id().clone()]);
