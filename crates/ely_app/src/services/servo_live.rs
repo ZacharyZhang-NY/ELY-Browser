@@ -166,31 +166,28 @@ impl ServoLiveClient {
         let Some(session) = self.sessions.get_mut(&request.tab_id) else {
             return Ok(());
         };
+        let change = ViewportChange::between(request, session);
 
-        if session.width != request.width || session.height != request.height {
-            self.host.resize(ResizeRequest {
-                webview_id: webview_id.clone(),
-                width: request.width,
-                height: request.height,
-            })?;
-            session.width = request.width;
-            session.height = request.height;
+        if let Some((width, height)) = change.resize {
+            self.host.resize(ResizeRequest { webview_id: webview_id.clone(), width, height })?;
+            session.width = width;
+            session.height = height;
         }
 
-        if session.device_pixel_ratio != request.device_pixel_ratio {
+        if let Some(scale_factor) = change.set_hidpi {
             self.host.set_hidpi_scale(HidpiScaleRequest {
                 webview_id: webview_id.clone(),
-                scale_factor: request.device_pixel_ratio,
+                scale_factor,
             })?;
-            session.device_pixel_ratio = request.device_pixel_ratio;
+            session.device_pixel_ratio = scale_factor;
         }
 
-        if session.page_zoom_percent != request.page_zoom_percent {
+        if let Some(page_zoom_percent) = change.set_page_zoom {
             self.host.set_page_zoom(PageZoomRequest {
                 webview_id: webview_id.clone(),
-                zoom_factor: f32::from(request.page_zoom_percent) / 100.0,
+                zoom_factor: f32::from(page_zoom_percent) / 100.0,
             })?;
-            session.page_zoom_percent = request.page_zoom_percent;
+            session.page_zoom_percent = page_zoom_percent;
         }
 
         Ok(())
@@ -315,4 +312,141 @@ struct DirectWebViewSession {
     page_zoom_percent: u16,
     device_pixel_ratio: f32,
     native_surface_id: Option<usize>,
+}
+
+/// Calls that `apply_viewport` needs to make to bring the underlying
+/// Servo WebView state in line with the embedder's request. Extracted
+/// as a pure value so the diff decision is testable without a live
+/// `SoftwareServoHost` — see `tests` below.
+#[derive(Debug, Default, PartialEq)]
+struct ViewportChange {
+    resize: Option<(u32, u32)>,
+    set_hidpi: Option<f32>,
+    set_page_zoom: Option<u16>,
+}
+
+impl ViewportChange {
+    fn between(request: &ServoLiveEnsureRequest, session: &DirectWebViewSession) -> Self {
+        Self {
+            resize: (session.width != request.width || session.height != request.height)
+                .then_some((request.width, request.height)),
+            set_hidpi: (session.device_pixel_ratio != request.device_pixel_ratio)
+                .then_some(request.device_pixel_ratio),
+            set_page_zoom: (session.page_zoom_percent != request.page_zoom_percent)
+                .then_some(request.page_zoom_percent),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ely_domain::WebViewId;
+
+    fn session(width: u32, height: u32, dpr: f32, zoom: u16) -> DirectWebViewSession {
+        DirectWebViewSession {
+            webview_id: WebViewId::new(),
+            profile_id: ProfileId::new(),
+            requested_url: None,
+            width,
+            height,
+            page_zoom_percent: zoom,
+            device_pixel_ratio: dpr,
+            native_surface_id: Some(0xC0FFEE),
+        }
+    }
+
+    fn request(width: u32, height: u32, dpr: f32, zoom: u16) -> ServoLiveEnsureRequest {
+        ServoLiveEnsureRequest {
+            tab_id: String::from("tab"),
+            profile_id: String::from("profile"),
+            url: String::from("https://example.com/"),
+            width,
+            height,
+            page_zoom_percent: zoom,
+            device_pixel_ratio: dpr,
+            native_surface: None,
+            scroll_delta_x: 0,
+            scroll_delta_y: 0,
+            scroll_point_x: None,
+            scroll_point_y: None,
+            click_x: None,
+            click_y: None,
+            hover_x: None,
+            hover_y: None,
+            typed_text: None,
+            site_permissions: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn fresh_retina_session_pushes_hidpi_only() {
+        // A 1440×900 Retina viewport arrives as physical 2880×1800 with
+        // DPR=2.0. `ensure_webview` stamps the session with Servo's
+        // post-build defaults (1.0 DPR, 100 % zoom) and the request's
+        // physical dimensions, so only the hidpi push should fire.
+        let change = ViewportChange::between(
+            &request(2880, 1800, 2.0, SERVO_DEFAULT_PAGE_ZOOM_PERCENT),
+            &session(
+                2880,
+                1800,
+                SERVO_DEFAULT_DEVICE_PIXEL_RATIO,
+                SERVO_DEFAULT_PAGE_ZOOM_PERCENT,
+            ),
+        );
+        assert_eq!(
+            change,
+            ViewportChange { resize: None, set_hidpi: Some(2.0), set_page_zoom: None },
+        );
+    }
+
+    #[test]
+    fn fresh_standard_dpi_session_pushes_nothing() {
+        // On a 1.0-DPR display the fresh session already matches the
+        // request — Servo's defaults are exactly what we asked for.
+        let change = ViewportChange::between(
+            &request(
+                1280,
+                720,
+                SERVO_DEFAULT_DEVICE_PIXEL_RATIO,
+                SERVO_DEFAULT_PAGE_ZOOM_PERCENT,
+            ),
+            &session(
+                1280,
+                720,
+                SERVO_DEFAULT_DEVICE_PIXEL_RATIO,
+                SERVO_DEFAULT_PAGE_ZOOM_PERCENT,
+            ),
+        );
+        assert_eq!(change, ViewportChange::default());
+    }
+
+    #[test]
+    fn page_zoom_change_pushes_only_zoom() {
+        // User toggled zoom to 150 % on a session that's already at the
+        // right size and DPR — only `set_page_zoom` should fire.
+        let change = ViewportChange::between(
+            &request(2880, 1800, 2.0, 150),
+            &session(2880, 1800, 2.0, SERVO_DEFAULT_PAGE_ZOOM_PERCENT),
+        );
+        assert_eq!(
+            change,
+            ViewportChange { resize: None, set_hidpi: None, set_page_zoom: Some(150) },
+        );
+    }
+
+    #[test]
+    fn cross_monitor_dpr_change_pushes_only_hidpi() {
+        // A window dragged from a 2.0-DPR monitor to a 1.0-DPR one keeps
+        // the same physical surface (GPUI re-emits the viewport at the
+        // new scale) — only the DPR push should fire.
+        let change = ViewportChange::between(
+            &request(2880, 1800, 1.0, SERVO_DEFAULT_PAGE_ZOOM_PERCENT),
+            &session(2880, 1800, 2.0, SERVO_DEFAULT_PAGE_ZOOM_PERCENT),
+        );
+        assert_eq!(
+            change,
+            ViewportChange { resize: None, set_hidpi: Some(1.0), set_page_zoom: None },
+        );
+    }
 }
