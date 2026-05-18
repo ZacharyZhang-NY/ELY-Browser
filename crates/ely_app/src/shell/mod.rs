@@ -32,6 +32,7 @@ mod web_surface_cadence;
 mod web_surface_controller;
 mod web_surface_frame;
 mod web_surface_geometry;
+mod web_surface_input;
 mod web_surface_keyboard;
 mod web_surface_metadata;
 mod web_surface_permissions;
