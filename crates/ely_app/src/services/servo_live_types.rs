@@ -1,5 +1,5 @@
 use ely_domain::SitePermissionDecision;
-use ely_servo_host::{ServoHostError, WebViewSnapshot, WebViewState};
+use ely_servo_host::{RenderedFrame, ServoHostError, WebViewSnapshot, WebViewState};
 use gpui::NativeSurfaceHandle;
 use serde::Serialize;
 use thiserror::Error;
@@ -90,6 +90,34 @@ impl ServoLiveFrame {
         }
     }
 
+    pub(super) fn from_rendered(
+        snapshot: WebViewSnapshot,
+        rendered_frame: RenderedFrame,
+        device_pixel_ratio: f32,
+    ) -> Self {
+        let width = rendered_frame.width();
+        let height = rendered_frame.height();
+        let (css_viewport_width, css_viewport_height) =
+            css_viewport_size(width, height, device_pixel_ratio);
+        Self {
+            loaded_url: snapshot.url().map(str::to_string),
+            title: snapshot.title().map(str::to_string),
+            render_state: render_state_label(snapshot.state()).to_string(),
+            width,
+            height,
+            device_pixel_ratio,
+            css_viewport_width,
+            css_viewport_height,
+            #[cfg(all(test, feature = "live-site-smoke"))]
+            non_white_pixel_count: rendered_frame.non_white_pixel_count(),
+            #[cfg(all(test, feature = "live-site-smoke"))]
+            content_pixel_count: rendered_frame.content_pixel_count(),
+            #[cfg(all(test, feature = "live-site-smoke"))]
+            sample_hash: rendered_frame.sample_hash(),
+            rgba_bytes: Some(rendered_frame.rgba_bytes().to_vec()),
+        }
+    }
+
     #[must_use]
     pub fn loaded_url(&self) -> Option<&str> {
         self.loaded_url.as_deref()
@@ -155,6 +183,9 @@ impl ServoLiveFrame {
 
     #[cfg(test)]
     pub(crate) fn for_test(width: u32, height: u32, rgba_bytes: Vec<u8>) -> Self {
+        #[cfg(all(test, feature = "live-site-smoke"))]
+        let summary =
+            ely_servo_host::RenderedFrameSummary::from_rgba_bytes(width, height, &rgba_bytes);
         Self {
             loaded_url: Some("https://example.com/".to_string()),
             title: Some("Example".to_string()),
@@ -165,11 +196,11 @@ impl ServoLiveFrame {
             css_viewport_width: width,
             css_viewport_height: height,
             #[cfg(all(test, feature = "live-site-smoke"))]
-            non_white_pixel_count: 0,
+            non_white_pixel_count: summary.non_white_pixel_count(),
             #[cfg(all(test, feature = "live-site-smoke"))]
-            content_pixel_count: 0,
+            content_pixel_count: summary.content_pixel_count(),
             #[cfg(all(test, feature = "live-site-smoke"))]
-            sample_hash: 0,
+            sample_hash: summary.sample_hash(),
             rgba_bytes: Some(rgba_bytes),
         }
     }

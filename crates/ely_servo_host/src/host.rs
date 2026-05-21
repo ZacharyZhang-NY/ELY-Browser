@@ -148,6 +148,29 @@ impl RenderedFrame {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WebViewSnapshotPending {
+    has_pending_frame: bool,
+    has_pending_metadata: bool,
+}
+
+impl WebViewSnapshotPending {
+    #[must_use]
+    pub fn new(has_pending_frame: bool, has_pending_metadata: bool) -> Self {
+        Self { has_pending_frame, has_pending_metadata }
+    }
+
+    #[must_use]
+    pub fn has_pending_frame(&self) -> bool {
+        self.has_pending_frame
+    }
+
+    #[must_use]
+    pub fn has_pending_metadata(&self) -> bool {
+        self.has_pending_metadata
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WebViewSnapshot {
     webview_id: WebViewId,
     tab_id: TabId,
@@ -155,7 +178,7 @@ pub struct WebViewSnapshot {
     state: WebViewState,
     url: Option<String>,
     title: Option<String>,
-    has_pending_frame: bool,
+    pending: WebViewSnapshotPending,
 }
 
 impl WebViewSnapshot {
@@ -167,9 +190,9 @@ impl WebViewSnapshot {
         state: WebViewState,
         url: Option<String>,
         title: Option<String>,
-        has_pending_frame: bool,
+        pending: WebViewSnapshotPending,
     ) -> Self {
-        Self { webview_id, tab_id, profile_id, state, url, title, has_pending_frame }
+        Self { webview_id, tab_id, profile_id, state, url, title, pending }
     }
 
     #[must_use]
@@ -204,7 +227,14 @@ impl WebViewSnapshot {
 
     #[must_use]
     pub fn has_pending_frame(&self) -> bool {
-        self.has_pending_frame
+        self.pending.has_pending_frame()
+    }
+
+    /// Returns true when URL, title, or load-state changed since the
+    /// last embedder snapshot observation.
+    #[must_use]
+    pub fn has_pending_metadata(&self) -> bool {
+        self.pending.has_pending_metadata()
     }
 }
 

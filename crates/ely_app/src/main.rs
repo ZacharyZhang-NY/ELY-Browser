@@ -20,6 +20,7 @@ use gpui_component_assets::Assets;
 use shell::ElyShell;
 use shell::chrome::{TRAFFIC_LIGHT_ORIGIN_X, TRAFFIC_LIGHT_ORIGIN_Y};
 use shortcuts::bind_shortcuts;
+use url::Url;
 
 use crate::brand::{DEEP_LINK_PREFIX, PRODUCT_NAME};
 
@@ -55,7 +56,7 @@ actions!(
 fn main() {
     init_tracing();
     let pending_deep_links = PendingDeepLinks::default();
-    pending_deep_links.push(startup_deep_links(env::args().skip(1)));
+    pending_deep_links.push(startup_open_urls(env::args().skip(1)));
     let open_url_queue = pending_deep_links.clone();
     let application = Application::new().with_assets(Assets);
 
@@ -248,7 +249,7 @@ fn open_deep_links(
     current_window: &Rc<RefCell<Option<BrowserWindowTarget>>>,
     cx: &mut App,
 ) {
-    let urls = urls.into_iter().filter_map(|url| parse_ely_deep_link(&url)).collect::<Vec<_>>();
+    let urls = urls.into_iter().filter_map(|url| parse_open_url(&url)).collect::<Vec<_>>();
 
     if urls.is_empty() {
         return;
@@ -314,9 +315,19 @@ fn parse_ely_deep_link(value: &str) -> Option<UrlText> {
         .flatten()
 }
 
-fn startup_deep_links(args: impl IntoIterator<Item = String>) -> Vec<String> {
+fn parse_open_url(value: &str) -> Option<UrlText> {
+    parse_ely_deep_link(value).or_else(|| parse_external_open_url(value))
+}
+
+fn parse_external_open_url(value: &str) -> Option<UrlText> {
+    let parsed = UrlText::from_address_text(value).ok()?;
+    let url = Url::parse(parsed.as_str()).ok()?;
+    matches!(url.scheme(), "http" | "https").then(|| UrlText::parse(url.to_string()).ok()).flatten()
+}
+
+fn startup_open_urls(args: impl IntoIterator<Item = String>) -> Vec<String> {
     args.into_iter()
-        .filter_map(|arg| parse_ely_deep_link(&arg).map(|url| url.as_str().to_string()))
+        .filter_map(|arg| parse_open_url(&arg).map(|url| url.as_str().to_string()))
         .collect()
 }
 
@@ -346,7 +357,7 @@ fn open_private_window(_: &OpenPrivateWindow, cx: &mut App) {
 
 #[cfg(test)]
 mod tests {
-    use super::{PendingDeepLinks, parse_ely_deep_link, startup_deep_links};
+    use super::{PendingDeepLinks, parse_ely_deep_link, parse_open_url, startup_open_urls};
 
     #[test]
     fn pending_deep_links_drains_urls_in_order() {
@@ -381,16 +392,41 @@ mod tests {
     }
 
     #[test]
-    fn startup_deep_links_filter_and_normalize_args() {
-        let links = startup_deep_links(
-            ["--ignored", " ELY://history ", "https://example.com", "ely://auth/callback?code=abc"]
-                .into_iter()
-                .map(str::to_string),
+    fn parse_open_url_accepts_external_pages() {
+        let url = parse_open_url(" HTTPS://example.com ");
+
+        assert_eq!(url.as_ref().map(|url| url.as_str()), Some("https://example.com/"));
+    }
+
+    #[test]
+    fn parse_open_url_accepts_address_text_domains() {
+        let url = parse_open_url("servo.org");
+
+        assert_eq!(url.as_ref().map(|url| url.as_str()), Some("https://servo.org/"));
+    }
+
+    #[test]
+    fn startup_open_urls_filter_and_normalize_args() {
+        let links = startup_open_urls(
+            [
+                "--ignored",
+                " ELY://history ",
+                "https://example.com",
+                "servo.org",
+                "ely://auth/callback?code=abc",
+            ]
+            .into_iter()
+            .map(str::to_string),
         );
 
         assert_eq!(
             links,
-            vec!["ely://history".to_string(), "ely://auth/callback?code=abc".to_string()]
+            vec![
+                "ely://history".to_string(),
+                "https://example.com/".to_string(),
+                "https://servo.org/".to_string(),
+                "ely://auth/callback?code=abc".to_string(),
+            ]
         );
     }
 }

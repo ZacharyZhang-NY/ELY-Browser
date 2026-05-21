@@ -395,7 +395,9 @@ impl WebSurfaceRuntime {
         let Some(scoped) = self.worker.take() else {
             return;
         };
-        if let Some(path) = scoped.transient_profile_data_dir {
+        let ScopedWorker { worker, transient_profile_data_dir } = scoped;
+        drop(worker);
+        if let Some(path) = transient_profile_data_dir {
             let _ = fs::remove_dir_all(path);
         }
     }
@@ -404,7 +406,9 @@ impl WebSurfaceRuntime {
         let Some(scoped) = self.direct_client.take() else {
             return;
         };
-        if let Some(path) = scoped.transient_profile_data_dir {
+        let ScopedDirectClient { client, transient_profile_data_dir } = scoped;
+        drop(client);
+        if let Some(path) = transient_profile_data_dir {
             let _ = fs::remove_dir_all(path);
         }
     }

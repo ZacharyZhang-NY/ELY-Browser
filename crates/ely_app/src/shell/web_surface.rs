@@ -79,10 +79,8 @@ impl WebSurfaceStore {
         // which destroys and reallocates the framebuffer — the source of
         // the per-frame blank flash. The first ensure (when no prior
         // `last_ensure_key` is set) always fires so the page can load.
-        let already_ensured = self
-            .surfaces
-            .get(tab.id())
-            .is_some_and(|surface| surface.last_ensure_key.is_some());
+        let already_ensured =
+            self.surfaces.get(tab.id()).is_some_and(|surface| surface.last_ensure_key.is_some());
         if already_ensured
             && self
                 .surfaces
@@ -211,9 +209,9 @@ impl WebSurfaceStore {
         // one frame of the gesture settling. Without this boost the
         // idle 80 ms polling adds a noticeable lag between letting go
         // of a resize and the page re-laying-out at the final size.
-        let any_settling = visible_tab_ids
-            .iter()
-            .any(|tab_id| self.surfaces.get(tab_id).is_some_and(|s| s.viewport_size_is_settling(now)));
+        let any_settling = visible_tab_ids.iter().any(|tab_id| {
+            self.surfaces.get(tab_id).is_some_and(|s| s.viewport_size_is_settling(now))
+        });
         if any_settling {
             return ACTIVE_POLL_INTERVAL;
         }

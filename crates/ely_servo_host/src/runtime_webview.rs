@@ -5,7 +5,7 @@ use servo::{LoadStatus, RenderingContext, WebView, WebViewDelegate};
 use url::Url;
 
 use crate::{
-    PermissionDecision, WebViewSnapshot, WebViewState,
+    PermissionDecision, WebViewSnapshot, WebViewSnapshotPending, WebViewState,
     runtime_permissions::{PermissionStore, permission_decision_for_webview},
 };
 
@@ -27,7 +27,10 @@ impl HostWebView {
             self.state(),
             self.current_url(),
             self.current_title(),
-            self.delegate.has_pending_frame(),
+            WebViewSnapshotPending::new(
+                self.delegate.has_pending_frame(),
+                self.delegate.has_pending_metadata(),
+            ),
         )
     }
 
@@ -62,6 +65,7 @@ pub(super) struct HostWebViewDelegate {
     url: RefCell<Option<String>>,
     title: RefCell<Option<String>>,
     has_pending_frame: Cell<bool>,
+    has_pending_metadata: Cell<bool>,
 }
 
 impl HostWebViewDelegate {
@@ -73,6 +77,7 @@ impl HostWebViewDelegate {
             url: RefCell::new(None),
             title: RefCell::new(None),
             has_pending_frame: Cell::new(false),
+            has_pending_metadata: Cell::new(false),
         }
     }
 
@@ -94,12 +99,12 @@ impl HostWebViewDelegate {
 
     fn record_url_change(&self, url: String) {
         self.url.replace(Some(url));
-        self.has_pending_frame.set(true);
+        self.has_pending_metadata.set(true);
     }
 
     fn record_title_change(&self, title: Option<String>) {
         self.title.replace(title);
-        self.has_pending_frame.set(true);
+        self.has_pending_metadata.set(true);
     }
 
     fn record_load_status(&self, status: LoadStatus) {
@@ -108,15 +113,23 @@ impl HostWebViewDelegate {
             LoadStatus::Complete => WebViewState::Complete,
         };
         self.set_state(state);
-        self.has_pending_frame.set(true);
+        self.has_pending_metadata.set(true);
     }
 
     pub(super) fn has_pending_frame(&self) -> bool {
         self.has_pending_frame.get()
     }
 
+    pub(super) fn has_pending_metadata(&self) -> bool {
+        self.has_pending_metadata.get()
+    }
+
     pub(super) fn mark_frame_presented(&self) {
         self.has_pending_frame.set(false);
+    }
+
+    pub(super) fn mark_metadata_observed(&self) {
+        self.has_pending_metadata.set(false);
     }
 }
 
@@ -172,21 +185,25 @@ mod tests {
     use super::HostWebViewDelegate;
 
     #[test]
-    fn metadata_changes_mark_pending_frame() {
+    fn metadata_changes_are_separate_from_pending_frame() {
         let delegate =
             HostWebViewDelegate::new(ProfileId::new(), Rc::new(RefCell::new(HashMap::new())));
 
         assert!(!delegate.has_pending_frame());
+        assert!(!delegate.has_pending_metadata());
 
         delegate.record_title_change(Some("Example Domain".to_string()));
         assert_eq!(delegate.title().as_deref(), Some("Example Domain"));
-        assert!(delegate.has_pending_frame());
-
-        delegate.mark_frame_presented();
         assert!(!delegate.has_pending_frame());
+        assert!(delegate.has_pending_metadata());
+
+        delegate.mark_metadata_observed();
+        assert!(!delegate.has_pending_frame());
+        assert!(!delegate.has_pending_metadata());
 
         delegate.record_url_change("https://example.com/".to_string());
         assert_eq!(delegate.url().as_deref(), Some("https://example.com/"));
-        assert!(delegate.has_pending_frame());
+        assert!(!delegate.has_pending_frame());
+        assert!(delegate.has_pending_metadata());
     }
 }

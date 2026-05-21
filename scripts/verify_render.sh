@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # T16 — real-window screencapture sanity check.
 #
-# Boots ./target/release/ely_app in the background, lets it open about:blank,
-# grabs a screencapture, then asserts the PNG is non-trivial (size + dimensions
-# + non-white center). Stderr from the app is tee'd to a log so a crash leaves
-# evidence behind.
+# Boots ./target/release/ely_app in the background, opens a live page through
+# Servo's native surface path, grabs a screencapture, then asserts the PNG is
+# non-trivial (size + dimensions + non-white center). Stderr from the app is
+# tee'd to a log so a crash leaves evidence behind.
 #
 # Idempotent: kills any leftover ely_app processes from prior runs before
 # starting, and cleans up its own background process on exit (success or fail).
@@ -18,6 +18,7 @@ TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 SHOT_PATH="/tmp/ely-verify-${TIMESTAMP}.png"
 STDERR_LOG="/tmp/ely-verify-stderr.log"
 APP_BIN="${REPO_ROOT}/target/release/ely_app"
+SMOKE_URL="${ELY_VERIFY_URL:-https://servo.org/}"
 APP_PID=""
 
 cleanup() {
@@ -32,6 +33,7 @@ cleanup() {
     fi
     # Stragglers from prior runs / child processes
     pkill -f "target/release/ely_app" 2>/dev/null || true
+    pkill -x "ely_app" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
@@ -47,6 +49,7 @@ fail() {
 
 echo "[1/6] killing stale ely_app processes"
 pkill -f "target/release/ely_app" 2>/dev/null || true
+pkill -x "ely_app" 2>/dev/null || true
 sleep 0.5
 
 echo "[2/6] cargo build --release -p ely_app"
@@ -55,21 +58,30 @@ if ! cargo build --release -p ely_app; then
 fi
 [[ -x "${APP_BIN}" ]] || fail "binary missing: ${APP_BIN}"
 
-echo "[3/6] launching ${APP_BIN} (stderr -> ${STDERR_LOG})"
+echo "[3/6] launching ${APP_BIN} ${SMOKE_URL} (stderr -> ${STDERR_LOG})"
 : > "${STDERR_LOG}"
-"${APP_BIN}" >/dev/null 2>"${STDERR_LOG}" &
+"${APP_BIN}" "${SMOKE_URL}" >/dev/null 2>"${STDERR_LOG}" &
 APP_PID=$!
 echo "      pid=${APP_PID}"
 
-echo "[4/6] waiting 8s for window + about:blank to settle"
-for i in 1 2 3 4 5 6 7 8; do
+echo "[4/6] waiting 12s for window + live page to settle"
+for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
     sleep 1
     if ! kill -0 "${APP_PID}" 2>/dev/null; then
         fail "app exited early during warm-up (after ${i}s)"
     fi
 done
 
-echo "[5/6] screencapture -> ${SHOT_PATH}"
+echo "[5/6] activating pid ${APP_PID} and screencapture -> ${SHOT_PATH}"
+if ! osascript >/dev/null <<OSA
+tell application "System Events"
+    set frontmost of first process whose unix id is ${APP_PID} to true
+end tell
+OSA
+then
+    fail "could not activate ely_app process ${APP_PID}"
+fi
+sleep 1
 # -x silences the shutter sound. Full screen is safer than -l <windowid> here
 # because we don't have a stable Cocoa window id; the app paints into the
 # primary display and that's what we care about.

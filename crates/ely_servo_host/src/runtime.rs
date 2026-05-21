@@ -45,6 +45,9 @@ pub struct SoftwareServoHost {
     default_surface_size: ServoSurfaceSize,
     rendering_context_kind: RenderingContextKind,
     webviews: HashMap<WebViewId, HostWebView>,
+    // Servo 0.1.0 can still run script tasks after a remote page moves away.
+    // Retain hidden about:blank WebViews until host shutdown releases them together.
+    retired_webviews: Vec<HostWebView>,
     permissions: PermissionStore,
     wake_requested: Arc<AtomicBool>,
     last_rendered_frame: Option<RenderedFrame>,
@@ -120,7 +123,27 @@ impl SoftwareServoHost {
     }
 
     pub fn close_webview(&mut self, webview_id: &WebViewId) -> bool {
-        self.webviews.remove(webview_id).is_some()
+        let Some(webview) = self.webviews.remove(webview_id) else {
+            return false;
+        };
+        self.retire_webview(webview);
+        true
+    }
+
+    fn retire_webview(&mut self, webview: HostWebView) {
+        webview.webview.hide();
+        if let Ok(blank_url) = Url::parse("about:blank") {
+            webview.webview.load(blank_url);
+        }
+        for _ in 0..32 {
+            self.servo.spin_event_loop();
+            if webview.current_url().as_deref() == Some("about:blank")
+                && matches!(webview.state(), WebViewState::Complete)
+            {
+                break;
+            }
+        }
+        self.retired_webviews.push(webview);
     }
 
     fn new_started(
@@ -143,6 +166,7 @@ impl SoftwareServoHost {
             default_surface_size: size,
             rendering_context_kind,
             webviews: HashMap::new(),
+            retired_webviews: Vec::new(),
             permissions: Rc::new(RefCell::new(HashMap::new())),
             wake_requested,
             last_rendered_frame: None,
@@ -189,6 +213,24 @@ impl SoftwareServoHost {
         };
         self.last_rendered_frame = Some(rendered_frame);
         Ok(())
+    }
+
+    /// Returns the current snapshot and acknowledges metadata-only
+    /// updates without clearing Servo's frame-ready signal.
+    pub fn snapshot_and_mark_metadata_observed(
+        &self,
+        webview_id: &WebViewId,
+    ) -> Result<WebViewSnapshot, ServoHostError> {
+        let webview = self.webview(webview_id)?;
+        let snapshot = webview.snapshot(webview_id);
+        webview.delegate.mark_metadata_observed();
+        Ok(snapshot)
+    }
+
+    fn drain_after_webview_close(&self) {
+        for _ in 0..16 {
+            self.servo.spin_event_loop();
+        }
     }
 }
 
@@ -395,6 +437,12 @@ impl ServoHost for SoftwareServoHost {
 
 impl Drop for SoftwareServoHost {
     fn drop(&mut self) {
+        let webviews = std::mem::take(&mut self.webviews);
+        for webview in webviews.into_values() {
+            self.retire_webview(webview);
+        }
+        self.retired_webviews.clear();
+        self.drain_after_webview_close();
         SERVO_RUNTIME_STARTED.store(false, Ordering::Release);
     }
 }

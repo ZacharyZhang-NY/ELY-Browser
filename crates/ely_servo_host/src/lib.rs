@@ -18,7 +18,7 @@ pub use host::{
     HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest, MouseDragRequest, MouseHoverRequest,
     NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest, RenderedFrame,
     RenderedFrameSummary, ResizeRequest, ScrollRequest, ServoHost, TouchTapRequest,
-    WebViewSnapshot, WebViewState,
+    WebViewSnapshot, WebViewSnapshotPending, WebViewState,
 };
 #[cfg(feature = "servo-engine")]
 pub use runtime::{RenderingContextKind, ServoSurfaceSize, SoftwareServoHost};

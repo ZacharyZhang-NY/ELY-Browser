@@ -201,7 +201,7 @@ fn assert_web_surface_resizes_prd_site() -> Result<(), Box<dyn Error>> {
     store.ensure_surface(&tab, ProfileDataMode::Transient, &[]);
     let _ = wait_for_ready_frame_at_size(
         &mut store,
-        tab.id(),
+        &tab,
         case,
         LIVE_SURFACE_WIDTH,
         LIVE_SURFACE_HEIGHT,
@@ -216,7 +216,7 @@ fn assert_web_surface_resizes_prd_site() -> Result<(), Box<dyn Error>> {
     store.ensure_surface(&tab, ProfileDataMode::Transient, &[]);
     wait_for_ready_frame_at_size(
         &mut store,
-        tab.id(),
+        &tab,
         case,
         RESIZED_LIVE_SURFACE_WIDTH,
         RESIZED_LIVE_SURFACE_HEIGHT,
@@ -377,7 +377,7 @@ fn wait_for_ready_frame_at_scroll(
 
 fn wait_for_ready_frame_at_size(
     store: &mut WebSurfaceStore,
-    tab_id: &TabId,
+    tab: &BrowserTab,
     case: &LiveSiteCase,
     expected_width: u32,
     expected_height: u32,
@@ -386,8 +386,9 @@ fn wait_for_ready_frame_at_size(
     let mut last_error = None;
 
     loop {
-        store.tick(std::slice::from_ref(tab_id));
-        match store.state(tab_id) {
+        store.ensure_surface(tab, ProfileDataMode::Transient, &[]);
+        store.tick(std::slice::from_ref(tab.id()));
+        match store.state(tab.id()) {
             Some(WebSurfaceState::Ready(frame))
                 if frame.size().width == expected_width
                     && frame.size().height == expected_height =>

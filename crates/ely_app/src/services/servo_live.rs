@@ -6,7 +6,7 @@ use ely_domain::{
 use ely_servo_host::{
     HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest, MouseHoverRequest,
     NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest, ResizeRequest,
-    ScrollRequest, ServoHost, ServoSurfaceSize, SoftwareServoHost,
+    ScrollRequest, ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost,
 };
 
 #[path = "servo_live_types.rs"]
@@ -54,24 +54,18 @@ impl ServoLiveClient {
         self.apply_navigation(&request, &webview_id, tab_id, requested_url)?;
         self.apply_input(&request, &webview_id)?;
         // Match Servo's `examples/winit_minimal.rs`: spin the event loop on
-        // the embedder-side hot path, never paint. Painting is reactive in
-        // Servo — `notify_new_frame_ready` on the delegate flags the
-        // session, and the next `poll` (gated on `has_pending_frame`)
-        // performs the single paint + present for that frame. Forcing a
-        // paint here would clear the surface to the WebRender background
-        // and present it *before* Servo has composited the navigated
-        // page, which is what produced the per-redirect white-flash on
-        // sites that perform a chain of redirects (google.com → /
-        // → /?zx=…). The `ServoLiveFrame` we return only carries the
-        // snapshot metadata; the on-screen surface is owned by Servo via
-        // the native NSView and updated through `poll`.
+        // the embedder-side hot path, never paint. Servo's public
+        // rendering contract says `notify_new_frame_ready` is the signal
+        // for `WebView::paint`; URL/title/load-status callbacks are
+        // metadata updates and travel through snapshots. Painting here
+        // would present before Servo has composited the navigated page,
+        // which produced per-redirect white flashes.
         self.host.tick();
-        if !self.session_uses_native_surface(&request.tab_id) {
-            return Err(ServoLiveError::NativeSurfaceUnavailable);
+        if self.session_uses_native_surface(&request.tab_id) {
+            return self.presented_frame_from_session(&request.tab_id, &webview_id).map(Some);
         }
 
-        let frame = self.frame_from_session(&request.tab_id, &webview_id)?;
-        Ok(Some(frame))
+        Ok(None)
     }
 
     pub fn poll(&mut self, tab_id: String) -> Result<Option<ServoLiveFrame>, ServoLiveError> {
@@ -82,15 +76,22 @@ impl ServoLiveClient {
         let uses_native_surface = session.native_surface_id.is_some();
 
         self.host.tick();
-        if !self.host.snapshot(&webview_id)?.has_pending_frame() {
+        let snapshot = self.host.snapshot(&webview_id)?;
+        if !snapshot.has_pending_frame() && !snapshot.has_pending_metadata() {
             return Ok(None);
         }
 
-        if !uses_native_surface {
-            return Err(ServoLiveError::NativeSurfaceUnavailable);
+        if uses_native_surface {
+            if snapshot.has_pending_frame() {
+                self.host.paint_without_readback_with_completion(&webview_id, false)?;
+            }
+            return self.presented_frame_from_session(&tab_id, &webview_id).map(Some);
         }
-        self.host.paint_without_readback_with_completion(&webview_id, false)?;
-        self.frame_from_session(&tab_id, &webview_id).map(Some)
+
+        if snapshot.has_pending_frame() {
+            self.host.paint(&webview_id)?;
+        }
+        self.rendered_frame_from_session(&tab_id, &webview_id)
     }
 
     pub fn close(&mut self, tab_id: String) -> Result<(), ServoLiveError> {
@@ -252,8 +253,7 @@ impl ServoLiveClient {
         // `set_history`) is the source of truth — if it already
         // matches the requested URL, this URL change came *from*
         // Servo and only needs an embedder-side bookkeeping sync.
-        let servo_current_url =
-            self.host.snapshot(webview_id)?.url().map(str::to_string);
+        let servo_current_url = self.host.snapshot(webview_id)?.url().map(str::to_string);
         if servo_current_url.as_deref() == Some(requested_url.as_str()) {
             if let Some(session) = self.sessions.get_mut(&request.tab_id) {
                 session.requested_url = Some(requested_url.as_str().to_string());
@@ -314,7 +314,7 @@ impl ServoLiveClient {
         Ok(())
     }
 
-    fn frame_from_session(
+    fn presented_frame_from_session(
         &self,
         tab_id: &str,
         webview_id: &WebViewId,
@@ -325,7 +325,7 @@ impl ServoLiveClient {
             }));
         };
         if session.native_surface_id.is_some() {
-            let snapshot = self.host.snapshot(webview_id)?;
+            let snapshot = self.host.snapshot_and_mark_metadata_observed(webview_id)?;
             return Ok(ServoLiveFrame::from_presented(
                 snapshot,
                 session.width,
@@ -334,6 +334,29 @@ impl ServoLiveClient {
             ));
         }
         Err(ServoLiveError::NativeSurfaceUnavailable)
+    }
+
+    fn rendered_frame_from_session(
+        &self,
+        tab_id: &str,
+        webview_id: &WebViewId,
+    ) -> Result<Option<ServoLiveFrame>, ServoLiveError> {
+        let Some(session) = self.sessions.get(tab_id) else {
+            return Err(ServoLiveError::Host(ServoHostError::WebViewNotFound {
+                id: webview_id.clone(),
+            }));
+        };
+        let rendered_frame = match self.host.last_rendered_frame() {
+            Ok(frame) => frame,
+            Err(ServoHostError::RenderedFrameUnavailable) => return Ok(None),
+            Err(error) => return Err(ServoLiveError::Host(error)),
+        };
+        let snapshot = self.host.snapshot_and_mark_metadata_observed(webview_id)?;
+        Ok(Some(ServoLiveFrame::from_rendered(
+            snapshot,
+            rendered_frame,
+            session.device_pixel_ratio,
+        )))
     }
 
     fn session_uses_native_surface(&self, tab_id: &str) -> bool {
@@ -425,12 +448,7 @@ mod tests {
         // physical dimensions, so only the hidpi push should fire.
         let change = ViewportChange::between(
             &request(2880, 1800, 2.0, SERVO_DEFAULT_PAGE_ZOOM_PERCENT),
-            &session(
-                2880,
-                1800,
-                SERVO_DEFAULT_DEVICE_PIXEL_RATIO,
-                SERVO_DEFAULT_PAGE_ZOOM_PERCENT,
-            ),
+            &session(2880, 1800, SERVO_DEFAULT_DEVICE_PIXEL_RATIO, SERVO_DEFAULT_PAGE_ZOOM_PERCENT),
         );
         assert_eq!(
             change,
@@ -443,18 +461,8 @@ mod tests {
         // On a 1.0-DPR display the fresh session already matches the
         // request — Servo's defaults are exactly what we asked for.
         let change = ViewportChange::between(
-            &request(
-                1280,
-                720,
-                SERVO_DEFAULT_DEVICE_PIXEL_RATIO,
-                SERVO_DEFAULT_PAGE_ZOOM_PERCENT,
-            ),
-            &session(
-                1280,
-                720,
-                SERVO_DEFAULT_DEVICE_PIXEL_RATIO,
-                SERVO_DEFAULT_PAGE_ZOOM_PERCENT,
-            ),
+            &request(1280, 720, SERVO_DEFAULT_DEVICE_PIXEL_RATIO, SERVO_DEFAULT_PAGE_ZOOM_PERCENT),
+            &session(1280, 720, SERVO_DEFAULT_DEVICE_PIXEL_RATIO, SERVO_DEFAULT_PAGE_ZOOM_PERCENT),
         );
         assert_eq!(change, ViewportChange::default());
     }
