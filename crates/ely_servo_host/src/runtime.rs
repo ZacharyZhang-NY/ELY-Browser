@@ -241,7 +241,18 @@ fn install_rustls_provider() {
 }
 
 fn ely_servo_preferences() -> Preferences {
-    Preferences { dom_intersection_observer_enabled: true, ..Preferences::default() }
+    // `Preferences::default()` is Servo's conservative *library* default and ships
+    // CSS Grid off. `Servo::new` forwards prefs to Stylo via `prefs::set`, and with
+    // `layout.grid.enabled` off Stylo blockifies `display: grid`, collapsing every
+    // grid container to `display: block` — modern grid layouts stack into one column
+    // (the "broken" rendering on grid-based sites). The layout path is implemented
+    // (servo-layout drives `DisplayInside::Grid` through Taffy), so an embedder
+    // building a browser must enable it, exactly as Servo's own servoshell does.
+    Preferences {
+        dom_intersection_observer_enabled: true,
+        layout_grid_enabled: true,
+        ..Preferences::default()
+    }
 }
 
 impl ServoHost for SoftwareServoHost {
