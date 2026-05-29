@@ -1084,7 +1084,12 @@ impl PlatformWindow for WaylandWindow {
         ))
     }
 
-    fn sync_native_surface(&self, surface: &crate::NativeSurfaceHandle, bounds: Bounds<Pixels>) {
+    fn sync_native_surface(
+        &self,
+        surface: &crate::NativeSurfaceHandle,
+        bounds: Bounds<Pixels>,
+        _corner_radii: crate::Corners<Pixels>,
+    ) {
         let state = self.borrow();
         let bounds = bounds.to_device_pixels(state.scale);
         if let Some(native_surface) = state.native_surfaces.get(&surface.identity()) {

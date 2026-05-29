@@ -1521,7 +1521,12 @@ impl PlatformWindow for X11Window {
         ))
     }
 
-    fn sync_native_surface(&self, surface: &NativeSurfaceHandle, bounds: Bounds<Pixels>) {
+    fn sync_native_surface(
+        &self,
+        surface: &NativeSurfaceHandle,
+        bounds: Bounds<Pixels>,
+        _corner_radii: crate::Corners<Pixels>,
+    ) {
         let state = self.0.state.borrow();
         let bounds = bounds.to_device_pixels(state.scale_factor);
         drop(state);

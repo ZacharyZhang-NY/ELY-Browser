@@ -871,7 +871,12 @@ impl PlatformWindow for WindowsWindow {
         Some(NativeSurfaceHandle::from_win32_hwnd(hwnd.0 as isize))
     }
 
-    fn sync_native_surface(&self, surface: &NativeSurfaceHandle, bounds: Bounds<Pixels>) {
+    fn sync_native_surface(
+        &self,
+        surface: &NativeSurfaceHandle,
+        bounds: Bounds<Pixels>,
+        _corner_radii: crate::Corners<Pixels>,
+    ) {
         let bounds = bounds.to_device_pixels(self.scale_factor());
         let hwnd = HWND(surface.win32_hwnd() as _);
         unsafe {
