@@ -19,6 +19,8 @@ use servo::{
 
 #[path = "runtime_context.rs"]
 mod runtime_context;
+#[path = "runtime_paint.rs"]
+mod runtime_paint;
 
 use runtime_context::hidpi_scale_from_factor;
 pub use runtime_context::{RenderingContextKind, ServoSurfaceSize};
@@ -109,19 +111,6 @@ impl SoftwareServoHost {
         self.create_webview_in_context(tab_id, profile_id, handles)
     }
 
-    /// Paint and present the current surface without RGBA readback.
-    pub fn paint_without_readback(&mut self, webview_id: &WebViewId) -> Result<(), ServoHostError> {
-        self.paint_without_readback_with_completion(webview_id, true)
-    }
-
-    pub fn paint_without_readback_with_completion(
-        &mut self,
-        webview_id: &WebViewId,
-        wait_for_completion: bool,
-    ) -> Result<(), ServoHostError> {
-        self.paint_webview(webview_id, false, wait_for_completion).map(|_| ())
-    }
-
     pub fn close_webview(&mut self, webview_id: &WebViewId) -> bool {
         let Some(webview) = self.webviews.remove(webview_id) else {
             return false;
@@ -171,48 +160,6 @@ impl SoftwareServoHost {
             wake_requested,
             last_rendered_frame: None,
         })
-    }
-
-    fn paint_webview(
-        &mut self,
-        webview_id: &WebViewId,
-        capture_frame: bool,
-        wait_for_completion: bool,
-    ) -> Result<Option<RenderedFrame>, ServoHostError> {
-        let rendering_context = self.webview(webview_id)?.rendering_context.clone();
-        rendering_context.make_current().map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
-        rendering_context.prepare_for_rendering();
-        // Clear the pending-frame flag before `paint()` so barrier callers observe
-        // the next Servo frame-ready notification for this paint.
-        {
-            let webview = self.webview(webview_id)?;
-            webview.delegate.mark_frame_presented();
-            webview.webview.paint();
-        }
-        if wait_for_completion {
-            self.wait_for_paint_completion(webview_id);
-        }
-        let rendered_frame = if capture_frame {
-            Some(Self::read_rendered_frame(rendering_context.as_ref())?)
-        } else {
-            None
-        };
-        rendering_context.present();
-        self.webview(webview_id)?.delegate.mark_frame_presented();
-        Ok(rendered_frame)
-    }
-
-    pub fn paint_with_readback(
-        &mut self,
-        webview_id: &WebViewId,
-        wait_for_completion: bool,
-    ) -> Result<(), ServoHostError> {
-        let Some(rendered_frame) = self.paint_webview(webview_id, true, wait_for_completion)?
-        else {
-            return Err(ServoHostError::RenderedFrameUnavailable);
-        };
-        self.last_rendered_frame = Some(rendered_frame);
-        Ok(())
     }
 
     /// Returns the current snapshot and acknowledges metadata-only
