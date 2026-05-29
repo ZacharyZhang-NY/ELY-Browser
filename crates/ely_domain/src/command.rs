@@ -78,19 +78,21 @@ mod tests {
     use super::CommandIntent;
 
     #[test]
-    fn plain_text_parses_as_search() {
+    fn plain_text_parses_as_search() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(
-            CommandIntent::parse("servo browser").unwrap(),
+            CommandIntent::parse("servo browser")?,
             CommandIntent::Search("servo browser".to_string())
         );
+        Ok(())
     }
 
     #[test]
-    fn domain_like_text_parses_as_navigation() {
-        let intent = CommandIntent::parse("example.com").unwrap();
+    fn domain_like_text_parses_as_navigation() -> Result<(), Box<dyn std::error::Error>> {
+        let intent = CommandIntent::parse("example.com")?;
         let CommandIntent::Navigate(url) = intent else {
-            panic!("expected navigation intent");
+            return Err("expected navigation intent".into());
         };
         assert_eq!(url.as_str(), "https://example.com");
+        Ok(())
     }
 }
