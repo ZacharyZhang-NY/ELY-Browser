@@ -188,16 +188,20 @@ fn install_rustls_provider() {
 }
 
 fn ely_servo_preferences() -> Preferences {
-    // `Preferences::default()` is Servo's conservative *library* default and ships
-    // CSS Grid off. `Servo::new` forwards prefs to Stylo via `prefs::set`, and with
-    // `layout.grid.enabled` off Stylo blockifies `display: grid`, collapsing every
-    // grid container to `display: block` — modern grid layouts stack into one column
-    // (the "broken" rendering on grid-based sites). The layout path is implemented
-    // (servo-layout drives `DisplayInside::Grid` through Taffy), so an embedder
-    // building a browser must enable it, exactly as Servo's own servoshell does.
+    // `Preferences::default()` is Servo's conservative *library* default: it ships
+    // modern-layout features off even though servo-layout/Stylo implement them and
+    // Servo's own servoshell browser enables them. `Servo::new` forwards these to
+    // Stylo via `prefs::set`, so an embedder building a browser must turn them on or
+    // pages render wrong:
+    //   - `layout.grid.enabled` off => Stylo blockifies `display: grid`, collapsing
+    //     grid layouts into one stacked column (the "broken" modern-site render).
+    //   - `layout.variable_fonts.enabled` off => `font-variation-settings` and
+    //     variable weight/width axes are ignored, so a variable font only ever
+    //     renders its default instance (every requested weight looks identical).
     Preferences {
         dom_intersection_observer_enabled: true,
         layout_grid_enabled: true,
+        layout_variable_fonts_enabled: true,
         ..Preferences::default()
     }
 }
