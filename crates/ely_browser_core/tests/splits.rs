@@ -263,4 +263,3 @@ fn detach_split_pane_refreshes_saved_split_title() -> Result<(), Box<dyn Error>>
     assert_eq!(layout.pane_count(), 2);
     Ok(())
 }
-
