@@ -12,7 +12,7 @@ pub(crate) const PRD_REFERENCE_SITE_CASES: &[LiveSiteCase] = &[
         title_fragment: "Chrome",
     },
     LiveSiteCase {
-        url: "https://www.microsoft.com/en-us/edge/features/vertical-tabs",
+        url: "https://explore.microsoft.com/en-us/edge/features/vertical-tabs?form=MT0160",
         title_fragment: "Microsoft Edge",
     },
     LiveSiteCase {
@@ -28,7 +28,7 @@ pub(crate) const PRD_REFERENCE_SITE_CASES: &[LiveSiteCase] = &[
         url: "https://help.vivaldi.com/desktop/tabs/tab-tiling/",
         title_fragment: "Tab Tiling",
     },
-    LiveSiteCase { url: "https://www.gpui.rs/", title_fragment: "gpui" },
+    LiveSiteCase { url: "https://gpui.rs/", title_fragment: "gpui" },
     LiveSiteCase { url: "https://docs.rs/gpui", title_fragment: "gpui" },
     LiveSiteCase { url: "https://zed.dev/blog/videogame", title_fragment: "Leveraging Rust" },
     LiveSiteCase {

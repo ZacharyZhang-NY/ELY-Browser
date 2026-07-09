@@ -75,11 +75,13 @@ fn site_permission_feature_for_servo(
         servo::PermissionFeature::PersistentStorage => {
             Some(SitePermissionFeature::StoragePersistence)
         }
-        servo::PermissionFeature::Push
+        servo::PermissionFeature::ScreenWakeLock(_)
+        | servo::PermissionFeature::Push
         | servo::PermissionFeature::Midi
         | servo::PermissionFeature::Speaker
         | servo::PermissionFeature::DeviceInfo
         | servo::PermissionFeature::BackgroundSync
+        | servo::PermissionFeature::Gamepad
         | servo::PermissionFeature::Bluetooth => None,
     }
 }
@@ -90,7 +92,20 @@ mod tests {
 
     use crate::{PermissionDecision, PermissionRequest};
 
-    use super::{PermissionStore, set_permission_decision, take_permission_decision};
+    use super::{
+        PermissionStore, set_permission_decision, site_permission_feature_for_servo,
+        take_permission_decision,
+    };
+
+    #[test]
+    fn keeps_disabled_servo_permissions_out_of_site_settings() {
+        for feature in [
+            servo::PermissionFeature::ScreenWakeLock(servo::WakeLockType::Screen),
+            servo::PermissionFeature::Gamepad,
+        ] {
+            assert_eq!(site_permission_feature_for_servo(feature), None);
+        }
+    }
 
     #[test]
     fn allow_once_is_consumed_after_one_matching_origin_request()

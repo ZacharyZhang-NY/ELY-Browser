@@ -2,8 +2,9 @@
 # T16 — real-window screencapture sanity check.
 #
 # Boots ./target/release/ely_app in the background, opens a live page through
-# Servo's native surface path, grabs a screencapture, then asserts the PNG is
-# non-trivial (size + dimensions + non-white center). Stderr from the app is
+# Servo's native surface path, captures the ELY window by its Core Graphics
+# window ID, then asserts the PNG is non-trivial (size + dimensions + non-white
+# center). Stderr from the app is
 # tee'd to a log so a crash leaves evidence behind.
 #
 # Idempotent: kills any leftover ely_app processes from prior runs before
@@ -52,8 +53,8 @@ pkill -f "target/release/ely_app" 2>/dev/null || true
 pkill -x "ely_app" 2>/dev/null || true
 sleep 0.5
 
-echo "[2/6] cargo build --release -p ely_app"
-if ! cargo build --release -p ely_app; then
+echo "[2/6] cargo build --release --locked -p ely_app"
+if ! cargo build --release --locked -p ely_app; then
     fail "cargo build failed"
 fi
 [[ -x "${APP_BIN}" ]] || fail "binary missing: ${APP_BIN}"
@@ -82,10 +83,52 @@ then
     fail "could not activate ely_app process ${APP_PID}"
 fi
 sleep 1
-# -x silences the shutter sound. Full screen is safer than -l <windowid> here
-# because we don't have a stable Cocoa window id; the app paints into the
-# primary display and that's what we care about.
-if ! screencapture -x "${SHOT_PATH}"; then
+FRONTMOST=$(osascript -e \
+    "tell application \"System Events\" to get frontmost of first process whose unix id is ${APP_PID}")
+[[ "${FRONTMOST}" == "true" ]] || fail "ely_app process ${APP_PID} is not frontmost"
+
+WINDOW_ID=$(/usr/bin/swift -e '
+import CoreGraphics
+import Darwin
+import Foundation
+
+guard CommandLine.arguments.count == 2, let targetPID = Int32(CommandLine.arguments[1]) else {
+    exit(64)
+}
+let windows = CGWindowListCopyWindowInfo(
+    [.optionOnScreenOnly, .excludeDesktopElements],
+    kCGNullWindowID
+) as? [[String: Any]] ?? []
+
+let candidates = windows.compactMap { window -> (number: UInt32, area: Double)? in
+    guard
+        let owner = window[kCGWindowOwnerPID as String] as? NSNumber,
+        owner.int32Value == targetPID,
+        let layer = window[kCGWindowLayer as String] as? NSNumber,
+        layer.intValue == 0,
+        let number = window[kCGWindowNumber as String] as? NSNumber,
+        let bounds = window[kCGWindowBounds as String] as? [String: Any],
+        let width = bounds["Width"] as? NSNumber,
+        let height = bounds["Height"] as? NSNumber,
+        width.doubleValue > 100,
+        height.doubleValue > 100
+    else {
+        return nil
+    }
+
+    return (number.uint32Value, width.doubleValue * height.doubleValue)
+}
+
+guard let window = candidates.max(by: { $0.area < $1.area }) else {
+    exit(1)
+}
+print(window.number)
+' "${APP_PID}")
+[[ "${WINDOW_ID}" =~ ^[0-9]+$ ]] || fail "could not resolve ELY window for pid ${APP_PID}"
+echo "      window_id=${WINDOW_ID}"
+
+# -x silences the shutter sound; -l limits capture to the verified ELY window.
+if ! screencapture -x -l "${WINDOW_ID}" "${SHOT_PATH}"; then
     fail "screencapture invocation failed"
 fi
 [[ -f "${SHOT_PATH}" ]] || fail "screencapture produced no file"
@@ -131,7 +174,7 @@ path = sys.argv[1]
 with open(path, "rb") as f:
     data = f.read()
 if data[:8] != b"\x89PNG\r\n\x1a\n":
-    print("SKIP not-png"); sys.exit(0)
+    print("ERROR not-png"); sys.exit(3)
 
 i = 8
 width = height = bit_depth = color_type = None
@@ -149,8 +192,8 @@ while i < len(data):
         break
 
 if bit_depth != 8 or color_type not in (2, 6):
-    print(f"SKIP unsupported bit_depth={bit_depth} color_type={color_type}")
-    sys.exit(0)
+    print(f"ERROR unsupported bit_depth={bit_depth} color_type={color_type}")
+    sys.exit(3)
 
 channels = 3 if color_type == 2 else 4
 stride = width * channels
@@ -184,7 +227,7 @@ for y in range(height):
             pr = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
             row[x] = (row[x] + pr) & 0xFF
     else:
-        print(f"SKIP filter={f}"); sys.exit(0)
+        print(f"ERROR filter={f}"); sys.exit(3)
     out[y*stride:(y+1)*stride] = row
     prev = row
 
@@ -206,6 +249,9 @@ echo "      center: ${PY_OUT}"
 rm -f "${CENTER_PATCH}"
 if (( PY_RC == 2 )); then
     fail "center ${PATCH_PX}x${PATCH_PX} patch is ~white — likely empty desktop or failed paint"
+fi
+if (( PY_RC != 0 )); then
+    fail "screenshot decoder rejected the center patch (exit ${PY_RC})"
 fi
 
 echo

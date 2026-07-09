@@ -1788,12 +1788,12 @@ KV namespace: ELY_KV
 ## 24. Reference
 
 [R1] Google Chrome — Get more done with new vertical tabs and immersive reading mode in Chrome — https://blog.google/products-and-platforms/products/chrome/new-chrome-productivity-features/  
-[R2] Microsoft Edge — Vertical Tabs — https://www.microsoft.com/en-us/edge/features/vertical-tabs  
+[R2] Microsoft Edge — Vertical Tabs — https://explore.microsoft.com/en-us/edge/features/vertical-tabs?form=MT0160 <br>
 [R3] Arc Help Center — Favorites: Top Tabs Across Every Space — https://resources.arc.net/hc/en-us/articles/19230755904151-Favorites-Top-Tabs-Across-Every-Space  
 [R4] Arc Help Center — Auto Archive: Clean as you go — https://resources.arc.net/hc/en-us/articles/19228855311127-Auto-Archive-Clean-as-you-go  
 [R5] Vivaldi — Workspaces — https://vivaldi.com/features/workspaces/  
 [R6] Vivaldi Help — Tab Tiling — https://help.vivaldi.com/desktop/tabs/tab-tiling/  
-[R7] GPUI official — https://www.gpui.rs/  
+[R7] GPUI official — https://gpui.rs/ <br>
 [R8] docs.rs — GPUI — https://docs.rs/gpui  
 [R9] Zed Blog — Leveraging Rust and the GPU to render user interfaces at 120 FPS — https://zed.dev/blog/videogame  
 [R10] gpui-component — https://github.com/longbridge/gpui-component  

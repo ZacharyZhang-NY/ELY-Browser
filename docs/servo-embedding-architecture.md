@@ -47,6 +47,10 @@ Current platform child surfaces:
 
 ## Upstream Servo Route
 
+ELY pins Servo upstream commit `bc469fd5c17137373458508f88c3907cd1fcb69a` (workspace version
+`0.4.0`) in `Cargo.toml` and `Cargo.lock`. That revision includes the July 2026 security fixes that
+landed after the `v0.3.0` regular release. Servo's LTS line uses a separate six-month cadence.
+
 Servo's own shell route is the model for the final ELY rendering path:
 
 ```text
@@ -58,7 +62,7 @@ Window event
   -> RenderingContext::present
 ```
 
-Relevant upstream evidence from Servo `7c48af7`:
+Relevant upstream evidence from Servo `bc469fd5c17137373458508f88c3907cd1fcb69a`:
 
 - `ports/servoshell/window.rs` creates `WebViewBuilder::new(state.servo(), platform_window.rendering_context())`.
 - `ports/servoshell/window.rs` repaints with `webview.paint()` and `rendering_context().present()`.
