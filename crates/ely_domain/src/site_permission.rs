@@ -124,6 +124,25 @@ impl SitePermissionFeature {
         ]
     }
 
+    /// The features ELY actually enforces: each is driven by a
+    /// `servo::PermissionFeature` the host maps in
+    /// `ely_servo_host::runtime_permissions`. The other `all()` variants
+    /// are kept for stored and synced records but are not offered as
+    /// controllable toggles, because nothing consults them yet — showing
+    /// them would be a placebo. A drift guard
+    /// (`enforced_features_match_the_servo_mapping`) keeps this in step
+    /// with the engine.
+    #[must_use]
+    pub fn enforced() -> &'static [Self] {
+        &[
+            Self::Camera,
+            Self::Microphone,
+            Self::Location,
+            Self::Notifications,
+            Self::StoragePersistence,
+        ]
+    }
+
     #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {

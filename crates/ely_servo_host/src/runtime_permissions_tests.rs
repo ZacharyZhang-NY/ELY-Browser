@@ -18,6 +18,37 @@ fn keeps_disabled_servo_permissions_out_of_site_settings() {
     }
 }
 
+/// The site-settings toggles come from `SitePermissionFeature::enforced()`.
+/// This pins that list to what the Servo permission mapping actually
+/// honors, so the UI can never drift back into offering placebo toggles.
+/// (The mapping match is exhaustive over `servo::PermissionFeature`, so a
+/// new upstream variant already fails to compile until it is mapped.)
+#[test]
+fn enforced_features_match_the_servo_mapping() {
+    let mapped: Vec<SitePermissionFeature> = [
+        servo::PermissionFeature::Camera,
+        servo::PermissionFeature::Microphone,
+        servo::PermissionFeature::Geolocation,
+        servo::PermissionFeature::Notifications,
+        servo::PermissionFeature::PersistentStorage,
+    ]
+    .into_iter()
+    .filter_map(site_permission_feature_for_servo)
+    .collect();
+
+    assert_eq!(mapped.as_slice(), SitePermissionFeature::enforced());
+    for feature in SitePermissionFeature::enforced() {
+        assert!(SitePermissionFeature::all().contains(feature));
+    }
+    for placebo in [
+        SitePermissionFeature::ClipboardRead,
+        SitePermissionFeature::WebUsb,
+        SitePermissionFeature::Popups,
+    ] {
+        assert!(!SitePermissionFeature::enforced().contains(&placebo));
+    }
+}
+
 #[test]
 fn allow_once_is_consumed_after_one_matching_request() -> Result<(), Box<dyn std::error::Error>> {
     let permissions = PermissionStore::default();

@@ -84,9 +84,9 @@ fn render_site_permission_rows(
             div().text_xs().font_semibold().text_color(rgb(colors::muted())).child("Permissions"),
         )
         .child(div().flex_1().min_h_0().flex().flex_col().overflow_y_scrollbar().children(
-            SitePermissionFeature::all().iter().copied().enumerate().map(|(index, feature)| {
-                render_site_permission_row(snapshot, origin, index, feature, cx)
-            }),
+            SitePermissionFeature::enforced().iter().copied().enumerate().map(
+                |(index, feature)| render_site_permission_row(snapshot, origin, index, feature, cx),
+            ),
         ))
         .into_any_element()
 }
