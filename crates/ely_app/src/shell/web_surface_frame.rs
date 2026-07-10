@@ -3,18 +3,29 @@ use std::hash::Hasher;
 use std::sync::Arc;
 
 use ahash::AHasher;
+#[cfg(target_os = "macos")]
+use core_video::pixel_buffer::{CVPixelBuffer, kCVPixelFormatType_32BGRA};
 use gpui::RenderImage;
 use image::{ImageBuffer, Rgba};
 use thiserror::Error;
 
+#[cfg(target_os = "macos")]
+use crate::services::iosurface_metal::HardwareSurfaceBacking;
 use crate::services::servo_live::ServoLiveFrame;
 
 thread_local! {
     /// Single-slot cache for byte-identical software frames.
     /// AHash keeps the 1080p hash pass below the frame budget while
     /// avoiding repeated GPUI texture allocation for idle pages.
-    static LAST_FRAME_IMAGE: RefCell<Option<(u64, Arc<RenderImage>)>> =
+    static LAST_FRAME_IMAGE: RefCell<Option<CachedRenderImage>> =
         const { RefCell::new(None) };
+}
+
+struct CachedRenderImage {
+    width: u32,
+    height: u32,
+    bytes_hash: u64,
+    image: Arc<RenderImage>,
 }
 
 #[cfg(all(test, feature = "live-site-smoke"))]
@@ -37,6 +48,7 @@ pub(super) struct WebSurfaceFrame {
     zoom_percent: u16,
     click_point: Option<WebSurfaceClickPoint>,
     typed_text: Option<String>,
+    pixels_changed: bool,
     #[cfg(all(test, feature = "live-site-smoke"))]
     non_white_pixel_count: u64,
     #[cfg(all(test, feature = "live-site-smoke"))]
@@ -44,6 +56,10 @@ pub(super) struct WebSurfaceFrame {
     #[cfg(all(test, feature = "live-site-smoke"))]
     sample_hash: u64,
     pub(super) image: Option<Arc<RenderImage>>,
+    #[cfg(target_os = "macos")]
+    pub(super) hardware_surface: Option<Arc<HardwareSurfaceBacking>>,
+    #[cfg(target_os = "macos")]
+    hardware_surface_id: Option<u64>,
 }
 
 impl WebSurfaceFrame {
@@ -53,6 +69,10 @@ impl WebSurfaceFrame {
         zoom_percent: u16,
         frame: ServoLiveFrame,
     ) -> Result<Self, WebSurfaceError> {
+        #[cfg(target_os = "macos")]
+        let hardware_surface = frame.hardware_surface().cloned();
+        #[cfg(target_os = "macos")]
+        let hardware_surface_id = frame.hardware_surface_id();
         Self::from_parts(WebSurfaceFrameParts {
             requested_url,
             loaded_url: frame.loaded_url().map(str::to_string),
@@ -67,6 +87,7 @@ impl WebSurfaceFrame {
             zoom_percent,
             click_point: None,
             typed_text: None,
+            pixels_changed: frame.pixels_changed(),
             #[cfg(all(test, feature = "live-site-smoke"))]
             non_white_pixel_count: frame.non_white_pixel_count(),
             #[cfg(all(test, feature = "live-site-smoke"))]
@@ -74,10 +95,26 @@ impl WebSurfaceFrame {
             #[cfg(all(test, feature = "live-site-smoke"))]
             sample_hash: frame.sample_hash(),
             rgba_bytes: frame.into_rgba_bytes(),
+            #[cfg(target_os = "macos")]
+            hardware_surface,
+            #[cfg(target_os = "macos")]
+            hardware_surface_id,
         })
     }
 
     fn from_parts(parts: WebSurfaceFrameParts) -> Result<Self, WebSurfaceError> {
+        #[cfg(target_os = "macos")]
+        if let Some(surface) = parts.hardware_surface.as_ref() {
+            validate_hardware_pixel_buffer(surface.pixel_buffer(), parts.width, parts.height)?;
+        }
+        #[cfg(target_os = "macos")]
+        let has_hardware_surface = parts.hardware_surface.is_some();
+        #[cfg(not(target_os = "macos"))]
+        let has_hardware_surface = false;
+        if parts.rgba_bytes.is_none() && !has_hardware_surface {
+            return Err(WebSurfaceError::MissingRenderablePayload);
+        }
+
         #[cfg(all(test, feature = "live-site-smoke"))]
         let pixel_sample = pixel_sample_for_parts(&parts)?;
 
@@ -108,6 +145,7 @@ impl WebSurfaceFrame {
             zoom_percent: parts.zoom_percent,
             click_point: parts.click_point,
             typed_text: parts.typed_text,
+            pixels_changed: parts.pixels_changed,
             #[cfg(all(test, feature = "live-site-smoke"))]
             non_white_pixel_count: pixel_sample.non_white_pixel_count,
             #[cfg(all(test, feature = "live-site-smoke"))]
@@ -115,6 +153,10 @@ impl WebSurfaceFrame {
             #[cfg(all(test, feature = "live-site-smoke"))]
             sample_hash: pixel_sample.sample_hash,
             image,
+            #[cfg(target_os = "macos")]
+            hardware_surface: parts.hardware_surface,
+            #[cfg(target_os = "macos")]
+            hardware_surface_id: parts.hardware_surface_id,
         })
     }
 
@@ -158,7 +200,6 @@ impl WebSurfaceFrame {
         (self.css_viewport_width, self.css_viewport_height)
     }
 
-    #[cfg(all(test, feature = "live-site-smoke"))]
     pub(super) fn render_state(&self) -> &str {
         self.render_state.as_str()
     }
@@ -180,15 +221,26 @@ impl WebSurfaceFrame {
         self.title.as_deref()
     }
 
-    pub(super) fn has_same_software_render_as(&self, other: &Self) -> bool {
+    pub(super) fn has_same_render_as(&self, other: &Self) -> bool {
+        #[cfg(target_os = "macos")]
+        if self.hardware_surface.is_some() || other.hardware_surface.is_some() {
+            return self.hardware_surface.is_some()
+                && other.hardware_surface.is_some()
+                && self.hardware_surface_id == other.hardware_surface_id
+                && !other.pixels_changed
+                && self.metadata_matches(other);
+        }
         let image_matches = match (self.image.as_ref(), other.image.as_ref()) {
             (Some(image), Some(other_image)) => Arc::ptr_eq(image, other_image),
             (None, None) => true,
             _ => false,
         };
 
-        image_matches
-            && self.requested_url == other.requested_url
+        image_matches && self.metadata_matches(other)
+    }
+
+    fn metadata_matches(&self, other: &Self) -> bool {
+        self.requested_url == other.requested_url
             && self.loaded_url == other.loaded_url
             && self.title == other.title
             && self.render_state == other.render_state
@@ -201,17 +253,6 @@ impl WebSurfaceFrame {
             && self.zoom_percent == other.zoom_percent
             && self.click_point == other.click_point
             && self.typed_text == other.typed_text
-    }
-
-    pub(super) fn has_visible_content_for_initial_display(&self) -> Result<bool, WebSurfaceError> {
-        #[cfg(all(test, feature = "live-site-smoke"))]
-        {
-            Ok(self.non_white_pixel_count > 0 && self.content_pixel_count > 0)
-        }
-        #[cfg(not(all(test, feature = "live-site-smoke")))]
-        {
-            Ok(true)
-        }
     }
 
     #[cfg(all(test, feature = "live-site-smoke"))]
@@ -229,9 +270,21 @@ impl WebSurfaceFrame {
         self.sample_hash
     }
 
-    #[cfg(all(test, feature = "live-site-smoke"))]
+    #[cfg(test)]
     pub(super) fn has_hardware_surface(&self) -> bool {
-        false
+        #[cfg(target_os = "macos")]
+        {
+            self.hardware_surface.is_some()
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            false
+        }
+    }
+
+    #[cfg(all(test, feature = "live-site-smoke", target_os = "macos"))]
+    pub(super) fn hardware_surface_id_for_test(&self) -> Option<u64> {
+        self.hardware_surface_id
     }
 }
 
@@ -249,6 +302,7 @@ struct WebSurfaceFrameParts {
     zoom_percent: u16,
     click_point: Option<WebSurfaceClickPoint>,
     typed_text: Option<String>,
+    pixels_changed: bool,
     #[cfg(all(test, feature = "live-site-smoke"))]
     non_white_pixel_count: u64,
     #[cfg(all(test, feature = "live-site-smoke"))]
@@ -256,6 +310,10 @@ struct WebSurfaceFrameParts {
     #[cfg(all(test, feature = "live-site-smoke"))]
     sample_hash: u64,
     rgba_bytes: Option<Vec<u8>>,
+    #[cfg(target_os = "macos")]
+    hardware_surface: Option<Arc<HardwareSurfaceBacking>>,
+    #[cfg(target_os = "macos")]
+    hardware_surface_id: Option<u64>,
 }
 
 #[derive(Debug, Error)]
@@ -264,6 +322,42 @@ pub(super) enum WebSurfaceError {
     InvalidFrameBuffer { width: u32, height: u32 },
     #[error("servo live frame did not include renderable pixels")]
     MissingRenderablePayload,
+    #[cfg(target_os = "macos")]
+    #[error(
+        "servo hardware surface size {actual_width}x{actual_height} did not match frame report {expected_width}x{expected_height}"
+    )]
+    HardwareSurfaceSizeMismatch {
+        expected_width: u32,
+        expected_height: u32,
+        actual_width: usize,
+        actual_height: usize,
+    },
+    #[cfg(target_os = "macos")]
+    #[error("servo hardware surface pixel format 0x{actual:x} is unsupported; expected 32BGRA")]
+    UnsupportedHardwareSurfaceFormat { actual: u32 },
+}
+
+#[cfg(target_os = "macos")]
+fn validate_hardware_pixel_buffer(
+    pixel_buffer: &CVPixelBuffer,
+    expected_width: u32,
+    expected_height: u32,
+) -> Result<(), WebSurfaceError> {
+    let actual_width = pixel_buffer.get_width();
+    let actual_height = pixel_buffer.get_height();
+    if actual_width != expected_width as usize || actual_height != expected_height as usize {
+        return Err(WebSurfaceError::HardwareSurfaceSizeMismatch {
+            expected_width,
+            expected_height,
+            actual_width,
+            actual_height,
+        });
+    }
+    let actual_format = pixel_buffer.get_pixel_format();
+    if actual_format != kCVPixelFormatType_32BGRA {
+        return Err(WebSurfaceError::UnsupportedHardwareSurfaceFormat { actual: actual_format });
+    }
+    Ok(())
 }
 
 /// Swap byte 0 and byte 2 of every 4-byte pixel, converting Servo's
@@ -307,16 +401,27 @@ fn resolve_render_image(
 ) -> Result<Arc<RenderImage>, WebSurfaceError> {
     LAST_FRAME_IMAGE.with(|cache| -> Result<Arc<RenderImage>, WebSurfaceError> {
         let mut cache = cache.borrow_mut();
-        if let Some((cached_hash, cached_image)) = cache.as_ref()
-            && *cached_hash == bytes_hash
+        if let Some(cached) = cache.as_ref()
+            && cached.width == width
+            && cached.height == height
+            && cached.bytes_hash == bytes_hash
+            && cached.image.as_bytes(0) == Some(rgba_bytes.as_slice())
         {
-            return Ok(cached_image.clone());
+            return Ok(cached.image.clone());
         }
 
         let image_buffer = ImageBuffer::<Rgba<u8>, _>::from_raw(width, height, rgba_bytes)
             .ok_or(WebSurfaceError::InvalidFrameBuffer { width, height })?;
         let new_image = Arc::new(RenderImage::new([image::Frame::new(image_buffer)]));
-        *cache = Some((bytes_hash, new_image.clone()));
+        *cache = Some(CachedRenderImage { width, height, bytes_hash, image: new_image.clone() });
         Ok(new_image)
     })
 }
+
+#[cfg(test)]
+#[path = "web_surface_frame_cache_tests.rs"]
+mod cache_tests;
+
+#[cfg(all(test, target_os = "macos"))]
+#[path = "web_surface_frame_hardware_tests.rs"]
+mod hardware_tests;

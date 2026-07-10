@@ -5,6 +5,33 @@ use crate::{
 #[cfg(target_os = "macos")]
 use core_video::pixel_buffer::CVPixelBuffer;
 use refineable::Refineable;
+use std::{fmt, sync::Arc};
+
+/// An owner retained until the GPU finishes reading a surface frame.
+///
+/// Attach a lease with [`Surface::lease`] when the surface's producer may
+/// recycle its backing storage independently of the CoreVideo pixel buffer.
+#[derive(Clone)]
+pub struct SurfaceLease(Arc<dyn Send + Sync>);
+
+impl SurfaceLease {
+    /// Create a lease from a thread-safe shared owner.
+    pub fn from_arc<T>(owner: Arc<T>) -> Self
+    where
+        T: Send + Sync + 'static,
+    {
+        Self(owner)
+    }
+}
+
+impl fmt::Debug for SurfaceLease {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SurfaceLease")
+            .field("strong_count", &Arc::strong_count(&self.0))
+            .finish()
+    }
+}
 
 /// A source of a surface's content.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -24,6 +51,7 @@ impl From<CVPixelBuffer> for SurfaceSource {
 /// A surface element.
 pub struct Surface {
     source: SurfaceSource,
+    lease: Option<SurfaceLease>,
     object_fit: ObjectFit,
     corner_radii: Option<Corners<Pixels>>,
     style: StyleRefinement,
@@ -33,6 +61,7 @@ pub struct Surface {
 pub fn surface(source: impl Into<SurfaceSource>) -> Surface {
     Surface {
         source: source.into(),
+        lease: None,
         object_fit: ObjectFit::Contain,
         corner_radii: None,
         style: Default::default(),
@@ -40,6 +69,12 @@ pub fn surface(source: impl Into<SurfaceSource>) -> Surface {
 }
 
 impl Surface {
+    /// Retain an owner until the GPU completes this surface frame.
+    pub fn lease(mut self, lease: SurfaceLease) -> Self {
+        self.lease = Some(lease);
+        self
+    }
+
     /// Set the object fit for the image.
     pub fn object_fit(mut self, object_fit: ObjectFit) -> Self {
         self.object_fit = object_fit;
@@ -110,7 +145,12 @@ impl Element for Surface {
                     .corner_radii
                     .unwrap_or_else(|| style.corner_radii.to_pixels(window.rem_size()))
                     .clamp_radii_for_quad_size(new_bounds.size);
-                window.paint_surface(new_bounds, corner_radii, surface.clone());
+                window.paint_surface_with_lease(
+                    new_bounds,
+                    corner_radii,
+                    surface.clone(),
+                    self.lease.clone(),
+                );
             }
             #[allow(unreachable_patterns)]
             _ => {}
@@ -129,5 +169,36 @@ impl IntoElement for Surface {
 impl Styled for Surface {
     fn style(&mut self) -> &mut StyleRefinement {
         &mut self.style
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use super::SurfaceLease;
+
+    struct DropProbe(Arc<AtomicUsize>);
+
+    impl Drop for DropProbe {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn surface_lease_retains_its_owner() {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let owner = Arc::new(DropProbe(drops.clone()));
+        let lease = SurfaceLease::from_arc(owner.clone());
+
+        drop(owner);
+        assert_eq!(drops.load(Ordering::SeqCst), 0);
+
+        drop(lease);
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
     }
 }

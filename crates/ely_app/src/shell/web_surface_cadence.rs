@@ -41,7 +41,10 @@ impl WebSurfacePollCadence {
         }
     }
 
-    pub(super) fn note_frame(&mut self, render_state: &str, now: Instant) {
+    pub(super) fn note_frame(&mut self, render_state: &str, pixels_changed: bool, now: Instant) {
+        if pixels_changed {
+            extend_deadline(&mut self.settle_active_until, now + FRAME_SETTLE_WINDOW);
+        }
         let phase = WebSurfaceRenderPhase::from_render_state(render_state);
         match phase {
             WebSurfaceRenderPhase::Created | WebSurfaceRenderPhase::Loading
@@ -173,7 +176,7 @@ mod tests {
         let start = Instant::now();
         let mut cadence = WebSurfacePollCadence::default();
 
-        cadence.note_frame("loading", start);
+        cadence.note_frame("loading", true, start);
         cadence.note_poll_submitted(start);
 
         assert!(cadence.next_poll_delay(start) <= FRAME_BUDGET_120HZ);
@@ -209,7 +212,7 @@ mod tests {
         let start = Instant::now();
         let mut cadence = WebSurfacePollCadence::default();
 
-        cadence.note_frame("complete", start);
+        cadence.note_frame("complete", true, start);
         cadence.note_poll_submitted(start + Duration::from_millis(300));
 
         assert!(!cadence.should_poll(start + Duration::from_millis(379)));
@@ -222,7 +225,7 @@ mod tests {
         let mut cadence = WebSurfacePollCadence::default();
 
         cadence.note_ensure(WebSurfaceInputKind::Idle, true, start);
-        cadence.note_frame("complete", start + Duration::from_secs(1));
+        cadence.note_frame("complete", true, start + Duration::from_secs(1));
         cadence.note_poll_submitted(start + Duration::from_millis(1_300));
 
         assert_eq!(
@@ -237,7 +240,7 @@ mod tests {
         let mut cadence = WebSurfacePollCadence::default();
 
         cadence.note_ensure(WebSurfaceInputKind::Idle, true, start);
-        cadence.note_frame("loading", start + Duration::from_secs(1));
+        cadence.note_frame("loading", true, start + Duration::from_secs(1));
         cadence.note_poll_submitted(start + Duration::from_millis(1_300));
 
         assert_eq!(
@@ -252,7 +255,7 @@ mod tests {
         let mut cadence = WebSurfacePollCadence::default();
 
         cadence.note_ensure(WebSurfaceInputKind::Scroll, false, start);
-        cadence.note_frame("complete", start + Duration::from_millis(100));
+        cadence.note_frame("complete", true, start + Duration::from_millis(100));
         cadence.note_poll_submitted(start + Duration::from_millis(500));
 
         assert_eq!(
@@ -267,7 +270,7 @@ mod tests {
         let mut cadence = WebSurfacePollCadence::default();
 
         cadence.note_ensure(WebSurfaceInputKind::Scroll, false, start);
-        cadence.note_frame("loading", start + Duration::from_millis(100));
+        cadence.note_frame("loading", true, start + Duration::from_millis(100));
         cadence.note_poll_submitted(start + Duration::from_millis(500));
 
         assert_eq!(
@@ -281,8 +284,8 @@ mod tests {
         let start = Instant::now();
         let mut cadence = WebSurfacePollCadence::default();
 
-        cadence.note_frame("complete", start);
-        cadence.note_frame("complete", start + Duration::from_millis(200));
+        cadence.note_frame("complete", false, start);
+        cadence.note_frame("complete", false, start + Duration::from_millis(200));
         cadence.note_poll_submitted(start + Duration::from_millis(260));
 
         assert!(!cadence.should_poll(start + Duration::from_millis(339)));
@@ -294,8 +297,8 @@ mod tests {
         let start = Instant::now();
         let mut cadence = WebSurfacePollCadence::default();
 
-        cadence.note_frame("loading", start);
-        cadence.note_frame("loading", start + Duration::from_millis(200));
+        cadence.note_frame("loading", false, start);
+        cadence.note_frame("loading", false, start + Duration::from_millis(200));
         cadence.note_poll_submitted(start + Duration::from_millis(5_010));
 
         assert_eq!(
@@ -309,10 +312,25 @@ mod tests {
         let start = Instant::now();
         let mut cadence = WebSurfacePollCadence::default();
 
-        cadence.note_frame("sleeping", start);
-        cadence.note_frame("sleeping", start + Duration::from_millis(200));
+        cadence.note_frame("sleeping", false, start);
+        cadence.note_frame("sleeping", false, start + Duration::from_millis(200));
         cadence.note_poll_submitted(start + Duration::from_millis(610));
 
         assert_eq!(cadence.next_poll_delay(start + Duration::from_millis(610)), IDLE_POLL_INTERVAL);
+    }
+
+    #[test]
+    fn repeated_pixel_frames_keep_animation_cadence_active() {
+        let start = Instant::now();
+        let mut cadence = WebSurfacePollCadence::default();
+
+        cadence.note_frame("complete", true, start);
+        cadence.note_frame("complete", true, start + Duration::from_millis(240));
+        cadence.note_poll_submitted(start + Duration::from_millis(300));
+
+        assert_eq!(
+            cadence.next_poll_delay(start + Duration::from_millis(300)),
+            ACTIVE_POLL_INTERVAL
+        );
     }
 }

@@ -1,10 +1,4 @@
-use std::{
-    env,
-    rc::Rc,
-    sync::OnceLock,
-    thread,
-    time::{Duration, Instant},
-};
+use std::rc::Rc;
 
 use dpi::PhysicalSize;
 use euclid::Scale;
@@ -16,9 +10,6 @@ use servo::{
 
 use super::SoftwareServoHost;
 use crate::{RenderedFrame, ServoHostError};
-
-const DEFAULT_PAINT_BARRIER_MS: u64 = 32;
-const PAINT_BARRIER_POLL_INTERVAL: Duration = Duration::from_millis(2);
 
 /// Wrap an `f32` scale factor in Servo's typed `Scale<f32, DeviceIndependentPixel,
 /// DevicePixel>`. The clamp guards against `NaN`/`inf` reaching Servo's
@@ -32,17 +23,6 @@ pub(super) fn hidpi_scale_from_factor(
         1.0
     };
     Scale::new(safe)
-}
-
-fn paint_barrier_budget() -> Duration {
-    static BUDGET: OnceLock<Duration> = OnceLock::new();
-    *BUDGET.get_or_init(|| {
-        let ms = env::var("ELY_PAINT_BARRIER_MS")
-            .ok()
-            .and_then(|raw| raw.parse::<u64>().ok())
-            .unwrap_or(DEFAULT_PAINT_BARRIER_MS);
-        Duration::from_millis(ms)
-    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -67,12 +47,15 @@ impl ServoSurfaceSize {
 pub enum RenderingContextKind {
     #[default]
     Software,
+    Hardware,
 }
 
 /// Pair of rendering-context handles produced by
 /// [`SoftwareServoHost::new_rendering_context`].
 pub(super) struct RenderingContextHandles {
     pub(super) rendering_context: Rc<dyn RenderingContext>,
+    #[cfg(feature = "hardware-render")]
+    pub(super) hardware_context: Option<Rc<crate::HardwareOffscreenContext>>,
 }
 
 impl SoftwareServoHost {
@@ -89,8 +72,28 @@ impl SoftwareServoHost {
                 rendering_context
                     .make_current()
                     .map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
-                Ok(RenderingContextHandles { rendering_context })
+                Ok(RenderingContextHandles {
+                    rendering_context,
+                    #[cfg(feature = "hardware-render")]
+                    hardware_context: None,
+                })
             }
+            #[cfg(feature = "hardware-render")]
+            RenderingContextKind::Hardware => {
+                let hardware_context = Rc::new(
+                    crate::HardwareOffscreenContext::new(size.physical())
+                        .map_err(|_| ServoHostError::RenderingContextUnavailable)?,
+                );
+                hardware_context
+                    .make_current()
+                    .map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
+                Ok(RenderingContextHandles {
+                    rendering_context: hardware_context.clone(),
+                    hardware_context: Some(hardware_context),
+                })
+            }
+            #[cfg(not(feature = "hardware-render"))]
+            RenderingContextKind::Hardware => Err(ServoHostError::HardwareRenderUnavailable),
         }
     }
 
@@ -113,42 +116,11 @@ impl SoftwareServoHost {
                 .map_err(|_| ServoHostError::RenderingContextUnavailable)?,
         );
         rendering_context.make_current().map_err(|_| ServoHostError::RenderingContextNotCurrent)?;
-        Ok(RenderingContextHandles { rendering_context })
-    }
-
-    /// Spin Servo's event loop until the webview's delegate observes a
-    /// fresh `notify_new_frame_ready` callback (i.e. the framebuffer is
-    /// consistent for readback) or [`paint_barrier_budget`] elapses. The
-    /// caller is responsible for clearing the pending-frame flag before
-    /// dispatching `webview.paint()`; otherwise this returns immediately
-    /// off the *previous* frame and the race is preserved.
-    ///
-    /// Returns silently on timeout — `paint()` falls through to
-    /// `read_rendered_frame` so callers still get whatever pixels the
-    /// rendering context currently holds. That keeps the fast path open
-    /// when `ELY_PAINT_BARRIER_MS=0` disables the budget entirely, and
-    /// matches the pre-T15 behaviour on the (rare) case where Servo
-    /// can't land a frame inside two refresh intervals.
-    pub(super) fn wait_for_paint_completion(&mut self, webview_id: &ely_domain::WebViewId) {
-        let budget = paint_barrier_budget();
-        if budget.is_zero() {
-            return;
-        }
-        let started_at = Instant::now();
-        loop {
-            self.servo.spin_event_loop();
-            let ready = self
-                .webviews
-                .get(webview_id)
-                .is_some_and(|webview| webview.delegate.has_pending_frame());
-            if ready {
-                return;
-            }
-            if started_at.elapsed() >= budget {
-                return;
-            }
-            thread::sleep(PAINT_BARRIER_POLL_INTERVAL);
-        }
+        Ok(RenderingContextHandles {
+            rendering_context,
+            #[cfg(feature = "hardware-render")]
+            hardware_context: None,
+        })
     }
 
     pub(super) fn read_rendered_frame(

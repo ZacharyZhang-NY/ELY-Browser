@@ -19,6 +19,9 @@ use servo::{
 
 #[path = "runtime_context.rs"]
 mod runtime_context;
+#[cfg(all(feature = "hardware-render", target_os = "macos"))]
+#[path = "runtime_hardware.rs"]
+mod runtime_hardware;
 #[path = "runtime_paint.rs"]
 mod runtime_paint;
 
@@ -365,7 +368,7 @@ impl ServoHost for SoftwareServoHost {
     }
 
     fn paint(&mut self, webview_id: &WebViewId) -> Result<(), ServoHostError> {
-        self.paint_with_readback(webview_id, true)
+        self.paint_with_readback(webview_id)
     }
 
     fn last_rendered_frame(&self) -> Result<RenderedFrame, ServoHostError> {
@@ -408,6 +411,8 @@ impl SoftwareServoHost {
                 tab_id,
                 profile_id,
                 rendering_context: handles.rendering_context,
+                #[cfg(feature = "hardware-render")]
+                hardware_context: handles.hardware_context,
                 webview,
                 delegate,
                 requested_url: None,

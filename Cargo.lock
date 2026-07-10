@@ -2434,6 +2434,8 @@ name = "ely_app"
 version = "0.1.0"
 dependencies = [
  "ahash",
+ "core-foundation 0.10.0",
+ "core-video",
  "directories",
  "ed25519-dalek 2.2.0",
  "ely_browser_core",
@@ -2445,15 +2447,21 @@ dependencies = [
  "gpui-component",
  "gpui-component-assets",
  "image",
+ "io-surface",
+ "mach2",
+ "objc2-core-foundation",
+ "objc2-io-surface",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tempfile",
  "thiserror 2.0.18",
  "toml 1.1.2+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
  "ureq",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -2492,12 +2500,18 @@ dependencies = [
  "dpi",
  "ely_domain",
  "euclid",
+ "gleam",
+ "glow 0.17.0",
+ "image",
+ "mach2",
  "naga 26.0.0",
+ "objc2-io-surface",
  "raw-window-handle",
  "rustls",
  "serde",
  "serde_json",
  "servo",
+ "surfman",
  "thiserror 2.0.18",
  "url",
 ]
@@ -6264,6 +6278,7 @@ dependencies = [
  "libc",
  "objc2",
  "objc2-core-foundation",
+ "objc2-foundation",
 ]
 
 [[package]]

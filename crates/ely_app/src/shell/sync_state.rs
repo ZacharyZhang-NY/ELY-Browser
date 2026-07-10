@@ -116,8 +116,6 @@ impl ElyShell {
         let profile_dir = crate::services::servo_profile_data::sync_profile_data_dir(
             &profile_root,
             &snapshot.active_profile_id,
-            &snapshot.active_profile_name,
-            &snapshot.active_profile_kind,
         );
         if snapshot.active_profile_name == "Default"
             && matches!(snapshot.active_profile_kind, ProfileKind::Standard)
@@ -237,26 +235,17 @@ fn migrate_legacy_default_sync_dir(profile_root: &Path, stable_profile_dir: &Pat
         return;
     }
 
-    let Ok(entries) = std::fs::read_dir(profile_root) else {
+    let candidate = profile_root.join("default").join("servo").join("sync");
+    if !bearer_token_file_present(&candidate.join("bearer.token")) {
         return;
-    };
-    for entry in entries.flatten() {
-        let candidate = entry.path().join("servo").join("sync");
-        if candidate == stable_sync_dir {
-            continue;
-        }
-        if !bearer_token_file_present(&candidate.join("bearer.token")) {
-            continue;
-        }
-        if let Err(error) = copy_dir_recursive(&candidate, &stable_sync_dir) {
-            tracing::warn!(
-                target: "ely::sync",
-                error = %error,
-                source = %candidate.display(),
-                "legacy sync profile migration failed",
-            );
-        }
-        return;
+    }
+    if let Err(error) = copy_dir_recursive(&candidate, &stable_sync_dir) {
+        tracing::warn!(
+            target: "ely::sync",
+            error = %error,
+            source = %candidate.display(),
+            "legacy sync profile migration failed",
+        );
     }
 }
 
@@ -277,7 +266,7 @@ fn copy_dir_recursive(source: &Path, destination: &Path) -> std::io::Result<()> 
 
 #[cfg(test)]
 mod tests {
-    use super::bearer_token_file_present;
+    use super::{bearer_token_file_present, migrate_legacy_default_sync_dir};
 
     #[test]
     fn bearer_token_file_presence_requires_bytes() -> Result<(), Box<dyn std::error::Error>> {
@@ -295,6 +284,35 @@ mod tests {
         assert!(bearer_token_file_present(&path));
 
         std::fs::remove_dir_all(dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn known_default_sync_directory_is_migrated() -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let legacy = directory.path().join("default/servo/sync");
+        let stable = directory.path().join("profile_stable/servo");
+        std::fs::create_dir_all(&legacy)?;
+        std::fs::write(legacy.join("bearer.token"), "default-token")?;
+
+        migrate_legacy_default_sync_dir(directory.path(), &stable);
+
+        assert_eq!(std::fs::read_to_string(stable.join("sync/bearer.token"))?, "default-token");
+        Ok(())
+    }
+
+    #[test]
+    fn custom_profile_bearer_is_ignored_during_default_migration()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let custom = directory.path().join("profile_custom/servo/sync");
+        let stable = directory.path().join("profile_stable/servo");
+        std::fs::create_dir_all(&custom)?;
+        std::fs::write(custom.join("bearer.token"), "custom-token")?;
+
+        migrate_legacy_default_sync_dir(directory.path(), &stable);
+
+        assert!(!stable.join("sync/bearer.token").exists());
         Ok(())
     }
 }

@@ -257,7 +257,7 @@ fn render_compatibility_rows(
             format!("gpui {GPUI_VERSION}"),
             "Native shell renderer",
         ))
-        .child(compatibility_row(IconName::GitHub, "Build", BUILD_REVISION, "Git revision"))
+        .child(compatibility_row(IconName::GitHub, "Build", BUILD_REVISION, "Build source"))
         .child(compatibility_row(
             IconName::CircleCheck,
             "Site Permissions",

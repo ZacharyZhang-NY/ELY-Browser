@@ -124,6 +124,7 @@ mod tests {
             profile_name: "Default".to_string(),
             profile_color_hex: 0x26251e,
             profile_kind: ely_domain::ProfileKind::Standard,
+            profile_id: None,
             new_tab_destination: Default::default(),
         })?;
         core.open_tab(UrlText::parse(url)?);

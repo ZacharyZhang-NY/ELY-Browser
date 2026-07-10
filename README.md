@@ -10,17 +10,29 @@ from version control.
 ## Local Commands
 
 ```bash
-cargo fmt --all --check
-cargo check --workspace --all-targets
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-targets
-cargo check -p ely_servo_host --features servo-engine --all-targets
-cargo clippy -p ely_servo_host --features servo-engine --all-targets -- -D warnings
-cargo test -p ely_servo_host --features servo-engine --test software_host
+cargo --locked fmt --all --check
+cargo check --locked --workspace --all-targets
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo test --locked --workspace --all-targets
+cargo check --locked -p ely_servo_host --features servo-engine,hardware-render --all-targets
+cargo clippy --locked -p ely_servo_host --features servo-engine,hardware-render --all-targets -- -D warnings
+cargo test --locked -p ely_servo_host --features servo-engine,hardware-render --all-targets -- --test-threads=1
 scripts/verify_prd_site_rendering.sh
 scripts/verify_windows_app_manifest.sh
-cargo run -p ely_app
+scripts/create_macos_app_bundle.sh
+scripts/create_native_distribution.sh
+scripts/run_dev.sh
 ```
+
+The macOS hardware tests cover the CGL rendering context, IOSurface export, sidecar Mach descriptor
+transfer, GPUI surface lease, and IOSurface use-count release. `scripts/verify_prd_site_rendering.sh`
+keeps the software RGBA assertions.
+
+The local macOS QA bundle places both release executables in `Contents/MacOS`, installs
+`AppIcon.icns`, and verifies its code signature. It uses an ad-hoc signature by default;
+`ELY_CODESIGN_IDENTITY` selects an installed signing identity. Native distribution inputs place
+`ely_app` and `ely_servo_sidecar` beside each other at the distribution root. The packaging scripts
+verify those paths and executable permissions.
 
 ## Cloudflare Auth Configuration
 

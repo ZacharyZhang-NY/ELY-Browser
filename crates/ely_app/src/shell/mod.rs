@@ -121,15 +121,28 @@ pub struct ElyShell {
 
 impl ElyShell {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        Self::new_with_config(InitialBrowserConfig::ely_defaults(), window, cx)
+        let config = InitialBrowserConfig::ely_defaults()
+            .map_err(|error| error.to_string())
+            .and_then(|mut config| {
+                config.profile_id = Some(
+                    crate::services::profile_identity::default_standard_profile_id()
+                        .map_err(|error| error.to_string())?,
+                );
+                Ok(config)
+            });
+        Self::new_with_config(config, window, cx)
     }
 
     pub fn new_private(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        Self::new_with_config(InitialBrowserConfig::private_window(), window, cx)
+        Self::new_with_config(
+            InitialBrowserConfig::private_window().map_err(|error| error.to_string()),
+            window,
+            cx,
+        )
     }
 
     fn new_with_config(
-        config: Result<InitialBrowserConfig, ely_domain::DomainError>,
+        config: Result<InitialBrowserConfig, String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -192,14 +205,11 @@ impl ElyShell {
             },
         );
 
-        let state = match config.and_then(|config| {
-            BrowserCore::new(config).map_err(|error| match error {
-                ely_browser_core::CoreError::Domain(source) => source,
-                _ => ely_domain::DomainError::InvalidCommand,
-            })
-        }) {
+        let state = match config
+            .and_then(|config| BrowserCore::new(config).map_err(|error| error.to_string()))
+        {
             Ok(core) => ShellState::Ready(Box::new(core)),
-            Err(error) => ShellState::StartupError(error.to_string()),
+            Err(error) => ShellState::StartupError(error),
         };
 
         let (sync_inbox_tx, sync_inbox_rx) = std::sync::mpsc::channel();

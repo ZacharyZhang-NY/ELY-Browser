@@ -1,6 +1,6 @@
 use ely_browser_core::{BrowserCore, BrowserSnapshot};
 use ely_domain::{BrowserTab, ProfileKind, TabId, UrlText};
-use gpui::{AnyElement, Bounds, Context, NativeSurfaceHandle, Pixels, Point};
+use gpui::{AnyElement, Bounds, Context, Pixels, Point};
 
 use crate::services::ProfileDataMode;
 
@@ -26,11 +26,11 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let state_entity = cx.entity().clone();
-        if profile_data_mode_for(tab, snapshot).is_none() {
+        let Some(profile_data_mode) = profile_data_mode_for(tab, snapshot) else {
             return render_failed_web_surface(tab, "Profile context is unavailable.", state_entity);
-        }
+        };
 
-        match self.web_surfaces.state(tab.id()) {
+        match self.web_surfaces.state_for_scope(tab.id(), tab.profile_id(), profile_data_mode) {
             Some(WebSurfaceState::Ready(frame)) => {
                 render_ready_web_surface(frame, tab, state_entity, bottom_corner_radius)
             }
@@ -98,25 +98,6 @@ impl ElyShell {
         if self.web_surfaces.record_viewport_size(&tab_id, bounds, scale_factor)
             == WebSurfaceInputOutcome::Applied
         {
-            self.flush_external_web_surface_tick(cx);
-        }
-    }
-
-    pub(super) fn record_external_web_surface(
-        &mut self,
-        tab_id: TabId,
-        bounds: Bounds<Pixels>,
-        scale_factor: f32,
-        native_surface: NativeSurfaceHandle,
-        cx: &mut Context<Self>,
-    ) {
-        let viewport_changed =
-            self.web_surfaces.record_viewport_size(&tab_id, bounds, scale_factor)
-                == WebSurfaceInputOutcome::Applied;
-        let surface_changed = self.web_surfaces.record_native_surface(&tab_id, native_surface)
-            == WebSurfaceInputOutcome::Applied;
-
-        if viewport_changed || surface_changed {
             self.flush_external_web_surface_tick(cx);
         }
     }

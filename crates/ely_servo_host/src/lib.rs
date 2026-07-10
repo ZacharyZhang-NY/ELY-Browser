@@ -1,5 +1,8 @@
 mod error;
+#[cfg(feature = "hardware-render")]
+mod hardware_rendering_context;
 mod host;
+mod iosurface_handle;
 #[cfg(feature = "servo-engine")]
 mod keyboard;
 #[cfg(feature = "servo-engine")]
@@ -14,11 +17,14 @@ mod runtime_waker;
 mod runtime_webview;
 
 pub use error::ServoHostError;
+#[cfg(feature = "hardware-render")]
+pub use hardware_rendering_context::HardwareOffscreenContext;
 pub use host::{
     HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest, MouseDragRequest, MouseHoverRequest,
     NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest, RenderedFrame,
     RenderedFrameSummary, ResizeRequest, ScrollRequest, ServoHost, TouchTapRequest,
     WebViewSnapshot, WebViewSnapshotPending, WebViewState,
 };
+pub use iosurface_handle::{IOSurfaceHandle, IOSurfaceIdentity};
 #[cfg(feature = "servo-engine")]
 pub use runtime::{RenderingContextKind, ServoSurfaceSize, SoftwareServoHost};

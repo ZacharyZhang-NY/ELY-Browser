@@ -24,6 +24,15 @@ pub enum ServoHostError {
     #[error("servo rendering context could not be made current")]
     RenderingContextNotCurrent,
 
+    #[error(
+        "hardware rendering requires the `hardware-render` feature; rebuild with \
+         --features servo-engine,hardware-render"
+    )]
+    HardwareRenderUnavailable,
+
     #[error("servo rendered frame is unavailable")]
     RenderedFrameUnavailable,
+
+    #[error("servo hardware surface is unavailable for {id}")]
+    HardwareSurfaceUnavailable { id: WebViewId },
 }

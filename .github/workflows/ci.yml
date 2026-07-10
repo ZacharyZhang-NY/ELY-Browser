@@ -1,6 +1,9 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -18,27 +21,32 @@ jobs:
         run: rustup show
 
       - name: Check formatting
-        run: cargo fmt --all --check
+        run: cargo --locked fmt --all --check
 
       - name: Check workspace
-        run: cargo check --workspace --all-targets
+        run: cargo --locked check --workspace --all-targets
 
       - name: Lint workspace
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo --locked clippy --workspace --all-targets -- -D warnings
 
       - name: Test workspace
-        run: cargo test --workspace --all-targets
+        run: cargo --locked test --workspace --all-targets
 
       - name: Check Servo engine host
-        run: cargo check -p ely_servo_host --features servo-engine --all-targets
+        run: cargo --locked check -p ely_servo_host --features servo-engine,hardware-render --all-targets
 
       - name: Lint Servo engine host
-        run: cargo clippy -p ely_servo_host --features servo-engine --all-targets -- -D warnings
+        run: cargo --locked clippy -p ely_servo_host --features servo-engine,hardware-render --all-targets -- -D warnings
 
-      - name: Test Servo engine host
-        run: cargo test -p ely_servo_host --features servo-engine --test software_host
+      - name: Test Servo engine host all targets
+        run: cargo --locked test -p ely_servo_host --features servo-engine,hardware-render --all-targets -- --test-threads=1
 
-      - name: Test embedded PRD site compatibility
+      - name: Test app hardware IOSurface integration
+        env:
+          ELY_SERVO_RENDERING_CONTEXT: hardware
+        run: cargo --locked test -p ely_app --features live-site-smoke --all-targets web_surface_imports_hardware_iosurface -- --test-threads=1
+
+      - name: Test profile-scoped PRD site compatibility
         run: scripts/verify_prd_site_rendering.sh
 
       - name: Audit source file size
@@ -58,6 +66,86 @@ jobs:
 
       - name: Verify built macOS app bundle metadata
         run: scripts/verify_macos_bundle_metadata.sh "target/macos/ELY Browser.app/Contents/Info.plist"
+
+      - name: Verify macOS bundle executable placement
+        run: |
+          test -x "target/macos/ELY Browser.app/Contents/MacOS/ely_app"
+          test -x "target/macos/ELY Browser.app/Contents/MacOS/ely_servo_sidecar"
+          test -f "target/macos/ELY Browser.app/Contents/Resources/AppIcon.icns"
+          test ! -e "target/macos/ELY Browser.app/Contents/Resources/ely_servo_sidecar"
+          codesign --verify --deep --strict "target/macos/ELY Browser.app"
+
+      - name: Build adjacent-binary native distribution
+        run: scripts/create_native_distribution.sh
+
+      - name: Verify native distribution sidecar contract
+        run: |
+          test -x target/distribution/ely-browser/ely_app
+          test -x target/distribution/ely-browser/ely_servo_sidecar
+
+  portable:
+    name: Portable app (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use pinned Rust toolchain
+        run: rustup show
+
+      - name: Install Linux native dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libfontconfig1-dev \
+            libssl-dev \
+            libwayland-dev \
+            libx11-dev \
+            libx11-xcb-dev \
+            libxkbcommon-x11-dev \
+            libxrandr-dev
+
+      - name: Check portable app targets
+        run: cargo --locked check -p ely_app --all-targets
+
+      - name: Check shell scripts
+        shell: bash
+        run: >-
+          bash -n
+          scripts/run_dev.sh
+          scripts/create_macos_app_bundle.sh
+          scripts/create_native_distribution.sh
+          scripts/release_build_env.sh
+          scripts/verify_release_artifacts.sh
+
+      - name: Build native distribution
+        shell: bash
+        run: scripts/create_native_distribution.sh
+
+      - name: Verify native distribution
+        shell: bash
+        run: |
+          suffix=""
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            suffix=".exe"
+          fi
+
+          test -f "target/distribution/ely-browser/ely_app${suffix}"
+          test -f "target/distribution/ely-browser/ely_servo_sidecar${suffix}"
+
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            test -f target/distribution/ely-browser/com.elydora.ely-browser.desktop
+          fi
+
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            test -f target/distribution/ely-browser/ely_app.exe.manifest
+          fi
 
   cloudflare:
     name: Cloudflare worker

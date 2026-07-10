@@ -35,6 +35,11 @@ use std::{
     pin::Pin,
 };
 
+#[cfg(all(target_os = "macos", feature = "test-support", not(feature = "macos-blade")))]
+pub use crate::metal_renderer::{
+    MetalSurfaceTestSubmission, submit_surface_to_metal_for_test,
+};
+
 /// Run the given test function with the configured parameters.
 /// This is intended for use with the `gpui::test` macro
 /// and generally should not be used directly.

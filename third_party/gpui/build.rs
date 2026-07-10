@@ -201,18 +201,18 @@ mod macos {
             PathBuf::from(env::var("OUT_DIR").unwrap()).join("shaders.metallib");
         println!("cargo:rerun-if-changed={}", shader_path);
 
-        let output = Command::new("xcrun")
+        let mut command = Command::new("xcrun");
+        command.args(["-sdk", "macosx", "metal"]);
+        if env::var("DEBUG").as_deref() == Ok("true") {
+            command.args(["-gline-tables-only", "-MO"]);
+        }
+        let output = command
             .args([
-                "-sdk",
-                "macosx",
-                "metal",
-                "-gline-tables-only",
                 "-mmacosx-version-min=10.15.7",
-                "-MO",
                 "-c",
                 shader_path,
                 "-include",
-                (header_path.to_str().unwrap()),
+                header_path.to_str().unwrap(),
                 "-o",
             ])
             .arg(&air_output_path)

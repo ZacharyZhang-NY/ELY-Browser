@@ -1,7 +1,9 @@
 use std::time::{Duration, Instant};
 
-use ely_domain::TabId;
-use gpui::{Bounds, NativeSurfaceHandle, Pixels};
+use ely_domain::{ProfileId, TabId};
+use gpui::{Bounds, Pixels};
+
+use crate::services::ProfileDataMode;
 
 use super::{
     web_surface_cadence::ACTIVE_POLL_INTERVAL,
@@ -133,7 +135,6 @@ pub(super) struct PerTabSurface {
     /// every GPUI paint does not translate into a Servo framebuffer
     /// destroy/recreate every frame (the "page flashing" symptom).
     viewport_size_changed_at: Option<Instant>,
-    pub(super) native_surface: Option<NativeSurfaceHandle>,
     pub(super) last_ensure_key: Option<WebSurfaceEnsureKey>,
     pub(super) hover_point: Option<WebSurfaceClickPoint>,
     last_hover_enqueued_at: Option<Instant>,
@@ -154,7 +155,6 @@ impl PerTabSurface {
             viewport_bounds: None,
             viewport_size: None,
             viewport_size_changed_at: None,
-            native_surface: None,
             last_ensure_key: None,
             hover_point: None,
             last_hover_enqueued_at: None,
@@ -196,6 +196,39 @@ impl PerTabSurface {
         self.last_ensure_key.as_ref() != Some(key) || self.has_pending_input()
     }
 
+    pub(super) fn has_scope(
+        &self,
+        profile_id: &ProfileId,
+        profile_data_mode: ProfileDataMode,
+    ) -> bool {
+        self.last_ensure_key.as_ref().is_some_and(|key| {
+            key.profile_id == *profile_id && key.profile_data_mode == profile_data_mode
+        })
+    }
+
+    pub(super) fn reset_for_scope_change(&mut self, key: &WebSurfaceEnsureKey) -> bool {
+        let Some(previous_key) = self.last_ensure_key.as_ref() else {
+            return false;
+        };
+        if previous_key.has_same_scope(key) {
+            return false;
+        }
+
+        self.last_ensure_key = None;
+        self.hover_point = None;
+        self.last_hover_enqueued_at = None;
+        self.click_point = None;
+        self.pending_scroll_delta = None;
+        self.pending_scroll_point = None;
+        self.pending_input_started_at = None;
+        self.scroll_offset = None;
+        self.typed_text = None;
+        self.state = None;
+        self.last_input_flushed_at = None;
+        self.metadata_tracker = WebSurfaceMetadataTracker::default();
+        true
+    }
+
     /// True when the viewport bounds have changed within the last
     /// [`VIEWPORT_RESIZE_DEBOUNCE`] window. The renderer treats this
     /// as "the user is mid-animation" and holds off telling Servo to
@@ -217,23 +250,13 @@ impl PerTabSurface {
         self.viewport_size_changed_at = Some(now);
     }
 
-    /// Test-only escape hatch: simulate the trailing edge of a resize
-    /// animation by clearing the debounce timestamp, so a synchronous
-    /// `record + ensure` sequence in tests behaves as if the gesture
-    /// has fully settled. Production code drives this via the poll
-    /// cadence and time elapsing — tests can't advance an `Instant`.
-    #[cfg(test)]
-    pub(super) fn clear_viewport_resize_debounce_for_test(&mut self) {
-        self.viewport_size_changed_at = None;
-    }
-
     pub(super) fn mark_ensured(&mut self, key: WebSurfaceEnsureKey) {
         self.last_ensure_key = Some(key);
     }
 
     pub(super) fn matches_ready(&self, frame: &WebSurfaceFrame) -> bool {
         match self.state.as_ref() {
-            Some(WebSurfaceState::Ready(current)) => current.has_same_software_render_as(frame),
+            Some(WebSurfaceState::Ready(current)) => current.has_same_render_as(frame),
             _ => false,
         }
     }
@@ -275,7 +298,8 @@ const VIEWPORT_RESIZE_DEBOUNCE: Duration = Duration::from_millis(80);
 pub(super) struct WebSurfaceEnsureKey {
     requested_url: String,
     size: WebSurfaceSize,
-    native_surface_id: Option<usize>,
+    profile_id: ProfileId,
+    profile_data_mode: ProfileDataMode,
     zoom_percent: u16,
     permissions: Vec<WebSurfaceSitePermission>,
 }
@@ -284,17 +308,23 @@ impl WebSurfaceEnsureKey {
     pub(super) fn new(
         requested_url: String,
         size: WebSurfaceSize,
-        native_surface: Option<&NativeSurfaceHandle>,
+        profile_id: ProfileId,
+        profile_data_mode: ProfileDataMode,
         zoom_percent: u16,
         permissions: &[WebSurfaceSitePermission],
     ) -> Self {
         Self {
             requested_url,
             size,
-            native_surface_id: native_surface.map(NativeSurfaceHandle::identity),
+            profile_id,
+            profile_data_mode,
             zoom_percent,
             permissions: permissions.to_vec(),
         }
+    }
+
+    fn has_same_scope(&self, other: &Self) -> bool {
+        self.profile_id == other.profile_id && self.profile_data_mode == other.profile_data_mode
     }
 }
 
@@ -306,7 +336,7 @@ mod tests {
 
     #[test]
     fn unchanged_surface_without_input_skips_ensure() {
-        let key = ensure_key("https://example.com/", 800, 600);
+        let key = ensure_key("https://example.com/", 800, 600, &ProfileId::new());
         let mut surface = PerTabSurface::new();
 
         assert!(surface.should_ensure(&key));
@@ -318,7 +348,7 @@ mod tests {
 
     #[test]
     fn pending_input_forces_ensure_even_when_key_matches() {
-        let key = ensure_key("https://example.com/", 800, 600);
+        let key = ensure_key("https://example.com/", 800, 600, &ProfileId::new());
         let mut surface = PerTabSurface::new();
         surface.mark_ensured(key.clone());
         surface.pending_scroll_delta =
@@ -329,8 +359,31 @@ mod tests {
 
     #[test]
     fn viewport_change_forces_ensure() {
-        let old_key = ensure_key("https://example.com/", 800, 600);
-        let new_key = ensure_key("https://example.com/", 1024, 768);
+        let profile_id = ProfileId::new();
+        let old_key = ensure_key("https://example.com/", 800, 600, &profile_id);
+        let new_key = ensure_key("https://example.com/", 1024, 768, &profile_id);
+        let mut surface = PerTabSurface::new();
+        surface.mark_ensured(old_key);
+
+        assert!(surface.should_ensure(&new_key));
+    }
+
+    #[test]
+    fn profile_change_forces_ensure() {
+        let old_key = ensure_key("https://example.com/", 800, 600, &ProfileId::new());
+        let new_key = ensure_key("https://example.com/", 800, 600, &ProfileId::new());
+        let mut surface = PerTabSurface::new();
+        surface.mark_ensured(old_key);
+
+        assert!(surface.should_ensure(&new_key));
+    }
+
+    #[test]
+    fn profile_data_mode_change_forces_ensure() {
+        let profile_id = ProfileId::new();
+        let old_key = ensure_key("https://example.com/", 800, 600, &profile_id);
+        let mut new_key = old_key.clone();
+        new_key.profile_data_mode = ProfileDataMode::Transient;
         let mut surface = PerTabSurface::new();
         surface.mark_ensured(old_key);
 
@@ -348,11 +401,17 @@ mod tests {
         assert!(!surface.input_flush_is_throttled(start + Duration::from_millis(8)));
     }
 
-    fn ensure_key(url: &str, width: u32, height: u32) -> WebSurfaceEnsureKey {
+    fn ensure_key(
+        url: &str,
+        width: u32,
+        height: u32,
+        profile_id: &ProfileId,
+    ) -> WebSurfaceEnsureKey {
         WebSurfaceEnsureKey::new(
             url.to_string(),
             WebSurfaceSize { width, height, device_pixel_ratio_percent: 100 },
-            None,
+            profile_id.clone(),
+            ProfileDataMode::Persistent,
             100,
             &[],
         )

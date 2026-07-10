@@ -4,8 +4,6 @@ use std::{
     env,
     error::Error,
     process::{Command, Stdio},
-    thread,
-    time::Duration,
 };
 
 use ely_domain::{ProfileId, SiteOrigin, SitePermissionFeature, TabId, UrlText};
@@ -27,9 +25,9 @@ const PRD_SITE_COMPATIBILITY_CASES: &[PrdSiteCompatibilityCase] = &[
 const SOFTWARE_HOST_CHILD_ENV: &str = "ELY_SERVO_SOFTWARE_HOST_CHILD";
 const DPR_VIEWPORT_CHILD_ENV: &str = "ELY_SERVO_DPR_VIEWPORT_CHILD";
 const CLICK_PROBE_URL: &str = "data:text/html,%3C!doctype%20html%3E%3Ctitle%3EClick%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23f7f7f7%3B%7Dbutton%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A220px%3Bheight%3A90px%3Bfont%3A28px%20sans-serif%3Bbackground%3A%23ffffff%3Bcolor%3A%23111111%3B%7D%3C%2Fstyle%3E%3Cbutton%20onclick%3D%22document.body.style.background%3D%27%230039ff%27%3Bdocument.title%3D%27Clicked%27%3Bthis.textContent%3D%27Clicked%27%3B%22%3ETap%3C%2Fbutton%3E";
-const DRAG_PROBE_URL: &str = "data:text/html,%3C%21doctype%20html%3E%3Ctitle%3EDrag%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23f7f7f7%3B%7Dbutton%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A220px%3Bheight%3A90px%3Bfont%3A28px%20sans-serif%3Bbackground%3A%23ffffff%3Bcolor%3A%23111111%3B%7D%3C%2Fstyle%3E%3Cbutton%20id%3Dbox%3EDrag%3C%2Fbutton%3E%3Cscript%3Elet%20dragging%3Dfalse%3Bconst%20box%3Ddocument.getElementById%28%27box%27%29%3BaddEventListener%28%27mousedown%27%2Cevent%3D%3E%7Bif%28event.target%3D%3D%3Dbox%29%7Bdragging%3Dtrue%3B%7D%7D%29%3BaddEventListener%28%27mousemove%27%2Cevent%3D%3E%7Bif%28dragging%26%26event.clientX%3E280%29%7Bdocument.body.style.background%3D%27%230039ff%27%3Bdocument.title%3D%27Dragged%27%3Bbox.textContent%3D%27Dragged%27%3B%7D%7D%29%3BaddEventListener%28%27mouseup%27%2C%28%29%3D%3E%7Bdragging%3Dfalse%3B%7D%29%3B%3C%2Fscript%3E";
-const TOUCH_PROBE_URL: &str = "data:text/html,%3C%21doctype%20html%3E%3Ctitle%3ETouch%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23f7f7f7%3B%7Dbutton%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A220px%3Bheight%3A90px%3Bfont%3A28px%20sans-serif%3Bbackground%3A%23ffffff%3Bcolor%3A%23111111%3Btouch-action%3Amanipulation%3B%7D%3C%2Fstyle%3E%3Cbutton%20ontouchstart%3D%22document.body.dataset.touch%3D%27start%27%3B%22%20onpointerdown%3D%22if%28%21document.body.dataset.pointerType%29%7Bdocument.body.dataset.pointerType%3Devent.pointerType%3B%7D%22%20onclick%3D%22if%28document.body.dataset.pointerType%21%3D%3D%27touch%27%29%7Bdocument.title%3Ddocument.body.dataset.pointerType%3Breturn%3B%7Ddocument.body.style.background%3D%27%230039ff%27%3Bdocument.title%3D%27Touched%27%3Bthis.textContent%3D%27Touched%27%3B%22%3ETap%3C%2Fbutton%3E";
-const TEXT_PROBE_URL: &str = "data:text/html,%3C!doctype%20html%3E%3Ctitle%3EText%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23f7f7f7%3Bfont%3A28px%20sans-serif%3B%7Dinput%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A260px%3Bheight%3A70px%3Bfont%3A28px%20sans-serif%3B%7Doutput%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A180px%3Bfont%3A32px%20sans-serif%3B%7D%3C%2Fstyle%3E%3Cinput%20id%3Dq%20autofocus%20oninput%3D%22document.body.style.background%3D%27%230039ff%27%3Bdocument.getElementById%28%27out%27%29.textContent%3Dthis.value%3B%22%3E%3Coutput%20id%3Dout%3Eempty%3C%2Foutput%3E";
+const DRAG_PROBE_URL: &str = "data:text/html,%3C%21doctype%20html%3E%3Ctitle%3EDrag%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23f6d365%3B%7Dbutton%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A220px%3Bheight%3A90px%3Bfont%3A28px%20sans-serif%3Bbackground%3A%23ffffff%3Bcolor%3A%23111111%3B%7D%3C%2Fstyle%3E%3Cbutton%20id%3Dbox%3EDrag%3C%2Fbutton%3E%3Cscript%3Elet%20dragging%3Dfalse%3Bconst%20box%3Ddocument.getElementById%28%27box%27%29%3BaddEventListener%28%27mousedown%27%2Cevent%3D%3E%7Bif%28event.target%3D%3D%3Dbox%29%7Bdragging%3Dtrue%3B%7D%7D%29%3BaddEventListener%28%27mousemove%27%2Cevent%3D%3E%7Bif%28dragging%26%26event.clientX%3E280%29%7Bdocument.body.style.background%3D%27%230039ff%27%3Bdocument.title%3D%27Dragged%27%3Bbox.textContent%3D%27Dragged%27%3B%7D%7D%29%3BaddEventListener%28%27mouseup%27%2C%28%29%3D%3E%7Bdragging%3Dfalse%3B%7D%29%3B%3C%2Fscript%3E";
+const TOUCH_PROBE_URL: &str = "data:text/html,%3C%21doctype%20html%3E%3Ctitle%3ETouch%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23c7f5d9%3B%7Dbutton%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A220px%3Bheight%3A90px%3Bfont%3A28px%20sans-serif%3Bbackground%3A%23ffffff%3Bcolor%3A%23111111%3Btouch-action%3Amanipulation%3B%7D%3C%2Fstyle%3E%3Cbutton%20ontouchstart%3D%22document.body.dataset.touch%3D%27start%27%3B%22%20onpointerdown%3D%22if%28%21document.body.dataset.pointerType%29%7Bdocument.body.dataset.pointerType%3Devent.pointerType%3B%7D%22%20onclick%3D%22if%28document.body.dataset.pointerType%21%3D%3D%27touch%27%29%7Bdocument.title%3Ddocument.body.dataset.pointerType%3Breturn%3B%7Ddocument.body.style.background%3D%27%230039ff%27%3Bdocument.title%3D%27Touched%27%3Bthis.textContent%3D%27Touched%27%3B%22%3ETap%3C%2Fbutton%3E";
+const TEXT_PROBE_URL: &str = "data:text/html,%3C!doctype%20html%3E%3Ctitle%3EText%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23d9e8ff%3Bfont%3A28px%20sans-serif%3B%7Dinput%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A260px%3Bheight%3A70px%3Bfont%3A28px%20sans-serif%3B%7Doutput%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A180px%3Bfont%3A32px%20sans-serif%3B%7D%3C%2Fstyle%3E%3Cinput%20id%3Dq%20autofocus%20oninput%3D%22document.body.style.background%3D%27%230039ff%27%3Bdocument.getElementById%28%27out%27%29.textContent%3Dthis.value%3B%22%3E%3Coutput%20id%3Dout%3Eempty%3C%2Foutput%3E";
 const TEXT_PROBE_VALUE: &str = "ely42";
 
 struct PrdSiteCompatibilityCase {
@@ -258,15 +256,27 @@ fn exercise_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
 
     let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
     host.click(MouseClickRequest { webview_id: webview_id.clone(), x: 160, y: 120 })?;
-    let snapshot = wait_for_rendered_webview(&mut host, &webview_id, Some(previous_frame_hash))?;
+    let snapshot = wait_for_rendered_webview_with_title(
+        &mut host,
+        &webview_id,
+        Some(previous_frame_hash),
+        "Clicked",
+    )?;
     assert_eq!(snapshot.state(), &WebViewState::Complete, "snapshot: {snapshot:?}");
+    assert_eq!(snapshot.title(), Some("Clicked"), "snapshot: {snapshot:?}");
     assert_rendered_frame_has_content(&host, "data:text/html clicked", 1)?;
     assert_ne!(host.last_rendered_frame()?.sample_hash(), previous_frame_hash);
 
     let tab_id = TabId::new();
     let url = UrlText::parse(DRAG_PROBE_URL)?;
+    let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
     host.navigate(NavigationRequest { webview_id: webview_id.clone(), tab_id, url })?;
-    let snapshot = wait_for_rendered_webview(&mut host, &webview_id, None)?;
+    let snapshot = wait_for_rendered_webview_with_center_pixel(
+        &mut host,
+        &webview_id,
+        Some(previous_frame_hash),
+        [246, 211, 101],
+    )?;
     assert_eq!(snapshot.state(), &WebViewState::Complete, "snapshot: {snapshot:?}");
     assert_rendered_frame_has_content(&host, "data:text/html drag", 1)?;
 
@@ -278,21 +288,38 @@ fn exercise_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
         to_x: 320,
         to_y: 120,
     })?;
-    let snapshot = wait_for_rendered_webview(&mut host, &webview_id, Some(previous_frame_hash))?;
+    let snapshot = wait_for_rendered_webview_with_title(
+        &mut host,
+        &webview_id,
+        Some(previous_frame_hash),
+        "Dragged",
+    )?;
     assert_eq!(snapshot.state(), &WebViewState::Complete, "snapshot: {snapshot:?}");
+    assert_eq!(snapshot.title(), Some("Dragged"), "snapshot: {snapshot:?}");
     assert_rendered_frame_has_content(&host, "data:text/html dragged", 1)?;
     assert_ne!(host.last_rendered_frame()?.sample_hash(), previous_frame_hash);
 
     let tab_id = TabId::new();
     let url = UrlText::parse(TOUCH_PROBE_URL)?;
+    let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
     host.navigate(NavigationRequest { webview_id: webview_id.clone(), tab_id, url })?;
-    let snapshot = wait_for_rendered_webview(&mut host, &webview_id, None)?;
+    let snapshot = wait_for_rendered_webview_with_center_pixel(
+        &mut host,
+        &webview_id,
+        Some(previous_frame_hash),
+        [199, 245, 217],
+    )?;
     assert_eq!(snapshot.state(), &WebViewState::Complete, "snapshot: {snapshot:?}");
     assert_rendered_frame_has_content(&host, "data:text/html touch", 1)?;
 
     let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
     host.touch_tap(TouchTapRequest { webview_id: webview_id.clone(), x: 160, y: 120 })?;
-    let snapshot = wait_for_rendered_webview(&mut host, &webview_id, Some(previous_frame_hash))?;
+    let snapshot = wait_for_rendered_webview_with_title(
+        &mut host,
+        &webview_id,
+        Some(previous_frame_hash),
+        "Touched",
+    )?;
     assert_eq!(snapshot.state(), &WebViewState::Complete, "snapshot: {snapshot:?}");
     assert_eq!(snapshot.title(), Some("Touched"), "snapshot: {snapshot:?}");
     assert_rendered_frame_has_content(&host, "data:text/html touched", 1)?;
@@ -300,8 +327,14 @@ fn exercise_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
 
     let tab_id = TabId::new();
     let url = UrlText::parse(TEXT_PROBE_URL)?;
+    let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
     host.navigate(NavigationRequest { webview_id: webview_id.clone(), tab_id, url })?;
-    let snapshot = wait_for_rendered_webview(&mut host, &webview_id, None)?;
+    let snapshot = wait_for_rendered_webview_with_center_pixel(
+        &mut host,
+        &webview_id,
+        Some(previous_frame_hash),
+        [217, 232, 255],
+    )?;
     assert_eq!(snapshot.state(), &WebViewState::Complete, "snapshot: {snapshot:?}");
     assert_rendered_frame_has_content(&host, "data:text/html input", 1)?;
 
@@ -311,7 +344,12 @@ fn exercise_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
         webview_id: webview_id.clone(),
         text: TEXT_PROBE_VALUE.to_string(),
     })?;
-    let snapshot = wait_for_rendered_webview(&mut host, &webview_id, Some(previous_frame_hash))?;
+    let snapshot = wait_for_rendered_webview_with_center_pixel(
+        &mut host,
+        &webview_id,
+        Some(previous_frame_hash),
+        [0, 57, 255],
+    )?;
     assert_eq!(snapshot.state(), &WebViewState::Complete, "snapshot: {snapshot:?}");
     assert_rendered_frame_has_content(&host, "data:text/html typed", 1)?;
     assert_ne!(host.last_rendered_frame()?.sample_hash(), previous_frame_hash);
@@ -390,111 +428,6 @@ fn exercise_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn wait_for_rendered_webview(
-    host: &mut SoftwareServoHost,
-    webview_id: &ely_domain::WebViewId,
-    previous_frame_hash: Option<u64>,
-) -> Result<ely_servo_host::WebViewSnapshot, Box<dyn Error>> {
-    let mut painted_since_request = false;
-
-    for _ in 0..5_000 {
-        host.tick();
-        let snapshot = host.snapshot(webview_id)?;
-        if snapshot.has_pending_frame() {
-            host.paint(webview_id)?;
-            painted_since_request = true;
-        }
-
-        let snapshot = host.snapshot(webview_id)?;
-        let has_rendered_current_request = host.last_rendered_frame().is_ok_and(|frame| {
-            painted_since_request
-                && Some(frame.sample_hash()) != previous_frame_hash
-                && frame.non_white_pixel_count() > 0
-        });
-
-        if snapshot.state() == &WebViewState::Complete && has_rendered_current_request {
-            return Ok(snapshot);
-        }
-
-        thread::sleep(Duration::from_millis(2));
-    }
-
-    Err(format!("timed out waiting for rendered webview: {:?}", host.snapshot(webview_id)?).into())
-}
-
-fn assert_rendered_frame_has_content(
-    host: &SoftwareServoHost,
-    label: &str,
-    minimum_content_pixels: u64,
-) -> Result<(), Box<dyn Error>> {
-    assert_rendered_frame_has_dimensions_and_content(
-        host,
-        label,
-        INITIAL_WIDTH,
-        INITIAL_HEIGHT,
-        minimum_content_pixels,
-    )
-}
-
-fn assert_rendered_frame_has_dimensions_and_content(
-    host: &SoftwareServoHost,
-    label: &str,
-    expected_width: u32,
-    expected_height: u32,
-    minimum_content_pixels: u64,
-) -> Result<(), Box<dyn Error>> {
-    let frame = host.last_rendered_frame()?;
-    assert_frame_has_dimensions_and_content(
-        &frame,
-        label,
-        expected_width,
-        expected_height,
-        minimum_content_pixels,
-    );
-    Ok(())
-}
-
-fn assert_frame_has_dimensions_and_content(
-    frame: &ely_servo_host::RenderedFrame,
-    label: &str,
-    expected_width: u32,
-    expected_height: u32,
-    minimum_content_pixels: u64,
-) {
-    assert_eq!(frame.width(), expected_width, "{label}: {frame:?}");
-    assert_eq!(frame.height(), expected_height, "{label}: {frame:?}");
-    assert!(frame.opaque_pixel_count() > 0, "{label}: {frame:?}");
-    assert!(frame.non_white_pixel_count() > 0, "{label}: {frame:?}");
-    assert!(frame.content_pixel_count() >= minimum_content_pixels, "{label}: {frame:?}");
-    assert_ne!(frame.sample_hash(), 0, "{label}: {frame:?}");
-}
-
-fn center_pixel_rgb(frame: &ely_servo_host::RenderedFrame) -> [u8; 3] {
-    let x = frame.width() / 2;
-    let y = frame.height() / 2;
-    let index = ((y * frame.width() + x) * 4) as usize;
-    let rgba = &frame.rgba_bytes()[index..index + 4];
-    [rgba[0], rgba[1], rgba[2]]
-}
-
-fn viewport_probe_url(min_width_threshold: u32) -> String {
-    let html = format!(
-        "<!doctype html><title>DPR Probe</title><style>\
-         html,body{{margin:0;width:100%;height:100%;background:rgb(238,32,77);}}\
-         @media (min-width:{min_width_threshold}px){{html,body{{background:rgb(0,57,255);}}}}\
-         </style>",
-    );
-    format!("data:text/html,{}", percent_encode_for_data_url(&html))
-}
-
-fn percent_encode_for_data_url(value: &str) -> String {
-    value
-        .bytes()
-        .map(|byte| match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                (byte as char).to_string()
-            }
-            _ => format!("%{byte:02X}"),
-        })
-        .collect()
-}
+#[path = "software_host/support.rs"]
+mod support;
+use support::*;

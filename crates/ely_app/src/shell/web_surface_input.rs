@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use ely_domain::TabId;
-use gpui::{Bounds, NativeSurfaceHandle, Pixels, Point};
+use gpui::{Bounds, Pixels, Point};
 
 use super::{
     web_surface::WebSurfaceStore,
@@ -102,24 +102,6 @@ impl WebSurfaceStore {
         } else {
             WebSurfaceInputOutcome::Applied
         }
-    }
-
-    pub(super) fn record_native_surface(
-        &mut self,
-        tab_id: &TabId,
-        native_surface: NativeSurfaceHandle,
-    ) -> WebSurfaceInputOutcome {
-        let surface = self.surface_mut(tab_id);
-        if surface
-            .native_surface
-            .as_ref()
-            .is_some_and(|current| current.identity() == native_surface.identity())
-        {
-            return WebSurfaceInputOutcome::NoChange;
-        }
-        surface.native_surface = Some(native_surface);
-        surface.last_ensure_key = None;
-        WebSurfaceInputOutcome::Applied
     }
 
     pub(super) fn record_hover_point(

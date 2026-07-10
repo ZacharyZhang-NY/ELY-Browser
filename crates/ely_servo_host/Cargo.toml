@@ -18,19 +18,41 @@ servo-engine = [
     "dep:servo",
     "dep:url",
 ]
+hardware-render = [
+    "servo-engine",
+    "dep:gleam",
+    "dep:glow",
+    "dep:image",
+    "dep:mach2",
+    "dep:objc2-io-surface",
+    "dep:surfman",
+]
+
+[[bin]]
+name = "ely_servo_sidecar"
+path = "src/bin/ely_servo_sidecar.rs"
+required-features = ["servo-engine"]
 
 [dependencies]
 dpi = { workspace = true, optional = true }
 ely_domain = { path = "../ely_domain" }
 euclid = { version = "0.22", optional = true }
+gleam = { version = "0.15", optional = true }
+glow = { version = "0.17", optional = true }
+image = { workspace = true, optional = true }
 naga = { version = "26.0.0", features = ["termcolor"], optional = true }
 raw-window-handle = { version = "0.6", optional = true }
 rustls = { version = "0.23.40", default-features = false, features = ["std", "aws_lc_rs"], optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 servo = { workspace = true, optional = true }
+surfman = { version = "0.13", features = ["chains"], optional = true }
 thiserror.workspace = true
 url = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+mach2 = { version = "0.6", optional = true }
+objc2-io-surface = { version = "0.3.2", default-features = false, features = ["std", "libc", "objc2", "objc2-core-foundation", "IOSurfaceRef", "IOSurfaceTypes"], optional = true }
 
 [lints]
 workspace = true

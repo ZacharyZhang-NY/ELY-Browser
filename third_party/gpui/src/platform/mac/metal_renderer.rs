@@ -384,19 +384,17 @@ impl MetalRenderer {
             let mut instance_buffer = self.instance_buffer_pool.lock().acquire(&self.device);
 
             let command_buffer =
-                self.draw_primitives(scene, &mut instance_buffer, drawable, viewport_size);
+                self.draw_primitives(scene, &mut instance_buffer, drawable.texture(), viewport_size);
 
             match command_buffer {
                 Ok(command_buffer) => {
-                    let instance_buffer_pool = self.instance_buffer_pool.clone();
-                    let instance_buffer = Cell::new(Some(instance_buffer));
-                    let block = ConcreteBlock::new(move |_| {
-                        if let Some(instance_buffer) = instance_buffer.take() {
-                            instance_buffer_pool.lock().release(instance_buffer);
-                        }
-                    });
-                    let block = block.copy();
-                    command_buffer.add_completed_handler(&block);
+                    retain_frame_resources_until_completion(
+                        command_buffer.as_ref(),
+                        scene,
+                        instance_buffer,
+                        self.instance_buffer_pool.clone(),
+                        None,
+                    );
 
                     if self.presents_with_transaction {
                         command_buffer.commit();
@@ -433,7 +431,7 @@ impl MetalRenderer {
         &mut self,
         scene: &Scene,
         instance_buffer: &mut InstanceBuffer,
-        drawable: &metal::MetalDrawableRef,
+        target_texture: &metal::TextureRef,
         viewport_size: Size<DevicePixels>,
     ) -> Result<metal::CommandBuffer> {
         let command_queue = self.command_queue.clone();
@@ -443,7 +441,7 @@ impl MetalRenderer {
 
         let mut command_encoder = new_command_encoder(
             command_buffer,
-            drawable,
+            target_texture,
             viewport_size,
             |color_attachment| {
                 color_attachment.set_load_action(metal::MTLLoadAction::Clear);
@@ -480,7 +478,7 @@ impl MetalRenderer {
 
                     command_encoder = new_command_encoder(
                         command_buffer,
-                        drawable,
+                        target_texture,
                         viewport_size,
                         |color_attachment| {
                             color_attachment.set_load_action(metal::MTLLoadAction::Load);
@@ -1197,9 +1195,36 @@ impl MetalRenderer {
     }
 }
 
+fn retain_frame_resources_until_completion(
+    command_buffer: &metal::CommandBufferRef,
+    scene: &Scene,
+    instance_buffer: InstanceBuffer,
+    instance_buffer_pool: Arc<Mutex<InstanceBufferPool>>,
+    completion_tx: Option<std::sync::mpsc::Sender<()>>,
+) {
+    let instance_buffer = Cell::new(Some(instance_buffer));
+    let surface_leases = Cell::new(Some(
+        scene
+            .surfaces
+            .iter()
+            .filter_map(|surface| surface.lease.clone())
+            .collect::<Vec<_>>(),
+    ));
+    let block = ConcreteBlock::new(move |_| {
+        let _ = surface_leases.take();
+        if let Some(instance_buffer) = instance_buffer.take() {
+            instance_buffer_pool.lock().release(instance_buffer);
+        }
+        if let Some(completion_tx) = completion_tx.as_ref() {
+            let _ = completion_tx.send(());
+        }
+    });
+    command_buffer.add_completed_handler(&block.copy());
+}
+
 fn new_command_encoder<'a>(
     command_buffer: &'a metal::CommandBufferRef,
-    drawable: &'a metal::MetalDrawableRef,
+    target_texture: &'a metal::TextureRef,
     viewport_size: Size<DevicePixels>,
     configure_color_attachment: impl Fn(&RenderPassColorAttachmentDescriptorRef),
 ) -> &'a metal::RenderCommandEncoderRef {
@@ -1208,7 +1233,7 @@ fn new_command_encoder<'a>(
         .color_attachments()
         .object_at(0)
         .unwrap();
-    color_attachment.set_texture(Some(drawable.texture()));
+    color_attachment.set_texture(Some(target_texture));
     color_attachment.set_store_action(metal::MTLStoreAction::Store);
     configure_color_attachment(color_attachment);
 
@@ -1223,6 +1248,13 @@ fn new_command_encoder<'a>(
     });
     command_encoder
 }
+
+#[cfg(feature = "test-support")]
+#[path = "metal_renderer_test_support.rs"]
+mod test_support;
+
+#[cfg(feature = "test-support")]
+pub use test_support::{MetalSurfaceTestSubmission, submit_surface_to_metal_for_test};
 
 fn build_pipeline_state(
     device: &metal::DeviceRef,

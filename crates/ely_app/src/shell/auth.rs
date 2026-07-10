@@ -104,12 +104,7 @@ impl ElyShell {
             };
             return;
         };
-        let profile_dir = sync_profile_data_dir(
-            &profile_root,
-            &active_profile.id,
-            &active_profile.name,
-            &active_profile.kind,
-        );
+        let profile_dir = sync_profile_data_dir(&profile_root, &active_profile.id);
         self.auth_flow_phase = AuthFlowPhase::Verifying { email: email.clone() };
         let tx = self.sync_inbox_tx.clone();
         spawn_verify_otp(email, normalized_otp, profile_dir, tx);
@@ -127,12 +122,7 @@ impl ElyShell {
         let Some(profile_root) = default_profile_data_root() else {
             return;
         };
-        let profile_dir = sync_profile_data_dir(
-            &profile_root,
-            &active_profile.id,
-            &active_profile.name,
-            &active_profile.kind,
-        );
+        let profile_dir = sync_profile_data_dir(&profile_root, &active_profile.id);
         match SyncEngine::for_profile_dir(&profile_dir, "ELY", sync_platform_label()) {
             Ok(mut engine) => {
                 let _ = engine.install_bearer("");

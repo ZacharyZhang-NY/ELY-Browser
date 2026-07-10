@@ -269,19 +269,12 @@ impl ElyShell {
             return;
         };
         let active_profile_id = snapshot.active_profile_id.clone();
-        let active_profile_name = snapshot.active_profile_name.clone();
-        let active_profile_kind = snapshot.active_profile_kind.clone();
         let device_name = format!("ELY · {}", snapshot.active_profile_name);
         let Some(profile_root) = default_profile_data_root() else {
             tracing::warn!(target: "ely::sync", "profile data root is unavailable");
             return;
         };
-        let profile_dir = sync_profile_data_dir(
-            &profile_root,
-            &active_profile_id,
-            &active_profile_name,
-            &active_profile_kind,
-        );
+        let profile_dir = sync_profile_data_dir(&profile_root, &active_profile_id);
         let bytes = match core.build_sync_snapshot_bytes() {
             Ok(bytes) => bytes,
             Err(error) => {

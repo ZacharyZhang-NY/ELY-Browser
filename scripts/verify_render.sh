@@ -2,7 +2,7 @@
 # T16 — real-window screencapture sanity check.
 #
 # Boots ./target/release/ely_app in the background, opens a live page through
-# Servo's native surface path, captures the ELY window by its Core Graphics
+# its profile-scoped Servo sidecar, captures the ELY window by its Core Graphics
 # window ID, then asserts the PNG is non-trivial (size + dimensions + non-white
 # center). Stderr from the app is
 # tee'd to a log so a crash leaves evidence behind.
@@ -35,6 +35,7 @@ cleanup() {
     # Stragglers from prior runs / child processes
     pkill -f "target/release/ely_app" 2>/dev/null || true
     pkill -x "ely_app" 2>/dev/null || true
+    pkill -x "ely_servo_sidecar" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
@@ -51,17 +52,23 @@ fail() {
 echo "[1/6] killing stale ely_app processes"
 pkill -f "target/release/ely_app" 2>/dev/null || true
 pkill -x "ely_app" 2>/dev/null || true
+pkill -x "ely_servo_sidecar" 2>/dev/null || true
 sleep 0.5
 
-echo "[2/6] cargo build --release --locked -p ely_app"
+echo "[2/6] building release app and Servo sidecar"
 if ! cargo build --release --locked -p ely_app; then
-    fail "cargo build failed"
+    fail "app build failed"
+fi
+if ! cargo build --release --locked -p ely_servo_host --features servo-engine,hardware-render --bin ely_servo_sidecar; then
+    fail "Servo sidecar build failed"
 fi
 [[ -x "${APP_BIN}" ]] || fail "binary missing: ${APP_BIN}"
+[[ -x "${REPO_ROOT}/target/release/ely_servo_sidecar" ]] || fail "sidecar binary missing"
 
 echo "[3/6] launching ${APP_BIN} ${SMOKE_URL} (stderr -> ${STDERR_LOG})"
 : > "${STDERR_LOG}"
-"${APP_BIN}" "${SMOKE_URL}" >/dev/null 2>"${STDERR_LOG}" &
+ELY_SERVO_RENDERING_CONTEXT=hardware \
+    "${APP_BIN}" "${SMOKE_URL}" >/dev/null 2>"${STDERR_LOG}" &
 APP_PID=$!
 echo "      pid=${APP_PID}"
 

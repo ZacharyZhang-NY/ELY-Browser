@@ -70,6 +70,7 @@ pub struct InitialBrowserConfig {
     pub profile_name: String,
     pub profile_color_hex: u32,
     pub profile_kind: ProfileKind,
+    pub profile_id: Option<ProfileId>,
     pub new_tab_destination: NewTabDestination,
 }
 
@@ -82,6 +83,7 @@ impl InitialBrowserConfig {
             profile_name: "Default".to_string(),
             profile_color_hex: 0x26251e,
             profile_kind: ProfileKind::Standard,
+            profile_id: None,
             new_tab_destination: NewTabDestination::default(),
         })
     }
@@ -94,6 +96,7 @@ impl InitialBrowserConfig {
             profile_name: "Private".to_string(),
             profile_color_hex: 0x807d72,
             profile_kind: ProfileKind::Private,
+            profile_id: None,
             new_tab_destination: NewTabDestination::default(),
         })
     }
@@ -181,6 +184,10 @@ impl BrowserCore {
     pub fn new(config: InitialBrowserConfig) -> Result<Self, CoreError> {
         let profile =
             Profile::new(config.profile_name, config.profile_color_hex, config.profile_kind);
+        let profile = match config.profile_id {
+            Some(profile_id) => Profile::restore(profile_id, profile),
+            None => profile,
+        };
         let active_profile_id = profile.id().clone();
         let space = Space::new(
             config.space_name,

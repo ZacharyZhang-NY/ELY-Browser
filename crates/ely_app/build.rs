@@ -11,24 +11,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?);
     let workspace_root = workspace_root(&manifest_dir)?;
     let workspace_manifest_path = workspace_root.join("Cargo.toml");
-    let git_head_path = workspace_root.join(".git/HEAD");
     let workspace_manifest = read_workspace_manifest(&workspace_manifest_path)?;
     let workspace = table(&workspace_manifest, "workspace")?;
     let package = table(workspace, "package")?;
     let dependencies = table(workspace, "dependencies")?;
 
     emit_cargo_directive(format!("cargo:rerun-if-changed={}", workspace_manifest_path.display()))?;
-    emit_cargo_directive(format!("cargo:rerun-if-changed={}", git_head_path.display()))?;
-    if let Some(ref_path) = git_head_ref(&git_head_path)? {
-        emit_cargo_directive(format!(
-            "cargo:rerun-if-changed={}",
-            workspace_root.join(".git").join(ref_path).display()
-        ))?;
-    }
+    emit_cargo_directive("cargo:rerun-if-env-changed=ELY_BUILD_REVISION")?;
 
-    emit_env("ELY_BUILD_REVISION", &git_revision(workspace_root)?)?;
+    emit_env("ELY_BUILD_REVISION", &build_revision(workspace_root)?)?;
     emit_env("ELY_WORKSPACE_LICENSE", string_value(package, "license")?)?;
-    emit_env("ELY_WORKSPACE_MANIFEST", path_value(&workspace_manifest_path)?)?;
+    if env::var("PROFILE").as_deref() == Ok("debug") {
+        emit_env("ELY_WORKSPACE_MANIFEST", path_value(&workspace_manifest_path)?)?;
+    }
     emit_env("ELY_GPUI_VERSION", dependency_version(dependencies, "gpui")?)?;
     emit_env("ELY_GPUI_COMPONENT_VERSION", dependency_version(dependencies, "gpui-component")?)?;
     emit_env("ELY_SERVO_VERSION", dependency_version(dependencies, "servo")?)?;
@@ -90,36 +85,89 @@ fn dependency_version<'a>(
     }
 }
 
-fn git_revision(workspace_root: &Path) -> Result<String, Box<dyn Error>> {
-    let output = Command::new("git")
-        .args(["rev-parse", "--short=12", "HEAD"])
-        .current_dir(workspace_root)
-        .output()?;
-    if !output.status.success() {
-        return Err(
-            io::Error::new(io::ErrorKind::InvalidData, "git revision is unavailable").into()
-        );
+fn build_revision(workspace_root: &Path) -> Result<String, Box<dyn Error>> {
+    match env::var("ELY_BUILD_REVISION") {
+        Ok(revision) => return validated_revision(revision),
+        Err(env::VarError::NotUnicode(_)) => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "ELY_BUILD_REVISION is not UTF-8",
+            )
+            .into());
+        }
+        Err(env::VarError::NotPresent) => {}
     }
-    let revision = String::from_utf8(output.stdout)?.trim().to_string();
-    if revision.is_empty() {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "git revision is empty").into());
+
+    match fs::symlink_metadata(workspace_root.join(".git")) {
+        Ok(_) => git_revision(workspace_root),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            validated_revision(format!("source-{}", env::var("CARGO_PKG_VERSION")?))
+        }
+        Err(error) => Err(error.into()),
     }
-    Ok(revision)
 }
 
-fn git_head_ref(git_head_path: &Path) -> Result<Option<String>, Box<dyn Error>> {
-    let head = fs::read_to_string(git_head_path)?;
-    let Some(ref_path) = head.trim().strip_prefix("ref: ") else {
+fn git_revision(workspace_root: &Path) -> Result<String, Box<dyn Error>> {
+    emit_git_watch(workspace_root, "HEAD")?;
+    emit_git_watch(workspace_root, "packed-refs")?;
+    if let Some(reference) = git_optional_output(workspace_root, &["symbolic-ref", "-q", "HEAD"])? {
+        emit_git_watch(workspace_root, &reference)?;
+    }
+    let revision = git_output(workspace_root, &["rev-parse", "--short=12", "HEAD"])?;
+    validated_revision(revision)
+}
+
+fn emit_git_watch(workspace_root: &Path, git_path: &str) -> Result<(), Box<dyn Error>> {
+    let path = PathBuf::from(git_output(workspace_root, &["rev-parse", "--git-path", git_path])?);
+    let path = if path.is_absolute() { path } else { workspace_root.join(path) };
+    emit_cargo_directive(format!("cargo:rerun-if-changed={}", path.display()))
+}
+
+fn git_output(workspace_root: &Path, arguments: &[&str]) -> Result<String, Box<dyn Error>> {
+    let output = Command::new("git").args(arguments).current_dir(workspace_root).output()?;
+    if !output.status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("git {} failed", arguments.join(" ")),
+        )
+        .into());
+    }
+    String::from_utf8(output.stdout).map(|value| value.trim().to_string()).map_err(Into::into)
+}
+
+fn git_optional_output(
+    workspace_root: &Path,
+    arguments: &[&str],
+) -> Result<Option<String>, Box<dyn Error>> {
+    let output = Command::new("git").args(arguments).current_dir(workspace_root).output()?;
+    if output.status.success() {
+        return String::from_utf8(output.stdout)
+            .map(|value| Some(value.trim().to_string()))
+            .map_err(Into::into);
+    }
+    if output.status.code() == Some(1) {
         return Ok(None);
-    };
-    Ok(Some(ref_path.to_string()))
+    }
+    Err(io::Error::new(io::ErrorKind::InvalidData, format!("git {} failed", arguments.join(" ")))
+        .into())
+}
+
+fn validated_revision(revision: String) -> Result<String, Box<dyn Error>> {
+    let revision = revision.trim();
+    validate_env_value("ELY_BUILD_REVISION", revision)?;
+    Ok(revision.to_string())
 }
 
 fn emit_env(key: &str, value: &str) -> Result<(), Box<dyn Error>> {
-    if value.trim().is_empty() {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, format!("{key} is empty")).into());
-    }
+    validate_env_value(key, value)?;
     emit_cargo_directive(format!("cargo:rustc-env={key}={value}"))?;
+    Ok(())
+}
+
+fn validate_env_value(key: &str, value: &str) -> Result<(), Box<dyn Error>> {
+    if value.trim().is_empty() || value.contains('\r') || value.contains('\n') {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, format!("invalid {key}")).into());
+    }
     Ok(())
 }
 

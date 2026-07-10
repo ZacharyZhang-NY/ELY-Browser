@@ -20,7 +20,6 @@ pub(super) fn send_mouse_click(webview: &WebView, x: u32, y: u32) {
 pub(super) fn send_mouse_drag(webview: &WebView, from_x: u32, from_y: u32, to_x: u32, to_y: u32) {
     let from = point(from_x, from_y);
     let to = point(to_x, to_y);
-    webview.notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(from)));
     send_mouse_button(webview, MouseButtonAction::Down, from);
     webview.notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(to)));
     send_mouse_button(webview, MouseButtonAction::Up, to);

@@ -28,6 +28,7 @@ assert_value() {
 assert_value "CFBundleDisplayName" "ELY Browser"
 assert_value "CFBundleName" "ELY Browser"
 assert_value "CFBundleIdentifier" "com.elydora.ely-browser"
+assert_value "CFBundleIconFile" "AppIcon"
 assert_value "CFBundleGetInfoString" "ELY Browser by Elydora"
 assert_value "CFBundleExecutable" "ely_app"
 assert_value "CFBundlePackageType" "APPL"

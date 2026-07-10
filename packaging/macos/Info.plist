@@ -11,6 +11,8 @@
   <string>ely_app</string>
   <key>CFBundleIdentifier</key>
   <string>com.elydora.ely-browser</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundleGetInfoString</key>
   <string>ELY Browser by Elydora</string>
   <key>CFBundleInfoDictionaryVersion</key>

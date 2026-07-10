@@ -1,498 +1,465 @@
-use std::{collections::BTreeMap, path::PathBuf};
-
-use ely_domain::{
-    ProfileId, SiteOrigin, SitePermissionDecision, SitePermissionFeature, TabId, UrlText, WebViewId,
-};
-use ely_servo_host::{
-    HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest, MouseHoverRequest,
-    NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest, ResizeRequest,
-    ScrollRequest, ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost,
+use std::{
+    path::PathBuf,
+    process::{Child, Stdio},
+    thread,
+    time::{Duration, Instant},
 };
 
+#[cfg(target_os = "macos")]
+use std::collections::BTreeSet;
+
+#[cfg(target_os = "macos")]
+#[path = "servo_live_iosurface_importer.rs"]
+mod iosurface_importer;
+#[path = "servo_live_ipc.rs"]
+mod ipc;
 #[path = "servo_live_types.rs"]
 mod types;
+#[path = "servo_live_wire.rs"]
+mod wire;
 
 pub(crate) use types::{
     ServoLiveEnsureRequest, ServoLiveError, ServoLiveFrame, ServoLiveSitePermission,
 };
 
-/// Servo's `WebViewBuilder` defaults the hidpi (device → CSS) scale to
-/// 1.0 — see the contract documented on
-/// [`ely_servo_host::HidpiScaleRequest`]. Mirroring the post-build state
-/// in [`DirectWebViewSession`] makes the diff inside `apply_viewport`
-/// the source of truth for whether `set_hidpi_scale` has to run.
-const SERVO_DEFAULT_DEVICE_PIXEL_RATIO: f32 = 1.0;
+use self::{
+    ipc::{IpcReply, ServoLiveIpc, validate_frame_layout},
+    wire::{LIVE_PROTOCOL_VERSION, LiveRequest, LiveSurfaceHandle},
+};
+use super::servo_sidecar_command::{
+    SidecarRenderingContext, default_sidecar_command, rendering_context_from_env,
+};
 
-/// Servo's `WebViewBuilder` likewise defaults page zoom to 1.0 (100%).
-const SERVO_DEFAULT_PAGE_ZOOM_PERCENT: u16 = 100;
+#[cfg(target_os = "macos")]
+use super::iosurface_metal::IOSurfaceCache;
+#[cfg(target_os = "macos")]
+use iosurface_importer::{IOSurfaceImportResult, IOSurfaceImportWorker};
+
+const SIDECAR_TIMEOUTS: SidecarTimeouts = SidecarTimeouts {
+    request: Duration::from_secs(10),
+    shutdown: Duration::from_secs(2),
+    exit: Duration::from_secs(2),
+};
+
+#[derive(Clone, Copy)]
+struct SidecarTimeouts {
+    request: Duration,
+    shutdown: Duration,
+    exit: Duration,
+}
 
 pub(crate) struct ServoLiveClient {
-    host: SoftwareServoHost,
-    sessions: BTreeMap<String, DirectWebViewSession>,
+    child: Child,
+    ipc: ServoLiveIpc,
+    timeouts: SidecarTimeouts,
+    active: bool,
+    #[cfg(target_os = "macos")]
+    iosurface_cache: IOSurfaceCache,
+    #[cfg(target_os = "macos")]
+    iosurface_importer: Option<IOSurfaceImportWorker>,
+    #[cfg(target_os = "macos")]
+    pending_surface_ids: BTreeSet<u64>,
 }
 
 impl ServoLiveClient {
     pub fn new(profile_data_dir: PathBuf) -> Result<Self, ServoLiveError> {
-        let host = SoftwareServoHost::new_with_config_dir(
-            ServoSurfaceSize::new(1, 1),
-            Some(profile_data_dir),
-        )?;
-        Ok(Self { host, sessions: BTreeMap::new() })
+        let rendering_context = rendering_context_from_env();
+        let command_target = default_sidecar_command()?;
+        if let Some(path) = command_target.missing_binary_path() {
+            return Err(ServoLiveError::SidecarBinaryUnavailable { path: path.to_path_buf() });
+        }
+
+        let mut command = command_target.command();
+        command.arg("live").arg("--profile-data-dir").arg(profile_data_dir);
+        command.arg("--rendering-context").arg(rendering_context.cli_arg());
+        #[cfg(target_os = "macos")]
+        let iosurface_importer = if rendering_context == SidecarRenderingContext::Hardware {
+            let receiver = super::iosurface_mach::IOSurfaceMachReceiver::new()?;
+            command.arg("--iosurface-mach-service").arg(receiver.service_name());
+            Some(
+                IOSurfaceImportWorker::new(receiver)
+                    .map_err(ServoLiveError::IOSurfaceImportWorker)?,
+            )
+        } else {
+            None
+        };
+        let child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(ServoLiveError::Command)?;
+        let mut client = Self::from_spawned_child(child, SIDECAR_TIMEOUTS)?;
+        #[cfg(target_os = "macos")]
+        {
+            client.iosurface_importer = iosurface_importer;
+        }
+        Ok(client)
+    }
+
+    fn from_spawned_child(
+        mut child: Child,
+        timeouts: SidecarTimeouts,
+    ) -> Result<Self, ServoLiveError> {
+        let Some(stdin) = child.stdin.take() else {
+            terminate_child(&mut child, timeouts.exit);
+            return Err(ServoLiveError::PipeUnavailable { name: "stdin" });
+        };
+        let Some(stdout) = child.stdout.take() else {
+            drop(stdin);
+            terminate_child(&mut child, timeouts.exit);
+            return Err(ServoLiveError::PipeUnavailable { name: "stdout" });
+        };
+        let mut client = Self {
+            child,
+            ipc: ServoLiveIpc::spawn(stdin, stdout),
+            timeouts,
+            active: true,
+            #[cfg(target_os = "macos")]
+            iosurface_cache: IOSurfaceCache::new(),
+            #[cfg(target_os = "macos")]
+            iosurface_importer: None,
+            #[cfg(target_os = "macos")]
+            pending_surface_ids: BTreeSet::new(),
+        };
+        if let Err(error) = client.handshake() {
+            client.terminate();
+            return Err(error);
+        }
+        Ok(client)
     }
 
     pub fn ensure(
         &mut self,
         request: ServoLiveEnsureRequest,
     ) -> Result<Option<ServoLiveFrame>, ServoLiveError> {
-        let tab_id = TabId::parse(request.tab_id.clone())?;
-        let profile_id = ProfileId::parse(request.profile_id.clone())?;
-        let requested_url = UrlText::parse(request.url.clone())?;
-        let webview_id = self.ensure_webview(&request, &tab_id, &profile_id)?;
-
-        self.apply_viewport(&request, &webview_id)?;
-        self.apply_permissions(&request, &webview_id, &profile_id)?;
-        self.apply_navigation(&request, &webview_id, tab_id, requested_url)?;
-        self.apply_input(&request, &webview_id)?;
-        // Match Servo's `examples/winit_minimal.rs`: spin the event loop on
-        // the embedder-side hot path, never paint. Servo's public
-        // rendering contract says `notify_new_frame_ready` is the signal
-        // for `WebView::paint`; URL/title/load-status callbacks are
-        // metadata updates and travel through snapshots. Painting here
-        // would present before Servo has composited the navigated page,
-        // which produced per-redirect white flashes.
-        self.host.tick();
-        if self.session_uses_native_surface(&request.tab_id) {
-            return self.presented_frame_from_session(&request.tab_id, &webview_id).map(Some);
-        }
-
-        Ok(None)
+        #[cfg(target_os = "macos")]
+        self.drain_iosurface_imports()?;
+        validate_frame_layout(request.width, request.height)?;
+        let ready_surface_ids = self.ready_surface_ids();
+        let pending_surface_ids = self.pending_surface_ids();
+        self.request(LiveRequest::Ensure {
+            tab_id: request.tab_id,
+            profile_id: request.profile_id,
+            url: request.url,
+            width: request.width,
+            height: request.height,
+            page_zoom_percent: request.page_zoom_percent,
+            device_pixel_ratio: request.device_pixel_ratio,
+            scroll_delta_x: request.scroll_delta_x,
+            scroll_delta_y: request.scroll_delta_y,
+            scroll_point_x: request.scroll_point_x,
+            scroll_point_y: request.scroll_point_y,
+            click_x: request.click_x,
+            click_y: request.click_y,
+            hover_x: request.hover_x,
+            hover_y: request.hover_y,
+            typed_text: request.typed_text,
+            site_permissions: request.site_permissions,
+            ready_surface_ids,
+            pending_surface_ids,
+        })
     }
 
     pub fn poll(&mut self, tab_id: String) -> Result<Option<ServoLiveFrame>, ServoLiveError> {
-        let Some(session) = self.sessions.get(&tab_id) else {
-            return Ok(None);
-        };
-        let webview_id = session.webview_id.clone();
-        let uses_native_surface = session.native_surface_id.is_some();
-
-        self.host.tick();
-        let snapshot = self.host.snapshot(&webview_id)?;
-        if !snapshot.has_pending_frame() && !snapshot.has_pending_metadata() {
-            return Ok(None);
-        }
-
-        if uses_native_surface {
-            if snapshot.has_pending_frame() {
-                self.host.paint_without_readback_with_completion(&webview_id, false)?;
-            }
-            return self.presented_frame_from_session(&tab_id, &webview_id).map(Some);
-        }
-
-        if snapshot.has_pending_frame() {
-            self.host.paint(&webview_id)?;
-        }
-        self.rendered_frame_from_session(&tab_id, &webview_id)
+        #[cfg(target_os = "macos")]
+        self.drain_iosurface_imports()?;
+        self.request(LiveRequest::Poll {
+            tab_id,
+            ready_surface_ids: self.ready_surface_ids(),
+            pending_surface_ids: self.pending_surface_ids(),
+        })
     }
 
     pub fn close(&mut self, tab_id: String) -> Result<(), ServoLiveError> {
-        let Some(session) = self.sessions.remove(&tab_id) else {
-            return Ok(());
-        };
-        self.host.close_webview(&session.webview_id);
-        Ok(())
+        self.request(LiveRequest::Close { tab_id }).map(|_| ())
     }
 
-    fn ensure_webview(
-        &mut self,
-        request: &ServoLiveEnsureRequest,
-        tab_id: &TabId,
-        profile_id: &ProfileId,
-    ) -> Result<WebViewId, ServoLiveError> {
-        if self
-            .sessions
-            .get(&request.tab_id)
-            .is_some_and(|session| session.profile_id != *profile_id)
-            && let Some(session) = self.sessions.remove(&request.tab_id)
+    fn handshake(&mut self) -> Result<(), ServoLiveError> {
+        let reply = self.exchange(
+            LiveRequest::Handshake { protocol_version: LIVE_PROTOCOL_VERSION },
+            self.timeouts.request,
+            "handshake",
+        )?;
+        if reply.frame.is_some()
+            || reply.surface_handle.is_some()
+            || reply.current_surface_id.is_some()
         {
-            self.host.close_webview(&session.webview_id);
+            return Err(ServoLiveError::InvalidResponse {
+                message: "handshake response contains a frame",
+            });
         }
-
-        let native_surface_id =
-            request.native_surface.as_ref().map(gpui::NativeSurfaceHandle::identity);
-        if self
-            .sessions
-            .get(&request.tab_id)
-            .is_some_and(|session| session.native_surface_id != native_surface_id)
-            && let Some(session) = self.sessions.remove(&request.tab_id)
-        {
-            self.host.close_webview(&session.webview_id);
+        match reply.error {
+            Some(message) => Err(ServoLiveError::SidecarFailed { message }),
+            None => Ok(()),
         }
-
-        if let Some(session) = self.sessions.get(&request.tab_id) {
-            return Ok(session.webview_id.clone());
-        }
-
-        let surface_size = ServoSurfaceSize::new(request.width, request.height);
-        let webview_id = match request.native_surface.as_ref() {
-            Some(native_surface) => self.host.create_webview_with_native_surface(
-                tab_id.clone(),
-                profile_id.clone(),
-                surface_size,
-                native_surface,
-            )?,
-            None => self.host.create_webview_with_size(
-                tab_id.clone(),
-                profile_id.clone(),
-                surface_size,
-            )?,
-        };
-        self.sessions.insert(
-            request.tab_id.clone(),
-            DirectWebViewSession {
-                webview_id: webview_id.clone(),
-                profile_id: profile_id.clone(),
-                requested_url: None,
-                width: request.width,
-                height: request.height,
-                // Servo's WebViewBuilder defaults page zoom to 1.0 (100%) and
-                // hidpi scale to 1.0; record both as Servo's actual post-build
-                // state so `apply_viewport` pushes the embedder-requested
-                // values on the first ensure. Without this, a request whose
-                // zoom/DPR happens to equal the cached request value would
-                // bypass `set_page_zoom` / `set_hidpi_scale` and leave the
-                // WebView at Servo's defaults — on Retina that collapses CSS
-                // pixels onto device pixels and renders pages at half size.
-                page_zoom_percent: SERVO_DEFAULT_PAGE_ZOOM_PERCENT,
-                device_pixel_ratio: SERVO_DEFAULT_DEVICE_PIXEL_RATIO,
-                native_surface_id,
-            },
-        );
-        Ok(webview_id)
     }
 
-    fn apply_viewport(
+    fn request(&mut self, request: LiveRequest) -> Result<Option<ServoLiveFrame>, ServoLiveError> {
+        let reply = self.exchange(request, self.timeouts.request, "request")?;
+        if let Some(message) = reply.error {
+            return Err(ServoLiveError::SidecarFailed { message });
+        }
+        #[cfg(target_os = "macos")]
+        if let Some(handle) = reply.surface_handle {
+            self.queue_iosurface_handle(handle)?;
+            self.drain_iosurface_imports()?;
+        }
+
+        let mut frame = reply.frame;
+        #[cfg(target_os = "macos")]
+        if let (Some(frame), Some(surface_id)) = (frame.as_mut(), reply.current_surface_id) {
+            let hardware_surface =
+                self.iosurface_cache.hardware_surface_for(surface_id).map_err(|error| {
+                    ServoLiveError::IOSurfaceBackingFailed {
+                        surface_id,
+                        message: error.to_string(),
+                    }
+                })?;
+            if hardware_surface.is_none() && !frame.has_software_payload() {
+                return Ok(None);
+            }
+            frame.set_hardware_surface(surface_id, hardware_surface);
+        }
+        Ok(frame)
+    }
+
+    fn exchange(
         &mut self,
-        request: &ServoLiveEnsureRequest,
-        webview_id: &WebViewId,
-    ) -> Result<(), ServoLiveError> {
-        let Some(session) = self.sessions.get_mut(&request.tab_id) else {
+        request: LiveRequest,
+        timeout: Duration,
+        operation: &'static str,
+    ) -> Result<IpcReply, ServoLiveError> {
+        if !self.active {
+            return Err(ServoLiveError::SidecarExited);
+        }
+        let reply = match self.ipc.exchange(request, timeout, operation) {
+            Ok(reply) => reply,
+            Err(error) => {
+                self.terminate();
+                return Err(error);
+            }
+        };
+        if reply.protocol_version != Some(LIVE_PROTOCOL_VERSION) {
+            let error = ServoLiveError::ProtocolVersionMismatch {
+                expected: LIVE_PROTOCOL_VERSION,
+                actual: reply.protocol_version,
+            };
+            self.terminate();
+            return Err(error);
+        }
+        Ok(reply)
+    }
+
+    fn shutdown(&mut self) {
+        if !self.active {
+            return;
+        }
+        let acknowledged = self
+            .ipc
+            .exchange(LiveRequest::Shutdown, self.timeouts.shutdown, "shutdown")
+            .ok()
+            .is_some_and(|reply| {
+                reply.protocol_version == Some(LIVE_PROTOCOL_VERSION)
+                    && reply.error.is_none()
+                    && reply.frame.is_none()
+                    && reply.surface_handle.is_none()
+                    && reply.current_surface_id.is_none()
+            });
+        if acknowledged && wait_for_exit(&mut self.child, self.timeouts.exit) {
+            self.active = false;
+            self.ipc.close_and_join(self.timeouts.exit);
+            return;
+        }
+        self.terminate();
+    }
+
+    fn terminate(&mut self) {
+        if self.active {
+            terminate_child(&mut self.child, self.timeouts.exit);
+            self.active = false;
+        }
+        self.ipc.close_and_join(self.timeouts.exit);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+impl ServoLiveClient {
+    fn ready_surface_ids(&self) -> Vec<u64> {
+        Vec::new()
+    }
+
+    fn pending_surface_ids(&self) -> Vec<u64> {
+        Vec::new()
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl ServoLiveClient {
+    fn ready_surface_ids(&self) -> Vec<u64> {
+        self.iosurface_cache.surface_ids()
+    }
+
+    fn pending_surface_ids(&self) -> Vec<u64> {
+        self.pending_surface_ids.iter().copied().collect()
+    }
+
+    fn queue_iosurface_handle(&mut self, handle: LiveSurfaceHandle) -> Result<(), ServoLiveError> {
+        let Some(importer) = self.iosurface_importer.as_ref() else {
+            return Err(ServoLiveError::IOSurfaceImportFailed {
+                surface_id: handle.surface_id,
+                mach_port_name: handle.mach_port_name,
+                message: "IOSurface import worker is unavailable".to_string(),
+            });
+        };
+        let surface_id = handle.surface_id;
+        importer.submit(handle).map_err(|failure| ServoLiveError::IOSurfaceImportFailed {
+            surface_id: failure.surface_id,
+            mach_port_name: failure.mach_port_name,
+            message: failure.message,
+        })?;
+        self.pending_surface_ids.insert(surface_id);
+        Ok(())
+    }
+
+    fn drain_iosurface_imports(&mut self) -> Result<(), ServoLiveError> {
+        let Some(importer) = self.iosurface_importer.as_ref() else {
             return Ok(());
         };
-        let change = ViewportChange::between(request, session);
-
-        if let Some((width, height)) = change.resize {
-            self.host.resize(ResizeRequest { webview_id: webview_id.clone(), width, height })?;
-            session.width = width;
-            session.height = height;
-        }
-
-        if let Some(scale_factor) = change.set_hidpi {
-            self.host.set_hidpi_scale(HidpiScaleRequest {
-                webview_id: webview_id.clone(),
-                scale_factor,
-            })?;
-            session.device_pixel_ratio = scale_factor;
-        }
-
-        if let Some(page_zoom_percent) = change.set_page_zoom {
-            self.host.set_page_zoom(PageZoomRequest {
-                webview_id: webview_id.clone(),
-                zoom_factor: f32::from(page_zoom_percent) / 100.0,
-            })?;
-            session.page_zoom_percent = page_zoom_percent;
-        }
-
-        Ok(())
+        apply_iosurface_import_results(
+            &mut self.iosurface_cache,
+            &mut self.pending_surface_ids,
+            importer.drain(),
+        )
     }
+}
 
-    fn apply_permissions(
-        &mut self,
-        request: &ServoLiveEnsureRequest,
-        webview_id: &WebViewId,
-        profile_id: &ProfileId,
-    ) -> Result<(), ServoLiveError> {
-        for permission in &request.site_permissions {
-            let origin = SiteOrigin::parse(permission.origin.clone())?;
-            let feature = SitePermissionFeature::parse(permission.feature.as_str())?;
-            let decision = SitePermissionDecision::parse(permission.decision.as_str())?;
-            self.host.set_permission(
-                PermissionRequest {
-                    webview_id: webview_id.clone(),
-                    profile_id: profile_id.clone(),
-                    origin,
-                    feature,
-                },
-                PermissionDecision::from(decision),
-            )?;
-        }
-        Ok(())
-    }
-
-    fn apply_navigation(
-        &mut self,
-        request: &ServoLiveEnsureRequest,
-        webview_id: &WebViewId,
-        tab_id: TabId,
-        requested_url: UrlText,
-    ) -> Result<(), ServoLiveError> {
-        // Servo's `set_history` fires `notify_url_changed` on *every*
-        // history mutation — full navigations, redirects, in-page
-        // links, and JS-driven `history.pushState` / `replaceState`.
-        // Our embedder fans that back through `WebSurfaceUrlChange`
-        // into `tab.url`, which makes the next `ensure_surface` see a
-        // "different" URL and call back into this method. Without a
-        // guard we then send Servo `WebView::load(new_url)` for a URL
-        // Servo just informed us it is *already* at — and `load` is a
-        // hard navigation that aborts the live document, clears the
-        // surface, and refetches.
-        //
-        // The google.com homepage `replaceState`s a `?zx=<timestamp>`
-        // every second; under the unguarded path that turned into a
-        // load-clear-refetch cycle per second, i.e. the continuous
-        // white flash. Servo's own `webview.url()` (driven by
-        // `set_history`) is the source of truth — if it already
-        // matches the requested URL, this URL change came *from*
-        // Servo and only needs an embedder-side bookkeeping sync.
-        let servo_current_url = self.host.snapshot(webview_id)?.url().map(str::to_string);
-        if servo_current_url.as_deref() == Some(requested_url.as_str()) {
-            if let Some(session) = self.sessions.get_mut(&request.tab_id) {
-                session.requested_url = Some(requested_url.as_str().to_string());
+#[cfg(target_os = "macos")]
+fn apply_iosurface_import_results(
+    cache: &mut IOSurfaceCache,
+    pending_surface_ids: &mut BTreeSet<u64>,
+    results: Vec<IOSurfaceImportResult>,
+) -> Result<(), ServoLiveError> {
+    let mut first_failure = None;
+    for result in results {
+        let surface_id = match &result {
+            IOSurfaceImportResult::Imported(imported) => imported.surface_id,
+            IOSurfaceImportResult::Failed(failure) => failure.surface_id,
+        };
+        pending_surface_ids.remove(&surface_id);
+        match result {
+            IOSurfaceImportResult::Imported(imported) => {
+                cache.insert_imported(imported.surface_id, imported.imported);
             }
-            return Ok(());
-        }
-
-        let should_navigate = self
-            .sessions
-            .get(&request.tab_id)
-            .and_then(|session| session.requested_url.as_deref())
-            .is_none_or(|current| current != requested_url.as_str());
-        if should_navigate {
-            self.host.navigate(NavigationRequest {
-                webview_id: webview_id.clone(),
-                tab_id,
-                url: requested_url.clone(),
-            })?;
-            if let Some(session) = self.sessions.get_mut(&request.tab_id) {
-                session.requested_url = Some(requested_url.as_str().to_string());
+            IOSurfaceImportResult::Failed(failure) if first_failure.is_none() => {
+                first_failure = Some(ServoLiveError::IOSurfaceImportFailed {
+                    surface_id: failure.surface_id,
+                    mach_port_name: failure.mach_port_name,
+                    message: failure.message,
+                });
             }
+            IOSurfaceImportResult::Failed(_) => {}
         }
-        Ok(())
     }
+    first_failure.map_or(Ok(()), Err)
+}
 
-    fn apply_input(
-        &mut self,
-        request: &ServoLiveEnsureRequest,
-        webview_id: &WebViewId,
-    ) -> Result<(), ServoLiveError> {
-        if request.scroll_delta_x != 0 || request.scroll_delta_y != 0 {
-            let point_x = request.scroll_point_x.ok_or(ServoLiveError::MissingScrollPoint)?;
-            let point_y = request.scroll_point_y.ok_or(ServoLiveError::MissingScrollPoint)?;
-            self.host.scroll(ScrollRequest {
-                webview_id: webview_id.clone(),
-                delta_x: request.scroll_delta_x,
-                delta_y: request.scroll_delta_y,
-                point_x,
-                point_y,
-            })?;
-        }
-
-        if let (Some(x), Some(y)) = (request.hover_x, request.hover_y) {
-            self.host.hover(MouseHoverRequest { webview_id: webview_id.clone(), x, y })?;
-        }
-
-        if let (Some(x), Some(y)) = (request.click_x, request.click_y) {
-            self.host.click(MouseClickRequest { webview_id: webview_id.clone(), x, y })?;
-        }
-
-        if let Some(text) = request.typed_text.as_ref() {
-            self.host.type_text(KeyboardTextRequest {
-                webview_id: webview_id.clone(),
-                text: text.clone(),
-            })?;
-        }
-
-        Ok(())
-    }
-
-    fn presented_frame_from_session(
-        &self,
-        tab_id: &str,
-        webview_id: &WebViewId,
-    ) -> Result<ServoLiveFrame, ServoLiveError> {
-        let Some(session) = self.sessions.get(tab_id) else {
-            return Err(ServoLiveError::Host(ely_servo_host::ServoHostError::WebViewNotFound {
-                id: webview_id.clone(),
-            }));
-        };
-        if session.native_surface_id.is_some() {
-            let snapshot = self.host.snapshot_and_mark_metadata_observed(webview_id)?;
-            return Ok(ServoLiveFrame::from_presented(
-                snapshot,
-                session.width,
-                session.height,
-                session.device_pixel_ratio,
-            ));
-        }
-        Err(ServoLiveError::NativeSurfaceUnavailable)
-    }
-
-    fn rendered_frame_from_session(
-        &self,
-        tab_id: &str,
-        webview_id: &WebViewId,
-    ) -> Result<Option<ServoLiveFrame>, ServoLiveError> {
-        let Some(session) = self.sessions.get(tab_id) else {
-            return Err(ServoLiveError::Host(ServoHostError::WebViewNotFound {
-                id: webview_id.clone(),
-            }));
-        };
-        let rendered_frame = match self.host.last_rendered_frame() {
-            Ok(frame) => frame,
-            Err(ServoHostError::RenderedFrameUnavailable) => return Ok(None),
-            Err(error) => return Err(ServoLiveError::Host(error)),
-        };
-        let snapshot = self.host.snapshot_and_mark_metadata_observed(webview_id)?;
-        Ok(Some(ServoLiveFrame::from_rendered(
-            snapshot,
-            rendered_frame,
-            session.device_pixel_ratio,
-        )))
-    }
-
-    fn session_uses_native_surface(&self, tab_id: &str) -> bool {
-        self.sessions.get(tab_id).is_some_and(|session| session.native_surface_id.is_some())
+impl Drop for ServoLiveClient {
+    fn drop(&mut self) {
+        self.shutdown();
     }
 }
 
-struct DirectWebViewSession {
-    webview_id: WebViewId,
-    profile_id: ProfileId,
-    requested_url: Option<String>,
-    width: u32,
-    height: u32,
-    page_zoom_percent: u16,
-    device_pixel_ratio: f32,
-    native_surface_id: Option<usize>,
-}
-
-/// Calls that `apply_viewport` needs to make to bring the underlying
-/// Servo WebView state in line with the embedder's request. Extracted
-/// as a pure value so the diff decision is testable without a live
-/// `SoftwareServoHost` — see `tests` below.
-#[derive(Debug, Default, PartialEq)]
-struct ViewportChange {
-    resize: Option<(u32, u32)>,
-    set_hidpi: Option<f32>,
-    set_page_zoom: Option<u16>,
-}
-
-impl ViewportChange {
-    fn between(request: &ServoLiveEnsureRequest, session: &DirectWebViewSession) -> Self {
-        Self {
-            resize: (session.width != request.width || session.height != request.height)
-                .then_some((request.width, request.height)),
-            set_hidpi: (session.device_pixel_ratio != request.device_pixel_ratio)
-                .then_some(request.device_pixel_ratio),
-            set_page_zoom: (session.page_zoom_percent != request.page_zoom_percent)
-                .then_some(request.page_zoom_percent),
+fn wait_for_exit(child: &mut Child, timeout: Duration) -> bool {
+    let started_at = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return true,
+            Ok(None) => {}
+            Err(_) => return false,
         }
+        if started_at.elapsed() >= timeout {
+            return false;
+        }
+        thread::sleep(Duration::from_millis(5));
     }
 }
 
-#[cfg(test)]
+fn terminate_child(child: &mut Child, timeout: Duration) {
+    if child.try_wait().ok().flatten().is_none() {
+        let _ = child.kill();
+    }
+    let _ = wait_for_exit(child, timeout);
+}
+
+#[cfg(all(test, unix))]
 mod tests {
+    use std::{error::Error, process::Command};
+
     use super::*;
-    use ely_domain::WebViewId;
 
-    fn session(width: u32, height: u32, dpr: f32, zoom: u16) -> DirectWebViewSession {
-        DirectWebViewSession {
-            webview_id: WebViewId::new(),
-            profile_id: ProfileId::new(),
-            requested_url: None,
-            width,
-            height,
-            page_zoom_percent: zoom,
-            device_pixel_ratio: dpr,
-            native_surface_id: Some(0xC0FFEE),
-        }
-    }
+    const TEST_TIMEOUTS: SidecarTimeouts = SidecarTimeouts {
+        request: Duration::from_millis(50),
+        shutdown: Duration::from_millis(50),
+        exit: Duration::from_millis(250),
+    };
 
-    fn request(width: u32, height: u32, dpr: f32, zoom: u16) -> ServoLiveEnsureRequest {
-        ServoLiveEnsureRequest {
-            tab_id: String::from("tab"),
-            profile_id: String::from("profile"),
-            url: String::from("https://example.com/"),
-            width,
-            height,
-            page_zoom_percent: zoom,
-            device_pixel_ratio: dpr,
-            native_surface: None,
-            scroll_delta_x: 0,
-            scroll_delta_y: 0,
-            scroll_point_x: None,
-            scroll_point_y: None,
-            click_x: None,
-            click_y: None,
-            hover_x: None,
-            hover_y: None,
-            typed_text: None,
-            site_permissions: Vec::new(),
-        }
+    #[test]
+    fn startup_rejects_a_sidecar_without_the_current_protocol() -> Result<(), Box<dyn Error>> {
+        let child = spawn_script(
+            "IFS= read -r request; printf '%s\\n' '{\"error\":\"unknown request\",\"frame\":null}'",
+        )?;
+
+        let result = ServoLiveClient::from_spawned_child(child, TEST_TIMEOUTS);
+
+        assert!(matches!(result, Err(ServoLiveError::ProtocolVersionMismatch { .. })));
+        Ok(())
     }
 
     #[test]
-    fn fresh_retina_session_pushes_hidpi_only() {
-        // A 1440×900 Retina viewport arrives as physical 2880×1800 with
-        // DPR=2.0. `ensure_webview` stamps the session with Servo's
-        // post-build defaults (1.0 DPR, 100 % zoom) and the request's
-        // physical dimensions, so only the hidpi push should fire.
-        let change = ViewportChange::between(
-            &request(2880, 1800, 2.0, SERVO_DEFAULT_PAGE_ZOOM_PERCENT),
-            &session(2880, 1800, SERVO_DEFAULT_DEVICE_PIXEL_RATIO, SERVO_DEFAULT_PAGE_ZOOM_PERCENT),
-        );
-        assert_eq!(
-            change,
-            ViewportChange { resize: None, set_hidpi: Some(2.0), set_page_zoom: None },
-        );
+    fn request_timeout_kills_and_reaps_a_hung_sidecar() -> Result<(), Box<dyn Error>> {
+        let mut client = hung_sidecar_client()?;
+        let started_at = Instant::now();
+
+        let result = client.poll("tab-hung".to_string());
+
+        assert!(matches!(result, Err(ServoLiveError::RequestTimedOut { .. })));
+        assert!(started_at.elapsed() < Duration::from_secs(1));
+        assert!(client.child.try_wait()?.is_some());
+        Ok(())
     }
 
     #[test]
-    fn fresh_standard_dpi_session_pushes_nothing() {
-        // On a 1.0-DPR display the fresh session already matches the
-        // request — Servo's defaults are exactly what we asked for.
-        let change = ViewportChange::between(
-            &request(1280, 720, SERVO_DEFAULT_DEVICE_PIXEL_RATIO, SERVO_DEFAULT_PAGE_ZOOM_PERCENT),
-            &session(1280, 720, SERVO_DEFAULT_DEVICE_PIXEL_RATIO, SERVO_DEFAULT_PAGE_ZOOM_PERCENT),
-        );
-        assert_eq!(change, ViewportChange::default());
+    fn shutdown_timeout_kills_and_reaps_a_hung_sidecar() -> Result<(), Box<dyn Error>> {
+        let mut client = hung_sidecar_client()?;
+        let started_at = Instant::now();
+
+        client.shutdown();
+
+        assert!(started_at.elapsed() < Duration::from_secs(1));
+        assert!(client.child.try_wait()?.is_some());
+        Ok(())
     }
 
-    #[test]
-    fn page_zoom_change_pushes_only_zoom() {
-        // User toggled zoom to 150 % on a session that's already at the
-        // right size and DPR — only `set_page_zoom` should fire.
-        let change = ViewportChange::between(
-            &request(2880, 1800, 2.0, 150),
-            &session(2880, 1800, 2.0, SERVO_DEFAULT_PAGE_ZOOM_PERCENT),
+    fn hung_sidecar_client() -> Result<ServoLiveClient, ServoLiveError> {
+        let script = format!(
+            "IFS= read -r request; printf '%s\\n' '{{\"protocol_version\":{LIVE_PROTOCOL_VERSION},\"error\":null,\"frame\":null}}'; while IFS= read -r request; do :; done"
         );
-        assert_eq!(
-            change,
-            ViewportChange { resize: None, set_hidpi: None, set_page_zoom: Some(150) },
-        );
+        let child = spawn_script(&script).map_err(ServoLiveError::Command)?;
+        ServoLiveClient::from_spawned_child(child, TEST_TIMEOUTS)
     }
 
-    #[test]
-    fn cross_monitor_dpr_change_pushes_only_hidpi() {
-        // A window dragged from a 2.0-DPR monitor to a 1.0-DPR one keeps
-        // the same physical surface (GPUI re-emits the viewport at the
-        // new scale) — only the DPR push should fire.
-        let change = ViewportChange::between(
-            &request(2880, 1800, 1.0, SERVO_DEFAULT_PAGE_ZOOM_PERCENT),
-            &session(2880, 1800, 2.0, SERVO_DEFAULT_PAGE_ZOOM_PERCENT),
-        );
-        assert_eq!(
-            change,
-            ViewportChange { resize: None, set_hidpi: Some(1.0), set_page_zoom: None },
-        );
+    fn spawn_script(script: &str) -> Result<Child, std::io::Error> {
+        Command::new("sh")
+            .arg("-c")
+            .arg(script)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
     }
 }
+
+#[cfg(all(test, target_os = "macos"))]
+#[path = "servo_live_iosurface_tests.rs"]
+mod iosurface_tests;

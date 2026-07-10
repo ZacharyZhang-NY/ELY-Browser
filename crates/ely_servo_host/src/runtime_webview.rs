@@ -13,6 +13,8 @@ pub(super) struct HostWebView {
     pub(super) tab_id: TabId,
     pub(super) profile_id: ProfileId,
     pub(super) rendering_context: Rc<dyn RenderingContext>,
+    #[cfg(feature = "hardware-render")]
+    pub(super) hardware_context: Option<Rc<crate::HardwareOffscreenContext>>,
     pub(super) webview: WebView,
     pub(super) delegate: Rc<HostWebViewDelegate>,
     pub(super) requested_url: Option<String>,
@@ -128,6 +130,10 @@ impl HostWebViewDelegate {
         self.has_pending_frame.set(false);
     }
 
+    pub(super) fn mark_frame_ready(&self) {
+        self.has_pending_frame.set(true);
+    }
+
     pub(super) fn mark_metadata_observed(&self) {
         self.has_pending_metadata.set(false);
     }
@@ -147,7 +153,7 @@ impl WebViewDelegate for HostWebViewDelegate {
     }
 
     fn notify_new_frame_ready(&self, _webview: WebView) {
-        self.has_pending_frame.set(true);
+        self.mark_frame_ready();
     }
 
     fn notify_crashed(&self, _webview: WebView, _reason: String, _backtrace: Option<String>) {

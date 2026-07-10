@@ -3185,6 +3185,17 @@ impl Window {
         corner_radii: Corners<Pixels>,
         image_buffer: CVPixelBuffer,
     ) {
+        self.paint_surface_with_lease(bounds, corner_radii, image_buffer, None);
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(crate) fn paint_surface_with_lease(
+        &mut self,
+        bounds: Bounds<Pixels>,
+        corner_radii: Corners<Pixels>,
+        image_buffer: CVPixelBuffer,
+        lease: Option<crate::SurfaceLease>,
+    ) {
         use crate::PaintSurface;
 
         self.invalidator.debug_assert_paint();
@@ -3199,6 +3210,7 @@ impl Window {
             content_mask,
             corner_radii,
             image_buffer,
+            lease,
         });
     }
 

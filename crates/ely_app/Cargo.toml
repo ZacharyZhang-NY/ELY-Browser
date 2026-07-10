@@ -15,7 +15,6 @@ ed25519-dalek.workspace = true
 ely_browser_core = { path = "../ely_browser_core" }
 ely_design_system = { path = "../ely_design_system" }
 ely_domain = { path = "../ely_domain" }
-ely_servo_host = { path = "../ely_servo_host", features = ["servo-engine"] }
 ely_sync_client = { path = "../ely_sync_client" }
 gpui.workspace = true
 gpui-component.workspace = true
@@ -24,13 +23,24 @@ image.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true
+tempfile.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 ureq.workspace = true
 url.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+core-video = "0.4"
+io-surface = "0.16"
+mach2 = "0.6"
+objc2-core-foundation = { version = "0.3.2", features = ["CFBase", "CFDictionary", "CFNumber", "CFString"] }
+objc2-io-surface = "0.3.2"
+uuid.workspace = true
+
 [dev-dependencies]
+ely_servo_host = { path = "../ely_servo_host" }
 gpui = { workspace = true, features = ["test-support"] }
 
 [build-dependencies]

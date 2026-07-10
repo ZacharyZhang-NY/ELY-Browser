@@ -89,7 +89,7 @@ fn render_about_rows(snapshot: &BrowserSnapshot) -> AnyElement {
             format!("scheme: {DEEP_LINK_SCHEME}; auth: {AUTH_CALLBACK_URL}"),
         ))
         .child(about_row(IconName::Info, "Version", APP_VERSION, "Cargo package version"))
-        .child(about_row(IconName::GitHub, "Build", BUILD_REVISION, "Git revision"))
+        .child(about_row(IconName::GitHub, "Build", BUILD_REVISION, "Build source"))
         .child(about_row(
             IconName::Frame,
             "GPUI",

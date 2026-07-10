@@ -35,8 +35,21 @@ impl WebSurfaceStore {
         Self { runtime, surfaces: BTreeMap::new(), keyboard_focus: None }
     }
 
+    #[cfg(test)]
     pub(super) fn state(&self, tab_id: &TabId) -> Option<&WebSurfaceState> {
         self.surfaces.get(tab_id).and_then(|surface| surface.state.as_ref())
+    }
+
+    pub(super) fn state_for_scope(
+        &self,
+        tab_id: &TabId,
+        profile_id: &ely_domain::ProfileId,
+        profile_data_mode: ProfileDataMode,
+    ) -> Option<&WebSurfaceState> {
+        self.surfaces
+            .get(tab_id)
+            .filter(|surface| surface.has_scope(profile_id, profile_data_mode))
+            .and_then(|surface| surface.state.as_ref())
     }
 
     pub(super) fn ensure_surface(
@@ -53,23 +66,28 @@ impl WebSurfaceStore {
         else {
             return false;
         };
-        let native_surface =
-            self.surfaces.get(tab.id()).and_then(|surface| surface.native_surface.clone());
-        #[cfg(not(test))]
-        let Some(native_surface) = native_surface else {
-            return false;
-        };
         let ensure_key = WebSurfaceEnsureKey::new(
             requested_url.clone(),
             size,
-            #[cfg(test)]
-            native_surface.as_ref(),
-            #[cfg(not(test))]
-            Some(&native_surface),
+            tab.profile_id().clone(),
+            profile_data_mode,
             tab.zoom_percent(),
             permissions,
         );
-        if self.surfaces.get(tab.id()).is_some_and(|surface| !surface.should_ensure(&ensure_key)) {
+        let scope_changed = self.surface_mut(tab.id()).reset_for_scope_change(&ensure_key);
+        if scope_changed
+            && self.keyboard_focus.as_ref().is_some_and(|focus| focus.tab_id == *tab.id())
+        {
+            self.keyboard_focus = None;
+        }
+        let runtime_has_session =
+            self.runtime.has_session(tab.id(), tab.profile_id(), profile_data_mode);
+        if runtime_has_session
+            && self
+                .surfaces
+                .get(tab.id())
+                .is_some_and(|surface| !surface.should_ensure(&ensure_key))
+        {
             return false;
         }
         // Once the page has ensured at least once, defer further ensures
@@ -89,31 +107,23 @@ impl WebSurfaceStore {
         {
             return false;
         }
-        let input = self.take_pending_input(tab.id(), requested_url.as_str());
         let previous_frame =
             self.previous_ready_frame(tab.id(), requested_url.as_str(), tab.zoom_percent());
+        if let Err(message) =
+            self.runtime.prepare_tab_scope(tab.id(), tab.profile_id(), profile_data_mode)
+        {
+            return self.record_ensure_failure(
+                tab.id(),
+                ensure_key,
+                requested_url,
+                previous_frame,
+                message,
+            );
+        }
+        let input = self.take_pending_input(tab.id(), requested_url.as_str());
 
-        #[cfg(test)]
-        let ensure_result = match native_surface {
-            Some(native_surface) => self.runtime.ensure_tab_with_native_surface(
-                tab,
-                size,
-                native_surface,
-                profile_data_mode,
-                permissions,
-                input,
-            ),
-            None => self.runtime.ensure_tab(tab, size, profile_data_mode, permissions, input),
-        };
-        #[cfg(not(test))]
-        let ensure_result = self.runtime.ensure_tab_with_native_surface(
-            tab,
-            size,
-            native_surface,
-            profile_data_mode,
-            permissions,
-            input,
-        );
+        let ensure_result =
+            self.runtime.ensure_tab(tab, size, profile_data_mode, permissions, input);
 
         match ensure_result {
             Ok(result) => {
@@ -127,9 +137,35 @@ impl WebSurfaceStore {
                 }
                 false
             }
-            Err(message) => {
-                self.surface_mut(tab.id()).mark_ensured(ensure_key);
-                self.surface_mut(tab.id()).state = Some(WebSurfaceState::Failed { message });
+            Err(message) => self.record_ensure_failure(
+                tab.id(),
+                ensure_key,
+                requested_url,
+                previous_frame,
+                message,
+            ),
+        }
+    }
+
+    fn record_ensure_failure(
+        &mut self,
+        tab_id: &TabId,
+        ensure_key: WebSurfaceEnsureKey,
+        requested_url: String,
+        previous_frame: Option<WebSurfaceFrame>,
+        message: String,
+    ) -> bool {
+        self.surface_mut(tab_id).mark_ensured(ensure_key);
+        match previous_frame {
+            Some(previous_frame) => {
+                self.surface_mut(tab_id).state = Some(WebSurfaceState::Loading {
+                    requested_url,
+                    previous_frame: Some(previous_frame),
+                });
+                false
+            }
+            None => {
+                self.surface_mut(tab_id).state = Some(WebSurfaceState::Failed { message });
                 true
             }
         }
@@ -137,6 +173,13 @@ impl WebSurfaceStore {
 
     pub(super) fn tick(&mut self, visible_tab_ids: &[TabId]) -> WebSurfaceTickResult {
         let frames = self.runtime.tick(visible_tab_ids);
+        self.apply_runtime_frames(frames)
+    }
+
+    fn apply_runtime_frames(
+        &mut self,
+        frames: Vec<WebSurfaceRuntimeFrame>,
+    ) -> WebSurfaceTickResult {
         let mut result = WebSurfaceTickResult::default();
 
         for frame in frames {
@@ -146,29 +189,12 @@ impl WebSurfaceStore {
                         self.surfaces.get(&tab_id).and_then(|surface| surface.state.as_ref()),
                         Some(WebSurfaceState::Ready(_))
                     );
-                    match self.initial_display_gate_message(&tab_id, &frame, had_ready) {
-                        Ok(()) => {}
-                        Err(message) => {
-                            if !had_ready {
-                                self.surface_mut(&tab_id).state =
-                                    Some(WebSurfaceState::Failed { message });
-                                result.changed = true;
-                            }
-                            continue;
-                        }
-                    }
-                    if self.should_hold_initial_frame(&tab_id, &frame, had_ready) {
-                        if !had_ready {
-                            self.surface_mut(&tab_id).state = Some(WebSurfaceState::Loading {
-                                requested_url: frame.requested_url.clone(),
-                                previous_frame: None,
-                            });
-                            result.changed = true;
-                        }
-                        continue;
-                    }
                     let metadata = self.surface_mut(&tab_id).changed_page_metadata(&tab_id, &frame);
                     result.page_metadata.extend(metadata);
+                    result.url_changes.extend(url_change);
+                    if self.should_hold_initial_frame(&tab_id, &frame, had_ready) {
+                        continue;
+                    }
                     if self
                         .surfaces
                         .get(&tab_id)
@@ -177,7 +203,6 @@ impl WebSurfaceStore {
                         self.surface_mut(&tab_id).state = Some(WebSurfaceState::Ready(*frame));
                         result.changed = true;
                     }
-                    result.url_changes.extend(url_change);
                 }
                 WebSurfaceRuntimeFrame::Failed { tab_id, message } => {
                     let had_ready = matches!(
@@ -303,32 +328,11 @@ impl WebSurfaceStore {
         frame: &WebSurfaceFrame,
         has_previous_frame: bool,
     ) -> bool {
-        !has_previous_frame
+        frame.render_state() != "complete"
+            && !has_previous_frame
             && self
                 .previous_ready_frame(tab_id, frame.requested_url.as_str(), frame.zoom_percent())
-                .is_none()
-            && matches!(frame.has_visible_content_for_initial_display(), Ok(false))
-    }
-
-    fn initial_display_gate_message(
-        &self,
-        tab_id: &TabId,
-        frame: &WebSurfaceFrame,
-        has_previous_frame: bool,
-    ) -> Result<(), String> {
-        if has_previous_frame
-            || self
-                .previous_ready_frame(tab_id, frame.requested_url.as_str(), frame.zoom_percent())
                 .is_some()
-        {
-            return Ok(());
-        }
-        frame.has_visible_content_for_initial_display().map(|_| ()).map_err(|error| {
-            format!(
-                "Servo hardware surface initial content check failed for {}: {error}",
-                frame.requested_url
-            )
-        })
     }
 
     pub(super) fn surface_mut(&mut self, tab_id: &TabId) -> &mut PerTabSurface {
@@ -349,14 +353,7 @@ impl WebSurfaceStore {
     }
 
     #[cfg(test)]
-    pub(super) fn clear_viewport_resize_debounce_for_test(&mut self, tab_id: &TabId) {
-        if let Some(surface) = self.surfaces.get_mut(tab_id) {
-            surface.clear_viewport_resize_debounce_for_test();
-        }
-    }
-
-    #[cfg(test)]
-    pub(super) fn flush_runtime_for_test(&self) {
+    pub(super) fn flush_runtime_for_test(&mut self) {
         self.runtime.flush_for_test();
     }
 }
@@ -372,3 +369,15 @@ mod tests;
 #[cfg(all(test, feature = "live-site-smoke"))]
 #[path = "web_surface_live_site_tests.rs"]
 mod web_surface_live_site_tests;
+
+#[cfg(all(test, feature = "live-site-smoke"))]
+#[path = "web_surface_profile_isolation_tests.rs"]
+mod web_surface_profile_isolation_tests;
+
+#[cfg(all(test, feature = "live-site-smoke", target_os = "macos"))]
+#[path = "web_surface_hardware_import_tests.rs"]
+mod web_surface_hardware_import_tests;
+
+#[cfg(test)]
+#[path = "web_surface_scope_tests.rs"]
+mod web_surface_scope_tests;

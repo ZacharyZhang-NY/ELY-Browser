@@ -661,6 +661,8 @@ pub(crate) struct PaintSurface {
     pub corner_radii: Corners<ScaledPixels>,
     #[cfg(target_os = "macos")]
     pub image_buffer: core_video::pixel_buffer::CVPixelBuffer,
+    #[cfg(target_os = "macos")]
+    pub lease: Option<crate::SurfaceLease>,
 }
 
 impl From<PaintSurface> for Primitive {

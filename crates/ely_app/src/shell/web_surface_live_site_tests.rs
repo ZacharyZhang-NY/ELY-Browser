@@ -92,6 +92,7 @@ fn run_isolated_live_site_test(
     let output = Command::new(env::current_exe()?)
         .arg(test_name)
         .env(LIVE_SITE_CHILD_ENV, "1")
+        .env("ELY_SERVO_RENDERING_CONTEXT", "software")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()?;
