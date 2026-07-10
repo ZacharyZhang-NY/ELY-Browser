@@ -259,6 +259,11 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) {
         let key = event.keystroke.key.as_str();
+        if key == "escape" {
+            self.exit_command_mode(window, cx);
+            cx.stop_propagation();
+            return;
+        }
         if !matches!(key, "up" | "down" | "enter") {
             return;
         }

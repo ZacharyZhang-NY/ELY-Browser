@@ -15,6 +15,18 @@ impl ElyShell {
             });
         }
     }
+
+    /// Close the command overlay (Escape or a backdrop click): drop the
+    /// `>` query that drives its visibility, reset the selection, and put
+    /// the active tab's address back in the omnibar.
+    pub(super) fn exit_command_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let ShellState::Ready(core) = &mut self.state {
+            core.set_command_query("");
+        }
+        self.command_selected_index = 0;
+        self.sync_address_input(window, cx);
+        cx.notify();
+    }
 }
 
 impl Focusable for ElyShell {
