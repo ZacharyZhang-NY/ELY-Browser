@@ -25,7 +25,7 @@ gpui = "0.2.2"
 gpui-component = "0.5.1"
 gpui-component-assets = "0.5.1"
 image = "0.25.10"
-servo = { version = "0.4.0", git = "https://github.com/servo/servo.git", rev = "bc469fd5c17137373458508f88c3907cd1fcb69a" }
+servo = { version = "0.4.0", git = "https://github.com/servo/servo.git", rev = "c983c232385edf1170118b24637d2eb2564674d7" }
 sha2 = "0.10.9"
 semver = "1.0.28"
 serde = { version = "1.0.228", features = ["derive"] }
