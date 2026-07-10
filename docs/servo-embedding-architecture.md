@@ -108,7 +108,7 @@ The integration gates prove these invariants with real Servo networking:
 
 ## Upstream Servo Route
 
-ELY pins Servo upstream commit `bc469fd5c17137373458508f88c3907cd1fcb69a`, workspace version
+ELY pins Servo upstream commit `a87625150758fe91a29e7f6553ff2f798b87027e`, workspace version
 `0.4.0`, in `Cargo.toml` and `Cargo.lock`.
 
 Servo's rendering lifecycle remains authoritative inside each sidecar:
