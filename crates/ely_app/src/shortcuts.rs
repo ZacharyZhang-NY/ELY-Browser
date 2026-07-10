@@ -244,8 +244,20 @@ const fn shortcut(
     ShortcutBinding { action, platform, keystroke }
 }
 
+/// Only the current platform's keys may reach GPUI: registering the other
+/// platform's `ctrl-*` set on macOS hijacks readline editing inside every
+/// text input (and `cmd-*` is meaningless elsewhere).
+fn platform_bindings() -> impl Iterator<Item = &'static ShortcutBinding> {
+    let platform = if cfg!(target_os = "macos") {
+        ShortcutPlatform::Macos
+    } else {
+        ShortcutPlatform::WindowsLinux
+    };
+    SHORTCUT_BINDINGS.iter().filter(move |binding| binding.platform == platform)
+}
+
 pub(crate) fn bind_shortcuts(cx: &mut App) {
-    cx.bind_keys(SHORTCUT_BINDINGS.iter().map(|binding| binding.key_binding()));
+    cx.bind_keys(platform_bindings().map(|binding| binding.key_binding()));
 }
 
 impl ShortcutBinding {
@@ -354,6 +366,18 @@ mod tests {
         for action in SHORTCUT_ACTIONS {
             assert!(SHORTCUT_BINDINGS.iter().any(|binding| binding.action() == *action));
         }
+    }
+
+    #[test]
+    fn bound_shortcuts_are_scoped_to_the_current_platform() {
+        let expected = if cfg!(target_os = "macos") {
+            ShortcutPlatform::Macos
+        } else {
+            ShortcutPlatform::WindowsLinux
+        };
+
+        assert!(super::platform_bindings().next().is_some());
+        assert!(super::platform_bindings().all(|binding| binding.platform == expected));
     }
 
     fn platform_labels(action: ShortcutAction) -> Vec<String> {
