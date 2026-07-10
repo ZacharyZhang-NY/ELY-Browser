@@ -4,6 +4,11 @@ use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, div, prelude::FluentBuilder, px, rgb, rgba,
 };
+use gpui_component::{
+    Disableable, Sizable,
+    button::{Button, ButtonVariants},
+    input::{Input, InputState},
+};
 
 use crate::shell::ElyShell;
 use crate::shell::chrome::animations::{chrome_motion_feedback, toggle_thumb_motion};
@@ -70,10 +75,57 @@ where
         .into_any_element()
 }
 
-pub(super) fn render_sign_out_button(shell: &ElyShell, cx: &mut Context<ElyShell>) -> AnyElement {
-    render_secondary_button(shell, "sign-out", "Sign out", false, cx, |shell, cx| {
-        shell.submit_sign_out(cx);
-    })
+pub(super) fn render_sign_out_button(
+    _shell: &ElyShell,
+    label: &'static str,
+    disabled: bool,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    Button::new("sign-out")
+        .ghost()
+        .xsmall()
+        .label(label)
+        .disabled(disabled)
+        .on_click(cx.listener(|shell, _, _, cx| {
+            shell.submit_sign_out(cx);
+        }))
+        .into_any_element()
+}
+
+pub(super) fn render_card_heading(label: &'static str) -> AnyElement {
+    div()
+        .text_size(px(13.0))
+        .font_weight(FontWeight(500.0))
+        .text_color(rgb(colors::ink()))
+        .child(label)
+        .into_any_element()
+}
+
+pub(super) fn render_field_label(label: &'static str) -> AnyElement {
+    div()
+        .text_size(px(10.5))
+        .font_weight(FontWeight(500.0))
+        .text_color(rgb(colors::ink_4()))
+        .child(label)
+        .into_any_element()
+}
+
+pub(super) fn render_input(state: &gpui::Entity<InputState>) -> AnyElement {
+    div()
+        .px(px(10.0))
+        .py(px(8.0))
+        .rounded(px(8.0))
+        .bg(rgba(button_bg()))
+        .child(Input::new(state).appearance(false).cleanable(false))
+        .into_any_element()
+}
+
+pub(super) fn render_inline_error(message: &str) -> AnyElement {
+    div()
+        .text_size(px(11.5))
+        .text_color(rgb(colors::error()))
+        .child(message.to_string())
+        .into_any_element()
 }
 
 pub(super) fn render_reset_button(shell: &ElyShell, cx: &mut Context<ElyShell>) -> AnyElement {

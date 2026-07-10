@@ -11,6 +11,9 @@ pub enum SyncClientError {
     #[error("Bearer credential storage is unavailable: {0}")]
     BearerCredentialStorage(String),
 
+    #[error("Session logout response is invalid")]
+    SessionLogoutInvalid,
+
     #[error("HTTP request failed for {endpoint}: {source}")]
     Http {
         endpoint: String,

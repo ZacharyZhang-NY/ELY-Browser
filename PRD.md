@@ -961,6 +961,7 @@ Better Auth 在 Cloudflare Workers 中初始化，D1 binding 作为 database 传
 - D1 session validation 与自定义 device/session binding。
 - Bearer logout 精确删除当前 D1 session，并级联清理 session device context 与 rebind challenge。
 - Desktop bearer 以 stable `ProfileId` 作为系统凭据 account，Windows 使用 Local persistence；旧明文文件在 credential read-back 与 durable marker 提交后清理，系统凭据不可用时阻断设备加载与 Sync upload。
+- Desktop sign-out closes the authenticated-operation gate, drains active leases, revokes the exact server session, and conditionally clears the captured native credential; generation-stamped async results cannot restore stale auth or Sync state.
 - 设备注册、rebind、批准、撤销与 Vault rotation。
 - Signed Sync reset 和 signed account deletion。
 - 管理所有 `/api/auth/*` 路由。

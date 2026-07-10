@@ -1,5 +1,6 @@
 mod archive_labels;
 mod auth;
+mod auth_operation_gate;
 mod bookmark_files;
 mod bookmarks;
 pub(crate) mod chrome;
@@ -25,6 +26,7 @@ mod space_files;
 mod spaces;
 mod splits;
 mod sync_devices;
+mod sync_inbox;
 mod sync_state;
 mod tab_groups;
 mod tab_lifecycle;
@@ -54,12 +56,14 @@ use gpui_component::input::{InputEvent, InputState};
 use gpui_component::slider::{SliderEvent, SliderState, SliderValue};
 
 use crate::shortcuts::ShortcutProfile;
+use auth_operation_gate::{AuthenticatedOperationBarrier, AuthenticatedOperationGate};
 use bookmarks::PendingBookmarkEdit;
 use downloads::PendingDownloadFileAction;
 use history::{PendingHistoryDomainClear, PendingHistoryTimeClear};
 use plugins::{PendingPluginInstall, PendingPluginUninstall};
 use sync_devices::SyncDeviceUiState;
-use sync_state::{PendingMergeUpload, SyncStateUpdate};
+use sync_inbox::{SyncStateMessage, SyncWorkGeneration};
+use sync_state::PendingMergeUpload;
 use web_surface::WebSurfaceStore;
 
 enum ShellState {
@@ -108,8 +112,13 @@ pub struct ElyShell {
     /// shell can refresh the connection state without blocking. Sender
     /// is cloned for each spawned upload; receiver is drained on every
     /// `tick_external_web_surfaces`.
-    sync_inbox_rx: std::sync::mpsc::Receiver<SyncStateUpdate>,
-    pub(crate) sync_inbox_tx: std::sync::mpsc::Sender<SyncStateUpdate>,
+    sync_inbox_rx: std::sync::mpsc::Receiver<SyncStateMessage>,
+    sync_inbox_tx: std::sync::mpsc::Sender<SyncStateMessage>,
+    sync_generation: SyncWorkGeneration,
+    sync_profile_id: Option<ProfileId>,
+    authenticated_operation_gate: AuthenticatedOperationGate,
+    auth_flow_barrier: Option<AuthenticatedOperationBarrier>,
+    sign_out_phases: std::collections::HashMap<ProfileId, auth::SignOutPhase>,
     sync_upload_scheduled: bool,
     sync_upload_in_flight: bool,
     sync_upload_pending: bool,
@@ -224,6 +233,12 @@ impl ElyShell {
         };
 
         let (sync_inbox_tx, sync_inbox_rx) = std::sync::mpsc::channel();
+        let sync_profile_id = match &state {
+            ShellState::Ready(core) => {
+                core.snapshot().ok().map(|snapshot| snapshot.active_profile_id)
+            }
+            ShellState::StartupError(_) => None,
+        };
         let mut shell = Self {
             state,
             focus_handle: cx.focus_handle(),
@@ -260,6 +275,11 @@ impl ElyShell {
             web_surfaces: WebSurfaceStore::new(),
             sync_inbox_rx,
             sync_inbox_tx,
+            sync_generation: SyncWorkGeneration::default(),
+            sync_profile_id,
+            authenticated_operation_gate: AuthenticatedOperationGate::open(),
+            auth_flow_barrier: None,
+            sign_out_phases: std::collections::HashMap::new(),
             sync_upload_scheduled: false,
             sync_upload_in_flight: false,
             sync_upload_pending: false,
@@ -320,17 +340,26 @@ impl ElyShell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let ShellState::Ready(core) = &mut self.state
-            && core.select_profile(profile_id).is_ok()
-        {
-            self.auth_flow_phase = auth::AuthFlowPhase::Idle;
-            self.sync_devices.reset();
-            self.sync_retry_at = None;
-            self.clear_pending_cloud_sync_upload();
-            self.sync_address_input(window, cx);
-            self.schedule_cloud_sync_upload(cx);
-            cx.notify();
+        let selected = match &mut self.state {
+            ShellState::Ready(core) => core.select_profile(profile_id).is_ok(),
+            ShellState::StartupError(_) => false,
+        };
+        if !selected {
+            return;
         }
+        self.invalidate_sync_work();
+        self.sync_profile_id = match &self.state {
+            ShellState::Ready(core) => {
+                core.snapshot().ok().map(|snapshot| snapshot.active_profile_id)
+            }
+            ShellState::StartupError(_) => None,
+        };
+        self.auth_flow_phase = auth::AuthFlowPhase::Idle;
+        self.sync_address_input(window, cx);
+        if self.probe_initial_sync_state() {
+            self.schedule_cloud_sync_upload(cx);
+        }
+        cx.notify();
     }
 
     fn select_next_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {

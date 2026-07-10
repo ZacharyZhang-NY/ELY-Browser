@@ -11,7 +11,8 @@ use gpui_component::{input::Input, scroll::ScrollableElement};
 use crate::shell::auth::AuthFlowPhase;
 
 use super::sync_controls::{
-    button_bg, render_dual_button_row, render_policy_toggle, render_primary_button,
+    button_bg, render_card_heading, render_dual_button_row, render_field_label,
+    render_inline_error, render_input, render_policy_toggle, render_primary_button,
     render_reset_button, render_secondary_button, render_sign_out_button,
 };
 use super::{ElyShell, render_canvas_surface};
@@ -24,7 +25,10 @@ impl ElyShell {
         if profile_allows_sync_controls(&snapshot.active_profile_kind)
             && !matches!(
                 snapshot.sync_status.connection(),
-                SyncConnectionState::SignedOut | SyncConnectionState::CredentialUnavailable { .. }
+                SyncConnectionState::SignedOut
+                    | SyncConnectionState::CredentialUnavailable { .. }
+                    | SyncConnectionState::SigningOut
+                    | SyncConnectionState::SignOutError { .. }
             )
         {
             self.ensure_sync_devices_loaded(cx);
@@ -105,6 +109,39 @@ fn render_account_card(
             .child(render_inline_error(message))
             .children(account_form(shell, &snapshot.active_profile_id, cx))
             .into_any_element(),
+        SyncConnectionState::SigningOut => card
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(render_card_heading("Account"))
+                    .child(render_sign_out_button(shell, "Signing out...", true, cx)),
+            )
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .text_color(rgb(colors::ink_3()))
+                    .child("End-to-end encrypted"),
+            )
+            .into_any_element(),
+        SyncConnectionState::SignOutError { message } => card
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(render_card_heading("Account"))
+                    .child(render_sign_out_button(shell, "Retry sign out", false, cx)),
+            )
+            .child(render_inline_error(message))
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .text_color(rgb(colors::ink_3()))
+                    .child("End-to-end encrypted"),
+            )
+            .into_any_element(),
         SyncConnectionState::SignedIn
         | SyncConnectionState::AwaitingDeviceApproval
         | SyncConnectionState::SyncReady { .. }
@@ -115,7 +152,7 @@ fn render_account_card(
                     .items_center()
                     .justify_between()
                     .child(render_card_heading("Account"))
-                    .child(render_sign_out_button(shell, cx)),
+                    .child(render_sign_out_button(shell, "Sign out", false, cx)),
             )
             .child(
                 div()
@@ -431,42 +468,6 @@ fn render_sync_object_row(
         .into_any_element()
 }
 
-fn render_card_heading(label: &'static str) -> AnyElement {
-    div()
-        .text_size(px(13.0))
-        .font_weight(FontWeight(500.0))
-        .text_color(rgb(colors::ink()))
-        .child(label)
-        .into_any_element()
-}
-
-fn render_field_label(label: &'static str) -> AnyElement {
-    div()
-        .text_size(px(10.5))
-        .font_weight(FontWeight(500.0))
-        .text_color(rgb(colors::ink_4()))
-        .child(label)
-        .into_any_element()
-}
-
-fn render_input(state: &gpui::Entity<gpui_component::input::InputState>) -> AnyElement {
-    div()
-        .px(px(10.0))
-        .py(px(8.0))
-        .rounded(px(8.0))
-        .bg(rgba(button_bg()))
-        .child(Input::new(state).appearance(false).cleanable(false))
-        .into_any_element()
-}
-
-fn render_inline_error(message: &str) -> AnyElement {
-    div()
-        .text_size(px(11.5))
-        .text_color(rgb(colors::error()))
-        .child(message.to_string())
-        .into_any_element()
-}
-
 fn sync_object_kind_label(kind: SyncObjectKind) -> &'static str {
     match kind {
         SyncObjectKind::Spaces => "Spaces",
@@ -486,14 +487,5 @@ fn card_bg() -> u32 {
 }
 
 #[cfg(test)]
-mod tests {
-    use ely_domain::ProfileKind;
-
-    use super::profile_allows_sync_controls;
-
-    #[test]
-    fn private_profile_hides_sync_controls() {
-        assert!(!profile_allows_sync_controls(&ProfileKind::Private));
-        assert!(profile_allows_sync_controls(&ProfileKind::Standard));
-    }
-}
+#[path = "sync_tests.rs"]
+mod tests;

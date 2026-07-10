@@ -14,6 +14,8 @@
 pub enum SyncConnectionState {
     SignedOut,
     CredentialUnavailable { message: String },
+    SigningOut,
+    SignOutError { message: String },
     SignedIn,
     AwaitingDeviceApproval,
     SyncReady { last_synced_at_secs: u64 },
@@ -106,6 +108,7 @@ impl SyncStatus {
     pub fn new(connection: SyncConnectionState, objects: Vec<SyncObjectStatus>) -> Self {
         let failed_objects = match &connection {
             SyncConnectionState::CredentialUnavailable { .. }
+            | SyncConnectionState::SignOutError { .. }
             | SyncConnectionState::SyncError { .. } => 1,
             _ => 0,
         };

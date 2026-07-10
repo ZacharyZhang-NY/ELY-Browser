@@ -18,6 +18,8 @@ use crate::{
     vault_bootstrap::SyncVaultBootstrapRequest,
 };
 
+mod session;
+
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 const USER_AGENT: &str = concat!("ELY Browser/", env!("CARGO_PKG_VERSION"));

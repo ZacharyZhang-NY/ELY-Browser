@@ -9,6 +9,7 @@ use gpui_component::slider::SliderValue;
 
 use crate::services::servo_profile_data::{default_profile_data_root, sync_profile_data_dir};
 
+use super::sync_inbox::SyncStateSender;
 use super::sync_state::{
     PendingMergeUpload, SyncStateUpdate, sync_failure_update, sync_platform_label,
 };
@@ -300,12 +301,16 @@ impl ElyShell {
                 return;
             }
         };
-        let tx = self.sync_inbox_tx.clone();
+        let tx = self.sync_state_sender();
         let worker_profile_id = active_profile_id.clone();
         let thread_name = if merge.is_some() { "ely-sync-merge-upload" } else { "ely-sync-upload" };
+        let Some(operation_lease) = self.begin_authenticated_operation() else {
+            return;
+        };
         self.sync_upload_in_flight = true;
         if let Err(error) =
             std::thread::Builder::new().name(thread_name.to_string()).spawn(move || {
+                let _operation_lease = operation_lease;
                 run_sync_upload(worker_profile_id, profile_dir, device_name, bytes, merge, tx)
             })
         {
@@ -351,7 +356,7 @@ fn run_sync_upload(
     device_name: String,
     bytes: Vec<u8>,
     merge: Option<PendingMergeUpload>,
-    inbox: std::sync::mpsc::Sender<SyncStateUpdate>,
+    inbox: SyncStateSender,
 ) {
     let mut engine = match SyncEngine::for_profile_dir(
         &profile_id,

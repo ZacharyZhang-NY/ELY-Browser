@@ -7,6 +7,8 @@ use gpui::Context;
 
 use crate::services::servo_profile_data::{default_profile_data_root, sync_profile_data_dir};
 
+use super::auth_operation_gate::AuthenticatedOperationLease;
+use super::sync_inbox::SyncStateSender;
 use super::sync_state::{device_failure_update, sync_platform_label};
 use super::{ElyShell, ShellState, sync_state::SyncStateUpdate};
 
@@ -131,7 +133,9 @@ impl ElyShell {
 
     pub(crate) fn approve_sync_device(&mut self, device_id: String, cx: &mut Context<Self>) {
         let verification_code = self.sync_verification_input.read(cx).value().to_string();
-        let Some((profile_id, profile_dir, device_name)) = self.sync_device_context() else {
+        let Some((profile_id, profile_dir, device_name, operation_lease)) =
+            self.sync_device_context()
+        else {
             self.sync_devices.reset();
             return;
         };
@@ -139,21 +143,29 @@ impl ElyShell {
         if !self.sync_devices.begin_action(device_id.clone()) {
             return;
         }
-        let tx = self.sync_inbox_tx.clone();
-        spawn_device_task("ely-sync-device-approve", profile_id.clone(), tx, move || {
-            let engine = SyncEngine::for_profile_dir(
-                &profile_id,
-                &profile_dir,
-                device_name,
-                sync_platform_label(),
-            )?;
-            engine.approve_cloud_device(&device_id, &verification_code)?;
-            load_devices(profile_id, engine)
-        });
+        let tx = self.sync_state_sender();
+        spawn_device_task(
+            "ely-sync-device-approve",
+            profile_id.clone(),
+            tx,
+            operation_lease,
+            move || {
+                let engine = SyncEngine::for_profile_dir(
+                    &profile_id,
+                    &profile_dir,
+                    device_name,
+                    sync_platform_label(),
+                )?;
+                engine.approve_cloud_device(&device_id, &verification_code)?;
+                load_devices(profile_id, engine)
+            },
+        );
     }
 
     pub(crate) fn revoke_sync_device(&mut self, device_id: String, cx: &mut Context<Self>) {
-        let Some((profile_id, profile_dir, device_name)) = self.sync_device_context() else {
+        let Some((profile_id, profile_dir, device_name, operation_lease)) =
+            self.sync_device_context()
+        else {
             self.sync_devices.reset();
             return;
         };
@@ -165,21 +177,29 @@ impl ElyShell {
         if !self.sync_devices.begin_action(device_id.clone()) {
             return;
         }
-        let tx = self.sync_inbox_tx.clone();
-        spawn_device_task("ely-sync-device-revoke", profile_id.clone(), tx, move || {
-            let engine = SyncEngine::for_profile_dir(
-                &profile_id,
-                &profile_dir,
-                device_name,
-                sync_platform_label(),
-            )?;
-            engine.revoke_cloud_device(&device_id)?;
-            load_devices(profile_id, engine)
-        });
+        let tx = self.sync_state_sender();
+        spawn_device_task(
+            "ely-sync-device-revoke",
+            profile_id.clone(),
+            tx,
+            operation_lease,
+            move || {
+                let engine = SyncEngine::for_profile_dir(
+                    &profile_id,
+                    &profile_dir,
+                    device_name,
+                    sync_platform_label(),
+                )?;
+                engine.revoke_cloud_device(&device_id)?;
+                load_devices(profile_id, engine)
+            },
+        );
     }
 
     fn load_sync_devices(&mut self, force: bool, _cx: &mut Context<Self>) {
-        let Some((profile_id, profile_dir, device_name)) = self.sync_device_context() else {
+        let Some((profile_id, profile_dir, device_name, operation_lease)) =
+            self.sync_device_context()
+        else {
             self.sync_devices.reset();
             return;
         };
@@ -187,19 +207,27 @@ impl ElyShell {
         if !self.sync_devices.begin_load(force) {
             return;
         }
-        let tx = self.sync_inbox_tx.clone();
-        spawn_device_task("ely-sync-device-list", profile_id.clone(), tx, move || {
-            let engine = SyncEngine::for_profile_dir(
-                &profile_id,
-                &profile_dir,
-                device_name,
-                sync_platform_label(),
-            )?;
-            load_devices(profile_id, engine)
-        });
+        let tx = self.sync_state_sender();
+        spawn_device_task(
+            "ely-sync-device-list",
+            profile_id.clone(),
+            tx,
+            operation_lease,
+            move || {
+                let engine = SyncEngine::for_profile_dir(
+                    &profile_id,
+                    &profile_dir,
+                    device_name,
+                    sync_platform_label(),
+                )?;
+                load_devices(profile_id, engine)
+            },
+        );
     }
 
-    fn sync_device_context(&self) -> Option<(ProfileId, PathBuf, String)> {
+    fn sync_device_context(
+        &self,
+    ) -> Option<(ProfileId, PathBuf, String, AuthenticatedOperationLease)> {
         let ShellState::Ready(core) = &self.state else {
             return None;
         };
@@ -208,10 +236,12 @@ impl ElyShell {
         }
         let snapshot = core.snapshot().ok()?;
         let root = default_profile_data_root()?;
+        let operation_lease = self.begin_authenticated_operation()?;
         Some((
             snapshot.active_profile_id.clone(),
             sync_profile_data_dir(&root, &snapshot.active_profile_id),
             format!("ELY · {}", snapshot.active_profile_name),
+            operation_lease,
         ))
     }
 }
@@ -228,7 +258,8 @@ fn load_devices(
 fn spawn_device_task<F>(
     name: &str,
     profile_id: ProfileId,
-    tx: std::sync::mpsc::Sender<SyncStateUpdate>,
+    tx: SyncStateSender,
+    operation_lease: AuthenticatedOperationLease,
     task: F,
 ) where
     F: FnOnce() -> Result<SyncStateUpdate, ely_sync_client::SyncClientError> + Send + 'static,
@@ -237,6 +268,7 @@ fn spawn_device_task<F>(
     let worker_tx = tx.clone();
     let worker_profile_id = profile_id.clone();
     let spawn_result = std::thread::Builder::new().name(thread_name).spawn(move || {
+        let _operation_lease = operation_lease;
         let update = task().unwrap_or_else(|error| device_failure_update(worker_profile_id, error));
         let _ = worker_tx.send(update);
     });

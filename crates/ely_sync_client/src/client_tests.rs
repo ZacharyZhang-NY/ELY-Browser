@@ -13,6 +13,83 @@ use crate::{
 type TestServer = JoinHandle<std::io::Result<()>>;
 
 #[test]
+fn sign_out_posts_the_bearer_and_validates_success() -> Result<(), Box<dyn Error>> {
+    let (base_url, server) = spawn_logout_server("200 OK", r#"{"version":1,"signed_out":true}"#)?;
+    let client = SyncApiClient::new(
+        ApiClientConfig::custom(base_url, "auto"),
+        BearerToken::new("a".repeat(64))?,
+    )?;
+
+    client.sign_out()?;
+
+    join_server(server)
+}
+
+#[test]
+fn sign_out_accepts_already_ended_sessions() -> Result<(), Box<dyn Error>> {
+    for code in ["session_not_found", "session_expired"] {
+        let body = format!(r#"{{"error":"{code}"}}"#);
+        let (base_url, server) = spawn_logout_server("401 Unauthorized", &body)?;
+        let client = SyncApiClient::new(
+            ApiClientConfig::custom(base_url, "auto"),
+            BearerToken::new("a".repeat(64))?,
+        )?;
+
+        client.sign_out()?;
+        join_server(server)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn sign_out_preserves_retryable_failures() -> Result<(), Box<dyn Error>> {
+    let failures = [
+        ("401 Unauthorized", r#"{"error":"authorization_invalid"}"#, 401),
+        ("401 Unauthorized", r#"{"error":"session_not_found","extra":true}"#, 401),
+        ("403 Forbidden", r#"{"error":"session_not_found"}"#, 403),
+        ("500 Internal Server Error", r#"{"error":"session_logout_failed"}"#, 500),
+    ];
+    for (status_line, body, expected_status) in failures {
+        let (base_url, server) = spawn_logout_server(status_line, body)?;
+        let client = SyncApiClient::new(
+            ApiClientConfig::custom(base_url, "auto"),
+            BearerToken::new("a".repeat(64))?,
+        )?;
+
+        let error = match client.sign_out() {
+            Ok(()) => return Err("logout failure was treated as success".into()),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            error,
+            crate::SyncClientError::HttpStatus { status, .. } if status == expected_status
+        ));
+        join_server(server)?;
+    }
+
+    for body in [r#"{"version":1,"signed_out":false}"#, r#"{"version":2,"signed_out":true}"#] {
+        let (base_url, server) = spawn_logout_server("200 OK", body)?;
+        let client = SyncApiClient::new(
+            ApiClientConfig::custom(base_url, "auto"),
+            BearerToken::new("a".repeat(64))?,
+        )?;
+        assert!(matches!(client.sign_out(), Err(crate::SyncClientError::SessionLogoutInvalid)));
+        join_server(server)?;
+    }
+
+    for body in ["{", r#"{"version":1,"signed_out":true,"extra":true}"#, r#"{"version":1}"#] {
+        let (base_url, server) = spawn_logout_server("200 OK", body)?;
+        let client = SyncApiClient::new(
+            ApiClientConfig::custom(base_url, "auto"),
+            BearerToken::new("a".repeat(64))?,
+        )?;
+        assert!(matches!(client.sign_out(), Err(crate::SyncClientError::Json { .. })));
+        join_server(server)?;
+    }
+    Ok(())
+}
+
+#[test]
 fn upload_parses_structured_snapshot_head_conflict() -> Result<(), Box<dyn Error>> {
     let (base_url, server) = spawn_conflict_server()?;
     let client = SyncApiClient::new(
@@ -91,6 +168,40 @@ fn spawn_conflict_server() -> Result<(String, TestServer), Box<dyn Error>> {
         let _ = stream.read(&mut request)?;
         let response = format!(
             "HTTP/1.1 409 Conflict\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        stream.write_all(response.as_bytes())?;
+        stream.flush()
+    });
+    Ok((format!("http://{address}"), server))
+}
+
+fn spawn_logout_server(
+    status_line: &'static str,
+    body: &str,
+) -> Result<(String, TestServer), Box<dyn Error>> {
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let address = listener.local_addr()?;
+    let body = body.to_string();
+    let server = thread::spawn(move || -> std::io::Result<()> {
+        let (mut stream, _) = listener.accept()?;
+        let mut request = Vec::new();
+        let mut chunk = [0_u8; 1024];
+        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+            let read = stream.read(&mut chunk)?;
+            if read == 0 || request.len() + read > 8192 {
+                return Err(std::io::Error::other("logout request headers are incomplete"));
+            }
+            request.extend_from_slice(&chunk[..read]);
+        }
+        let request = String::from_utf8_lossy(&request);
+        if !request.starts_with("POST /api/session/logout HTTP/1.1\r\n")
+            || !request.contains(&format!("Authorization: Bearer {}\r\n", "a".repeat(64)))
+        {
+            return Err(std::io::Error::other("logout request contract mismatch"));
+        }
+        let response = format!(
+            "HTTP/1.1 {status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
             body.len()
         );
         stream.write_all(response.as_bytes())?;
