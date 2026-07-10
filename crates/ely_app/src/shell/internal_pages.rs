@@ -1,5 +1,4 @@
 mod about;
-mod advanced;
 mod appearance;
 mod auth_callback;
 mod bookmarks;
@@ -84,10 +83,6 @@ impl ElyShell {
             }
             "ely://about" => self.render_about_page(snapshot),
             "ely://settings" => self.render_settings_page(snapshot, cx),
-            url @ "ely://settings/advanced" => {
-                let content = self.render_advanced_page(snapshot);
-                render_settings_shell(snapshot, url, content, cx)
-            }
             url @ "ely://settings/appearance" => {
                 let content = self.render_appearance_page(snapshot, cx);
                 render_settings_shell(snapshot, url, content, cx)

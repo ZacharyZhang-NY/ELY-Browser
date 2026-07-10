@@ -430,10 +430,10 @@ mod tests {
             SpaceId::new(),
             ProfileId::new(),
             "Settings",
-            UrlText::parse("ely://settings/advanced")?,
+            UrlText::parse("ely://settings/general")?,
         );
 
-        assert_eq!(diagnostic_url_scope(&tab), "ely://settings/advanced");
+        assert_eq!(diagnostic_url_scope(&tab), "ely://settings/general");
         Ok(())
     }
 

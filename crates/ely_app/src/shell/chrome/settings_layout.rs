@@ -74,14 +74,11 @@ const NAV_GROUPS: &[NavGroup] = &[
     },
     NavGroup {
         label: "POWER",
-        items: &[
-            NavItem { icon: IconName::Asterisk, label: "Plugins", route: "ely://settings/plugins" },
-            NavItem {
-                icon: IconName::Inspector,
-                label: "Advanced",
-                route: "ely://settings/advanced",
-            },
-        ],
+        items: &[NavItem {
+            icon: IconName::Asterisk,
+            label: "Plugins",
+            route: "ely://settings/plugins",
+        }],
     },
     NavGroup {
         label: "ABOUT",
