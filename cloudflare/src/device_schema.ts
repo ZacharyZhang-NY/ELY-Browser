@@ -99,6 +99,13 @@ export class DevicePermissionError extends Error {
   }
 }
 
+export class DeviceConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DeviceConflictError";
+  }
+}
+
 export class DevicePersistenceError extends Error {
   constructor(message: string) {
     super(message);

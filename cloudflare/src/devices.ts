@@ -6,10 +6,12 @@ import {
   type DeviceApprovalRow,
   type DeviceListDocument,
   type DeviceRegistrationDocument,
+  type DeviceRegistrationRequest,
   type DeviceRevocationDocument,
   type DeviceRevocationRequest,
   type DeviceRevocationRow,
   type DeviceRow,
+  DeviceConflictError,
   DevicePermissionError,
   DevicePersistenceError,
   approvedDeviceDocument,
@@ -24,6 +26,7 @@ import {
 } from "./device_schema.js";
 
 export {
+  DeviceConflictError,
   DevicePermissionError,
   DevicePersistenceError,
   DeviceSchemaError,
@@ -61,7 +64,7 @@ const DEVICE_REGISTER_QUERY = `
     revoked_at,
     idempotency_key
   ) VALUES (?, ?, ?, ?, ?, 'pending', ?, NULL, ?, NULL, ?)
-  ON CONFLICT(user_id, idempotency_key) DO NOTHING
+  ON CONFLICT DO NOTHING
 `;
 const DEVICE_BY_IDEMPOTENCY_KEY_QUERY = `
   SELECT
@@ -208,7 +211,7 @@ export async function registerDeviceDocument(
     throw new DevicePermissionError("device_context_mismatch");
   }
 
-  await env.ELY_DB.prepare(DEVICE_REGISTER_QUERY)
+  const writeResult = await env.ELY_DB.prepare(DEVICE_REGISTER_QUERY)
     .bind(
       context.userId,
       registration.deviceId,
@@ -220,19 +223,74 @@ export async function registerDeviceDocument(
       registration.idempotencyKey,
     )
     .run();
+  const insertedRows = changedRowCount(writeResult);
+  if (insertedRows > 1) {
+    throw new DevicePersistenceError("device_registration_write_count_invalid");
+  }
   const row = await env.ELY_DB.prepare(DEVICE_BY_IDEMPOTENCY_KEY_QUERY)
     .bind(context.userId, registration.idempotencyKey)
     .first<DeviceRow>();
   if (row === null) {
+    if (insertedRows === 0) {
+      throw new DeviceConflictError("device_registration_conflict");
+    }
     throw new DevicePersistenceError("device_registration_missing");
   }
-  await bindSessionDeviceContext(env, context, registration.deviceId, nowSeconds);
+  const device = deviceDocument(row, registration.deviceId);
+  if (!registrationMatches(device, registration)) {
+    throw new DeviceConflictError("device_registration_conflict");
+  }
+  if (insertedRows === 0) {
+    if (
+      context.deviceId === undefined ||
+      context.deviceId !== device.device_id ||
+      device.revoked_at !== null
+    ) {
+      throw new DeviceConflictError("device_registration_conflict");
+    }
+    return {
+      version: 1,
+      user_id: context.userId,
+      device,
+    };
+  }
+  if (device.approval_status !== "pending" || device.revoked_at !== null) {
+    throw new DevicePersistenceError("device_registration_state_invalid");
+  }
+  await bindSessionDeviceContext(env, context, device.device_id, nowSeconds);
 
   return {
     version: 1,
     user_id: context.userId,
-    device: deviceDocument(row, registration.deviceId),
+    device,
   };
+}
+
+function registrationMatches(
+  device: DeviceRegistrationDocument["device"],
+  registration: DeviceRegistrationRequest,
+): boolean {
+  return (
+    device.device_id === registration.deviceId &&
+    device.public_key === registration.publicKey &&
+    device.device_name === registration.deviceName &&
+    device.platform === registration.platform
+  );
+}
+
+function changedRowCount(result: unknown): number {
+  if (typeof result !== "object" || result === null || !("meta" in result)) {
+    throw new DevicePersistenceError("device_registration_write_result_invalid");
+  }
+  const meta = result.meta;
+  if (typeof meta !== "object" || meta === null || !("changes" in meta)) {
+    throw new DevicePersistenceError("device_registration_write_result_invalid");
+  }
+  const changes = meta.changes;
+  if (typeof changes !== "number" || !Number.isSafeInteger(changes) || changes < 0) {
+    throw new DevicePersistenceError("device_registration_write_result_invalid");
+  }
+  return changes;
 }
 
 async function bindSessionDeviceContext(

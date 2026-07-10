@@ -40,6 +40,7 @@ export interface RecordedR2Put {
 interface TestD1DatabaseOptions {
   allRows?: unknown[];
   firstRows?: unknown[];
+  runChanges?: number[];
   sessionRow?: unknown | null;
 }
 
@@ -114,6 +115,7 @@ export function testD1Database(rows: unknown[] | TestD1DatabaseOptions): Recorde
       ? rows.sessionRow ?? null
       : DEFAULT_AUTH_SESSION_ROW;
   let firstIndex = 0;
+  let runIndex = 0;
   return {
     authBinds,
     authQueries,
@@ -130,6 +132,7 @@ export function testD1Database(rows: unknown[] | TestD1DatabaseOptions): Recorde
         isAuthSessionQuery ? authBinds : binds,
         isAuthSessionQuery,
         sessionRow,
+        () => (!Array.isArray(rows) ? rows.runChanges?.[runIndex++] : undefined) ?? 1,
       );
     },
     batch(statements: ElyD1PreparedStatement[]) {
@@ -159,6 +162,7 @@ function testD1PreparedStatement(
   binds: unknown[][],
   isAuthSessionQuery: boolean,
   sessionRow: unknown | null,
+  nextRunChanges: () => number,
 ): ElyD1PreparedStatement {
   return {
     bind(...values: unknown[]) {
@@ -175,7 +179,7 @@ function testD1PreparedStatement(
       return Promise.resolve({ results: allRows as T[] });
     },
     run() {
-      return Promise.resolve({});
+      return Promise.resolve({ results: [], meta: { changes: nextRunChanges() } });
     },
   };
 }

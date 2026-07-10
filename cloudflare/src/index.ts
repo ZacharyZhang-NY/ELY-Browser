@@ -11,6 +11,7 @@ import {
 } from "./account_deletion.js";
 import { handleBetterAuthRoute } from "./better_auth.js";
 import {
+  DeviceConflictError,
   DevicePermissionError,
   DevicePersistenceError,
   DeviceSchemaError,
@@ -85,6 +86,13 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
             "Cache-Control": "no-store",
           });
         } catch (error) {
+          if (error instanceof DeviceConflictError) {
+            return jsonResponse(
+              { error: "device_registration_conflict" },
+              409,
+              { "Cache-Control": "no-store" },
+            );
+          }
           if (error instanceof DevicePermissionError) {
             return jsonResponse(
               { error: "device_context_mismatch" },

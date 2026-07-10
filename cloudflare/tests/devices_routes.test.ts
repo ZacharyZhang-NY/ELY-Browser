@@ -208,7 +208,7 @@ describe("device routes", () => {
       },
     });
     assert.ok(d1.queries[0]?.includes("INSERT INTO user_devices"));
-    assert.ok(d1.queries[0]?.includes("ON CONFLICT(user_id, idempotency_key) DO NOTHING"));
+    assert.ok(d1.queries[0]?.includes("ON CONFLICT DO NOTHING"));
     assert.ok(d1.queries[1]?.includes("WHERE user_id = ? AND idempotency_key = ?"));
     assert.ok(d1.queries[2]?.includes("better_auth_session_device_context"));
     assert.deepEqual(d1.binds[0]?.slice(0, 5), [
@@ -271,6 +271,113 @@ describe("device routes", () => {
     assert.equal(response.status, 201);
     assert.deepEqual(d1.binds[2]?.slice(0, 3), ["session-01", "user-01", "device-01"]);
     assert.deepEqual(kvPuts, []);
+  });
+
+  it("rejects an unbound session replaying any existing device registration", async () => {
+    for (const status of ["pending", "approved", "revoked"] as const) {
+      const existingDevice = {
+        device_id: "device-01",
+        public_key: PUBLIC_KEY,
+        device_name: "MacBook Pro",
+        platform: "macOS",
+        approval_status: status,
+        created_at: 1_780_000_000,
+        approved_at: status === "pending" ? null : 1_780_000_010,
+        last_active_at: 1_780_000_020,
+        revoked_at: status === "revoked" ? 1_780_000_030 : null,
+      };
+      const d1 = testD1Database({
+        firstRows: [existingDevice],
+        runChanges: [0],
+        sessionRow: {
+          id: "session-02",
+          userId: "user-01",
+          expiresAt: "2099-01-01T00:00:00.000Z",
+          deviceId: null,
+        },
+      });
+
+      const response = await handleRequest(
+        new Request("https://elydora.test/api/devices/register", {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${ACCESS_TOKEN}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(deviceRegistrationBody()),
+        }),
+        testEnv({ d1 }),
+      );
+
+      assert.equal(response.status, 409, status);
+      assert.deepEqual(await response.json(), { error: "device_registration_conflict" });
+      assert.equal(d1.queries.some((query) => query.includes("session_device_context")), false);
+    }
+  });
+
+  it("allows an exact idempotent retry from the already bound session", async () => {
+    const pendingDevice = {
+      device_id: "device-01",
+      public_key: PUBLIC_KEY,
+      device_name: "MacBook Pro",
+      platform: "macOS",
+      approval_status: "pending",
+      created_at: 1_780_000_000,
+      approved_at: null,
+      last_active_at: 1_780_000_020,
+      revoked_at: null,
+    };
+    const d1 = testD1Database({ firstRows: [pendingDevice], runChanges: [0] });
+
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/devices/register", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${ACCESS_TOKEN}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(deviceRegistrationBody()),
+      }),
+      testEnv({ d1 }),
+    );
+
+    assert.equal(response.status, 201);
+    assert.equal(
+      ((await response.json()) as { device: { device_id: string } }).device.device_id,
+      "device-01",
+    );
+    assert.equal(d1.queries.some((query) => query.includes("session_device_context")), false);
+  });
+
+  it("rejects a device id collision with a different idempotency key", async () => {
+    const d1 = testD1Database({
+      firstRows: [],
+      runChanges: [0],
+      sessionRow: {
+        id: "session-02",
+        userId: "user-01",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        deviceId: null,
+      },
+    });
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/devices/register", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${ACCESS_TOKEN}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          ...deviceRegistrationBody(),
+          idempotency_key: "device-register-0002",
+        }),
+      }),
+      testEnv({ d1 }),
+    );
+
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { error: "device_registration_conflict" });
+    assert.equal(d1.queries.some((query) => query.includes("session_device_context")), false);
   });
 
   it("rejects invalid device registration payloads before D1 writes", async () => {
