@@ -71,6 +71,17 @@ Real and verified:
   manual Run Now; per-(space,profile) active-tab memory survives
   background-tab closes; shortcuts bind only the current platform's keys;
   sync-owner publish is first-claim-wins on every platform.
+- Profile isolation: the sidebar (tabs + favorites) is scoped to the
+  active profile like every other surface, so a private profile created
+  in-window (`>new-private-profile`) never leaks tabs into a standard one
+  (`state.rs::visible_tabs`/`favorites`; PRD §8.11).
+- Settings persistence: scalar settings (search engine, new-tab
+  destination, favorite limit, appearance, history policy, the 9 sync
+  toggles) ride `local-state.json` and survive a restart — a paused sync
+  toggle stays paused (`local_state.rs::LocalSettings`).
+- Site permissions: the per-site UI offers only the 5 features Servo
+  actually enforces (`SitePermissionFeature::enforced()`), guarded against
+  drift by `ely_servo_host`'s `enforced_features_match_the_servo_mapping`.
 
 Deferred deliberately (do NOT fake; ship with their subsystem):
 - Updates settings page — returns with a real updater.
@@ -90,27 +101,20 @@ file:line evidence lives in the 2026-07-10 bug-sweep report):
    idle devices churn (byte-exact AlreadyCurrent + Vec-order serialization).
    Needs record-level merge + tombstones + Conflict Center (PRD §9). Do
    not "quick-fix"; fix before any multi-device testing.
-2. Privacy: private-profile tabs are visible in the standard sidebar and
-   Ctrl+Tab cycles into them (`state.rs` visible_tabs filters by space
-   only; `tab_selection.rs`) — violates PRD §8.11.
-3. Settings scalars are not persisted (search engine, new-tab
-   destination, appearance, policies, the 9 sync toggles — a paused sync
-   toggle silently re-enables on restart, privacy-relevant) and session
-   fidelity is partial (stacks, splits, groups, archived tabs, downloads
-   not yet in `local-state.json`; extend the local-state document).
-4. Site permissions: only 5 of 16 features are enforced through Servo
-   (`runtime_permissions.rs:153`); the other 11 rows are placebo toggles —
-   trim the UI to enforced features until the engine covers them.
-5. Engine/webview: redirect or pushState leaves tab state "loading"
+2. Session fidelity in `local-state.json` is partial: scalar settings and
+   the syncable entities persist, but back/forward stacks, splits, tab
+   groups, archived tabs, and downloads do not yet — extend the local-state
+   document (its `settings`/`body` split is built to grow).
+3. Engine/webview: redirect or pushState leaves tab state "loading"
    forever and pins stale pixels (`ely_servo_host/src/runtime_webview.rs`
    requested-vs-current URL reconciliation); persistent-profile sidecars
    are never reclaimed while the app runs; sidecar stderr is nulled;
    final URLs >32KiB cause a reload loop.
-6. Downloads engine: pause/resume/cancel/retry are UI-only, progress
+4. Downloads engine: pause/resume/cancel/retry are UI-only, progress
    never updates, checksum runs on the UI thread, open/reveal hardcode
    `/usr/bin/open`; `ely://auth/callback` exchange and save-page commands
    are unimplemented.
-7. Smaller confirmed papercuts: several synced mutations never schedule
+5. Smaller confirmed papercuts: several synced mutations never schedule
    an upload (splits, group toggles, deletions), trash_space leaks split
    layouts, reload of the current URL is a no-op (crashed tabs can't
    reload in place), mid-Vec tab inserts skip sort normalization, Esc
@@ -119,7 +123,7 @@ file:line evidence lives in the 2026-07-10 bug-sweep report):
    vault rotation silently skips devices without wrapping keys,
    SyncStatus counters are hardcoded, second in-process Servo host panics
    (upstream OnceLock).
-8. Integration tests litter the real data root with `profile_*` dirs
+6. Integration tests litter the real data root with `profile_*` dirs
    (`~/Library/Application Support/com.elydora.ELY-Browser/profiles/`);
    tests should take an overridable data root.
 
