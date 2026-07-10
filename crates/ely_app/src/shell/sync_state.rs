@@ -88,7 +88,7 @@ impl ElyShell {
         true
     }
 
-    fn clear_pending_cloud_sync_upload(&mut self) {
+    pub(super) fn clear_pending_cloud_sync_upload(&mut self) {
         self.sync_upload_pending = false;
         self.sync_upload_pending_logical_clock_floor = None;
     }
@@ -103,34 +103,14 @@ impl ElyShell {
     /// Inspect the on-disk bearer token and seed `SyncConnectionState`
     /// so the Sync settings page reads the startup state on first render.
     pub(super) fn probe_initial_sync_state(&mut self) -> bool {
-        let ShellState::Ready(core) = &mut self.state else {
-            return false;
-        };
-        let Some(snapshot) = core.snapshot().ok() else {
-            return false;
-        };
         let Some(profile_root) = crate::services::servo_profile_data::default_profile_data_root()
         else {
             return false;
         };
-        let profile_dir = crate::services::servo_profile_data::sync_profile_data_dir(
-            &profile_root,
-            &snapshot.active_profile_id,
-        );
-        if snapshot.active_profile_name == "Default"
-            && matches!(snapshot.active_profile_kind, ProfileKind::Standard)
-        {
-            migrate_legacy_default_sync_dir(&profile_root, &profile_dir);
-        }
-        let bearer_path = profile_dir.join("sync").join("bearer.token");
-        let bearer_present = bearer_token_file_present(&bearer_path);
-        let state = if bearer_present {
-            ely_domain::SyncConnectionState::SignedIn
-        } else {
-            ely_domain::SyncConnectionState::SignedOut
+        let ShellState::Ready(core) = &mut self.state else {
+            return false;
         };
-        core.set_sync_connection_state(state);
-        bearer_present
+        probe_initial_sync_state_at(core, &profile_root)
     }
 
     /// Drain any sync upload outcomes the off-thread worker pushed
@@ -225,6 +205,40 @@ impl ElyShell {
     }
 }
 
+fn probe_initial_sync_state_at(
+    core: &mut ely_browser_core::BrowserCore,
+    profile_root: &Path,
+) -> bool {
+    let Some(snapshot) = core.snapshot().ok() else {
+        return false;
+    };
+    let profile_dir = crate::services::servo_profile_data::sync_profile_data_dir(
+        profile_root,
+        &snapshot.active_profile_id,
+    );
+    if !core.active_profile_allows_sync() {
+        if let Err(error) = auth::clear_persisted_bearer(&profile_dir) {
+            tracing::warn!(target: "ely::sync", error = %error, "private bearer cleanup failed");
+        }
+        core.set_sync_connection_state(SyncConnectionState::SignedOut);
+        return false;
+    }
+    if snapshot.active_profile_name == "Default"
+        && matches!(snapshot.active_profile_kind, ProfileKind::Standard)
+    {
+        migrate_legacy_default_sync_dir(profile_root, &profile_dir);
+    }
+    let bearer_path = profile_dir.join("sync").join("bearer.token");
+    let bearer_present = bearer_token_file_present(&bearer_path);
+    let state = if bearer_present {
+        ely_domain::SyncConnectionState::SignedIn
+    } else {
+        ely_domain::SyncConnectionState::SignedOut
+    };
+    core.set_sync_connection_state(state);
+    bearer_present
+}
+
 fn bearer_token_file_present(path: &Path) -> bool {
     std::fs::metadata(path).map(|metadata| metadata.len() > 0).unwrap_or(false)
 }
@@ -266,7 +280,13 @@ fn copy_dir_recursive(source: &Path, destination: &Path) -> std::io::Result<()> 
 
 #[cfg(test)]
 mod tests {
-    use super::{bearer_token_file_present, migrate_legacy_default_sync_dir};
+    use ely_browser_core::{BrowserCore, InitialBrowserConfig};
+    use ely_domain::SyncConnectionState;
+
+    use super::{
+        bearer_token_file_present, migrate_legacy_default_sync_dir, probe_initial_sync_state_at,
+    };
+    use crate::services::servo_profile_data::sync_profile_data_dir;
 
     #[test]
     fn bearer_token_file_presence_requires_bytes() -> Result<(), Box<dyn std::error::Error>> {
@@ -313,6 +333,43 @@ mod tests {
         migrate_legacy_default_sync_dir(directory.path(), &stable);
 
         assert!(!stable.join("sync/bearer.token").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn private_startup_clears_a_persisted_bearer() -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let mut core = BrowserCore::new(InitialBrowserConfig::private_window()?)?;
+        let profile_id = core.snapshot()?.active_profile_id;
+        let profile_dir = sync_profile_data_dir(directory.path(), &profile_id);
+        let bearer_path = profile_dir.join("sync/bearer.token");
+        std::fs::create_dir_all(bearer_path.parent().ok_or("missing bearer parent")?)?;
+        std::fs::write(&bearer_path, "a".repeat(64))?;
+        std::fs::write(bearer_path.with_extension("tmp"), "b".repeat(64))?;
+        core.set_sync_connection_state(SyncConnectionState::SignedIn);
+
+        assert!(!probe_initial_sync_state_at(&mut core, directory.path()));
+        assert!(!bearer_path.exists());
+        assert!(!bearer_path.with_extension("tmp").exists());
+        assert_eq!(core.snapshot()?.sync_status.connection(), &SyncConnectionState::SignedOut);
+
+        Ok(())
+    }
+
+    #[test]
+    fn standard_startup_preserves_a_persisted_bearer() -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+        let profile_id = core.snapshot()?.active_profile_id;
+        let profile_dir = sync_profile_data_dir(directory.path(), &profile_id);
+        let bearer_path = profile_dir.join("sync/bearer.token");
+        std::fs::create_dir_all(bearer_path.parent().ok_or("missing bearer parent")?)?;
+        std::fs::write(&bearer_path, "a".repeat(64))?;
+
+        assert!(probe_initial_sync_state_at(&mut core, directory.path()));
+        assert!(bearer_path.exists());
+        assert_eq!(core.snapshot()?.sync_status.connection(), &SyncConnectionState::SignedIn);
+
         Ok(())
     }
 }

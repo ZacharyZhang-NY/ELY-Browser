@@ -17,7 +17,13 @@ impl BrowserCore {
         if self.sync_object_policy(SyncObjectKind::Notes) == SyncObjectPolicy::Paused {
             return Vec::new();
         }
-        self.notes.iter().filter(|note| self.profile_allows_cloud_sync(note.profile_id())).collect()
+        self.notes
+            .iter()
+            .filter(|note| {
+                self.profile_allows_cloud_sync(note.profile_id())
+                    && self.space_allows_sync(note.space_id())
+            })
+            .collect()
     }
 
     pub(super) fn apply_note_sync_record(

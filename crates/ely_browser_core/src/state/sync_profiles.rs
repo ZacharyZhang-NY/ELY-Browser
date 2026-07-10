@@ -1,10 +1,37 @@
-use ely_domain::{Profile, ProfileId, ProfileKind, SyncObjectKind, SyncObjectPolicy};
+use ely_domain::{Profile, ProfileId, ProfileKind, SpaceId, SyncObjectKind, SyncObjectPolicy};
 use ely_sync_client::SyncClientError;
 
 use super::{BrowserCore, sync::snapshot_schema_error, sync_context::SyncSnapshotApplyContext};
 use crate::{sync_engine::SyncSnapshotApplySummary, sync_records::ProfileSyncRecord};
 
 impl BrowserCore {
+    #[must_use]
+    pub fn active_profile_allows_sync(&self) -> bool {
+        self.profile_allows_sync(&self.active_profile_id)
+    }
+
+    pub(super) fn profile_allows_sync(&self, profile_id: &ProfileId) -> bool {
+        self.profiles
+            .iter()
+            .find(|profile| profile.id() == profile_id)
+            .is_some_and(|profile| profile.allows_sync())
+    }
+
+    pub(super) fn profile_allows_cloud_sync(&self, profile_id: &ProfileId) -> bool {
+        self.profiles.iter().any(|profile| {
+            profile.id() == profile_id
+                && profile.allows_sync()
+                && profile.sync_policy() == ely_domain::ProfileSyncPolicy::Enabled
+        })
+    }
+
+    pub(super) fn space_allows_sync(&self, space_id: &SpaceId) -> bool {
+        self.spaces
+            .iter()
+            .find(|space| space.id() == space_id)
+            .is_some_and(|space| self.profile_allows_sync(space.default_profile_id()))
+    }
+
     pub(crate) fn visible_profiles_for_sync(&self) -> Vec<&Profile> {
         if self.sync_object_policy(SyncObjectKind::Profiles) == SyncObjectPolicy::Paused {
             return Vec::new();
@@ -21,8 +48,9 @@ impl BrowserCore {
         let profile_id = ProfileId::parse(&record.id).map_err(snapshot_schema_error)?;
         let kind = ProfileKind::from(record.kind);
         if kind == ProfileKind::Private {
-            summary.record_skipped();
-            return Ok(());
+            return Err(SyncClientError::SyncPolicy {
+                reason: "snapshot contains a private profile".to_string(),
+            });
         }
         let name = record.name.trim().to_string();
 

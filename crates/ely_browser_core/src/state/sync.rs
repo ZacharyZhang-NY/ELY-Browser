@@ -90,19 +90,20 @@ impl BrowserCore {
 
     #[must_use]
     pub fn cloud_sync_upload_enabled(&self) -> bool {
-        matches!(
-            self.sync_connection_state,
-            SyncConnectionState::SignedIn
-                | SyncConnectionState::AwaitingDeviceApproval
-                | SyncConnectionState::SyncReady { .. }
-                | SyncConnectionState::SyncError { .. }
-        )
+        self.active_profile_allows_sync()
+            && matches!(
+                self.sync_connection_state,
+                SyncConnectionState::SignedIn
+                    | SyncConnectionState::AwaitingDeviceApproval
+                    | SyncConnectionState::SyncReady { .. }
+                    | SyncConnectionState::SyncError { .. }
+            )
     }
 
     pub(crate) fn sync_space_name_for(&self, space_id: &SpaceId) -> Option<String> {
         self.spaces
             .iter()
-            .find(|space| space.id() == space_id)
+            .find(|space| space.id() == space_id && self.space_allows_sync(space.id()))
             .map(|space| space.name().to_string())
     }
 
@@ -180,7 +181,11 @@ impl BrowserCore {
         }
         self.tabs
             .iter()
-            .filter(|tab| tab.sync_enabled() && self.profile_allows_cloud_sync(tab.profile_id()))
+            .filter(|tab| {
+                tab.sync_enabled()
+                    && self.profile_allows_cloud_sync(tab.profile_id())
+                    && self.space_allows_sync(tab.space_id())
+            })
             .collect()
     }
 
@@ -188,7 +193,7 @@ impl BrowserCore {
         if self.sync_object_policy(SyncObjectKind::Spaces) == SyncObjectPolicy::Paused {
             return Vec::new();
         }
-        self.spaces.iter().collect()
+        self.spaces.iter().filter(|space| self.space_allows_sync(space.id())).collect()
     }
 
     pub(super) fn apply_space_sync_record(
@@ -200,11 +205,15 @@ impl BrowserCore {
         let space_id = parse_space_id(&record.id)?;
         let default_profile_id = self.sync_profile_id(&record.default_profile_id, context)?;
         let archive_policy = ArchivePolicy::from(record.archive_policy.clone());
-        let existing_index =
-            self.spaces.iter().position(|space| space.id() == &space_id).or_else(|| {
-                self.spaces
-                    .iter()
-                    .position(|space| space.name().eq_ignore_ascii_case(record.name.trim()))
+        let existing_index = self
+            .spaces
+            .iter()
+            .position(|space| space.id() == &space_id && self.space_allows_sync(space.id()))
+            .or_else(|| {
+                self.spaces.iter().position(|space| {
+                    space.name().eq_ignore_ascii_case(record.name.trim())
+                        && self.space_allows_sync(space.id())
+                })
             });
 
         match existing_index {
@@ -382,20 +391,20 @@ impl BrowserCore {
         context: &SyncSnapshotApplyContext,
     ) -> Result<ProfileId, SyncClientError> {
         let profile_id = ProfileId::parse(raw).map_err(snapshot_schema_error)?;
-        if let Some(local_profile_id) = context.profile_alias(&profile_id) {
+        let local_profile_id = context
+            .profile_alias(&profile_id)
+            .or_else(|| {
+                self.profiles
+                    .iter()
+                    .any(|profile| profile.id() == &profile_id)
+                    .then_some(profile_id)
+            })
+            .unwrap_or_else(|| self.active_profile_id.clone());
+        if self.profile_allows_sync(&local_profile_id) {
             return Ok(local_profile_id);
         }
-        if self.profiles.iter().any(|profile| profile.id() == &profile_id) {
-            return Ok(profile_id);
-        }
-        Ok(self.active_profile_id.clone())
-    }
-
-    pub(super) fn profile_allows_cloud_sync(&self, profile_id: &ProfileId) -> bool {
-        self.profiles.iter().any(|profile| {
-            profile.id() == profile_id
-                && profile.allows_sync()
-                && profile.sync_policy() == ely_domain::ProfileSyncPolicy::Enabled
+        Err(SyncClientError::SyncPolicy {
+            reason: "sync record targets a private profile".to_string(),
         })
     }
 
@@ -405,16 +414,22 @@ impl BrowserCore {
         space_name: Option<&str>,
     ) -> Result<SpaceId, SyncClientError> {
         let space_id = SpaceId::parse(raw).map_err(snapshot_schema_error)?;
-        if self.spaces.iter().any(|space| space.id() == &space_id) {
+        if self.space_allows_sync(&space_id) {
             return Ok(space_id);
         }
         if let Some(space_name) = space_name
-            && let Some(space) =
-                self.spaces.iter().find(|space| space.name().eq_ignore_ascii_case(space_name))
+            && let Some(space) = self.spaces.iter().find(|space| {
+                space.name().eq_ignore_ascii_case(space_name) && self.space_allows_sync(space.id())
+            })
         {
             return Ok(space.id().clone());
         }
-        Ok(self.active_space_id.clone())
+        if self.space_allows_sync(&self.active_space_id) {
+            return Ok(self.active_space_id.clone());
+        }
+        Err(SyncClientError::SyncPolicy {
+            reason: "sync record targets a private space".to_string(),
+        })
     }
 
     fn ensure_synced_tab_indexes(

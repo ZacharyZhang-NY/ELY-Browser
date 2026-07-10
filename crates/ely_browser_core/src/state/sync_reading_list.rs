@@ -19,7 +19,10 @@ impl BrowserCore {
         }
         self.reading_list
             .iter()
-            .filter(|entry| self.profile_allows_cloud_sync(entry.profile_id()))
+            .filter(|entry| {
+                self.profile_allows_cloud_sync(entry.profile_id())
+                    && self.space_allows_sync(entry.space_id())
+            })
             .collect()
     }
 

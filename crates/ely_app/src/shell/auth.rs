@@ -7,11 +7,14 @@
 //! so the existing 8 ms tick is the single point that reconciles
 //! background-task state with `BrowserCore`.
 
-use std::sync::mpsc::Sender;
+use std::{path::Path, sync::mpsc::Sender};
 
 use ely_browser_core::SyncEngine;
-use ely_domain::{ProfileId, ProfileKind};
-use ely_sync_client::{ApiClientConfig, BearerToken, send_email_otp, verify_email_otp};
+use ely_domain::ProfileId;
+use ely_sync_client::{
+    ApiClientConfig, BearerToken, BearerTokenStore, SyncClientError, send_email_otp,
+    verify_email_otp,
+};
 use gpui::Context;
 
 use crate::services::servo_profile_data::{default_profile_data_root, sync_profile_data_dir};
@@ -63,6 +66,9 @@ impl ElyShell {
     /// through the shared `SyncStateUpdate` channel, which the next
     /// shell tick reconciles into the `auth_flow_phase`.
     pub(crate) fn submit_email_otp_request(&mut self, cx: &mut Context<Self>) {
+        if active_profile_sync_context_for(&self.state).is_none() {
+            return;
+        }
         let email = self.read_auth_email_input(cx);
         let Some(email) = normalize_email(&email) else {
             self.auth_flow_phase = AuthFlowPhase::Error {
@@ -115,21 +121,16 @@ impl ElyShell {
     /// call to make, the token is the only artefact we own.
     pub(crate) fn submit_sign_out(&mut self, _cx: &mut Context<Self>) {
         self.auth_flow_phase = AuthFlowPhase::Idle;
-        let active_profile = match active_profile_sync_context_for(&self.state) {
-            Some(profile) => profile,
+        let active_profile_id = match active_profile_id_for(&self.state) {
+            Some(profile_id) => profile_id,
             None => return,
         };
         let Some(profile_root) = default_profile_data_root() else {
             return;
         };
-        let profile_dir = sync_profile_data_dir(&profile_root, &active_profile.id);
-        match SyncEngine::for_profile_dir(&profile_dir, "ELY", sync_platform_label()) {
-            Ok(mut engine) => {
-                let _ = engine.install_bearer("");
-            }
-            Err(error) => {
-                tracing::warn!(target: "ely::sync", error = %error, "sign-out failed to load engine");
-            }
+        let profile_dir = sync_profile_data_dir(&profile_root, &active_profile_id);
+        if let Err(error) = clear_persisted_bearer(&profile_dir) {
+            tracing::warn!(target: "ely::sync", error = %error, "sign-out failed to clear bearer");
         }
         if let ShellState::Ready(core) = &mut self.state {
             core.set_sync_connection_state(ely_domain::SyncConnectionState::SignedOut);
@@ -156,19 +157,27 @@ fn normalize_email(raw: &str) -> Option<String> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ActiveProfileSyncContext {
     id: ProfileId,
-    name: String,
-    kind: ProfileKind,
 }
 
 fn active_profile_sync_context_for(state: &ShellState) -> Option<ActiveProfileSyncContext> {
     let ShellState::Ready(core) = state else {
         return None;
     };
-    core.snapshot().ok().map(|snapshot| ActiveProfileSyncContext {
-        id: snapshot.active_profile_id,
-        name: snapshot.active_profile_name,
-        kind: snapshot.active_profile_kind,
-    })
+    if !core.active_profile_allows_sync() {
+        return None;
+    }
+    active_profile_id_for(state).map(|id| ActiveProfileSyncContext { id })
+}
+
+fn active_profile_id_for(state: &ShellState) -> Option<ProfileId> {
+    let ShellState::Ready(core) = state else {
+        return None;
+    };
+    core.snapshot().ok().map(|snapshot| snapshot.active_profile_id)
+}
+
+pub(super) fn clear_persisted_bearer(profile_dir: &Path) -> Result<(), SyncClientError> {
+    BearerTokenStore::new(profile_dir.join("sync").join("bearer.token")).clear()
 }
 
 fn spawn_send_otp(email: String, tx: Sender<SyncStateUpdate>) {
@@ -237,7 +246,10 @@ fn spawn_verify_otp(
 
 #[cfg(test)]
 mod tests {
-    use super::{AuthFlowPhase, normalize_email};
+    use ely_browser_core::{BrowserCore, InitialBrowserConfig};
+
+    use super::{AuthFlowPhase, active_profile_sync_context_for, normalize_email};
+    use crate::shell::ShellState;
 
     #[test]
     fn normalize_lowercases_and_trims() {
@@ -264,5 +276,19 @@ mod tests {
         };
         assert_eq!(phase.error_message(), Some("rate limited"));
         assert!(!phase.is_busy());
+    }
+
+    #[test]
+    fn private_profile_has_no_sync_auth_context() -> Result<(), Box<dyn std::error::Error>> {
+        let state =
+            ShellState::Ready(Box::new(BrowserCore::new(InitialBrowserConfig::private_window()?)?));
+
+        assert_eq!(active_profile_sync_context_for(&state), None);
+
+        let state =
+            ShellState::Ready(Box::new(BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?));
+        assert!(active_profile_sync_context_for(&state).is_some());
+
+        Ok(())
     }
 }

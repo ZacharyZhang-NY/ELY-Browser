@@ -255,6 +255,15 @@ impl ElyShell {
     }
 
     fn trigger_cloud_sync_upload_with_clock_floor(&mut self, logical_clock_floor: Option<u64>) {
+        let active_profile_allows_sync = match &self.state {
+            ShellState::Ready(core) => core.active_profile_allows_sync(),
+            ShellState::StartupError(_) => false,
+        };
+        if !active_profile_allows_sync {
+            self.sync_upload_scheduled = false;
+            self.clear_pending_cloud_sync_upload();
+            return;
+        }
         if self.sync_upload_in_flight {
             self.sync_upload_scheduled = false;
             self.queue_cloud_sync_upload(logical_clock_floor);

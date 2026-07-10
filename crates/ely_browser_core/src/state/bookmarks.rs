@@ -251,7 +251,10 @@ impl BrowserCore {
         }
         self.bookmarks
             .iter()
-            .filter(|bookmark| self.profile_allows_cloud_sync(bookmark.profile_id()))
+            .filter(|bookmark| {
+                self.profile_allows_cloud_sync(bookmark.profile_id())
+                    && self.space_allows_sync(bookmark.space_id())
+            })
             .collect()
     }
 

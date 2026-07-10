@@ -85,11 +85,16 @@ impl BearerTokenStore {
     }
 
     pub fn clear(&self) -> Result<(), SyncClientError> {
-        match fs::remove_file(&self.path) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(SyncClientError::TokenStorage(error.to_string())),
-        }
+        remove_file_if_present(&self.path)?;
+        remove_file_if_present(&self.path.with_extension("tmp"))
+    }
+}
+
+fn remove_file_if_present(path: &Path) -> Result<(), SyncClientError> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(SyncClientError::TokenStorage(error.to_string())),
     }
 }
 
@@ -126,9 +131,11 @@ mod tests {
 
         store.save(&token)?;
         assert_eq!(store.load()?, Some(token.clone()));
+        fs::write(store.path().with_extension("tmp"), token.as_str()).map_err(io_err)?;
 
         store.clear()?;
         assert_eq!(store.load()?, None);
+        assert!(!store.path().with_extension("tmp").exists());
         Ok(())
     }
 }

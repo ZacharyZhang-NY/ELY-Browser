@@ -1,6 +1,6 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::{SyncConnectionState, SyncObjectKind, SyncObjectStatus};
+use ely_domain::{ProfileKind, SyncConnectionState, SyncObjectKind, SyncObjectStatus};
 use gpui::{
     AnyElement, Context, FontWeight, IntoElement, ParentElement, Styled, div, px, rgb, rgba,
 };
@@ -36,25 +36,48 @@ fn render_sync_body(
     snapshot: &BrowserSnapshot,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
+    let body = div().max_w(px(860.0)).flex().flex_col().gap(px(18.0)).child(
+        div()
+            .text_size(px(26.0))
+            .font_weight(FontWeight(500.0))
+            .text_color(rgb(colors::ink()))
+            .child("Sync"),
+    );
+    if !profile_allows_sync_controls(&snapshot.active_profile_kind) {
+        return body.child(render_private_profile_card()).into_any_element();
+    }
+    body.child(
+        div()
+            .grid()
+            .grid_cols(2)
+            .gap(px(18.0))
+            .child(render_account_card(shell, snapshot, cx))
+            .child(render_data_card(shell, snapshot, cx)),
+    )
+    .into_any_element()
+}
+
+fn profile_allows_sync_controls(profile_kind: &ProfileKind) -> bool {
+    profile_kind == &ProfileKind::Standard
+}
+
+fn render_private_profile_card() -> AnyElement {
     div()
-        .max_w(px(860.0))
+        .p(px(16.0))
+        .rounded(px(12.0))
+        .bg(rgba(card_bg()))
         .flex()
         .flex_col()
-        .gap(px(18.0))
+        .gap(px(8.0))
         .child(
             div()
-                .text_size(px(26.0))
+                .text_size(px(14.0))
                 .font_weight(FontWeight(500.0))
                 .text_color(rgb(colors::ink()))
-                .child("Sync"),
+                .child("Private profile"),
         )
         .child(
-            div()
-                .grid()
-                .grid_cols(2)
-                .gap(px(18.0))
-                .child(render_account_card(shell, snapshot, cx))
-                .child(render_data_card(shell, snapshot, cx)),
+            div().text_size(px(14.0)).text_color(rgb(colors::ink_3())).child("Local session only"),
         )
         .into_any_element()
 }
@@ -240,4 +263,17 @@ fn sync_object_kind_label(kind: SyncObjectKind) -> &'static str {
 
 fn card_bg() -> u32 {
     colors::pick(0xffffffd9, 0x1f1d1bd9)
+}
+
+#[cfg(test)]
+mod tests {
+    use ely_domain::ProfileKind;
+
+    use super::profile_allows_sync_controls;
+
+    #[test]
+    fn private_profile_hides_sync_controls() {
+        assert!(!profile_allows_sync_controls(&ProfileKind::Private));
+        assert!(profile_allows_sync_controls(&ProfileKind::Standard));
+    }
 }

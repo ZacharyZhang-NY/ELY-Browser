@@ -291,6 +291,7 @@ impl BrowserCore {
     /// UI thread does the (synchronous, cheap) serialization before
     /// handing bytes off to the worker thread.
     pub fn build_sync_snapshot_bytes(&self) -> Result<Vec<u8>, SyncClientError> {
+        self.ensure_active_profile_allows_sync()?;
         let body = SyncSnapshotBody::from_core(self);
         serde_json::to_vec(&body).map_err(|error| SyncClientError::Json {
             endpoint: "snapshot".to_string(),
@@ -302,6 +303,7 @@ impl BrowserCore {
         &mut self,
         bytes: &[u8],
     ) -> Result<SyncSnapshotApplySummary, SyncClientError> {
+        self.ensure_active_profile_allows_sync()?;
         let body: SyncSnapshotBody = serde_json::from_slice(bytes).map_err(|error| {
             SyncClientError::Json { endpoint: "snapshot".to_string(), source: error }
         })?;
@@ -312,5 +314,12 @@ impl BrowserCore {
             )));
         }
         self.apply_sync_snapshot_body(body)
+    }
+
+    fn ensure_active_profile_allows_sync(&self) -> Result<(), SyncClientError> {
+        if self.active_profile_allows_sync() {
+            return Ok(());
+        }
+        Err(SyncClientError::SyncPolicy { reason: "active profile is private".to_string() })
     }
 }

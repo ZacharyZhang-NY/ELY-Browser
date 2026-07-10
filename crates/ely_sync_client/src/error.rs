@@ -34,6 +34,9 @@ pub enum SyncClientError {
     #[error("Snapshot schema is invalid: {0}")]
     SnapshotSchema(String),
 
+    #[error("Sync policy blocks this operation: {reason}")]
+    SyncPolicy { reason: String },
+
     #[error("Device {device_id} cannot sync with approval status {status}")]
     DeviceApprovalStatus { device_id: String, status: String },
 }
