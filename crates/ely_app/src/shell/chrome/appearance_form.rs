@@ -144,7 +144,6 @@ fn render_appearance_rows(
         .flex()
         .flex_col()
         .child(render_theme_mode_row(appearance.theme_mode(), cx))
-        .child(render_accent_row())
         .child(render_translucency_row(shell, appearance.translucency_pct()))
         .child(render_reduce_motion_row(shell, appearance.reduce_motion(), cx))
         .child(render_reset_row(cx))
@@ -256,36 +255,6 @@ fn theme_segment(
         }))
         .child(label)
         .into_any_element()
-}
-
-fn render_accent_row() -> AnyElement {
-    settings_row(
-        "Accent color",
-        "Used across selection, focus rings & links.",
-        div()
-            .flex()
-            .items_center()
-            .gap(px(8.0))
-            .child(swatch(colors::accent(), true))
-            .child(swatch(0xec6a8e, false))
-            .child(swatch(0x7c6cf7, false))
-            .child(swatch(0x4fb59a, false))
-            .child(swatch(colors::ink(), false))
-            .into_any_element(),
-    )
-}
-
-fn swatch(color: u32, selected: bool) -> AnyElement {
-    let mut element = div()
-        .size(px(22.0))
-        .rounded_full()
-        .bg(rgb(color))
-        .border_1()
-        .border_color(rgba(0x0000000d));
-    if selected {
-        element = element.border_2().border_color(rgb(colors::accent()));
-    }
-    element.into_any_element()
 }
 
 fn render_reduce_motion_row(
