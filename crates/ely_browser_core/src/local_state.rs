@@ -4,11 +4,14 @@
 //! reduce what survives a restart, and Private-profile data never
 //! reaches disk.
 
+use ely_domain::{
+    AppearanceSettings, FavoriteLimit, HistoryRecordingPolicy, NewTabDestination, SearchEngine,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     CoreError,
-    state::BrowserCore,
+    state::{BrowserCore, SyncObjectPolicies},
     sync_records::{
         BookmarkSyncRecord, HistorySyncRecord, NoteSyncRecord, PluginSettingsSyncRecord,
         ProfileSyncRecord, ReadingListSyncRecord, SNAPSHOT_SCHEMA_REV, SitePermissionSyncRecord,
@@ -22,12 +25,35 @@ pub(crate) const LOCAL_STATE_REV: u32 = 1;
 struct LocalStateDocument {
     local_rev: u32,
     body: SyncSnapshotBody,
+    // Scalar settings persist locally; cloud sync of them is a separate,
+    // still-unbuilt concern, so they stay out of the sync wire schema.
+    // `default` keeps older rev-1 files (written before settings existed)
+    // loadable — their settings fall back to defaults.
+    #[serde(default)]
+    settings: LocalSettings,
+}
+
+/// Scalar user settings that must survive a restart. Unlike the sync
+/// snapshot body, these never leave the device yet. `default` on the
+/// container fills any field a future revision has not written.
+#[derive(Default, Serialize, Deserialize)]
+#[serde(default)]
+struct LocalSettings {
+    search_engine: SearchEngine,
+    new_tab_destination: NewTabDestination,
+    history_recording_policy: HistoryRecordingPolicy,
+    favorite_limit: FavoriteLimit,
+    appearance: AppearanceSettings,
+    sync_object_policies: SyncObjectPolicies,
 }
 
 impl BrowserCore {
     pub fn build_local_state_bytes(&self) -> Result<Vec<u8>, CoreError> {
-        let document =
-            LocalStateDocument { local_rev: LOCAL_STATE_REV, body: local_body_from_core(self) };
+        let document = LocalStateDocument {
+            local_rev: LOCAL_STATE_REV,
+            body: local_body_from_core(self),
+            settings: self.local_settings(),
+        };
         serde_json::to_vec(&document)
             .map_err(|error| CoreError::LocalState { reason: error.to_string() })
     }
@@ -47,7 +73,28 @@ impl BrowserCore {
         }
         self.apply_sync_snapshot_body(document.body)
             .map_err(|error| CoreError::LocalState { reason: error.to_string() })?;
+        self.apply_local_settings(document.settings);
         Ok(())
+    }
+
+    fn local_settings(&self) -> LocalSettings {
+        LocalSettings {
+            search_engine: self.search_engine(),
+            new_tab_destination: self.new_tab_destination(),
+            history_recording_policy: self.history_recording_policy(),
+            favorite_limit: self.favorite_limit(),
+            appearance: self.appearance(),
+            sync_object_policies: self.sync_object_policies(),
+        }
+    }
+
+    fn apply_local_settings(&mut self, settings: LocalSettings) {
+        self.set_search_engine(settings.search_engine);
+        self.set_new_tab_destination(settings.new_tab_destination);
+        self.set_history_recording_policy(settings.history_recording_policy);
+        self.set_favorite_limit(settings.favorite_limit);
+        self.set_appearance(settings.appearance);
+        self.set_sync_object_policies(settings.sync_object_policies);
     }
 }
 

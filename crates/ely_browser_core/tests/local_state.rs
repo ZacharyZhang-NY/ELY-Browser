@@ -1,10 +1,41 @@
 use std::error::Error;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-use ely_domain::{SyncObjectKind, SyncObjectPolicy, UrlText};
+use ely_domain::{
+    FavoriteLimit, HistoryRecordingPolicy, NewTabDestination, SearchEngine, SyncObjectKind,
+    SyncObjectPolicy, ThemeMode, UrlText,
+};
 
 fn standard_core() -> Result<BrowserCore, Box<dyn Error>> {
     Ok(BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?)
+}
+
+#[test]
+fn local_state_persists_scalar_settings() -> Result<(), Box<dyn Error>> {
+    let mut before = standard_core()?;
+    before.set_search_engine(SearchEngine::Google);
+    before.set_new_tab_destination(NewTabDestination::Bookmarks);
+    before.set_favorite_limit(FavoriteLimit::TwentyFour);
+    before.set_history_recording_policy(HistoryRecordingPolicy::Pause);
+    before.set_theme_mode(ThemeMode::Dark);
+    // Privacy-critical: a paused sync toggle must not silently re-enable.
+    before.set_sync_object_policy(SyncObjectKind::History, SyncObjectPolicy::Paused);
+    let bytes = before.build_local_state_bytes()?;
+
+    let mut after = standard_core()?;
+    after.apply_local_state_bytes(&bytes)?;
+
+    assert_eq!(after.search_engine(), SearchEngine::Google);
+    assert_eq!(after.new_tab_destination(), NewTabDestination::Bookmarks);
+    assert_eq!(after.favorite_limit(), FavoriteLimit::TwentyFour);
+    assert_eq!(after.history_recording_policy(), HistoryRecordingPolicy::Pause);
+    assert_eq!(after.appearance().theme_mode(), ThemeMode::Dark);
+    assert_eq!(
+        after.sync_object_policy(SyncObjectKind::History),
+        SyncObjectPolicy::Paused,
+        "a paused sync toggle must survive a restart",
+    );
+    Ok(())
 }
 
 #[test]

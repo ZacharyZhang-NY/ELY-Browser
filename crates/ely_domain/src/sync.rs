@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 /// Connection lifecycle of the cloud sync client.
 ///
 /// The previous variant set was a single `SignedOut`, which made the
@@ -35,7 +37,8 @@ pub enum SyncObjectKind {
     PluginSettings,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SyncObjectPolicy {
     #[default]
     Enabled,

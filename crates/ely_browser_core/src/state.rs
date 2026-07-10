@@ -9,7 +9,7 @@ use ely_domain::{
 };
 
 use crate::{CoreError, navigation::tab_title};
-use sync::SyncObjectPolicies;
+pub(crate) use sync::SyncObjectPolicies;
 
 mod bookmarks;
 mod commands;

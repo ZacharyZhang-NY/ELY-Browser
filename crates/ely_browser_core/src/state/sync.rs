@@ -1,5 +1,7 @@
 use std::time::{Duration, UNIX_EPOCH};
 
+use serde::{Deserialize, Serialize};
+
 use ely_domain::{
     ArchivePolicy, BookmarkEntry, BookmarkId, BrowserTab, ProfileId, Space, SpaceId,
     SyncConnectionState, SyncObjectKind, SyncObjectPolicy, SyncObjectState, SyncObjectStatus,
@@ -11,8 +13,9 @@ use super::{BrowserCore, sync_context::SyncSnapshotApplyContext};
 use crate::sync_engine::SyncSnapshotApplySummary;
 use crate::sync_records::{BookmarkSyncRecord, SpaceSyncRecord, TabSyncRecord};
 
-#[derive(Clone, Debug)]
-pub(super) struct SyncObjectPolicies {
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(default)]
+pub(crate) struct SyncObjectPolicies {
     spaces: SyncObjectPolicy,
     tabs: SyncObjectPolicy,
     bookmarks: SyncObjectPolicy,
@@ -82,6 +85,14 @@ impl BrowserCore {
     #[must_use]
     pub fn sync_object_policy(&self, kind: SyncObjectKind) -> SyncObjectPolicy {
         self.sync_object_policies.get(kind)
+    }
+
+    pub(crate) fn sync_object_policies(&self) -> SyncObjectPolicies {
+        self.sync_object_policies
+    }
+
+    pub(crate) fn set_sync_object_policies(&mut self, policies: SyncObjectPolicies) {
+        self.sync_object_policies = policies;
     }
 
     pub fn set_sync_connection_state(&mut self, state: SyncConnectionState) {

@@ -1,8 +1,10 @@
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::{DomainError, UrlText};
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SearchEngine {
     #[default]
     DuckDuckGo,

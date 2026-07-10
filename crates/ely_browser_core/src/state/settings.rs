@@ -75,6 +75,10 @@ impl BrowserCore {
         self.appearance = AppearanceSettings::default();
     }
 
+    pub(crate) fn set_appearance(&mut self, appearance: AppearanceSettings) {
+        self.appearance = appearance;
+    }
+
     pub fn set_command_query(&mut self, query: impl Into<String>) {
         self.command_query = query.into();
     }
