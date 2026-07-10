@@ -16,6 +16,6 @@
     "wrangler": "4.90.0"
   },
   "dependencies": {
-    "better-auth": "^1.6.9"
+    "better-auth": "1.6.23"
   }
 }

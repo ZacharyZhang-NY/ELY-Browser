@@ -165,6 +165,10 @@ jobs:
         run: npm ci
         working-directory: cloudflare
 
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: cloudflare
+
       - name: Check worker types
         run: npm run check
         working-directory: cloudflare
