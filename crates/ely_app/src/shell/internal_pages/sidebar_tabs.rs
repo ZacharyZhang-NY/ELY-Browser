@@ -24,7 +24,7 @@ const ARCHIVE_POLICY_OPTIONS: &[ArchivePolicyOption] = &[
     },
     ArchivePolicyOption {
         label: "Today",
-        detail: "Archive idle unpinned tabs during daily cleanup.",
+        detail: "Archive unpinned tabs left idle since yesterday.",
         policy: ArchivePolicy::IdleDays(0),
     },
     ArchivePolicyOption {

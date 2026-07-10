@@ -31,6 +31,7 @@ mod sync_inbox;
 mod sync_state;
 mod tab_groups;
 mod tab_lifecycle;
+mod timers;
 mod web_surface;
 mod web_surface_cadence;
 mod web_surface_controller;
@@ -52,7 +53,7 @@ mod gpui_harness_tests;
 
 use ely_browser_core::{BrowserCore, InitialBrowserConfig};
 use ely_domain::{DEFAULT_TRANSLUCENCY_PCT, ProfileId, SpaceId, TabId};
-use gpui::{AppContext, Context, Entity, FocusHandle, Subscription, Timer, Window};
+use gpui::{AppContext, Context, Entity, FocusHandle, Subscription, Window};
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::slider::{SliderEvent, SliderState, SliderValue};
 
@@ -313,7 +314,7 @@ impl ElyShell {
         if should_run_initial_sync {
             shell.trigger_cloud_sync_upload();
         }
-        start_external_web_surface_timer(cx);
+        timers::start(cx);
         shell
     }
 
@@ -476,25 +477,4 @@ impl ElyShell {
             cx.notify();
         }
     }
-}
-
-fn start_external_web_surface_timer(cx: &mut Context<ElyShell>) {
-    cx.spawn(async move |shell, cx| {
-        loop {
-            let delay = match shell.update(cx, |shell, _| shell.external_web_surface_tick_delay()) {
-                Ok(delay) => delay,
-                Err(_) => break,
-            };
-            Timer::after(delay).await;
-            let result = shell.update(cx, |shell, cx| {
-                if shell.tick_external_web_surfaces(cx) {
-                    cx.notify();
-                }
-            });
-            if result.is_err() {
-                break;
-            }
-        }
-    })
-    .detach();
 }

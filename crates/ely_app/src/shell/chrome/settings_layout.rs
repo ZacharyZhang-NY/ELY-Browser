@@ -24,6 +24,11 @@ const NAV_GROUPS: &[NavGroup] = &[
         label: "GENERAL",
         items: &[
             NavItem {
+                icon: IconName::Settings2,
+                label: "General",
+                route: "ely://settings/general",
+            },
+            NavItem {
                 icon: IconName::Palette,
                 label: "Appearance",
                 route: "ely://settings/appearance",
