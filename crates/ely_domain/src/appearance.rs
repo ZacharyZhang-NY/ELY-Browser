@@ -19,6 +19,24 @@ pub enum ThemeMode {
     Dark,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ColorScheme {
+    #[default]
+    Light,
+    Dark,
+}
+
+impl ThemeMode {
+    pub fn resolve(self, system: ColorScheme) -> ColorScheme {
+        match self {
+            Self::System => system,
+            Self::Light => ColorScheme::Light,
+            Self::Dark => ColorScheme::Dark,
+        }
+    }
+}
+
 pub const DEFAULT_TRANSLUCENCY_PCT: u8 = 40;
 pub const MAX_TRANSLUCENCY_PCT: u8 = 100;
 
@@ -77,7 +95,7 @@ impl AppearanceSettings {
 
 #[cfg(test)]
 mod tests {
-    use super::{AppearanceSettings, ThemeMode, WallpaperTheme};
+    use super::{AppearanceSettings, ColorScheme, ThemeMode, WallpaperTheme};
 
     #[test]
     fn default_settings_use_dawn_and_system_mode() {
@@ -101,6 +119,13 @@ mod tests {
         assert_eq!(settings.theme_mode(), ThemeMode::Dark);
         assert!(settings.reduce_motion());
         assert_eq!(settings.translucency_pct(), 75);
+    }
+
+    #[test]
+    fn theme_mode_resolves_explicit_and_system_color_schemes() {
+        assert_eq!(ThemeMode::System.resolve(ColorScheme::Dark), ColorScheme::Dark);
+        assert_eq!(ThemeMode::Light.resolve(ColorScheme::Dark), ColorScheme::Light);
+        assert_eq!(ThemeMode::Dark.resolve(ColorScheme::Light), ColorScheme::Dark);
     }
 
     #[test]

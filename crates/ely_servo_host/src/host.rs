@@ -1,5 +1,6 @@
 use ely_domain::{
-    ProfileId, SiteOrigin, SitePermissionDecision, SitePermissionFeature, TabId, UrlText, WebViewId,
+    ColorScheme, ProfileId, SiteOrigin, SitePermissionDecision, SitePermissionFeature, TabId,
+    UrlText, WebViewId,
 };
 
 use crate::ServoHostError;
@@ -281,6 +282,12 @@ pub struct HidpiScaleRequest {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ColorSchemeRequest {
+    pub webview_id: WebViewId,
+    pub color_scheme: ColorScheme,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MouseClickRequest {
     pub webview_id: WebViewId,
     pub x: u32,
@@ -384,6 +391,8 @@ pub trait ServoHost {
     fn set_page_zoom(&mut self, request: PageZoomRequest) -> Result<(), ServoHostError>;
 
     fn set_hidpi_scale(&mut self, request: HidpiScaleRequest) -> Result<(), ServoHostError>;
+
+    fn set_color_scheme(&mut self, request: ColorSchemeRequest) -> Result<(), ServoHostError>;
 
     fn click(&mut self, request: MouseClickRequest) -> Result<(), ServoHostError>;
 

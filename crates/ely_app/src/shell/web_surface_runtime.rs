@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ely_domain::{BrowserTab, TabId};
+use ely_domain::{BrowserTab, ColorScheme, TabId};
 
 use crate::services::{
     ProfileDataMode,
@@ -43,6 +43,7 @@ pub(super) struct WebSurfaceRuntime {
     transient_cleanup_error: Option<String>,
     client_factory: LiveRuntimeClientFactory,
     last_generation: u64,
+    color_scheme: ColorScheme,
 }
 
 const SIDECAR_RESTART_BASE_DELAY: Duration = Duration::from_millis(250);
@@ -60,6 +61,7 @@ impl WebSurfaceRuntime {
             transient_cleanup_error,
             client_factory: new_servo_live_client,
             last_generation: 0,
+            color_scheme: ColorScheme::Light,
         }
     }
 
@@ -74,6 +76,7 @@ impl WebSurfaceRuntime {
             transient_cleanup_error: None,
             client_factory,
             last_generation: 0,
+            color_scheme: ColorScheme::Light,
         }
     }
 
@@ -125,6 +128,7 @@ impl WebSurfaceRuntime {
             height: size.height,
             page_zoom_percent: zoom_percent,
             device_pixel_ratio: size.device_pixel_ratio_f32(),
+            color_scheme: self.color_scheme,
             scroll_delta_x,
             scroll_delta_y,
             scroll_point_x,
@@ -224,6 +228,10 @@ impl WebSurfaceRuntime {
             session.scope == WebSurfaceRuntimeScope::new(profile_id.clone(), profile_data_mode)
                 && self.workers.contains_key(&session.scope)
         })
+    }
+
+    pub(super) fn set_color_scheme(&mut self, color_scheme: ColorScheme) {
+        self.color_scheme = color_scheme;
     }
 
     pub(super) fn prepare_tab_scope(
@@ -472,3 +480,6 @@ mod retry_tests;
 #[cfg(test)]
 #[path = "web_surface_runtime_tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "web_surface_theme_tests.rs"]
+mod theme_tests;

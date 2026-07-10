@@ -6,12 +6,13 @@ use std::{
     process::{Command, Stdio},
 };
 
-use ely_domain::{ProfileId, SiteOrigin, SitePermissionFeature, TabId, UrlText};
+use ely_domain::{ColorScheme, ProfileId, SiteOrigin, SitePermissionFeature, TabId, UrlText};
 use ely_servo_host::{
-    HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest,
-    PageZoomRequest, PermissionDecision, PermissionSnapshotEntry, PermissionSnapshotRequest,
-    PermissionSnapshotState, ResizeRequest, ScrollRequest, ServoHost, ServoHostError,
-    ServoSurfaceSize, SoftwareServoHost, TouchTapRequest, WebViewState,
+    ColorSchemeRequest, HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest,
+    MouseDragRequest, NavigationRequest, PageZoomRequest, PermissionDecision,
+    PermissionSnapshotEntry, PermissionSnapshotRequest, PermissionSnapshotState, ResizeRequest,
+    ScrollRequest, ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, TouchTapRequest,
+    WebViewState,
 };
 
 const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
@@ -29,6 +30,7 @@ const CLICK_PROBE_URL: &str = "data:text/html,%3C!doctype%20html%3E%3Ctitle%3ECl
 const DRAG_PROBE_URL: &str = "data:text/html,%3C%21doctype%20html%3E%3Ctitle%3EDrag%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23f6d365%3B%7Dbutton%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A220px%3Bheight%3A90px%3Bfont%3A28px%20sans-serif%3Bbackground%3A%23ffffff%3Bcolor%3A%23111111%3B%7D%3C%2Fstyle%3E%3Cbutton%20id%3Dbox%3EDrag%3C%2Fbutton%3E%3Cscript%3Elet%20dragging%3Dfalse%3Bconst%20box%3Ddocument.getElementById%28%27box%27%29%3BaddEventListener%28%27mousedown%27%2Cevent%3D%3E%7Bif%28event.target%3D%3D%3Dbox%29%7Bdragging%3Dtrue%3B%7D%7D%29%3BaddEventListener%28%27mousemove%27%2Cevent%3D%3E%7Bif%28dragging%26%26event.clientX%3E280%29%7Bdocument.body.style.background%3D%27%230039ff%27%3Bdocument.title%3D%27Dragged%27%3Bbox.textContent%3D%27Dragged%27%3B%7D%7D%29%3BaddEventListener%28%27mouseup%27%2C%28%29%3D%3E%7Bdragging%3Dfalse%3B%7D%29%3B%3C%2Fscript%3E";
 const TOUCH_PROBE_URL: &str = "data:text/html,%3C%21doctype%20html%3E%3Ctitle%3ETouch%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23c7f5d9%3B%7Dbutton%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A220px%3Bheight%3A90px%3Bfont%3A28px%20sans-serif%3Bbackground%3A%23ffffff%3Bcolor%3A%23111111%3Btouch-action%3Amanipulation%3B%7D%3C%2Fstyle%3E%3Cbutton%20ontouchstart%3D%22document.body.dataset.touch%3D%27start%27%3B%22%20onpointerdown%3D%22if%28%21document.body.dataset.pointerType%29%7Bdocument.body.dataset.pointerType%3Devent.pointerType%3B%7D%22%20onclick%3D%22if%28document.body.dataset.pointerType%21%3D%3D%27touch%27%29%7Bdocument.title%3Ddocument.body.dataset.pointerType%3Breturn%3B%7Ddocument.body.style.background%3D%27%230039ff%27%3Bdocument.title%3D%27Touched%27%3Bthis.textContent%3D%27Touched%27%3B%22%3ETap%3C%2Fbutton%3E";
 const TEXT_PROBE_URL: &str = "data:text/html,%3C!doctype%20html%3E%3Ctitle%3EText%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23d9e8ff%3Bfont%3A28px%20sans-serif%3B%7Dinput%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A80px%3Bwidth%3A260px%3Bheight%3A70px%3Bfont%3A28px%20sans-serif%3B%7Doutput%7Bposition%3Aabsolute%3Bleft%3A80px%3Btop%3A180px%3Bfont%3A32px%20sans-serif%3B%7D%3C%2Fstyle%3E%3Cinput%20id%3Dq%20autofocus%20oninput%3D%22document.body.style.background%3D%27%230039ff%27%3Bdocument.getElementById%28%27out%27%29.textContent%3Dthis.value%3B%22%3E%3Coutput%20id%3Dout%3Eempty%3C%2Foutput%3E";
+const THEME_PROBE_URL: &str = "data:text/html,%3C!doctype%20html%3E%3Ctitle%3ETheme%20Probe%3C%2Ftitle%3E%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23f1e2d3%3B%7D%40media%28prefers-color-scheme%3Adark%29%7Bbody%7Bbackground%3A%23112233%3B%7D%7D%3C%2Fstyle%3E";
 const TEXT_PROBE_VALUE: &str = "ely42";
 
 struct PrdSiteCompatibilityCase {
@@ -234,6 +236,29 @@ fn exercise_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
         ),
         "mismatch: {mismatch:?}"
     );
+
+    host.set_color_scheme(ColorSchemeRequest {
+        webview_id: webview_id.clone(),
+        color_scheme: ColorScheme::Dark,
+    })?;
+    host.navigate(NavigationRequest {
+        webview_id: webview_id.clone(),
+        tab_id: tab_id.clone(),
+        url: UrlText::parse(THEME_PROBE_URL)?,
+    })?;
+    wait_for_rendered_webview_with_center_pixel(&mut host, &webview_id, None, [17, 34, 51])?;
+
+    let previous_frame_hash = host.last_rendered_frame()?.sample_hash();
+    host.set_color_scheme(ColorSchemeRequest {
+        webview_id: webview_id.clone(),
+        color_scheme: ColorScheme::Light,
+    })?;
+    wait_for_rendered_webview_with_center_pixel(
+        &mut host,
+        &webview_id,
+        Some(previous_frame_hash),
+        [241, 226, 211],
+    )?;
 
     let url = UrlText::parse(CLICK_PROBE_URL)?;
 

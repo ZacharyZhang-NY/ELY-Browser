@@ -9,11 +9,11 @@ use std::{
 };
 
 use dpi::PhysicalSize;
-use ely_domain::{ProfileId, TabId, WebViewId};
+use ely_domain::{ColorScheme, ProfileId, TabId, WebViewId};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use servo::{
-    DevicePoint, DeviceVector2D, Opts, Scroll, Servo, ServoBuilder, WebViewBuilder, WebViewPoint,
-    WebViewVector,
+    DevicePoint, DeviceVector2D, Opts, Scroll, Servo, ServoBuilder, Theme, WebViewBuilder,
+    WebViewPoint, WebViewVector,
 };
 
 #[path = "runtime_context.rs"]
@@ -32,8 +32,8 @@ use runtime_preferences::ely_servo_preferences;
 use url::Url;
 
 use crate::{
-    ConsumedPermission, HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest,
-    MouseDragRequest, MouseHoverRequest, NavigationRequest, PageZoomRequest,
+    ColorSchemeRequest, ConsumedPermission, HidpiScaleRequest, KeyboardTextRequest,
+    MouseClickRequest, MouseDragRequest, MouseHoverRequest, NavigationRequest, PageZoomRequest,
     PermissionSnapshotRequest, RenderedFrame, ResizeRequest, ScrollRequest, ServoHost,
     ServoHostError, TouchTapRequest, WebViewSnapshot, WebViewState,
     runtime_input::{
@@ -204,13 +204,15 @@ impl ServoHost for SoftwareServoHost {
         webview.delegate.set_state(WebViewState::Loading);
         if should_create_initial_document {
             let hidpi_scale_factor = webview.webview.hidpi_scale_factor();
-            webview.webview = WebViewBuilder::new(&servo, webview.rendering_context.clone())
+            let replacement = WebViewBuilder::new(&servo, webview.rendering_context.clone())
                 .delegate(webview.delegate.clone())
                 .url(url)
                 // The live path pushes DPR before first navigation. Preserve that scale when
                 // replacing the about:blank WebView so CSS viewport = physical surface / DPR.
                 .hidpi_scale_factor(hidpi_scale_factor)
                 .build();
+            replacement.notify_theme_change(servo_theme(webview.color_scheme));
+            webview.webview = replacement;
             // The input-accepting invariant lives in `webview_for_input`.
             webview.webview.show();
             webview.webview.focus();
@@ -300,6 +302,18 @@ impl ServoHost for SoftwareServoHost {
 
         let scale = hidpi_scale_from_factor(request.scale_factor);
         webview.webview.set_hidpi_scale_factor(scale);
+        Ok(())
+    }
+
+    fn set_color_scheme(&mut self, request: ColorSchemeRequest) -> Result<(), ServoHostError> {
+        let webview = self
+            .webviews
+            .get_mut(&request.webview_id)
+            .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
+        if webview.color_scheme != request.color_scheme {
+            webview.color_scheme = request.color_scheme;
+            webview.webview.notify_theme_change(servo_theme(request.color_scheme));
+        }
         Ok(())
     }
 
@@ -440,6 +454,7 @@ impl SoftwareServoHost {
                 webview,
                 delegate,
                 requested_url: None,
+                color_scheme: ColorScheme::Light,
             },
         );
 
@@ -470,5 +485,12 @@ impl SoftwareServoHost {
         webview.webview.show();
         webview.webview.focus();
         Ok(webview)
+    }
+}
+
+fn servo_theme(color_scheme: ColorScheme) -> Theme {
+    match color_scheme {
+        ColorScheme::Light => Theme::Light,
+        ColorScheme::Dark => Theme::Dark,
     }
 }

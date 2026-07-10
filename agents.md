@@ -13,7 +13,7 @@ in the same commit as any change that makes it stale.
   local persistence. No IO except through callers.
 - `crates/ely_servo_host` — Servo embedding, rendering contexts, the
   `ely_servo_sidecar` binary (one Servo process per profile; stdio JSON
-  protocol v3 + macOS IOSurface Mach transport). See
+  protocol v4 + macOS IOSurface Mach transport). See
   `docs/servo-embedding-architecture.md`.
 - `crates/ely_sync_client` — worker API client, device identity/trust,
   E2E snapshot crypto, native-keychain bearer storage, sync-owner store.
@@ -92,6 +92,10 @@ Real and verified:
   profile worker boundary while preserving total device-pixel distance;
   clicks, text, and allow-once permission transfers retain strict ordering.
   Verified by a blocked-worker burst regression and the live-site scroll e2e.
+- Website color scheme: resolved System/Light/Dark state crosses sidecar
+  protocol v4 and reaches `WebView::notify_theme_change`; GPUI appearance
+  events trigger a shell repaint, and first-navigation WebView replacement
+  preserves the selected scheme. Verified with real Servo media-query pixels.
 - Cross-platform: download Open/Reveal use per-OS launchers (macOS `open`,
   Windows `cmd start`/`explorer /select`, Linux `xdg-open`); the command
   overlay closes on Escape.

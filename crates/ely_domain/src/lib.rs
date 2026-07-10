@@ -24,7 +24,8 @@ mod tab_group;
 mod url_text;
 
 pub use appearance::{
-    AppearanceSettings, DEFAULT_TRANSLUCENCY_PCT, MAX_TRANSLUCENCY_PCT, ThemeMode, WallpaperTheme,
+    AppearanceSettings, ColorScheme, DEFAULT_TRANSLUCENCY_PCT, MAX_TRANSLUCENCY_PCT, ThemeMode,
+    WallpaperTheme,
 };
 pub use archive::{ArchiveSource, ArchivedTab};
 pub use bookmark::BookmarkEntry;

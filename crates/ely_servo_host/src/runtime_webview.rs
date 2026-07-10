@@ -1,6 +1,6 @@
 use std::{cell::Cell, cell::RefCell, rc::Rc};
 
-use ely_domain::{ProfileId, TabId, WebViewId};
+use ely_domain::{ColorScheme, ProfileId, TabId, WebViewId};
 use servo::{LoadStatus, RenderingContext, WebView, WebViewDelegate};
 use url::Url;
 
@@ -19,6 +19,7 @@ pub(super) struct HostWebView {
     pub(super) webview: WebView,
     pub(super) delegate: Rc<HostWebViewDelegate>,
     pub(super) requested_url: Option<String>,
+    pub(super) color_scheme: ColorScheme,
 }
 
 impl HostWebView {

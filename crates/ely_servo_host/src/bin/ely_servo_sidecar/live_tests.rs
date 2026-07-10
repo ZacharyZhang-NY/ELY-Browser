@@ -67,7 +67,7 @@ fn request_line_accepts_a_bounded_eof_terminated_frame() -> Result<(), Box<dyn s
 }
 
 fn padded_handshake_line(bytes: usize) -> Vec<u8> {
-    let mut line = br#"{"type":"handshake","protocol_version":3}"#.to_vec();
+    let mut line = br#"{"type":"handshake","protocol_version":4}"#.to_vec();
     assert!(bytes > line.len());
     line.resize(bytes - 1, b' ');
     line.push(b'\n');

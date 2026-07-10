@@ -27,35 +27,39 @@ impl Render for ElyShell {
         match &self.state {
             ShellState::Ready(core) => match core.snapshot() {
                 Ok(snapshot) => {
-                    apply_color_mode(
-                        resolve_color_mode(snapshot.appearance.theme_mode(), appearance),
-                        cx,
-                    );
+                    let color_scheme =
+                        resolve_color_scheme(snapshot.appearance.theme_mode(), appearance);
+                    self.web_surfaces.set_color_scheme(color_scheme);
+                    apply_color_scheme(color_scheme, cx);
                     match active_tab_from_snapshot(&snapshot) {
                         Some(active_tab) => self.render_browser(&snapshot, active_tab, window, cx),
                         None => render_error("active tab missing from snapshot".to_string()),
                     }
                 }
                 Err(error) => {
-                    apply_color_mode(
-                        resolve_color_mode(ely_domain::ThemeMode::default(), appearance),
-                        cx,
-                    );
+                    let color_scheme =
+                        resolve_color_scheme(ely_domain::ThemeMode::default(), appearance);
+                    self.web_surfaces.set_color_scheme(color_scheme);
+                    apply_color_scheme(color_scheme, cx);
                     render_error(error.to_string())
                 }
             },
             ShellState::StartupError(message) => {
-                apply_color_mode(
-                    resolve_color_mode(ely_domain::ThemeMode::default(), appearance),
-                    cx,
-                );
+                let color_scheme =
+                    resolve_color_scheme(ely_domain::ThemeMode::default(), appearance);
+                self.web_surfaces.set_color_scheme(color_scheme);
+                apply_color_scheme(color_scheme, cx);
                 render_error(message.clone())
             }
         }
     }
 }
 
-fn apply_color_mode(mode: colors::Mode, cx: &mut Context<ElyShell>) {
+fn apply_color_scheme(color_scheme: ely_domain::ColorScheme, cx: &mut Context<ElyShell>) {
+    let mode = match color_scheme {
+        ely_domain::ColorScheme::Light => colors::Mode::Light,
+        ely_domain::ColorScheme::Dark => colors::Mode::Dark,
+    };
     colors::set_mode(mode);
 
     let component_mode = match mode {
@@ -68,22 +72,19 @@ fn apply_color_mode(mode: colors::Mode, cx: &mut Context<ElyShell>) {
     gpui_component::Theme::global_mut(cx).font_family = SANS_FAMILY.into();
 }
 
-fn resolve_color_mode(
+fn resolve_color_scheme(
     theme_mode: ely_domain::ThemeMode,
     window_appearance: gpui::WindowAppearance,
-) -> colors::Mode {
-    match theme_mode {
-        ely_domain::ThemeMode::Light => colors::Mode::Light,
-        ely_domain::ThemeMode::Dark => colors::Mode::Dark,
-        ely_domain::ThemeMode::System => match window_appearance {
-            gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark => {
-                colors::Mode::Dark
-            }
-            gpui::WindowAppearance::Light | gpui::WindowAppearance::VibrantLight => {
-                colors::Mode::Light
-            }
-        },
-    }
+) -> ely_domain::ColorScheme {
+    let system = match window_appearance {
+        gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark => {
+            ely_domain::ColorScheme::Dark
+        }
+        gpui::WindowAppearance::Light | gpui::WindowAppearance::VibrantLight => {
+            ely_domain::ColorScheme::Light
+        }
+    };
+    theme_mode.resolve(system)
 }
 
 fn active_tab_from_snapshot(snapshot: &BrowserSnapshot) -> Option<&BrowserTab> {
@@ -427,4 +428,32 @@ pub(super) fn tab_profile_label(tab: &BrowserTab, profiles: &[ely_domain::Profil
         .find(|profile| profile.id() == tab.profile_id())
         .map(|profile| format!("Profile: {}", profile.name()))
         .unwrap_or_else(|| format!("Profile: {}", tab.profile_id().as_str()))
+}
+
+#[cfg(test)]
+mod tests {
+    use ely_domain::{ColorScheme, ThemeMode};
+    use gpui::WindowAppearance;
+
+    use super::resolve_color_scheme;
+
+    #[test]
+    fn resolved_color_scheme_tracks_browser_and_system_modes() {
+        assert_eq!(
+            resolve_color_scheme(ThemeMode::System, WindowAppearance::Dark),
+            ColorScheme::Dark,
+        );
+        assert_eq!(
+            resolve_color_scheme(ThemeMode::System, WindowAppearance::VibrantLight),
+            ColorScheme::Light,
+        );
+        assert_eq!(
+            resolve_color_scheme(ThemeMode::Light, WindowAppearance::Dark),
+            ColorScheme::Light,
+        );
+        assert_eq!(
+            resolve_color_scheme(ThemeMode::Dark, WindowAppearance::Light),
+            ColorScheme::Dark,
+        );
+    }
 }

@@ -24,7 +24,7 @@ use super::pages::{
 pub(super) const WIDTH: u32 = 360;
 pub(super) const HEIGHT: u32 = 240;
 pub(super) const RESPONSE_TIMEOUT: Duration = Duration::from_secs(20);
-pub(super) const LIVE_PROTOCOL_VERSION: u32 = 3;
+pub(super) const LIVE_PROTOCOL_VERSION: u32 = 4;
 pub(super) const MAX_FRAME_DIMENSION: u32 = 16_384;
 const MAX_FRAME_BYTE_COUNT: usize = 256 * 1024 * 1024;
 
@@ -38,6 +38,7 @@ pub(super) fn ensure_request(tab_id: &TabId, profile_id: &ProfileId, url: &str) 
         "height": HEIGHT,
         "page_zoom_percent": 100,
         "device_pixel_ratio": 1.0,
+        "color_scheme": "light",
         "site_permission_generation": 0,
         "site_permissions": [],
     })

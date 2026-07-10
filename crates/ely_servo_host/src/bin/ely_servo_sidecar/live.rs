@@ -21,8 +21,8 @@ use super::{
     },
     live_request::{MAX_REQUEST_LINE_BYTES, RequestLineRead, read_request_line},
     live_session::{
-        LiveInput, LiveSession, apply_input, apply_layout, apply_permissions, bind_profile,
-        ensure_session,
+        LiveInput, LiveSession, apply_color_scheme, apply_input, apply_layout, apply_permissions,
+        bind_profile, ensure_session,
     },
 };
 
@@ -159,6 +159,7 @@ fn handle_request(
             height,
             page_zoom_percent,
             device_pixel_ratio,
+            color_scheme,
             scroll_delta_x,
             scroll_delta_y,
             scroll_point_x,
@@ -184,6 +185,7 @@ fn handle_request(
             let session =
                 ensure_session(host, sessions, tab_id.clone(), &tab, &profile, width, height)?;
             apply_layout(host, session, width, height, page_zoom_percent, device_pixel_ratio)?;
+            apply_color_scheme(host, session, color_scheme)?;
             apply_permissions(
                 host,
                 session,

@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use ely_domain::{ProfileId, TabId};
+use ely_domain::{ColorScheme, ProfileId, TabId};
 use gpui::{Bounds, Pixels};
 
 use crate::services::ProfileDataMode;
@@ -309,6 +309,7 @@ pub(super) struct WebSurfaceEnsureKey {
     profile_id: ProfileId,
     profile_data_mode: ProfileDataMode,
     zoom_percent: u16,
+    color_scheme: ColorScheme,
     permissions: Vec<WebSurfaceSitePermission>,
 }
 
@@ -319,6 +320,7 @@ impl WebSurfaceEnsureKey {
         profile_id: ProfileId,
         profile_data_mode: ProfileDataMode,
         zoom_percent: u16,
+        color_scheme: ColorScheme,
         permissions: &[WebSurfaceSitePermission],
     ) -> Self {
         Self {
@@ -327,6 +329,7 @@ impl WebSurfaceEnsureKey {
             profile_id,
             profile_data_mode,
             zoom_percent,
+            color_scheme,
             permissions: permissions.to_vec(),
         }
     }
@@ -446,6 +449,7 @@ mod tests {
             profile_id.clone(),
             ProfileDataMode::Persistent,
             100,
+            ColorScheme::Light,
             &[],
         )
     }

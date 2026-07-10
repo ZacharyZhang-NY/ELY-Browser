@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-use ely_domain::{BrowserTab, ProfileId, TabId, UrlText};
+use ely_domain::{BrowserTab, ColorScheme, ProfileId, TabId, UrlText};
 
 use crate::services::{ProfileDataMode, servo_live::ServoLivePermissionGrant};
 
@@ -23,16 +23,27 @@ pub(super) struct WebSurfaceStore {
     /// Singleton because only one tab at a time holds keyboard focus
     /// across the whole window. Lives on the store, not per-tab.
     pub(super) keyboard_focus: Option<WebSurfaceKeyboardFocusState>,
+    color_scheme: ColorScheme,
 }
 
 impl WebSurfaceStore {
     pub(super) fn new() -> Self {
-        Self { runtime: WebSurfaceRuntime::new(), surfaces: BTreeMap::new(), keyboard_focus: None }
+        Self {
+            runtime: WebSurfaceRuntime::new(),
+            surfaces: BTreeMap::new(),
+            keyboard_focus: None,
+            color_scheme: ColorScheme::Light,
+        }
     }
 
     #[cfg(test)]
     pub(super) fn new_with_runtime(runtime: WebSurfaceRuntime) -> Self {
-        Self { runtime, surfaces: BTreeMap::new(), keyboard_focus: None }
+        Self {
+            runtime,
+            surfaces: BTreeMap::new(),
+            keyboard_focus: None,
+            color_scheme: ColorScheme::Light,
+        }
     }
 
     #[cfg(test)]
@@ -72,6 +83,7 @@ impl WebSurfaceStore {
             tab.profile_id().clone(),
             profile_data_mode,
             tab.zoom_percent(),
+            self.color_scheme,
             permissions,
         );
         let scope_changed = self.surface_mut(tab.id()).reset_for_scope_change(&ensure_key);
@@ -363,6 +375,11 @@ impl WebSurfaceStore {
         if self.keyboard_focus.as_ref().is_some_and(|focus| focus.tab_id == *tab_id) {
             self.keyboard_focus = None;
         }
+    }
+
+    pub(super) fn set_color_scheme(&mut self, color_scheme: ColorScheme) {
+        self.color_scheme = color_scheme;
+        self.runtime.set_color_scheme(color_scheme);
     }
 
     #[cfg(test)]

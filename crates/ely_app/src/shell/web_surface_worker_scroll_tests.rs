@@ -78,6 +78,7 @@ fn ensure_request(scroll_delta: i32) -> ServoLiveEnsureRequest {
         height: 480,
         page_zoom_percent: 100,
         device_pixel_ratio: 1.0,
+        color_scheme: ely_domain::ColorScheme::Light,
         scroll_delta_x: scroll_delta,
         scroll_delta_y: scroll_delta,
         scroll_point_x: (scroll_delta != 0).then_some(1),

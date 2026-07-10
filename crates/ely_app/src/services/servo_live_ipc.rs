@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn reply_rejects_oversized_frame_before_readback_allocation() {
         let header = format!(
-            "{{\"protocol_version\":3,\"error\":null,\"frame\":{{\"loaded_url\":null,\"title\":null,\"state\":\"complete\",\"width\":{0},\"height\":{0},\"device_pixel_ratio\":1.0,\"css_viewport_width\":{0},\"css_viewport_height\":{0},\"rgba_byte_count\":1073741824,\"pixels_changed\":true}}}}\n",
+            "{{\"protocol_version\":4,\"error\":null,\"frame\":{{\"loaded_url\":null,\"title\":null,\"state\":\"complete\",\"width\":{0},\"height\":{0},\"device_pixel_ratio\":1.0,\"css_viewport_width\":{0},\"css_viewport_height\":{0},\"rgba_byte_count\":1073741824,\"pixels_changed\":true}}}}\n",
             MAX_FRAME_DIMENSION
         );
         let mut input = Cursor::new(header.into_bytes());
@@ -269,19 +269,19 @@ mod tests {
 
     #[test]
     fn reply_accepts_the_exact_header_limit() -> Result<(), ServoLiveError> {
-        let mut header = br#"{"protocol_version":3,"error":null,"frame":null}"#.to_vec();
+        let mut header = br#"{"protocol_version":4,"error":null,"frame":null}"#.to_vec();
         header.resize(MAX_RESPONSE_HEADER_BYTES - 1, b' ');
         header.push(b'\n');
 
         let reply = read_reply(&mut Cursor::new(header))?;
 
-        assert_eq!(reply.protocol_version, Some(3));
+        assert_eq!(reply.protocol_version, Some(4));
         Ok(())
     }
 
     #[test]
     fn reply_rejects_one_byte_over_the_header_limit() {
-        let mut header = br#"{"protocol_version":3,"error":null,"frame":null}"#.to_vec();
+        let mut header = br#"{"protocol_version":4,"error":null,"frame":null}"#.to_vec();
         header.resize(MAX_RESPONSE_HEADER_BYTES, b' ');
         header.push(b'\n');
 
@@ -327,7 +327,7 @@ mod tests {
     fn reply_parses_permission_consumption_without_a_frame() -> Result<(), ServoLiveError> {
         let profile_id = ely_domain::ProfileId::new();
         let header = format!(
-            "{{\"protocol_version\":3,\"error\":null,\"frame\":null,\"permission_consumptions\":[{{\"profile_id\":\"{}\",\"origin\":\"https://example.com\",\"feature\":\"camera\",\"grant_revision\":7}}]}}\n",
+            "{{\"protocol_version\":4,\"error\":null,\"frame\":null,\"permission_consumptions\":[{{\"profile_id\":\"{}\",\"origin\":\"https://example.com\",\"feature\":\"camera\",\"grant_revision\":7}}]}}\n",
             profile_id.as_str(),
         );
         let mut input = Cursor::new(header.into_bytes());
@@ -350,7 +350,7 @@ mod tests {
     #[test]
     fn hardware_reply_uses_surface_without_rgba_allocation() -> Result<(), ServoLiveError> {
         let header = concat!(
-            "{\"protocol_version\":3,\"error\":null,",
+            "{\"protocol_version\":4,\"error\":null,",
             "\"surface_handle\":{\"mach_port_name\":91,\"surface_id\":7,\"width\":64,\"height\":48},",
             "\"current_surface_id\":7,",
             "\"frame\":{\"loaded_url\":null,\"title\":null,\"state\":\"complete\",",
@@ -402,7 +402,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     fn hardware_header(current_surface_id: u64, handle_width: u32, handle_height: u32) -> String {
         format!(
-            "{{\"protocol_version\":3,\"error\":null,\"surface_handle\":{{\"mach_port_name\":91,\"surface_id\":7,\"width\":{handle_width},\"height\":{handle_height}}},\"current_surface_id\":{current_surface_id},\"frame\":{{\"loaded_url\":null,\"title\":null,\"state\":\"complete\",\"width\":64,\"height\":48,\"device_pixel_ratio\":1.0,\"css_viewport_width\":64,\"css_viewport_height\":48,\"rgba_byte_count\":0,\"pixels_changed\":true}}}}\n"
+            "{{\"protocol_version\":4,\"error\":null,\"surface_handle\":{{\"mach_port_name\":91,\"surface_id\":7,\"width\":{handle_width},\"height\":{handle_height}}},\"current_surface_id\":{current_surface_id},\"frame\":{{\"loaded_url\":null,\"title\":null,\"state\":\"complete\",\"width\":64,\"height\":48,\"device_pixel_ratio\":1.0,\"css_viewport_width\":64,\"css_viewport_height\":48,\"rgba_byte_count\":0,\"pixels_changed\":true}}}}\n"
         )
     }
 }

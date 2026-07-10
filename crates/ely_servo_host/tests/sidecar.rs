@@ -208,7 +208,7 @@ fn live_sidecar_drains_an_oversized_request_line_and_recovers_the_handshake()
     let mut stdin = child.stdin.take().ok_or_else(|| io::Error::other("missing stdin"))?;
     let stdout = child.stdout.take().ok_or_else(|| io::Error::other("missing stdout"))?;
     let mut stdout = BufReader::new(stdout);
-    let mut oversized = br#"{"type":"handshake","protocol_version":3}"#.to_vec();
+    let mut oversized = br#"{"type":"handshake","protocol_version":4}"#.to_vec();
     oversized.resize(MAX_REQUEST_LINE_BYTES + 4_096, b' ');
     oversized.push(b'\n');
 

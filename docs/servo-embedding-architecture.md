@@ -50,8 +50,9 @@ transfers the IOSurface send right; the JSON port number is diagnostic metadata.
 
 The protocol supports:
 
-- `handshake`: verify protocol version `3` before accepting browser commands.
-- `ensure`: create or update a WebView, navigation, viewport, zoom, permissions, and input.
+- `handshake`: verify protocol version `4` before accepting browser commands.
+- `ensure`: create or update a WebView, navigation, viewport, zoom, resolved color scheme,
+  permissions, and input.
 - `poll`: advance Servo and return pending frame or metadata state.
 - `close`: destroy one tab's WebView.
 - `shutdown`: acknowledge graceful process shutdown so Servo flushes profile storage.

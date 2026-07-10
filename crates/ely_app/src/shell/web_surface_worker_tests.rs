@@ -450,6 +450,7 @@ fn ensure_request(tab_id: &str, input: RecordedInput) -> ServoLiveEnsureRequest 
         height: 480,
         page_zoom_percent: 100,
         device_pixel_ratio: 1.0,
+        color_scheme: ely_domain::ColorScheme::Light,
         scroll_delta_x: i32::from(scroll),
         scroll_delta_y: i32::from(scroll),
         scroll_point_x: scroll.then_some(1),

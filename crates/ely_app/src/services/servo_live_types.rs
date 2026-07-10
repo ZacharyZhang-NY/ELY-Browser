@@ -2,6 +2,7 @@
 use std::sync::Arc;
 use std::{collections::TryReserveError, io, path::PathBuf};
 
+use ely_domain::ColorScheme;
 use serde::Serialize;
 use thiserror::Error;
 
@@ -24,6 +25,7 @@ pub(crate) struct ServoLiveEnsureRequest {
     pub(crate) page_zoom_percent: u16,
     /// Display scale factor used to derive Servo's CSS viewport.
     pub(crate) device_pixel_ratio: f32,
+    pub(crate) color_scheme: ColorScheme,
     pub(crate) scroll_delta_x: i32,
     pub(crate) scroll_delta_y: i32,
     pub(crate) scroll_point_x: Option<u32>,

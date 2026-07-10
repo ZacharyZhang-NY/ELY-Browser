@@ -151,6 +151,7 @@ impl ServoLiveClient {
             height: request.height,
             page_zoom_percent: request.page_zoom_percent,
             device_pixel_ratio: request.device_pixel_ratio,
+            color_scheme: request.color_scheme,
             scroll_delta_x: request.scroll_delta_x,
             scroll_delta_y: request.scroll_delta_y,
             scroll_point_x: request.scroll_point_x,

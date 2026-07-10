@@ -1,8 +1,9 @@
+use ely_domain::ColorScheme;
 use serde::{Deserialize, Serialize};
 
 use super::ServoLiveSitePermission;
 
-pub(super) const LIVE_PROTOCOL_VERSION: u32 = 3;
+pub(super) const LIVE_PROTOCOL_VERSION: u32 = 4;
 pub(super) const MAX_FRAME_DIMENSION: u32 = 16_384;
 pub(super) const MAX_FRAME_BYTE_COUNT: usize = 256 * 1024 * 1024;
 pub(super) const MAX_RESPONSE_HEADER_BYTES: usize = 256 * 1024;
@@ -22,6 +23,7 @@ pub(super) enum LiveRequest {
         height: u32,
         page_zoom_percent: u16,
         device_pixel_ratio: f32,
+        color_scheme: ColorScheme,
         scroll_delta_x: i32,
         scroll_delta_y: i32,
         scroll_point_x: Option<u32>,

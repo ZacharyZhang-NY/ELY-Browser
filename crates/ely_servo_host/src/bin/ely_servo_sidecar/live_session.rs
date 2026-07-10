@@ -1,11 +1,11 @@
 use std::collections::{HashMap, hash_map::Entry};
 
-use ely_domain::{ProfileId, TabId, validate_zoom_percent};
+use ely_domain::{ColorScheme, ProfileId, TabId, validate_zoom_percent};
 use ely_servo_host::{
-    HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest, MouseHoverRequest, PageZoomRequest,
-    PermissionDecision, PermissionSnapshotEntry, PermissionSnapshotRequest,
-    PermissionSnapshotState, RenderedFrame, ResizeRequest, ScrollRequest, ServoHost,
-    ServoSurfaceSize, SoftwareServoHost,
+    ColorSchemeRequest, HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest,
+    MouseHoverRequest, PageZoomRequest, PermissionDecision, PermissionSnapshotEntry,
+    PermissionSnapshotRequest, PermissionSnapshotState, RenderedFrame, ResizeRequest,
+    ScrollRequest, ServoHost, ServoSurfaceSize, SoftwareServoHost,
 };
 
 use super::live_protocol::{LiveSidecarError, LiveSitePermission};
@@ -166,6 +166,18 @@ pub(super) fn apply_permissions(
         profile_id: profile_id.clone(),
         generation,
         entries,
+    })
+    .map_err(LiveSidecarError::from)
+}
+
+pub(super) fn apply_color_scheme(
+    host: &mut SoftwareServoHost,
+    session: &LiveSession,
+    color_scheme: ColorScheme,
+) -> Result<(), LiveSidecarError> {
+    host.set_color_scheme(ColorSchemeRequest {
+        webview_id: session.webview_id.clone(),
+        color_scheme,
     })
     .map_err(LiveSidecarError::from)
 }

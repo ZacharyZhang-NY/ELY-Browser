@@ -1,5 +1,6 @@
 use std::{io, path::PathBuf};
 
+use ely_domain::ColorScheme;
 use ely_servo_host::{
     ConsumedPermission, IOSurfaceHandle, RenderedFrame, ServoHostError, WebViewSnapshot,
     WebViewState,
@@ -10,7 +11,7 @@ use thiserror::Error;
 #[cfg(all(feature = "hardware-render", target_os = "macos"))]
 use super::iosurface_mach::IOSurfaceMachError;
 
-pub(super) const LIVE_PROTOCOL_VERSION: u32 = 3;
+pub(super) const LIVE_PROTOCOL_VERSION: u32 = 4;
 pub(super) const MAX_FRAME_DIMENSION: u32 = 16_384;
 pub(super) const MAX_FRAME_BYTE_COUNT: usize = 256 * 1024 * 1024;
 pub(super) const MAX_RESPONSE_HEADER_BYTES: usize = 256 * 1024;
@@ -35,6 +36,7 @@ pub(super) enum LiveRequest {
         page_zoom_percent: u16,
         #[serde(default = "default_device_pixel_ratio")]
         device_pixel_ratio: f32,
+        color_scheme: ColorScheme,
         #[serde(default)]
         scroll_delta_x: i32,
         #[serde(default)]
@@ -401,7 +403,7 @@ mod tests {
     #[test]
     fn ensure_defaults_optional_input_fields() -> Result<(), serde_json::Error> {
         let request = serde_json::from_str::<LiveRequest>(
-            r#"{"type":"ensure","tab_id":"tab","profile_id":"profile","url":"https://example.com","width":800,"height":600,"site_permission_generation":0}"#,
+            r#"{"type":"ensure","tab_id":"tab","profile_id":"profile","url":"https://example.com","width":800,"height":600,"color_scheme":"dark","site_permission_generation":0}"#,
         )?;
 
         assert!(matches!(
@@ -409,6 +411,7 @@ mod tests {
             LiveRequest::Ensure {
                 page_zoom_percent: 100,
                 device_pixel_ratio: 1.0,
+                color_scheme: ColorScheme::Dark,
                 scroll_delta_x: 0,
                 scroll_delta_y: 0,
                 ready_surface_ids,
@@ -420,18 +423,27 @@ mod tests {
     }
 
     #[test]
+    fn ensure_requires_color_scheme() {
+        let request = serde_json::from_str::<LiveRequest>(
+            r#"{"type":"ensure","tab_id":"tab","profile_id":"profile","url":"https://example.com","width":800,"height":600,"site_permission_generation":0}"#,
+        );
+
+        assert!(request.is_err());
+    }
+
+    #[test]
     fn handshake_deserializes_protocol_version() -> Result<(), serde_json::Error> {
         let request =
-            serde_json::from_str::<LiveRequest>(r#"{"type":"handshake","protocol_version":3}"#)?;
+            serde_json::from_str::<LiveRequest>(r#"{"type":"handshake","protocol_version":4}"#)?;
 
-        assert!(matches!(request, LiveRequest::Handshake { protocol_version: 3 }));
+        assert!(matches!(request, LiveRequest::Handshake { protocol_version: 4 }));
         Ok(())
     }
 
     #[test]
     fn site_permission_requires_revision() {
         let request = serde_json::from_str::<LiveRequest>(
-            r#"{"type":"ensure","tab_id":"tab","profile_id":"profile","url":"https://example.com","width":800,"height":600,"site_permission_generation":0,"site_permissions":[{"origin":"https://example.com","feature":"camera","state":"allow-once"}]}"#,
+            r#"{"type":"ensure","tab_id":"tab","profile_id":"profile","url":"https://example.com","width":800,"height":600,"color_scheme":"light","site_permission_generation":0,"site_permissions":[{"origin":"https://example.com","feature":"camera","state":"allow-once"}]}"#,
         );
 
         assert!(request.is_err());

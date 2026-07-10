@@ -25,6 +25,7 @@ pub(super) fn can_merge_consecutive_scroll(
         && latest.height == previous.height
         && latest.page_zoom_percent == previous.page_zoom_percent
         && latest.device_pixel_ratio == previous.device_pixel_ratio
+        && latest.color_scheme == previous.color_scheme
 }
 
 pub(super) fn merge_consecutive_scroll(latest: &mut WorkerRequest, previous: &WorkerRequest) {

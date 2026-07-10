@@ -136,6 +136,7 @@ pub struct ElyShell {
     pub(crate) local_state_save_scheduled: bool,
     _command_subscription: Subscription,
     _translucency_subscription: Subscription,
+    _appearance_subscription: Subscription,
     _quit_save_subscription: Option<Subscription>,
 }
 
@@ -251,6 +252,8 @@ impl ElyShell {
             }
             ShellState::StartupError(_) => None,
         };
+        let appearance_subscription =
+            cx.observe_window_appearance(window, |_shell, _window, cx| cx.notify());
         let mut shell = Self {
             state,
             focus_handle: cx.focus_handle(),
@@ -307,6 +310,7 @@ impl ElyShell {
             auth_flow_phase: auth::AuthFlowPhase::Idle,
             _command_subscription: command_subscription,
             _translucency_subscription: translucency_subscription,
+            _appearance_subscription: appearance_subscription,
             _quit_save_subscription: None,
         };
         shell._quit_save_subscription = Some(local_persistence::register_quit_save(cx));
