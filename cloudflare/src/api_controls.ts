@@ -2,7 +2,7 @@ import type { Env } from "./bindings.js";
 import {
   type AuthContext,
   AuthError,
-  AuthSessionCacheSchemaError,
+  AuthSessionSchemaError,
   authenticatedRateLimitKey,
   readAuthContext,
 } from "./auth.js";
@@ -87,13 +87,13 @@ export async function withAuthenticatedApiControls(
       recordApiAuditEvent(request, env, route, response, error.code);
       return response;
     }
-    if (error instanceof AuthSessionCacheSchemaError) {
+    if (error instanceof AuthSessionSchemaError) {
       const response = jsonResponse(
-        { error: "auth_session_cache_invalid" },
+        { error: "auth_session_invalid" },
         500,
         { "Cache-Control": "no-store" },
       );
-      recordApiAuditEvent(request, env, route, response, "auth_session_cache_invalid");
+      recordApiAuditEvent(request, env, route, response, "auth_session_invalid");
       return response;
     }
     throw error;

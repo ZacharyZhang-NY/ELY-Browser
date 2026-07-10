@@ -24,6 +24,8 @@ export interface TestEnvOptions {
 }
 
 export interface RecordedD1Database extends ElyD1Database {
+  authBinds: unknown[][];
+  authQueries: string[];
   batches: number[];
   binds: unknown[][];
   queries: string[];
@@ -38,7 +40,15 @@ export interface RecordedR2Put {
 interface TestD1DatabaseOptions {
   allRows?: unknown[];
   firstRows?: unknown[];
+  sessionRow?: unknown | null;
 }
+
+const DEFAULT_AUTH_SESSION_ROW = {
+  id: "session-01",
+  userId: "user-01",
+  expiresAt: "2099-01-01T00:00:00.000Z",
+  deviceId: "device-01",
+};
 
 export function testEnv(options: TestEnvOptions): Env {
   const values = new Map(options.kvEntries ?? []);
@@ -92,19 +102,35 @@ export function testEnv(options: TestEnvOptions): Env {
 }
 
 export function testD1Database(rows: unknown[] | TestD1DatabaseOptions): RecordedD1Database {
+  const authBinds: unknown[][] = [];
+  const authQueries: string[] = [];
   const binds: unknown[][] = [];
   const batches: number[] = [];
   const queries: string[] = [];
   const allRows = Array.isArray(rows) ? rows : rows.allRows ?? [];
   const firstRows = Array.isArray(rows) ? rows : rows.firstRows ?? [];
+  const sessionRow =
+    !Array.isArray(rows) && Object.hasOwn(rows, "sessionRow")
+      ? rows.sessionRow ?? null
+      : DEFAULT_AUTH_SESSION_ROW;
   let firstIndex = 0;
   return {
+    authBinds,
+    authQueries,
     batches,
     binds,
     queries,
     prepare(query: string) {
-      queries.push(query);
-      return testD1PreparedStatement(allRows, firstRows, () => firstIndex++, binds);
+      const isAuthSessionQuery = query.includes("FROM better_auth_session AS session");
+      (isAuthSessionQuery ? authQueries : queries).push(query);
+      return testD1PreparedStatement(
+        allRows,
+        firstRows,
+        () => firstIndex++,
+        isAuthSessionQuery ? authBinds : binds,
+        isAuthSessionQuery,
+        sessionRow,
+      );
     },
     batch(statements: ElyD1PreparedStatement[]) {
       batches.push(statements.length);
@@ -131,6 +157,8 @@ function testD1PreparedStatement(
   firstRows: unknown[],
   nextFirstIndex: () => number,
   binds: unknown[][],
+  isAuthSessionQuery: boolean,
+  sessionRow: unknown | null,
 ): ElyD1PreparedStatement {
   return {
     bind(...values: unknown[]) {
@@ -138,6 +166,9 @@ function testD1PreparedStatement(
       return this;
     },
     first<T>() {
+      if (isAuthSessionQuery) {
+        return Promise.resolve(sessionRow as T | null);
+      }
       return Promise.resolve((firstRows[nextFirstIndex()] as T | undefined) ?? null);
     },
     all<T>() {

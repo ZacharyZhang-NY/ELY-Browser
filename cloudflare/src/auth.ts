@@ -45,16 +45,16 @@ export class AuthError extends Error {
   }
 }
 
-export class AuthSessionCacheSchemaError extends Error {
+export class AuthSessionSchemaError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "AuthSessionCacheSchemaError";
+    this.name = "AuthSessionSchemaError";
   }
 }
 
 export function authSessionCacheKvKey(environment: string, tokenHash: string): string {
   if (!/^[a-f0-9]{64}$/.test(tokenHash)) {
-    throw new AuthSessionCacheSchemaError("token_hash_invalid");
+    throw new AuthSessionSchemaError("token_hash_invalid");
   }
   return `${prefixedKvKey(environment, AUTH_SESSION_CACHE_NAMESPACE)}:${tokenHash}`;
 }
@@ -90,17 +90,7 @@ export async function readAuthContext(
   }
 
   const tokenHash = await sha256Hex(token);
-  const cacheKey = authSessionCacheKvKey(env.ELY_ENVIRONMENT, tokenHash);
-  const document = await env.ELY_KV.get(cacheKey);
-  if (document === null) {
-    return readBetterAuthSessionContext(env, token, tokenHash, now);
-  }
-
-  const session = parseAuthSessionCacheDocument(document, tokenHash);
-  if (Date.parse(session.expiresAt) <= now.getTime()) {
-    throw new AuthError("session_expired");
-  }
-  return session;
+  return readBetterAuthSessionContext(env, token, tokenHash, now);
 }
 
 async function readBetterAuthSessionContext(
@@ -152,45 +142,16 @@ function bearerToken(request: Request): string | null {
   return token;
 }
 
-function parseAuthSessionCacheDocument(value: string, tokenHash: string): AuthContext {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    throw new AuthSessionCacheSchemaError("auth_session_cache_json_invalid");
-  }
-
-  if (!isRecord(parsed)) {
-    throw new AuthSessionCacheSchemaError("auth_session_cache_must_be_object");
-  }
-  assertOnlyFields(parsed, ["version", "user_id", "session_id", "device_id", "expires_at"]);
-  if (parsed.version !== 1) {
-    throw new AuthSessionCacheSchemaError("auth_session_cache_version_invalid");
-  }
-
-  const context: AuthContext = {
-    userId: subjectId(stringField(parsed, "user_id"), "user_id"),
-    sessionId: subjectId(stringField(parsed, "session_id"), "session_id"),
-    tokenHash,
-    expiresAt: isoTimestamp(stringField(parsed, "expires_at"), "expires_at"),
-  };
-  const deviceId = optionalStringField(parsed, "device_id");
-  if (deviceId !== undefined) {
-    context.deviceId = deviceIdValue(deviceId);
-  }
-  return context;
-}
-
 function subjectId(value: string, label: string): string {
   if (!SUBJECT_ID_PATTERN.test(value)) {
-    throw new AuthSessionCacheSchemaError(`${label}_invalid`);
+    throw new AuthSessionSchemaError(`${label}_invalid`);
   }
   return value;
 }
 
 function deviceIdValue(value: string): string {
   if (!DEVICE_ID_PATTERN.test(value)) {
-    throw new AuthSessionCacheSchemaError("device_id_invalid");
+    throw new AuthSessionSchemaError("device_id_invalid");
   }
   return value;
 }
@@ -198,7 +159,7 @@ function deviceIdValue(value: string): string {
 function isoTimestamp(value: string, label: string): string {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) {
-    throw new AuthSessionCacheSchemaError(`${label}_invalid`);
+    throw new AuthSessionSchemaError(`${label}_invalid`);
   }
   return new Date(timestamp).toISOString();
 }
@@ -214,13 +175,13 @@ function timestampField(value: Record<string, unknown>, field: string): string {
   if (fieldValue instanceof Date) {
     return fieldValue.toISOString();
   }
-  throw new AuthSessionCacheSchemaError(`${field}_required`);
+  throw new AuthSessionSchemaError(`${field}_required`);
 }
 
 function stringField(value: Record<string, unknown>, field: string): string {
   const fieldValue = value[field];
   if (typeof fieldValue !== "string" || fieldValue.trim() === "") {
-    throw new AuthSessionCacheSchemaError(`${field}_required`);
+    throw new AuthSessionSchemaError(`${field}_required`);
   }
   return fieldValue.trim();
 }
@@ -231,22 +192,9 @@ function optionalStringField(value: Record<string, unknown>, field: string): str
     return undefined;
   }
   if (typeof fieldValue !== "string" || fieldValue.trim() === "") {
-    throw new AuthSessionCacheSchemaError(`${field}_invalid`);
+    throw new AuthSessionSchemaError(`${field}_invalid`);
   }
   return fieldValue.trim();
-}
-
-function assertOnlyFields(value: Record<string, unknown>, fields: string[]): void {
-  const allowed = new Set(fields);
-  for (const field of Object.keys(value)) {
-    if (!allowed.has(field)) {
-      throw new AuthSessionCacheSchemaError(`unexpected_field:${field}`);
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function sha256Hex(value: string): Promise<string> {

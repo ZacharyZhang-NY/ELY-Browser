@@ -223,26 +223,34 @@ describe("device routes", () => {
     assert.equal(d1.binds[0]?.[7], IDEMPOTENCY_KEY);
     assert.deepEqual(d1.binds[1], ["user-01", IDEMPOTENCY_KEY]);
     assert.deepEqual(d1.binds[2]?.slice(0, 3), ["session-01", "user-01", "device-01"]);
-    assert.deepEqual(kvPuts, [[sessionCacheKey, sessionDocument("device-01")]]);
+    assert.deepEqual(kvPuts, []);
   });
 
-  it("registers and caches device context for sessions without a current device", async () => {
+  it("registers D1 device context for sessions without a current device", async () => {
     const tokenHash = await authTokenHash(ACCESS_TOKEN);
     const sessionCacheKey = authSessionCacheKvKey("local", tokenHash);
     const kvPuts: [string, string][] = [];
-    const d1 = testD1Database([
-      {
-        device_id: "device-01",
-        public_key: PUBLIC_KEY,
-        device_name: "MacBook Pro",
-        platform: "macOS",
-        approval_status: "pending",
-        created_at: 1_780_000_100,
-        approved_at: null,
-        last_active_at: 1_780_000_100,
-        revoked_at: null,
+    const deviceRow = {
+      device_id: "device-01",
+      public_key: PUBLIC_KEY,
+      device_name: "MacBook Pro",
+      platform: "macOS",
+      approval_status: "pending",
+      created_at: 1_780_000_100,
+      approved_at: null,
+      last_active_at: 1_780_000_100,
+      revoked_at: null,
+    };
+    const d1 = testD1Database({
+      allRows: [deviceRow],
+      firstRows: [deviceRow],
+      sessionRow: {
+        id: "session-01",
+        userId: "user-01",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        deviceId: null,
       },
-    ]);
+    });
 
     const response = await handleRequest(
       new Request("https://elydora.test/api/devices/register", {
@@ -262,7 +270,7 @@ describe("device routes", () => {
 
     assert.equal(response.status, 201);
     assert.deepEqual(d1.binds[2]?.slice(0, 3), ["session-01", "user-01", "device-01"]);
-    assert.deepEqual(kvPuts, [[sessionCacheKey, sessionDocument("device-01")]]);
+    assert.deepEqual(kvPuts, []);
   });
 
   it("rejects invalid device registration payloads before D1 writes", async () => {

@@ -79,7 +79,7 @@ describe("api controls", () => {
     assert.equal(auditEvents[0]?.doubles?.[0], 405);
   });
 
-  it("rate limits authenticated API routes before reading session cache", async () => {
+  it("rate limits authenticated API routes before reading session state", async () => {
     const auditEvents: ElyAnalyticsDataPoint[] = [];
     const kvReads: string[] = [];
     const response = await withAuthenticatedApiControls(
@@ -167,7 +167,6 @@ describe("api controls", () => {
         auditEvents,
         kvReads,
         rateLimitKeys,
-        kvEntries: [[authSessionCacheKvKey("local", tokenHash), sessionDocument()]],
       }),
       "devices.list",
       ["GET"],
@@ -182,7 +181,7 @@ describe("api controls", () => {
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { user_id: "user-01", device_id: "device-01" });
     assert.deepEqual(rateLimitKeys, [`local:devices.list:bearer:${tokenHash}`]);
-    assert.deepEqual(kvReads, [authSessionCacheKvKey("local", tokenHash)]);
+    assert.deepEqual(kvReads, []);
     assert.equal(receivedTokenHash, tokenHash);
     assert.deepEqual(auditEvents[0]?.blobs, [
       "devices.list",
@@ -196,7 +195,7 @@ describe("api controls", () => {
     ]);
   });
 
-  it("uses Better Auth D1 sessions when the session cache is cold", async () => {
+  it("uses Better Auth D1 sessions as the authoritative source", async () => {
     const tokenHash = await authTokenHash(ACCESS_TOKEN);
     const auditEvents: ElyAnalyticsDataPoint[] = [];
     const kvReads: string[] = [];
@@ -246,7 +245,7 @@ describe("api controls", () => {
       device_id: "device-01",
     });
     assert.deepEqual(rateLimitKeys, [`local:devices.list:bearer:${tokenHash}`]);
-    assert.deepEqual(kvReads, [authSessionCacheKvKey("local", tokenHash)]);
+    assert.deepEqual(kvReads, []);
     assert.equal(d1Queries.length, 1);
     assert.match(d1Queries[0] ?? "", /FROM better_auth_session/);
     assert.deepEqual(d1Binds, [[ACCESS_TOKEN]]);
@@ -262,19 +261,49 @@ describe("api controls", () => {
     assert.equal(auditEvents[0]?.blobs?.[7], "device-01");
   });
 
-  it("rejects expired authenticated sessions", async () => {
+  it("rejects a legacy cached session after D1 revocation", async () => {
     const tokenHash = await authTokenHash(ACCESS_TOKEN);
+    const kvReads: string[] = [];
+    const d1Queries: string[] = [];
+    const d1Binds: unknown[][] = [];
     const response = await withAuthenticatedApiControls(
       new Request("https://elydora.test/api/devices", {
         headers: { authorization: `Bearer ${ACCESS_TOKEN}` },
       }),
       testEnv({
-        kvEntries: [
-          [
-            authSessionCacheKvKey("local", tokenHash),
-            sessionDocument("2026-01-01T00:00:00.000Z"),
+        kvEntries: [[authSessionCacheKvKey("local", tokenHash), sessionDocument()]],
+        kvReads,
+        d1: testD1Database({ firstRows: [], queries: d1Queries, binds: d1Binds }),
+      }),
+      "devices.list",
+      ["GET"],
+      () => Promise.resolve(jsonResponse({ ok: true }, 200)),
+    );
+
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: "session_not_found" });
+    assert.deepEqual(kvReads, []);
+    assert.equal(d1Queries.length, 1);
+    assert.match(d1Queries[0] ?? "", /FROM better_auth_session/);
+    assert.deepEqual(d1Binds, [[ACCESS_TOKEN]]);
+  });
+
+  it("rejects expired authenticated sessions", async () => {
+    const response = await withAuthenticatedApiControls(
+      new Request("https://elydora.test/api/devices", {
+        headers: { authorization: `Bearer ${ACCESS_TOKEN}` },
+      }),
+      testEnv({
+        d1: testD1Database({
+          firstRows: [
+            {
+              id: "session-01",
+              userId: "user-01",
+              expiresAt: "2026-01-01T00:00:00.000Z",
+              deviceId: "device-01",
+            },
           ],
-        ],
+        }),
       }),
       "devices.list",
       ["GET"],
@@ -383,11 +412,22 @@ interface TestD1DatabaseOptions {
 }
 
 function testD1Database(options: TestD1DatabaseOptions = {}): Env["ELY_DB"] {
+  const configuredOptions: TestD1DatabaseOptions = {
+    ...options,
+    firstRows: options.firstRows ?? [
+      {
+        id: "session-01",
+        userId: "user-01",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        deviceId: "device-01",
+      },
+    ],
+  };
   let firstIndex = 0;
   return {
     prepare(query: string) {
       options.queries?.push(query);
-      return testD1PreparedStatement(options, () => firstIndex++);
+      return testD1PreparedStatement(configuredOptions, () => firstIndex++);
     },
     batch() {
       return Promise.resolve([]);
