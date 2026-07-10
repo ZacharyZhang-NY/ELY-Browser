@@ -668,6 +668,7 @@ Decrypt + Merge + Apply
 
 - Email/password、Email OTP、可选 Google/GitHub OAuth。
 - D1 authoritative bearer session，存储用户、账号、会话和验证记录。
+- `first-primary` session validation 与 exact current-session revoke。
 - ELY 自定义 device trust、Vault、Sync reset 与账号删除协议。
 - `better_auth_session_device_context` 将会话绑定到经过证明的设备身份。
 
@@ -810,6 +811,7 @@ ELY Desktop Client
   ↓ HTTPS
 Cloudflare Workers API
   ├─ /api/auth/*             Better Auth
+  ├─ /api/session/logout     Exact bearer session revoke
   ├─ /api/sync/push|pull     Authenticated retired endpoints
   ├─ /api/sync/snapshot      Encrypted snapshot v3 + global head CAS
   ├─ /api/sync/vault/*       AccountKey envelope bootstrap/read
@@ -957,11 +959,12 @@ Better Auth 在 Cloudflare Workers 中初始化，D1 binding 作为 database 传
 - Encrypted Email OTP。
 - Google/GitHub OAuth 按环境启用。
 - D1 session validation 与自定义 device/session binding。
+- Bearer logout 精确删除当前 D1 session，并级联清理 session device context 与 rebind challenge。
 - 设备注册、rebind、批准、撤销与 Vault rotation。
 - Signed Sync reset 和 signed account deletion。
 - 管理所有 `/api/auth/*` 路由。
 
-目标能力包括 Apple OAuth、Passkey、Recovery Key 与完整服务端 session revoke UX。
+目标能力包括 Apple OAuth、Passkey、Recovery Key 与完整 session 管理 UX。
 
 会话策略：
 
@@ -980,6 +983,7 @@ Auth：
 | Endpoint | Method | 说明 |
 |---|---|---|
 | `/api/auth/*` | Any | Better Auth handler |
+| `/api/session/logout` | POST | 精确撤销当前 bearer session |
 | `/api/devices` | GET | 当前账号设备列表 |
 | `/api/devices/register` | POST | 注册当前设备公钥 |
 | `/api/devices/rebind/challenge` | POST | 为未绑定的新会话签发短期 challenge |
@@ -1578,6 +1582,7 @@ Servo Host 需要实现：
 | S-010 | Account deletion | Signed request 原子删除 D1 权威数据；R2 ledger 与 legacy KV cleanup 持久排队并由请求内 drain + scheduled retry 收口 |
 | S-011 | Snapshot CAS | 单一 global head、exact base CAS、structured 409、exact replay zero R2 put |
 | S-012 | Destructive proof | Stolen bearer 缺少 device private key 时无法执行 Sync reset 或账号删除 |
+| S-013 | Session logout | exact bearer 撤销 D1 当前 session；device context 与 rebind challenge 级联删除；sibling sessions 保留 |
 
 ### 19.3 性能验收
 

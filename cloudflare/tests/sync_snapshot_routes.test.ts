@@ -141,7 +141,7 @@ describe("sync snapshot routes", () => {
 
     assert.equal(response.status, 201);
     assert.deepEqual(await response.json(), uploadDocument(committed));
-    assert.deepEqual(d1.sessionConstraints, ["first-primary", "first-primary"]);
+    assert.deepEqual(d1.sessionConstraints, ["first-primary", "first-primary", "first-primary"]);
   });
 
   it("rejects a stale base before writing R2", async () => {
@@ -268,7 +268,7 @@ describe("sync snapshot routes", () => {
 
     assert.equal(response.status, 409);
     assert.deepEqual(await response.json(), conflictDocument(current));
-    assert.deepEqual(d1.sessionConstraints, ["first-primary", "first-primary"]);
+    assert.deepEqual(d1.sessionConstraints, ["first-primary", "first-primary", "first-primary"]);
   });
 
   it("preserves legacy encryption metadata on exact downloads", async () => {

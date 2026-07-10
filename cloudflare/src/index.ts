@@ -1,5 +1,9 @@
 import type { Env } from "./bindings.js";
 import {
+  AuthSessionPersistenceError,
+  deleteAuthenticatedSession,
+} from "./auth.js";
+import {
   withAuthenticatedApiControls,
   withPublicApiControls,
 } from "./api_controls.js";
@@ -58,6 +62,30 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   const url = new URL(request.url);
   if (url.pathname === "/api/auth" || url.pathname.startsWith("/api/auth/")) {
     return handleBetterAuthRoute(request, env);
+  }
+  if (url.pathname === "/api/session/logout") {
+    return withAuthenticatedApiControls(
+      request,
+      env,
+      "session.logout",
+      ["POST"],
+      async (context) => {
+        try {
+          return jsonResponse(await deleteAuthenticatedSession(request, env, context), 200, {
+            "Cache-Control": "no-store",
+          });
+        } catch (error) {
+          if (error instanceof AuthSessionPersistenceError) {
+            return jsonResponse(
+              { error: "session_logout_failed" },
+              500,
+              { "Cache-Control": "no-store" },
+            );
+          }
+          throw error;
+        }
+      },
+    );
   }
   const deviceResponse = await handleDeviceRoute(request, env, url);
   if (deviceResponse !== null) {

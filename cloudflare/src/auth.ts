@@ -1,4 +1,5 @@
-import type { Env } from "./bindings.js";
+import type { ElyD1Result, Env } from "./bindings.js";
+import { primaryD1Session } from "./bindings.js";
 import { prefixedKvKey } from "./kv_keys.js";
 
 const AUTH_SESSION_CACHE_NAMESPACE = "auth_session_cache";
@@ -16,6 +17,10 @@ const BETTER_AUTH_SESSION_QUERY = `
   LEFT JOIN better_auth_session_device_context AS device_context
     ON device_context.session_id = session.id
   WHERE session.token = ?
+`;
+const DELETE_AUTHENTICATED_SESSION = `
+  DELETE FROM better_auth_session
+  WHERE id = ? AND userId = ? AND token = ?
 `;
 
 export interface AuthContext {
@@ -53,6 +58,18 @@ export class AuthSessionSchemaError extends Error {
     super(message);
     this.name = "AuthSessionSchemaError";
   }
+}
+
+export class AuthSessionPersistenceError extends Error {
+  constructor(cause?: unknown) {
+    super("auth_session_persistence_failed", { cause });
+    this.name = "AuthSessionPersistenceError";
+  }
+}
+
+export interface SessionLogoutDocument {
+  version: 1;
+  signed_out: true;
 }
 
 export function authSessionCacheKvKey(environment: string, tokenHash: string): string {
@@ -96,13 +113,46 @@ export async function readAuthContext(
   return readBetterAuthSessionContext(env, token, tokenHash, now);
 }
 
+export async function deleteAuthenticatedSession(
+  request: Request,
+  env: Env,
+  context: AuthContext,
+): Promise<SessionLogoutDocument> {
+  const token = bearerToken(request);
+  if (token === null) {
+    throw new AuthError("authorization_missing");
+  }
+
+  let result: unknown;
+  try {
+    result = await primaryD1Session(env.ELY_DB)
+      .prepare(DELETE_AUTHENTICATED_SESSION)
+      .bind(context.sessionId, context.userId, token)
+      .run();
+  } catch (cause) {
+    throw new AuthSessionPersistenceError(cause);
+  }
+  const changes = d1Changes(result);
+  if (changes < 0 || changes > 1) {
+    throw new AuthSessionPersistenceError();
+  }
+
+  try {
+    await env.ELY_KV.delete(authSessionCacheKvKey(env.ELY_ENVIRONMENT, context.tokenHash));
+  } catch {
+    // D1 is authoritative. Scheduled legacy cleanup converges KV failures.
+  }
+  return { version: 1, signed_out: true };
+}
+
 async function readBetterAuthSessionContext(
   env: Env,
   token: string,
   tokenHash: string,
   now: Date,
 ): Promise<AuthContext> {
-  const row = await env.ELY_DB.prepare(BETTER_AUTH_SESSION_QUERY)
+  const row = await primaryD1Session(env.ELY_DB)
+    .prepare(BETTER_AUTH_SESSION_QUERY)
     .bind(token)
     .first<BetterAuthSessionRow>();
   if (row === null) {
@@ -124,6 +174,11 @@ async function readBetterAuthSessionContext(
     throw new AuthError("session_expired");
   }
   return session;
+}
+
+function d1Changes(result: unknown): number {
+  const changes = (result as ElyD1Result | null)?.meta?.changes;
+  return typeof changes === "number" && Number.isSafeInteger(changes) ? changes : -1;
 }
 
 export async function authTokenHash(token: string): Promise<string> {

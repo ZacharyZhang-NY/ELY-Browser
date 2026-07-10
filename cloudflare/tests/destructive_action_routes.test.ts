@@ -159,7 +159,7 @@ describe("destructive action proofs", () => {
     );
 
     assert.equal(response.status, 200);
-    assert.deepEqual(d1.sessionConstraints, ["first-primary", "first-primary"]);
+    assert.deepEqual(d1.sessionConstraints, ["first-primary", "first-primary", "first-primary"]);
   });
 
   it("requires the exact timestamp and session for an account deletion replay", async () => {

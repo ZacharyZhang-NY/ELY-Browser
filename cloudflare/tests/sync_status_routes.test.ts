@@ -69,7 +69,7 @@ describe("sync status routes", () => {
       [USER_ID],
     ]);
     assert.deepEqual(d1.batches, [5]);
-    assert.deepEqual(d1.sessionConstraints, ["first-primary"]);
+    assert.deepEqual(d1.sessionConstraints, ["first-primary", "first-primary"]);
   });
 
   it("returns empty status when the account has no sync facts", async () => {

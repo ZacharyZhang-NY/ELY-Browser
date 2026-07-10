@@ -92,6 +92,7 @@ interface TestD1DatabaseOptions {
   batchError?: Error;
   batchRowSets?: unknown[][][];
   firstRows?: unknown[];
+  runError?: Error;
   runChanges?: number[];
   sessionRow?: unknown | null;
 }
@@ -190,6 +191,7 @@ export function testD1Database(rows: unknown[] | TestD1DatabaseOptions): Recorde
         isAuthSessionQuery,
         sessionRow,
         () => (!Array.isArray(rows) ? rows.runChanges?.[runIndex++] : undefined) ?? 1,
+        !Array.isArray(rows) ? rows.runError : undefined,
       );
     },
     batch<T>(statements: ElyD1PreparedStatement[]) {
@@ -239,6 +241,7 @@ function testD1PreparedStatement(
   isAuthSessionQuery: boolean,
   sessionRow: unknown | null,
   nextRunChanges: () => number,
+  runError: Error | undefined,
 ): ElyD1PreparedStatement {
   return {
     bind(...values: unknown[]) {
@@ -255,6 +258,9 @@ function testD1PreparedStatement(
       return Promise.resolve({ results: allRows() as T[] });
     },
     run() {
+      if (runError !== undefined) {
+        return Promise.reject(runError);
+      }
       return Promise.resolve({ results: [], meta: { changes: nextRunChanges() } });
     },
   };
