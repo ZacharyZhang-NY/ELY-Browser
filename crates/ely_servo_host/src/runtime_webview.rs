@@ -43,9 +43,7 @@ impl HostWebView {
             return state;
         }
 
-        if let Some(requested_url) = &self.requested_url
-            && self.current_url().as_deref() != Some(requested_url.as_str())
-        {
+        if self.delegate.awaiting_url_change() {
             return WebViewState::Loading;
         }
 
@@ -69,6 +67,7 @@ pub(super) struct HostWebViewDelegate {
     title: RefCell<Option<String>>,
     has_pending_frame: Cell<bool>,
     has_pending_metadata: Cell<bool>,
+    awaiting_url_change: Cell<bool>,
 }
 
 impl HostWebViewDelegate {
@@ -81,11 +80,24 @@ impl HostWebViewDelegate {
             title: RefCell::new(None),
             has_pending_frame: Cell::new(false),
             has_pending_metadata: Cell::new(false),
+            awaiting_url_change: Cell::new(false),
         }
     }
 
     pub(super) fn set_state(&self, state: WebViewState) {
         self.state.replace(state);
+    }
+
+    /// Called at navigation time. The surface stays `Loading` until Servo
+    /// reports a URL change, which fires for the target *and any redirect
+    /// or pushState*. A stale `Complete` from the previous page never
+    /// changes the URL, so it cannot end the loading state early.
+    pub(super) fn arm_pending_navigation(&self) {
+        self.awaiting_url_change.set(true);
+    }
+
+    pub(super) fn awaiting_url_change(&self) -> bool {
+        self.awaiting_url_change.get()
     }
 
     fn state(&self) -> WebViewState {
@@ -103,6 +115,7 @@ impl HostWebViewDelegate {
     fn record_url_change(&self, url: String) {
         self.url.replace(Some(url));
         self.has_pending_metadata.set(true);
+        self.awaiting_url_change.set(false);
     }
 
     fn record_title_change(&self, title: Option<String>) {
@@ -233,5 +246,24 @@ mod tests {
         let title = delegate.title().unwrap_or_default();
         assert!(title.len() <= super::MAX_PAGE_TITLE_BYTES);
         assert!(title.ends_with('…'));
+    }
+
+    #[test]
+    fn only_a_url_change_ends_a_pending_navigation() {
+        let delegate = HostWebViewDelegate::new(ProfileId::new(), PermissionStore::default());
+        assert!(!delegate.awaiting_url_change());
+
+        delegate.arm_pending_navigation();
+        assert!(delegate.awaiting_url_change());
+
+        // A late `Complete` from the previous page must not end the load;
+        // otherwise the surface would present the old page as finished.
+        delegate.record_load_status(servo::LoadStatus::Complete);
+        assert!(delegate.awaiting_url_change());
+
+        // The real navigation — or a redirect / pushState target — changes
+        // the URL, which is what actually reconciles the loading state.
+        delegate.record_url_change("https://www.example.com/".to_string());
+        assert!(!delegate.awaiting_url_change());
     }
 }

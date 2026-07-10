@@ -192,9 +192,14 @@ impl ServoHost for SoftwareServoHost {
             .ok_or_else(|| ServoHostError::WebViewNotFound { id: request.webview_id.clone() })?;
 
         let requested_url = url.to_string();
+        let current_url = webview.current_url();
         let has_loaded_page =
-            matches!(webview.current_url().as_deref(), Some(value) if value != "about:blank");
+            matches!(current_url.as_deref(), Some(value) if value != "about:blank");
         let should_create_initial_document = webview.requested_url.is_none() && !has_loaded_page;
+        // A same-URL reload does not fire a URL change, so only a navigation
+        // to a different URL arms the pending-navigation hold; reloads defer
+        // to Servo's own load-status transitions.
+        let navigates_to_new_url = current_url.as_deref() != Some(requested_url.as_str());
 
         webview.delegate.set_state(WebViewState::Loading);
         if should_create_initial_document {
@@ -211,6 +216,12 @@ impl ServoHost for SoftwareServoHost {
             webview.webview.focus();
         } else {
             webview.webview.load(url);
+        }
+        // Hold `Loading` until Servo reports the URL actually changed, so a
+        // redirect reconciles instead of pinning the surface (a stale
+        // previous-page `Complete` cannot clear it).
+        if navigates_to_new_url {
+            webview.delegate.arm_pending_navigation();
         }
         webview.requested_url = Some(requested_url);
         Ok(())
