@@ -2,7 +2,9 @@
 
 use std::{
     error::Error,
-    io, thread,
+    io,
+    process::{Command, Stdio},
+    thread,
     time::{Duration, Instant},
 };
 
@@ -61,6 +63,38 @@ fn live_sidecar_streams_rgba_and_flushes_profile_storage_on_shutdown() -> Result
         "read-cookie-no-storage-no",
     )?;
     fresh.shutdown()?;
+    Ok(())
+}
+
+#[test]
+fn live_sidecar_leases_profile_data_directory_for_process_lifetime() -> Result<(), Box<dyn Error>> {
+    let root = TestDirectory::new()?;
+    let leased_dir = root.path().join("leased");
+    let independent_dir = root.path().join("independent");
+    let mut owner = Sidecar::spawn(&leased_dir)?;
+    assert!(leased_dir.join(".ely-servo-sidecar.lock").is_file());
+
+    let rejected = Command::new(env!("CARGO_BIN_EXE_ely_servo_sidecar"))
+        .arg("live")
+        .arg("--profile-data-dir")
+        .arg(&leased_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()?;
+    let stderr = String::from_utf8(rejected.stderr)?;
+    assert!(!rejected.status.success(), "second sidecar unexpectedly acquired the profile lease");
+    assert!(
+        stderr.contains("ProfileDataDirectoryInUse"),
+        "second sidecar reported an unexpected error: {stderr}"
+    );
+
+    let mut independent = Sidecar::spawn(&independent_dir)?;
+    independent.shutdown()?;
+    owner.shutdown()?;
+
+    let mut replacement = Sidecar::spawn(&leased_dir)?;
+    replacement.shutdown()?;
     Ok(())
 }
 

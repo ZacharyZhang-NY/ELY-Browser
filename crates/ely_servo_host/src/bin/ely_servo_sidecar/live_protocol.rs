@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, path::PathBuf};
 
 use ely_servo_host::{
     ConsumedPermission, IOSurfaceHandle, RenderedFrame, ServoHostError, WebViewSnapshot,
@@ -304,6 +304,9 @@ pub(super) enum LiveSidecarError {
 
     #[error("sidecar process is already bound to profile {expected}; received {actual}")]
     ProfileMismatch { expected: String, actual: String },
+
+    #[error("servo profile data directory is already in use: {path}")]
+    ProfileDataDirectoryInUse { path: PathBuf },
 
     #[error("{input} requires both x and y coordinates")]
     IncompletePoint { input: &'static str },

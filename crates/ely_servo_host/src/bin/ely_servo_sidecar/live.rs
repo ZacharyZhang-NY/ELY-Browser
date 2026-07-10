@@ -1,7 +1,8 @@
 use std::{
     collections::HashMap,
-    fs,
+    fs::{self, File, OpenOptions, TryLockError},
     io::{self, BufRead},
+    path::Path,
 };
 
 use ely_domain::{ProfileId, TabId, UrlText};
@@ -24,9 +25,12 @@ use super::{
     },
 };
 
+const PROFILE_DATA_LEASE_FILE: &str = ".ely-servo-sidecar.lock";
+
 pub(super) fn run(args: LiveArgs) -> Result<(), LiveSidecarError> {
     let LiveArgs { profile_data_dir, rendering_context, iosurface_mach_service } = args;
     fs::create_dir_all(&profile_data_dir)?;
+    let _profile_data_lease = acquire_profile_data_lease(&profile_data_dir)?;
     let rendering_context_kind = match rendering_context {
         SidecarRenderingContext::Software => RenderingContextKind::Software,
         SidecarRenderingContext::Hardware => RenderingContextKind::Hardware,
@@ -82,6 +86,22 @@ pub(super) fn run(args: LiveArgs) -> Result<(), LiveSidecarError> {
         }
     }
     Ok(())
+}
+
+fn acquire_profile_data_lease(profile_data_dir: &Path) -> Result<File, LiveSidecarError> {
+    let lease = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(profile_data_dir.join(PROFILE_DATA_LEASE_FILE))?;
+    match lease.try_lock() {
+        Ok(()) => Ok(lease),
+        Err(TryLockError::WouldBlock) => Err(LiveSidecarError::ProfileDataDirectoryInUse {
+            path: profile_data_dir.to_path_buf(),
+        }),
+        Err(TryLockError::Error(error)) => Err(error.into()),
+    }
 }
 
 fn handle_request(
