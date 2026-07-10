@@ -1,31 +1,56 @@
 use std::{
-    fs,
-    io::{self, ErrorKind},
+    fmt,
     path::{Path, PathBuf},
 };
 
-use crate::error::SyncClientError;
+use ely_domain::ProfileId;
+use fs2::FileExt;
+use zeroize::Zeroizing;
 
-/// Better Auth bearer token issued by `https://<base>/api/auth/*`. The
-/// token grants access to the per-user `withAuthenticatedApiControls`
-/// routes and, once the device is bound to the session, to the
-/// `withApprovedDeviceApiControls` routes used by sync.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BearerToken(String);
+use crate::{
+    auth_files::{
+        ensure_migration_marker, migration_marker_exists, open_lock_file, read_legacy_bytes,
+        remove_file_if_present,
+    },
+    credential_store::{clear_secret, load_secret, save_secret},
+    error::SyncClientError,
+};
+
+const KEYCHAIN_SERVICE: &str = "com.elydora.ely-browser.auth.bearer.v1";
+const MIN_BEARER_TOKEN_BYTES: usize = 32;
+const MAX_BEARER_TOKEN_BYTES: usize = 2560;
+
+/// Better Auth bearer token issued by `https://<base>/api/auth/*`.
+pub struct BearerToken(Zeroizing<String>);
+
+impl Clone for BearerToken {
+    fn clone(&self) -> Self {
+        Self(Zeroizing::new(self.as_str().to_string()))
+    }
+}
+
+impl fmt::Debug for BearerToken {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("BearerToken([REDACTED])")
+    }
+}
+
+impl PartialEq for BearerToken {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl Eq for BearerToken {}
 
 impl BearerToken {
-    /// Construct a token from an existing string. Trims whitespace and
-    /// enforces the same character envelope the worker validates so
-    /// obviously-malformed tokens fail before we hit the network.
     pub fn new(value: impl Into<String>) -> Result<Self, SyncClientError> {
-        let value = value.into();
+        let value = Zeroizing::new(value.into());
         let trimmed = value.trim();
         if trimmed.is_empty() || !is_better_auth_bearer(trimmed) {
-            return Err(SyncClientError::TokenStorage(
-                "bearer token is not a Better Auth session token".to_string(),
-            ));
+            return Err(storage_error("bearer token is not a Better Auth session token"));
         }
-        Ok(Self(trimmed.to_string()))
+        Ok(Self(Zeroizing::new(trimmed.to_string())))
     }
 
     pub fn as_str(&self) -> &str {
@@ -34,7 +59,7 @@ impl BearerToken {
 }
 
 fn is_better_auth_bearer(token: &str) -> bool {
-    let length_ok = (32..=4096).contains(&token.len());
+    let length_ok = (MIN_BEARER_TOKEN_BYTES..=MAX_BEARER_TOKEN_BYTES).contains(&token.len());
     let charset_ok = token
         .as_bytes()
         .iter()
@@ -42,100 +67,238 @@ fn is_better_auth_bearer(token: &str) -> bool {
     length_ok && charset_ok
 }
 
-/// File-backed bearer token store. Lives in the per-profile data
-/// directory so a private window never inherits the standard
-/// profile's session — same isolation the rest of the runtime
-/// enforces. Writes go through a temp-rename so a partial write
-/// can't corrupt the persisted token.
+trait CredentialBackend {
+    fn load(&self, service: &str, account: &str) -> Result<Option<Zeroizing<Vec<u8>>>, String>;
+    fn save(&self, service: &str, account: &str, secret: &[u8]) -> Result<(), String>;
+    fn clear(&self, service: &str, account: &str) -> Result<(), String>;
+}
+
+struct NativeCredentialBackend;
+
+impl CredentialBackend for NativeCredentialBackend {
+    fn load(&self, service: &str, account: &str) -> Result<Option<Zeroizing<Vec<u8>>>, String> {
+        load_secret(service, account)
+    }
+
+    fn save(&self, service: &str, account: &str, secret: &[u8]) -> Result<(), String> {
+        save_secret(service, account, secret)
+    }
+
+    fn clear(&self, service: &str, account: &str) -> Result<(), String> {
+        clear_secret(service, account)
+    }
+}
+
+/// Profile-scoped native credential store with one-time plaintext-file migration.
 #[derive(Clone, Debug)]
 pub struct BearerTokenStore {
-    path: PathBuf,
+    account: String,
+    lock_path: PathBuf,
+    migration_marker_path: PathBuf,
+    legacy_paths: Vec<PathBuf>,
 }
 
 impl BearerTokenStore {
-    pub fn new(path: PathBuf) -> Self {
-        Self { path }
+    pub fn new(profile_id: &ProfileId, profile_data_dir: &Path) -> Self {
+        let sync_dir = profile_data_dir.join("sync");
+        Self {
+            account: profile_id.as_str().to_string(),
+            lock_path: sync_dir.join("bearer.lock"),
+            migration_marker_path: sync_dir.join("bearer.migrated"),
+            legacy_paths: vec![sync_dir.join("bearer.token")],
+        }
     }
 
-    pub fn path(&self) -> &Path {
-        &self.path
+    pub fn with_legacy_path(mut self, path: PathBuf) -> Self {
+        if !self.legacy_paths.contains(&path) {
+            self.legacy_paths.push(path);
+        }
+        self
     }
 
     pub fn load(&self) -> Result<Option<BearerToken>, SyncClientError> {
-        match fs::read_to_string(&self.path) {
-            Ok(contents) => {
-                if contents.trim().is_empty() {
-                    return Ok(None);
-                }
-                BearerToken::new(contents).map(Some)
-            }
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(SyncClientError::TokenStorage(error.to_string())),
-        }
+        self.load_with(&NativeCredentialBackend)
     }
 
     pub fn save(&self, token: &BearerToken) -> Result<(), SyncClientError> {
-        if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent).map_err(io_err)?;
-        }
-        let tmp = self.path.with_extension("tmp");
-        fs::write(&tmp, token.as_str()).map_err(io_err)?;
-        fs::rename(&tmp, &self.path).map_err(io_err)?;
-        Ok(())
+        self.save_with(&NativeCredentialBackend, token)
     }
 
     pub fn clear(&self) -> Result<(), SyncClientError> {
-        remove_file_if_present(&self.path)?;
-        remove_file_if_present(&self.path.with_extension("tmp"))
+        self.clear_with(&NativeCredentialBackend)
+    }
+
+    pub fn clear_if_matches(&self, token: &BearerToken) -> Result<bool, SyncClientError> {
+        self.clear_if_matches_with(&NativeCredentialBackend, token)
+    }
+
+    fn clear_if_matches_with<B: CredentialBackend>(
+        &self,
+        backend: &B,
+        token: &BearerToken,
+    ) -> Result<bool, SyncClientError> {
+        self.with_lock(|| {
+            let current = load_backend_token(backend, &self.account)?;
+            ensure_migration_marker(&self.migration_marker_path)?;
+            self.cleanup_legacy_paths()?;
+            if current.as_ref().is_some_and(|current| current != token) {
+                return Ok(false);
+            }
+            backend.clear(KEYCHAIN_SERVICE, &self.account).map_err(storage_error)?;
+            Ok(true)
+        })
+    }
+
+    pub fn clear_legacy_files(&self) -> Result<(), SyncClientError> {
+        self.with_lock(|| self.cleanup_legacy_paths())
+    }
+
+    fn load_with<B: CredentialBackend>(
+        &self,
+        backend: &B,
+    ) -> Result<Option<BearerToken>, SyncClientError> {
+        self.with_lock(|| self.load_locked(backend))
+    }
+
+    fn save_with<B: CredentialBackend>(
+        &self,
+        backend: &B,
+        token: &BearerToken,
+    ) -> Result<(), SyncClientError> {
+        self.with_lock(|| {
+            ensure_migration_marker(&self.migration_marker_path)?;
+            self.cleanup_legacy_paths()?;
+            backend
+                .save(KEYCHAIN_SERVICE, &self.account, token.as_str().as_bytes())
+                .map_err(storage_error)
+        })
+    }
+
+    fn clear_with<B: CredentialBackend>(&self, backend: &B) -> Result<(), SyncClientError> {
+        self.with_lock(|| {
+            ensure_migration_marker(&self.migration_marker_path)?;
+            self.cleanup_legacy_paths()?;
+            backend.clear(KEYCHAIN_SERVICE, &self.account).map_err(storage_error)
+        })
+    }
+
+    fn load_locked<B: CredentialBackend>(
+        &self,
+        backend: &B,
+    ) -> Result<Option<BearerToken>, SyncClientError> {
+        if let Some(token) = load_backend_token(backend, &self.account)? {
+            ensure_migration_marker(&self.migration_marker_path)?;
+            self.cleanup_legacy_paths()?;
+            return Ok(Some(token));
+        }
+
+        if migration_marker_exists(&self.migration_marker_path)? {
+            self.cleanup_legacy_paths()?;
+            return Ok(None);
+        }
+
+        let mut candidate = None;
+        for path in &self.legacy_paths {
+            if let Some(token) = read_legacy_token(path)? {
+                candidate = Some(token);
+                break;
+            }
+        }
+        let Some(token) = candidate else {
+            self.cleanup_legacy_tmp_files()?;
+            return Ok(None);
+        };
+        backend
+            .save(KEYCHAIN_SERVICE, &self.account, token.as_str().as_bytes())
+            .map_err(storage_error)?;
+        if let Err(error) = verify_backend_token(backend, &self.account, &token) {
+            return Err(rollback_migration(backend, &self.account, error));
+        }
+        if let Err(error) = ensure_migration_marker(&self.migration_marker_path) {
+            if matches!(migration_marker_exists(&self.migration_marker_path), Ok(false)) {
+                return Err(rollback_migration(backend, &self.account, error));
+            }
+            return Err(error);
+        }
+        self.cleanup_legacy_paths()?;
+        Ok(Some(token))
+    }
+
+    fn cleanup_legacy_paths(&self) -> Result<(), SyncClientError> {
+        for path in &self.legacy_paths {
+            remove_file_if_present(path)?;
+            remove_file_if_present(&path.with_extension("tmp"))?;
+        }
+        Ok(())
+    }
+
+    fn cleanup_legacy_tmp_files(&self) -> Result<(), SyncClientError> {
+        for path in &self.legacy_paths {
+            remove_file_if_present(&path.with_extension("tmp"))?;
+        }
+        Ok(())
+    }
+
+    fn with_lock<T>(
+        &self,
+        operation: impl FnOnce() -> Result<T, SyncClientError>,
+    ) -> Result<T, SyncClientError> {
+        let lock = open_lock_file(&self.lock_path)?;
+        lock.lock_exclusive().map_err(|error| storage_error(error.to_string()))?;
+        operation()
     }
 }
 
-fn remove_file_if_present(path: &Path) -> Result<(), SyncClientError> {
-    match fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(SyncClientError::TokenStorage(error.to_string())),
+fn load_backend_token<B: CredentialBackend>(
+    backend: &B,
+    account: &str,
+) -> Result<Option<BearerToken>, SyncClientError> {
+    let Some(secret) = backend.load(KEYCHAIN_SERVICE, account).map_err(storage_error)? else {
+        return Ok(None);
+    };
+    let value =
+        std::str::from_utf8(&secret).map_err(|error| storage_error(error.to_string()))?.to_string();
+    BearerToken::new(value).map(Some)
+}
+
+fn verify_backend_token<B: CredentialBackend>(
+    backend: &B,
+    account: &str,
+    token: &BearerToken,
+) -> Result<(), SyncClientError> {
+    let stored = load_backend_token(backend, account)?;
+    if stored.as_ref() != Some(token) {
+        return Err(storage_error("native credential read-back did not match"));
+    }
+    Ok(())
+}
+
+fn rollback_migration<B: CredentialBackend>(
+    backend: &B,
+    account: &str,
+    cause: SyncClientError,
+) -> SyncClientError {
+    match backend.clear(KEYCHAIN_SERVICE, account) {
+        Ok(()) => cause,
+        Err(rollback_error) => {
+            storage_error(format!("{cause}; native credential rollback failed: {rollback_error}"))
+        }
     }
 }
 
-fn io_err(error: io::Error) -> SyncClientError {
-    SyncClientError::TokenStorage(error.to_string())
+fn read_legacy_token(path: &Path) -> Result<Option<BearerToken>, SyncClientError> {
+    let Some(bytes) = read_legacy_bytes(path, MAX_BEARER_TOKEN_BYTES + 1)? else {
+        return Ok(None);
+    };
+    let value =
+        std::str::from_utf8(&bytes).map_err(|error| storage_error(error.to_string()))?.to_string();
+    BearerToken::new(value).map(Some)
+}
+
+fn storage_error(message: impl Into<String>) -> SyncClientError {
+    SyncClientError::BearerCredentialStorage(message.into())
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::env::temp_dir;
-
-    #[test]
-    fn rejects_obviously_broken_tokens() {
-        assert!(BearerToken::new("").is_err());
-        assert!(BearerToken::new("   ").is_err());
-        assert!(BearerToken::new("short").is_err());
-        // Spaces are not in the Better Auth bearer charset.
-        assert!(BearerToken::new(format!("{}aaa bb", "a".repeat(40))).is_err());
-    }
-
-    #[test]
-    fn accepts_better_auth_shape() -> Result<(), SyncClientError> {
-        let token = format!("{}-{}_{}", "a".repeat(20), "b".repeat(20), "c".repeat(20));
-        BearerToken::new(token).map(|_| ())
-    }
-
-    #[test]
-    fn token_store_round_trips() -> Result<(), SyncClientError> {
-        let dir = temp_dir().join(format!("ely-token-{}", uuid::Uuid::now_v7().simple()));
-        let store = BearerTokenStore::new(dir.join("token"));
-        let token = BearerToken::new("a".repeat(64))?;
-        assert_eq!(store.load()?, None);
-
-        store.save(&token)?;
-        assert_eq!(store.load()?, Some(token.clone()));
-        fs::write(store.path().with_extension("tmp"), token.as_str()).map_err(io_err)?;
-
-        store.clear()?;
-        assert_eq!(store.load()?, None);
-        assert!(!store.path().with_extension("tmp").exists());
-        Ok(())
-    }
-}
+#[path = "auth_tests.rs"]
+mod tests;

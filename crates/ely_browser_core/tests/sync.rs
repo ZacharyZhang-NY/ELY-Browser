@@ -39,6 +39,17 @@ fn default_sync_status_reflects_local_browser_state() -> Result<(), Box<dyn Erro
 }
 
 #[test]
+fn unavailable_credentials_disable_cloud_uploads() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    core.set_sync_connection_state(SyncConnectionState::CredentialUnavailable {
+        message: "credential unavailable".to_string(),
+    });
+
+    assert!(!core.cloud_sync_upload_enabled());
+    Ok(())
+}
+
+#[test]
 fn sync_object_policy_pauses_object_kind() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     core.set_sync_object_policy(SyncObjectKind::Tabs, SyncObjectPolicy::Paused);

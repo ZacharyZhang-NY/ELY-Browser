@@ -8,6 +8,9 @@ pub enum SyncClientError {
     #[error("Bearer token storage is unavailable: {0}")]
     TokenStorage(String),
 
+    #[error("Bearer credential storage is unavailable: {0}")]
+    BearerCredentialStorage(String),
+
     #[error("HTTP request failed for {endpoint}: {source}")]
     Http {
         endpoint: String,

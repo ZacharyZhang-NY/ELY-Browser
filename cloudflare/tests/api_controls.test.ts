@@ -149,6 +149,23 @@ describe("api controls", () => {
     ]);
   });
 
+  it("rejects bearer tokens larger than the native credential contract", async () => {
+    const d1Queries: string[] = [];
+    const response = await withAuthenticatedApiControls(
+      new Request("https://elydora.test/api/devices", {
+        headers: { authorization: `Bearer ${"A".repeat(2561)}` },
+      }),
+      testEnv({ d1: testD1Database({ queries: d1Queries }) }),
+      "devices.list",
+      ["GET"],
+      () => Promise.resolve(jsonResponse({ ok: true }, 200)),
+    );
+
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: "authorization_invalid" });
+    assert.deepEqual(d1Queries, []);
+  });
+
   it("passes authenticated session context and records subject audit fields", async () => {
     const tokenHash = await authTokenHash(ACCESS_TOKEN);
     const auditEvents: ElyAnalyticsDataPoint[] = [];

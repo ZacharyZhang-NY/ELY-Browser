@@ -3,6 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use ely_domain::ProfileId;
 use ely_sync_client::{
     AccountKey, ApiClientConfig, AuthenticatedSnapshotHead, BearerToken, BearerTokenStore,
     DeviceIdentity, SNAPSHOT_ENCRYPTION_VERSION, SnapshotCryptoContext, SnapshotDownloadResult,
@@ -34,6 +35,7 @@ impl SyncEngine {
     /// fresh device identity on first use, then keeps it stable across
     /// runs so the server's `user_devices` row stays bound.
     pub fn for_profile_dir(
+        profile_id: &ProfileId,
         profile_data_dir: &Path,
         device_name: impl Into<String>,
         platform: impl Into<String>,
@@ -46,7 +48,7 @@ impl SyncEngine {
             .join(".sync-key-locks");
         let identity =
             DeviceIdentity::load_or_create(&sync_dir.join("device.json"), device_name, platform)?;
-        let bearer_store = BearerTokenStore::new(sync_dir.join("bearer.token"));
+        let bearer_store = BearerTokenStore::new(profile_id, profile_data_dir);
         Ok(Self {
             api_config: ApiClientConfig::production(),
             bearer_store,
@@ -58,10 +60,6 @@ impl SyncEngine {
 
     pub fn identity(&self) -> &DeviceIdentity {
         &self.identity
-    }
-
-    pub fn bearer_path(&self) -> &Path {
-        self.bearer_store.path()
     }
 
     pub fn last_outcome(&self) -> Option<&SyncOutcome> {
@@ -436,6 +434,7 @@ fn device_registration_idempotency_key(identity: &DeviceIdentity) -> String {
 
 #[derive(Debug)]
 pub struct SyncEngineBuilder {
+    pub profile_id: ProfileId,
     pub profile_data_dir: PathBuf,
     pub device_name: String,
     pub platform: String,
@@ -443,7 +442,12 @@ pub struct SyncEngineBuilder {
 
 impl SyncEngineBuilder {
     pub fn build(self) -> Result<SyncEngine, SyncClientError> {
-        SyncEngine::for_profile_dir(&self.profile_data_dir, self.device_name, self.platform)
+        SyncEngine::for_profile_dir(
+            &self.profile_id,
+            &self.profile_data_dir,
+            self.device_name,
+            self.platform,
+        )
     }
 }
 

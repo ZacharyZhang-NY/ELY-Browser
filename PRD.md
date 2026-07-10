@@ -960,6 +960,7 @@ Better Auth 在 Cloudflare Workers 中初始化，D1 binding 作为 database 传
 - Google/GitHub OAuth 按环境启用。
 - D1 session validation 与自定义 device/session binding。
 - Bearer logout 精确删除当前 D1 session，并级联清理 session device context 与 rebind challenge。
+- Desktop bearer 以 stable `ProfileId` 作为系统凭据 account，Windows 使用 Local persistence；旧明文文件在 credential read-back 与 durable marker 提交后清理，系统凭据不可用时阻断设备加载与 Sync upload。
 - 设备注册、rebind、批准、撤销与 Vault rotation。
 - Signed Sync reset 和 signed account deletion。
 - 管理所有 `/api/auth/*` 路由。
@@ -1571,7 +1572,7 @@ Servo Host 需要实现：
 | ID | 模块 | 验收标准 |
 |---|---|---|
 | S-001 | Sync encryption | 服务端无法解密 Sync payload |
-| S-002 | Keychain | session token 和本地数据库密钥存入系统钥匙串 |
+| S-002 | Keychain | session token 按 stable ProfileId 隔离存入原生系统凭据；明文 legacy token 完成可恢复的一次迁移后删除；凭据不可用时进入独立错误状态并暂停云端动作 |
 | S-003 | Device revoke | 撤销设备后目标 sessions 失效、后续 Sync API 被拒绝、approved revoke 原子轮换 Vault generation |
 | S-004 | Plugin sandbox | 插件无声明权限时无法访问 tabs/bookmarks/history/page |
 | S-005 | Plugin signature | 市场插件必须签名验证通过 |

@@ -115,6 +115,7 @@ pub struct ElyShell {
     sync_upload_pending: bool,
     sync_upload_pending_merge: Option<PendingMergeUpload>,
     sync_retry_at: Option<std::time::Instant>,
+    default_profile_id: Option<ProfileId>,
     pub(crate) sync_devices: SyncDeviceUiState,
     pub(crate) sync_verification_input: Entity<InputState>,
     pub(crate) auth_email_input: Entity<InputState>,
@@ -126,21 +127,23 @@ pub struct ElyShell {
 
 impl ElyShell {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let mut default_profile_id = None;
         let config = InitialBrowserConfig::ely_defaults()
             .map_err(|error| error.to_string())
             .and_then(|mut config| {
-                config.profile_id = Some(
-                    crate::services::profile_identity::default_standard_profile_id()
-                        .map_err(|error| error.to_string())?,
-                );
+                let profile_id = crate::services::profile_identity::default_standard_profile_id()
+                    .map_err(|error| error.to_string())?;
+                config.profile_id = Some(profile_id.clone());
+                default_profile_id = Some(profile_id);
                 Ok(config)
             });
-        Self::new_with_config(config, window, cx)
+        Self::new_with_config(config, default_profile_id, window, cx)
     }
 
     pub fn new_private(window: &mut Window, cx: &mut Context<Self>) -> Self {
         Self::new_with_config(
             InitialBrowserConfig::private_window().map_err(|error| error.to_string()),
+            None,
             window,
             cx,
         )
@@ -148,6 +151,7 @@ impl ElyShell {
 
     fn new_with_config(
         config: Result<InitialBrowserConfig, String>,
+        default_profile_id: Option<ProfileId>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -261,6 +265,7 @@ impl ElyShell {
             sync_upload_pending: false,
             sync_upload_pending_merge: None,
             sync_retry_at: None,
+            default_profile_id,
             sync_devices: SyncDeviceUiState::default(),
             sync_verification_input,
             auth_email_input,

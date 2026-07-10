@@ -15,7 +15,6 @@ use super::sync_controls::{
     render_reset_button, render_secondary_button, render_sign_out_button,
 };
 use super::{ElyShell, render_canvas_surface};
-
 impl ElyShell {
     pub(super) fn render_sync_page(
         &mut self,
@@ -23,7 +22,10 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         if profile_allows_sync_controls(&snapshot.active_profile_kind)
-            && !matches!(snapshot.sync_status.connection(), SyncConnectionState::SignedOut)
+            && !matches!(
+                snapshot.sync_status.connection(),
+                SyncConnectionState::SignedOut | SyncConnectionState::CredentialUnavailable { .. }
+            )
         {
             self.ensure_sync_devices_loaded(cx);
         }
@@ -37,7 +39,6 @@ impl ElyShell {
         )
     }
 }
-
 fn render_sync_body(
     shell: &mut ElyShell,
     snapshot: &BrowserSnapshot,
@@ -63,11 +64,9 @@ fn render_sync_body(
     )
     .into_any_element()
 }
-
 fn profile_allows_sync_controls(profile_kind: &ProfileKind) -> bool {
     profile_kind == &ProfileKind::Standard
 }
-
 fn render_private_profile_card() -> AnyElement {
     div()
         .p(px(16.0))
@@ -88,7 +87,6 @@ fn render_private_profile_card() -> AnyElement {
         )
         .into_any_element()
 }
-
 fn render_account_card(
     shell: &mut ElyShell,
     snapshot: &BrowserSnapshot,
@@ -100,6 +98,11 @@ fn render_account_card(
     match snapshot.sync_status.connection() {
         SyncConnectionState::SignedOut => card
             .child(render_card_heading("Account"))
+            .children(account_form(shell, &snapshot.active_profile_id, cx))
+            .into_any_element(),
+        SyncConnectionState::CredentialUnavailable { message } => card
+            .child(render_card_heading("Account"))
+            .child(render_inline_error(message))
             .children(account_form(shell, &snapshot.active_profile_id, cx))
             .into_any_element(),
         SyncConnectionState::SignedIn
@@ -120,11 +123,13 @@ fn render_account_card(
                     .text_color(rgb(colors::ink_3()))
                     .child("End-to-end encrypted"),
             )
+            .when_some(shell.auth_flow_phase.error_message(), |card, message| {
+                card.child(render_inline_error(message))
+            })
             .child(render_devices(shell, cx))
             .into_any_element(),
     }
 }
-
 fn render_devices(shell: &mut ElyShell, cx: &mut Context<ElyShell>) -> AnyElement {
     let loading = shell.sync_devices.is_loading();
     let header =

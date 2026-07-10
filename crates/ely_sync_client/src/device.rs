@@ -17,6 +17,7 @@ use crate::{
 
 const PUBLIC_KEY_BYTES: usize = 32;
 const MAX_DEVICE_TEXT_CHARS: usize = 128;
+const MAX_STORED_IDENTITY_BYTES: usize = 16 * 1024;
 
 /// Public device identity persisted in the profile directory. Both private
 /// keys live in the macOS data-protection Keychain under `device_id`.
@@ -33,6 +34,18 @@ pub struct DeviceIdentity {
 }
 
 impl DeviceIdentity {
+    pub fn validate_stored_bytes(bytes: &[u8], path: &Path) -> Result<(), SyncClientError> {
+        if bytes.len() > MAX_STORED_IDENTITY_BYTES {
+            return Err(key_error("stored device identity is too large"));
+        }
+        let contents = std::str::from_utf8(bytes)
+            .map_err(|error| SyncClientError::TokenStorage(error.to_string()))?;
+        match decode_stored_identity(contents, path)? {
+            StoredIdentity::V2(identity) => identity.validate(),
+            StoredIdentity::Legacy(identity) => identity.validate(),
+        }
+    }
+
     /// Loads a v2 identity and its Keychain secrets. A legacy public-only
     /// identity is rotated to a fresh device ID because its private key was
     /// never persisted and cannot prove device continuity.
@@ -410,6 +423,31 @@ mod tests {
         });
         let stored = decode_stored_identity(&legacy.to_string(), Path::new("device.json"))?;
         assert!(matches!(stored, StoredIdentity::Legacy(_)));
+        Ok(())
+    }
+
+    #[test]
+    fn stored_identity_validation_is_bounded_and_schema_strict() -> Result<(), SyncClientError> {
+        let (identity, _) = generate_key_material("Test".to_string(), "macos".to_string())?;
+        let bytes = serde_json::to_vec(&identity).map_err(|error| {
+            SyncClientError::TokenStorage(format!("device identity serialize: {error}"))
+        })?;
+
+        DeviceIdentity::validate_stored_bytes(&bytes, Path::new("device.json"))?;
+        assert!(
+            DeviceIdentity::validate_stored_bytes(
+                &vec![b'a'; MAX_STORED_IDENTITY_BYTES + 1],
+                Path::new("device.json"),
+            )
+            .is_err()
+        );
+        assert!(
+            DeviceIdentity::validate_stored_bytes(
+                br#"{"device_id":"ely-test","unknown":true}"#,
+                Path::new("device.json"),
+            )
+            .is_err()
+        );
         Ok(())
     }
 

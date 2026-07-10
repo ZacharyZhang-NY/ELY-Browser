@@ -139,26 +139,51 @@ impl ElyShell {
     }
 
     /// Drop the persisted bearer token and reset the local form.
-    /// The bearer file is removed synchronously — there is no network
-    /// call to make, the token is the only artefact we own.
     pub(crate) fn submit_sign_out(&mut self, _cx: &mut Context<Self>) {
-        self.auth_flow_phase = AuthFlowPhase::Idle;
-        self.sync_devices.reset();
-        self.sync_retry_at = None;
-        self.clear_pending_cloud_sync_upload();
         let active_profile_id = match active_profile_id_for(&self.state) {
             Some(profile_id) => profile_id,
             None => return,
         };
+        self.auth_flow_phase = AuthFlowPhase::Idle;
+        self.sync_devices.reset();
+        self.sync_upload_scheduled = false;
+        self.sync_retry_at = None;
+        self.clear_pending_cloud_sync_upload();
         let Some(profile_root) = default_profile_data_root() else {
+            self.set_sign_out_error(
+                active_profile_id,
+                "Profile data root is unavailable. Retry sign out.",
+            );
             return;
         };
         let profile_dir = sync_profile_data_dir(&profile_root, &active_profile_id);
-        if let Err(error) = clear_persisted_bearer(&profile_dir) {
+        if let Err(error) = clear_persisted_bearer(
+            &active_profile_id,
+            &profile_dir,
+            &profile_root,
+            self.default_profile_id.as_ref(),
+        ) {
             tracing::warn!(target: "ely::sync", error = %error, "sign-out failed to clear bearer");
+            self.set_sign_out_error(
+                active_profile_id,
+                "System credential access failed. Retry sign out.",
+            );
+            return;
         }
         if let ShellState::Ready(core) = &mut self.state {
             core.set_sync_connection_state(ely_domain::SyncConnectionState::SignedOut);
+        }
+    }
+
+    fn set_sign_out_error(&mut self, profile_id: ProfileId, message: &str) {
+        self.auth_flow_phase =
+            AuthFlowPhase::Error { profile_id, email: String::new(), message: message.to_string() };
+        if let ShellState::Ready(core) = &mut self.state {
+            core.set_sync_connection_state(
+                ely_domain::SyncConnectionState::CredentialUnavailable {
+                    message: message.to_string(),
+                },
+            );
         }
     }
 
@@ -201,8 +226,28 @@ fn active_profile_id_for(state: &ShellState) -> Option<ProfileId> {
     core.snapshot().ok().map(|snapshot| snapshot.active_profile_id)
 }
 
-pub(super) fn clear_persisted_bearer(profile_dir: &Path) -> Result<(), SyncClientError> {
-    BearerTokenStore::new(profile_dir.join("sync").join("bearer.token")).clear()
+pub(super) fn clear_persisted_bearer(
+    profile_id: &ProfileId,
+    profile_dir: &Path,
+    profile_root: &Path,
+    default_profile_id: Option<&ProfileId>,
+) -> Result<(), SyncClientError> {
+    bearer_store_for_profile(profile_id, profile_dir, profile_root, default_profile_id).clear()
+}
+
+pub(super) fn bearer_store_for_profile(
+    profile_id: &ProfileId,
+    profile_dir: &Path,
+    profile_root: &Path,
+    default_profile_id: Option<&ProfileId>,
+) -> BearerTokenStore {
+    let store = BearerTokenStore::new(profile_id, profile_dir);
+    if default_profile_id != Some(profile_id) {
+        return store;
+    }
+    store.with_legacy_path(
+        profile_root.join("default").join("servo").join("sync").join("bearer.token"),
+    )
 }
 
 fn spawn_send_otp(profile_id: ProfileId, email: String, tx: Sender<SyncStateUpdate>) {
@@ -252,7 +297,12 @@ fn spawn_verify_otp(
                 }
             };
             let mut engine =
-                match SyncEngine::for_profile_dir(&profile_dir, "ELY", sync_platform_label()) {
+                match SyncEngine::for_profile_dir(
+                    &profile_id,
+                    &profile_dir,
+                    "ELY",
+                    sync_platform_label(),
+                ) {
                     Ok(engine) => engine,
                     Err(error) => {
                         let _ = tx.send(SyncStateUpdate::AuthError {
@@ -284,7 +334,9 @@ mod tests {
     use ely_browser_core::{BrowserCore, InitialBrowserConfig};
     use ely_domain::ProfileId;
 
-    use super::{AuthFlowPhase, active_profile_sync_context_for, normalize_email};
+    use super::{
+        AuthFlowPhase, active_profile_sync_context_for, bearer_store_for_profile, normalize_email,
+    };
     use crate::shell::ShellState;
 
     #[test]
@@ -332,6 +384,59 @@ mod tests {
             ShellState::Ready(Box::new(BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?));
         assert!(active_profile_sync_context_for(&state).is_some());
 
+        Ok(())
+    }
+
+    #[test]
+    fn default_profile_store_cleans_stable_and_old_legacy_paths()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let profile_id = ProfileId::new();
+        let profile_dir = directory.path().join(profile_id.as_str()).join("servo");
+        let stable = profile_dir.join("sync/bearer.token");
+        let old = directory.path().join("default/servo/sync/bearer.token");
+        std::fs::create_dir_all(stable.parent().ok_or("missing stable parent")?)?;
+        std::fs::create_dir_all(old.parent().ok_or("missing old parent")?)?;
+        std::fs::write(&stable, "a".repeat(64))?;
+        std::fs::write(&old, "b".repeat(64))?;
+        let store = bearer_store_for_profile(
+            &profile_id,
+            &profile_dir,
+            directory.path(),
+            Some(&profile_id),
+        );
+
+        store.clear_legacy_files()?;
+
+        assert!(!stable.exists());
+        assert!(!old.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn custom_profile_store_leaves_default_legacy_credentials_untouched()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let profile_id = ProfileId::new();
+        let default_profile_id = ProfileId::new();
+        let profile_dir = directory.path().join(profile_id.as_str()).join("servo");
+        let stable = profile_dir.join("sync/bearer.token");
+        let old_default = directory.path().join("default/servo/sync/bearer.token");
+        std::fs::create_dir_all(stable.parent().ok_or("missing stable parent")?)?;
+        std::fs::create_dir_all(old_default.parent().ok_or("missing default parent")?)?;
+        std::fs::write(&stable, "a".repeat(64))?;
+        std::fs::write(&old_default, "b".repeat(64))?;
+        let store = bearer_store_for_profile(
+            &profile_id,
+            &profile_dir,
+            directory.path(),
+            Some(&default_profile_id),
+        );
+
+        store.clear_legacy_files()?;
+
+        assert!(!stable.exists());
+        assert!(old_default.exists());
         Ok(())
     }
 }

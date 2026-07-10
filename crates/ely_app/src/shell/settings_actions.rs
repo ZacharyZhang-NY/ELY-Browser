@@ -9,7 +9,9 @@ use gpui_component::slider::SliderValue;
 
 use crate::services::servo_profile_data::{default_profile_data_root, sync_profile_data_dir};
 
-use super::sync_state::{PendingMergeUpload, SyncStateUpdate, sync_platform_label};
+use super::sync_state::{
+    PendingMergeUpload, SyncStateUpdate, sync_failure_update, sync_platform_label,
+};
 use super::{ElyShell, ShellState};
 
 impl ElyShell {
@@ -255,11 +257,11 @@ impl ElyShell {
     }
 
     fn trigger_cloud_sync_upload_with_merge(&mut self, mut merge: Option<PendingMergeUpload>) {
-        let active_profile_allows_sync = match &self.state {
-            ShellState::Ready(core) => core.active_profile_allows_sync(),
+        let cloud_sync_enabled = match &self.state {
+            ShellState::Ready(core) => core.cloud_sync_upload_enabled(),
             ShellState::StartupError(_) => false,
         };
-        if !active_profile_allows_sync {
+        if !cloud_sync_enabled {
             self.sync_upload_scheduled = false;
             self.clear_pending_cloud_sync_upload();
             return;
@@ -352,6 +354,7 @@ fn run_sync_upload(
     inbox: std::sync::mpsc::Sender<SyncStateUpdate>,
 ) {
     let mut engine = match SyncEngine::for_profile_dir(
+        &profile_id,
         &profile_dir,
         device_name,
         sync_platform_label(),
@@ -360,7 +363,7 @@ fn run_sync_upload(
         Err(error) => {
             let message = error.to_string();
             tracing::warn!(target: "ely::sync", error = %message, "could not initialise sync engine");
-            let _ = inbox.send(SyncStateUpdate::SyncError { profile_id, message });
+            let _ = inbox.send(sync_failure_update(profile_id, error));
             return;
         }
     };
@@ -380,7 +383,10 @@ fn run_sync_upload(
                 device_id = %device_id,
                 "sync device is awaiting approval",
             );
-            let _ = inbox.send(SyncStateUpdate::AwaitingDeviceApproval { profile_id });
+            let _ = inbox.send(SyncStateUpdate::AwaitingDeviceApproval {
+                profile_id,
+                finishes_upload: true,
+            });
         }
         Ok(ely_browser_core::SyncOutcome::RemoteSnapshot {
             snapshot_id,
@@ -454,12 +460,7 @@ fn run_sync_upload(
         Err(error) => {
             let message = error.to_string();
             tracing::warn!(target: "ely::sync", error = %message, "snapshot upload failed");
-            let update = if message.contains("device_not_approved") {
-                SyncStateUpdate::AwaitingDeviceApproval { profile_id }
-            } else {
-                SyncStateUpdate::SyncError { profile_id, message }
-            };
-            let _ = inbox.send(update);
+            let _ = inbox.send(sync_failure_update(profile_id, error));
         }
     }
 }

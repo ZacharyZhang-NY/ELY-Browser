@@ -1,10 +1,12 @@
 use std::{path::Path, time::Duration};
 
 use ely_domain::{ProfileId, ProfileKind, SyncConnectionState};
-use ely_sync_client::{AuthenticatedSnapshotHead, DeviceRecord};
+use ely_sync_client::{AuthenticatedSnapshotHead, BearerTokenStore, DeviceRecord};
 use gpui::{Context, Timer};
 
 use super::{ElyShell, ShellState, auth};
+
+mod legacy_sync_migration;
 
 const CLOUD_SYNC_UPLOAD_DEBOUNCE: Duration = Duration::from_millis(750);
 const CAS_RETRY_LIMIT: u8 = 3;
@@ -25,16 +27,56 @@ pub(crate) struct PendingMergeUpload {
 #[derive(Clone, Debug)]
 pub(crate) enum SyncStateUpdate {
     SignedOut { profile_id: ProfileId },
-    AwaitingDeviceApproval { profile_id: ProfileId },
+    AwaitingDeviceApproval { profile_id: ProfileId, finishes_upload: bool },
     RemoteSnapshot { profile_id: ProfileId, bytes: Vec<u8>, merge: PendingMergeUpload },
     SyncReady { profile_id: ProfileId, last_synced_at_secs: u64 },
     SyncBusy { profile_id: ProfileId },
     SyncError { profile_id: ProfileId, message: String },
+    CredentialUnavailable { profile_id: ProfileId, message: String, finishes_upload: bool },
     DevicesLoaded { profile_id: ProfileId, devices: Vec<DeviceRecord>, current_code: String },
     DevicesError { profile_id: ProfileId, message: String },
     AuthOtpSent { profile_id: ProfileId, email: String },
     AuthSucceeded { profile_id: ProfileId, email: String },
     AuthError { profile_id: ProfileId, email: String, message: String },
+}
+
+pub(super) fn sync_failure_update(
+    profile_id: ProfileId,
+    error: ely_sync_client::SyncClientError,
+) -> SyncStateUpdate {
+    let message = error.to_string();
+    match error {
+        ely_sync_client::SyncClientError::BearerCredentialStorage(_)
+        | ely_sync_client::SyncClientError::AccountKeyStorage(_)
+        | ely_sync_client::SyncClientError::DeviceKeyStorage(_) => {
+            SyncStateUpdate::CredentialUnavailable { profile_id, message, finishes_upload: true }
+        }
+        ely_sync_client::SyncClientError::DeviceApprovalStatus { .. } => {
+            SyncStateUpdate::AwaitingDeviceApproval { profile_id, finishes_upload: true }
+        }
+        _ if message.contains("device_not_approved") => {
+            SyncStateUpdate::AwaitingDeviceApproval { profile_id, finishes_upload: true }
+        }
+        _ => SyncStateUpdate::SyncError { profile_id, message },
+    }
+}
+
+pub(super) fn device_failure_update(
+    profile_id: ProfileId,
+    error: ely_sync_client::SyncClientError,
+) -> SyncStateUpdate {
+    match sync_failure_update(profile_id, error) {
+        SyncStateUpdate::CredentialUnavailable { profile_id, message, .. } => {
+            SyncStateUpdate::CredentialUnavailable { profile_id, message, finishes_upload: false }
+        }
+        SyncStateUpdate::AwaitingDeviceApproval { profile_id, .. } => {
+            SyncStateUpdate::AwaitingDeviceApproval { profile_id, finishes_upload: false }
+        }
+        SyncStateUpdate::SyncError { profile_id, message } => {
+            SyncStateUpdate::DevicesError { profile_id, message }
+        }
+        update => update,
+    }
 }
 
 /// Stable label for the current OS used by the device registration
@@ -128,7 +170,7 @@ impl ElyShell {
         let ShellState::Ready(core) = &mut self.state else {
             return false;
         };
-        probe_initial_sync_state_at(core, &profile_root)
+        probe_initial_sync_state_at(core, &profile_root, self.default_profile_id.as_ref())
     }
 
     /// Drain any sync upload outcomes the off-thread worker pushed
@@ -155,8 +197,8 @@ impl ElyShell {
                         latest_connection = Some(SyncConnectionState::SignedOut);
                     }
                 }
-                SyncStateUpdate::AwaitingDeviceApproval { profile_id } => {
-                    upload_finished = true;
+                SyncStateUpdate::AwaitingDeviceApproval { profile_id, finishes_upload } => {
+                    upload_finished |= finishes_upload;
                     if active_profile_id(&self.state).as_ref() == Some(&profile_id) {
                         latest_connection = Some(SyncConnectionState::AwaitingDeviceApproval);
                     }
@@ -214,6 +256,20 @@ impl ElyShell {
                     upload_finished = true;
                     if active_profile_id(&self.state).as_ref() == Some(&profile_id) {
                         latest_connection = Some(SyncConnectionState::SyncError { message });
+                    }
+                }
+                SyncStateUpdate::CredentialUnavailable { profile_id, message, finishes_upload } => {
+                    upload_finished |= finishes_upload;
+                    if active_profile_id(&self.state).as_ref() == Some(&profile_id) {
+                        latest_connection =
+                            Some(SyncConnectionState::CredentialUnavailable { message });
+                        self.sync_devices.reset();
+                        self.sync_upload_scheduled = false;
+                        self.sync_retry_at = None;
+                        self.clear_pending_cloud_sync_upload();
+                        trigger_initial_sync = false;
+                        trigger_merged_upload = None;
+                        devices_changed = true;
                     }
                 }
                 SyncStateUpdate::DevicesLoaded { profile_id, devices, current_code } => {
@@ -296,6 +352,7 @@ fn active_profile_id(state: &ShellState) -> Option<ProfileId> {
 fn probe_initial_sync_state_at(
     core: &mut ely_browser_core::BrowserCore,
     profile_root: &Path,
+    default_profile_id: Option<&ProfileId>,
 ) -> bool {
     let Some(snapshot) = core.snapshot().ok() else {
         return false;
@@ -305,65 +362,46 @@ fn probe_initial_sync_state_at(
         &snapshot.active_profile_id,
     );
     if !core.active_profile_allows_sync() {
-        if let Err(error) = auth::clear_persisted_bearer(&profile_dir) {
+        let store = BearerTokenStore::new(&snapshot.active_profile_id, &profile_dir);
+        if let Err(error) = store.clear_legacy_files() {
             tracing::warn!(target: "ely::sync", error = %error, "private bearer cleanup failed");
         }
         core.set_sync_connection_state(SyncConnectionState::SignedOut);
         return false;
     }
-    if snapshot.active_profile_name == "Default"
-        && matches!(snapshot.active_profile_kind, ProfileKind::Standard)
+    let is_default_profile = matches!(snapshot.active_profile_kind, ProfileKind::Standard)
+        && default_profile_id == Some(&snapshot.active_profile_id);
+    if is_default_profile
+        && let Err(error) =
+            legacy_sync_migration::migrate_default_sync_device(profile_root, &profile_dir)
     {
-        migrate_legacy_default_sync_dir(profile_root, &profile_dir);
-    }
-    let bearer_path = profile_dir.join("sync").join("bearer.token");
-    let bearer_present = bearer_token_file_present(&bearer_path);
-    let state = if bearer_present {
-        ely_domain::SyncConnectionState::SignedIn
-    } else {
-        ely_domain::SyncConnectionState::SignedOut
-    };
-    core.set_sync_connection_state(state);
-    bearer_present
-}
-
-fn bearer_token_file_present(path: &Path) -> bool {
-    std::fs::metadata(path).map(|metadata| metadata.len() > 0).unwrap_or(false)
-}
-
-fn migrate_legacy_default_sync_dir(profile_root: &Path, stable_profile_dir: &Path) {
-    let stable_sync_dir = stable_profile_dir.join("sync");
-    if stable_sync_dir.exists() {
-        return;
-    }
-
-    let candidate = profile_root.join("default").join("servo").join("sync");
-    if !bearer_token_file_present(&candidate.join("bearer.token")) {
-        return;
-    }
-    if let Err(error) = copy_dir_recursive(&candidate, &stable_sync_dir) {
         tracing::warn!(
             target: "ely::sync",
             error = %error,
-            source = %candidate.display(),
             "legacy sync profile migration failed",
         );
     }
-}
-
-fn copy_dir_recursive(source: &Path, destination: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(destination)?;
-    for entry in std::fs::read_dir(source)? {
-        let entry = entry?;
-        let file_type = entry.file_type()?;
-        let destination_path = destination.join(entry.file_name());
-        if file_type.is_dir() {
-            copy_dir_recursive(&entry.path(), &destination_path)?;
-        } else if file_type.is_file() {
-            std::fs::copy(entry.path(), destination_path)?;
+    let store = auth::bearer_store_for_profile(
+        &snapshot.active_profile_id,
+        &profile_dir,
+        profile_root,
+        default_profile_id,
+    );
+    let (bearer_present, state) = match store.load() {
+        Ok(Some(_)) => (true, SyncConnectionState::SignedIn),
+        Ok(None) => (false, SyncConnectionState::SignedOut),
+        Err(error) => {
+            tracing::warn!(target: "ely::sync", error = %error, "bearer credential probe failed");
+            (
+                false,
+                SyncConnectionState::CredentialUnavailable {
+                    message: "System credential access failed.".to_string(),
+                },
+            )
         }
-    }
-    Ok(())
+    };
+    core.set_sync_connection_state(state);
+    bearer_present
 }
 
 #[cfg(test)]
@@ -371,58 +409,8 @@ mod tests {
     use ely_browser_core::{BrowserCore, InitialBrowserConfig};
     use ely_domain::SyncConnectionState;
 
-    use super::{
-        bearer_token_file_present, migrate_legacy_default_sync_dir, probe_initial_sync_state_at,
-    };
+    use super::{SyncStateUpdate, probe_initial_sync_state_at, sync_failure_update};
     use crate::services::servo_profile_data::sync_profile_data_dir;
-
-    #[test]
-    fn bearer_token_file_presence_requires_bytes() -> Result<(), Box<dyn std::error::Error>> {
-        let suffix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();
-        let dir = std::env::temp_dir().join(format!("ely-sync-token-probe-{}", suffix));
-        std::fs::create_dir_all(&dir)?;
-        let path = dir.join("bearer.token");
-
-        assert!(!bearer_token_file_present(&path));
-
-        std::fs::write(&path, "")?;
-        assert!(!bearer_token_file_present(&path));
-
-        std::fs::write(&path, "session-token")?;
-        assert!(bearer_token_file_present(&path));
-
-        std::fs::remove_dir_all(dir)?;
-        Ok(())
-    }
-
-    #[test]
-    fn known_default_sync_directory_is_migrated() -> Result<(), Box<dyn std::error::Error>> {
-        let directory = tempfile::tempdir()?;
-        let legacy = directory.path().join("default/servo/sync");
-        let stable = directory.path().join("profile_stable/servo");
-        std::fs::create_dir_all(&legacy)?;
-        std::fs::write(legacy.join("bearer.token"), "default-token")?;
-
-        migrate_legacy_default_sync_dir(directory.path(), &stable);
-
-        assert_eq!(std::fs::read_to_string(stable.join("sync/bearer.token"))?, "default-token");
-        Ok(())
-    }
-
-    #[test]
-    fn custom_profile_bearer_is_ignored_during_default_migration()
-    -> Result<(), Box<dyn std::error::Error>> {
-        let directory = tempfile::tempdir()?;
-        let custom = directory.path().join("profile_custom/servo/sync");
-        let stable = directory.path().join("profile_stable/servo");
-        std::fs::create_dir_all(&custom)?;
-        std::fs::write(custom.join("bearer.token"), "custom-token")?;
-
-        migrate_legacy_default_sync_dir(directory.path(), &stable);
-
-        assert!(!stable.join("sync/bearer.token").exists());
-        Ok(())
-    }
 
     #[test]
     fn private_startup_clears_a_persisted_bearer() -> Result<(), Box<dyn std::error::Error>> {
@@ -436,7 +424,7 @@ mod tests {
         std::fs::write(bearer_path.with_extension("tmp"), "b".repeat(64))?;
         core.set_sync_connection_state(SyncConnectionState::SignedIn);
 
-        assert!(!probe_initial_sync_state_at(&mut core, directory.path()));
+        assert!(!probe_initial_sync_state_at(&mut core, directory.path(), None));
         assert!(!bearer_path.exists());
         assert!(!bearer_path.with_extension("tmp").exists());
         assert_eq!(core.snapshot()?.sync_status.connection(), &SyncConnectionState::SignedOut);
@@ -454,10 +442,56 @@ mod tests {
         std::fs::create_dir_all(bearer_path.parent().ok_or("missing bearer parent")?)?;
         std::fs::write(&bearer_path, "a".repeat(64))?;
 
-        assert!(probe_initial_sync_state_at(&mut core, directory.path()));
-        assert!(bearer_path.exists());
+        assert!(probe_initial_sync_state_at(&mut core, directory.path(), Some(&profile_id),));
+        assert!(!bearer_path.exists());
         assert_eq!(core.snapshot()?.sync_status.connection(), &SyncConnectionState::SignedIn);
 
+        let store = ely_sync_client::BearerTokenStore::new(&profile_id, &profile_dir);
+        assert!(store.load()?.is_some());
+        store.clear()?;
+
         Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn credential_probe_failure_enters_unavailable_state() -> Result<(), Box<dyn std::error::Error>>
+    {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempfile::tempdir()?;
+        let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+        let profile_id = core.snapshot()?.active_profile_id;
+        let profile_dir = sync_profile_data_dir(directory.path(), &profile_id);
+        let lock = profile_dir.join("sync/bearer.lock");
+        let target = directory.path().join("untrusted.lock");
+        std::fs::create_dir_all(lock.parent().ok_or("missing lock parent")?)?;
+        std::fs::write(&target, "target")?;
+        symlink(&target, &lock)?;
+
+        assert!(!probe_initial_sync_state_at(&mut core, directory.path(), Some(&profile_id),));
+        assert!(matches!(
+            core.snapshot()?.sync_status.connection(),
+            SyncConnectionState::CredentialUnavailable { .. }
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn credential_storage_failures_use_the_unavailable_update() {
+        let profile_id = ely_domain::ProfileId::new();
+        let update = sync_failure_update(
+            profile_id.clone(),
+            ely_sync_client::SyncClientError::BearerCredentialStorage("locked".to_string()),
+        );
+
+        assert!(matches!(
+            update,
+            SyncStateUpdate::CredentialUnavailable {
+                profile_id: owner,
+                finishes_upload: true,
+                ..
+            } if owner == profile_id
+        ));
     }
 }

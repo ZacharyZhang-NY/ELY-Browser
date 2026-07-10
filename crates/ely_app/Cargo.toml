@@ -10,12 +10,15 @@ live-site-smoke = []
 
 [dependencies]
 ahash = "0.8"
+cap-fs-ext.workspace = true
+cap-std.workspace = true
 directories.workspace = true
 ed25519-dalek.workspace = true
 ely_browser_core = { path = "../ely_browser_core" }
 ely_design_system = { path = "../ely_design_system" }
 ely_domain = { path = "../ely_domain" }
 ely_sync_client = { path = "../ely_sync_client" }
+fs2.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
 gpui-component-assets.workspace = true
@@ -29,6 +32,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 ureq.workspace = true
 url.workspace = true
+uuid.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"
@@ -37,7 +41,6 @@ io-surface = "0.16"
 mach2 = "0.6"
 objc2-core-foundation = { version = "0.3.2", features = ["CFBase", "CFDictionary", "CFNumber", "CFString"] }
 objc2-io-surface = "0.3.2"
-uuid.workspace = true
 
 [dev-dependencies]
 ely_servo_host = { path = "../ely_servo_host" }

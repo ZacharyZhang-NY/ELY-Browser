@@ -7,7 +7,7 @@ use gpui::Context;
 
 use crate::services::servo_profile_data::{default_profile_data_root, sync_profile_data_dir};
 
-use super::sync_state::sync_platform_label;
+use super::sync_state::{device_failure_update, sync_platform_label};
 use super::{ElyShell, ShellState, sync_state::SyncStateUpdate};
 
 #[derive(Clone, Debug, Default)]
@@ -141,8 +141,12 @@ impl ElyShell {
         }
         let tx = self.sync_inbox_tx.clone();
         spawn_device_task("ely-sync-device-approve", profile_id.clone(), tx, move || {
-            let engine =
-                SyncEngine::for_profile_dir(&profile_dir, device_name, sync_platform_label())?;
+            let engine = SyncEngine::for_profile_dir(
+                &profile_id,
+                &profile_dir,
+                device_name,
+                sync_platform_label(),
+            )?;
             engine.approve_cloud_device(&device_id, &verification_code)?;
             load_devices(profile_id, engine)
         });
@@ -163,8 +167,12 @@ impl ElyShell {
         }
         let tx = self.sync_inbox_tx.clone();
         spawn_device_task("ely-sync-device-revoke", profile_id.clone(), tx, move || {
-            let engine =
-                SyncEngine::for_profile_dir(&profile_dir, device_name, sync_platform_label())?;
+            let engine = SyncEngine::for_profile_dir(
+                &profile_id,
+                &profile_dir,
+                device_name,
+                sync_platform_label(),
+            )?;
             engine.revoke_cloud_device(&device_id)?;
             load_devices(profile_id, engine)
         });
@@ -181,8 +189,12 @@ impl ElyShell {
         }
         let tx = self.sync_inbox_tx.clone();
         spawn_device_task("ely-sync-device-list", profile_id.clone(), tx, move || {
-            let engine =
-                SyncEngine::for_profile_dir(&profile_dir, device_name, sync_platform_label())?;
+            let engine = SyncEngine::for_profile_dir(
+                &profile_id,
+                &profile_dir,
+                device_name,
+                sync_platform_label(),
+            )?;
             load_devices(profile_id, engine)
         });
     }
@@ -191,7 +203,7 @@ impl ElyShell {
         let ShellState::Ready(core) = &self.state else {
             return None;
         };
-        if !core.active_profile_allows_sync() {
+        if !core.cloud_sync_upload_enabled() {
             return None;
         }
         let snapshot = core.snapshot().ok()?;
@@ -225,10 +237,7 @@ fn spawn_device_task<F>(
     let worker_tx = tx.clone();
     let worker_profile_id = profile_id.clone();
     let spawn_result = std::thread::Builder::new().name(thread_name).spawn(move || {
-        let update = task().unwrap_or_else(|error| SyncStateUpdate::DevicesError {
-            profile_id: worker_profile_id,
-            message: error.to_string(),
-        });
+        let update = task().unwrap_or_else(|error| device_failure_update(worker_profile_id, error));
         let _ = worker_tx.send(update);
     });
     if let Err(error) = spawn_result {
@@ -256,5 +265,68 @@ mod tests {
         assert!(state.devices().is_empty());
         assert!(state.current_code().is_none());
         assert!(state.error().is_none());
+    }
+
+    #[test]
+    fn credential_failures_do_not_finish_an_upload() {
+        let profile_id = ProfileId::new();
+        let update = device_failure_update(
+            profile_id.clone(),
+            ely_sync_client::SyncClientError::BearerCredentialStorage("locked".to_string()),
+        );
+
+        assert!(matches!(
+            update,
+            SyncStateUpdate::CredentialUnavailable {
+                profile_id: owner,
+                finishes_upload: false,
+                ..
+            } if owner == profile_id
+        ));
+    }
+
+    #[test]
+    fn approval_failures_do_not_finish_an_upload() {
+        let profile_id = ProfileId::new();
+        let errors = [
+            ely_sync_client::SyncClientError::DeviceApprovalStatus {
+                device_id: "device-id".to_string(),
+                status: "pending".to_string(),
+            },
+            ely_sync_client::SyncClientError::HttpStatus {
+                endpoint: "/api/sync/devices".to_string(),
+                status: 403,
+                body: r#"{"error":"device_not_approved"}"#.to_string(),
+            },
+        ];
+
+        for error in errors {
+            let update = device_failure_update(profile_id.clone(), error);
+            assert!(matches!(
+                update,
+                SyncStateUpdate::AwaitingDeviceApproval {
+                    profile_id: owner,
+                    finishes_upload: false,
+                } if owner == profile_id
+            ));
+        }
+    }
+
+    #[test]
+    fn operational_failures_stay_in_device_ui_state() {
+        let profile_id = ProfileId::new();
+        let update = device_failure_update(
+            profile_id.clone(),
+            ely_sync_client::SyncClientError::HttpStatus {
+                endpoint: "/api/sync/devices".to_string(),
+                status: 503,
+                body: "unavailable".to_string(),
+            },
+        );
+
+        assert!(matches!(
+            update,
+            SyncStateUpdate::DevicesError { profile_id: owner, .. } if owner == profile_id
+        ));
     }
 }

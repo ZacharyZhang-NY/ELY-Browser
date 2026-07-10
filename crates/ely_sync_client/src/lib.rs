@@ -17,6 +17,7 @@
 //!   the bearer token out-of-band and hand it to the client.
 
 pub mod auth;
+mod auth_files;
 pub mod client;
 mod credential_store;
 pub mod device;

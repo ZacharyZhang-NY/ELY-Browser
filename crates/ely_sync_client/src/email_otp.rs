@@ -16,6 +16,7 @@
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use ureq::{Agent, AgentBuilder};
+use zeroize::Zeroizing;
 
 use crate::{auth::BearerToken, client::ApiClientConfig, error::SyncClientError};
 
@@ -86,20 +87,21 @@ pub fn verify_email_otp(
     match response {
         Ok(ok) => {
             let cookie_token = better_auth_cookie_token(ok.header("set-cookie"));
-            let body = ok.into_string().map_err(|error| SyncClientError::HttpStatus {
-                endpoint: endpoint.clone(),
-                status: 200,
-                body: error.to_string(),
-            })?;
+            let body =
+                Zeroizing::new(ok.into_string().map_err(|error| SyncClientError::HttpStatus {
+                    endpoint: endpoint.clone(),
+                    status: 200,
+                    body: error.to_string(),
+                })?);
             let json = serde_json::from_str::<VerifyOtpResponse>(&body).map_err(|error| {
                 SyncClientError::Json { endpoint: endpoint.clone(), source: error }
             })?;
-            let token = json.token.or(cookie_token).ok_or_else(|| {
+            let token = json.token.map(Zeroizing::new).or(cookie_token).ok_or_else(|| {
                 SyncClientError::TokenStorage(
                     "sign-in response did not include a session token".to_string(),
                 )
             })?;
-            BearerToken::new(token)
+            BearerToken::new(token.as_str())
         }
         Err(ureq::Error::Status(status, raw)) => {
             let body = raw.into_string().unwrap_or_default();
@@ -117,14 +119,14 @@ fn build_agent() -> Agent {
 /// better-auth.session_token=<token>; …` header. Strip the cookie's
 /// attributes and return just the value. Multi-cookie responses are
 /// concatenated by `ureq` into a single header line per spec.
-fn better_auth_cookie_token(set_cookie: Option<&str>) -> Option<String> {
+fn better_auth_cookie_token(set_cookie: Option<&str>) -> Option<Zeroizing<String>> {
     let header = set_cookie?;
     for cookie in header.split(',') {
         let trimmed = cookie.trim();
         if let Some(rest) = trimmed.strip_prefix("better-auth.session_token=") {
             let token = rest.split(';').next()?.trim();
             if !token.is_empty() {
-                return Some(token.to_string());
+                return Some(Zeroizing::new(token.to_string()));
             }
         }
     }
@@ -139,7 +141,10 @@ mod tests {
     fn picks_session_token_out_of_set_cookie_header() {
         let header =
             "better-auth.session_token=abc.def.ghi; Path=/; HttpOnly; Secure; SameSite=Lax";
-        assert_eq!(better_auth_cookie_token(Some(header)), Some("abc.def.ghi".to_string()),);
+        assert_eq!(
+            better_auth_cookie_token(Some(header)).as_deref().map(String::as_str),
+            Some("abc.def.ghi"),
+        );
     }
 
     #[test]

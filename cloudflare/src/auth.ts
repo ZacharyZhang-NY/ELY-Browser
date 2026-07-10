@@ -3,7 +3,7 @@ import { primaryD1Session } from "./bindings.js";
 import { prefixedKvKey } from "./kv_keys.js";
 
 const AUTH_SESSION_CACHE_NAMESPACE = "auth_session_cache";
-const BEARER_TOKEN_PATTERN = /^[A-Za-z0-9._~+/=-]{32,4096}$/;
+const BEARER_TOKEN_PATTERN = /^[A-Za-z0-9._~+/=-]{32,2560}$/;
 const SUBJECT_ID_PATTERN = /^[a-zA-Z0-9._:-]{3,128}$/;
 const DEVICE_ID_PATTERN = /^[a-zA-Z0-9._:-]{3,128}$/;
 const BETTER_AUTH_SESSION_QUERY = `
