@@ -80,6 +80,11 @@ impl Space {
         self.record_update();
     }
 
+    pub fn set_accent_hex(&mut self, accent_hex: u32) {
+        self.accent_hex = accent_hex;
+        self.record_update();
+    }
+
     pub fn set_presentation(
         &mut self,
         name: impl Into<String>,

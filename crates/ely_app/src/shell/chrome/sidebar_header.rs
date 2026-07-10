@@ -97,6 +97,7 @@ fn render_picker_pill(
 ) -> AnyElement {
     let space_name = active_space.map(|space| space.name().to_string()).unwrap_or_default();
     let space_glyph = active_space.map(|space| space.icon().to_string()).unwrap_or_default();
+    let space_accent = active_space.map(ely_domain::Space::accent_hex);
     let chevron = if picker_open { IconName::ChevronUp } else { IconName::ChevronDown };
     let bg = if picker_open { picker_bg_hover() } else { picker_bg() };
 
@@ -118,7 +119,7 @@ fn render_picker_pill(
         .on_click(cx.listener(|shell, _, _, cx| {
             shell.toggle_workspace_picker(cx);
         }))
-        .child(render_workspace_glyph(space_glyph))
+        .child(render_workspace_glyph(space_glyph, space_accent))
         .child(
             div()
                 .flex_1()
@@ -260,7 +261,7 @@ fn render_disclosure_row(
         .on_click(cx.listener(move |shell, _, window, cx| {
             shell.select_space_from_picker(&space_id, window, cx);
         }))
-        .child(render_workspace_glyph(space.icon().to_string()))
+        .child(render_workspace_glyph(space.icon().to_string(), Some(space.accent_hex())))
         .child(
             div()
                 .flex_1()
@@ -301,15 +302,17 @@ fn render_disclosure_footer(cx: &mut Context<ElyShell>) -> AnyElement {
         .into_any_element()
 }
 
-fn render_workspace_glyph(emoji: String) -> AnyElement {
-    div()
-        .size(px(18.0))
-        .rounded(px(5.0))
-        .bg(linear_gradient(
+fn render_workspace_glyph(emoji: String, accent_hex: Option<u32>) -> AnyElement {
+    let glyph = div().size(px(18.0)).rounded(px(5.0));
+    let glyph = match accent_hex {
+        Some(accent) => glyph.bg(rgb(accent)),
+        None => glyph.bg(linear_gradient(
             135.0,
             linear_color_stop(hsla(341.0 / 360.0, 0.78, 0.67, 1.0), 0.0),
             linear_color_stop(hsla(15.0 / 360.0, 0.55, 0.53, 1.0), 1.0),
-        ))
+        )),
+    };
+    glyph
         .flex()
         .items_center()
         .justify_center()

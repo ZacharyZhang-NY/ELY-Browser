@@ -262,6 +262,17 @@ impl BrowserCore {
         self.set_space_archive_policy(&active_space_id, archive_policy)
     }
 
+    pub fn set_active_space_accent(&mut self, accent_hex: u32) -> Result<(), CoreError> {
+        let active_space_id = self.active_space_id.clone();
+        let space = self
+            .spaces
+            .iter_mut()
+            .find(|space| space.id() == &active_space_id)
+            .ok_or_else(|| CoreError::SpaceNotFound { id: active_space_id.clone() })?;
+        space.set_accent_hex(accent_hex);
+        Ok(())
+    }
+
     pub fn set_space_archive_policy(
         &mut self,
         space_id: &SpaceId,

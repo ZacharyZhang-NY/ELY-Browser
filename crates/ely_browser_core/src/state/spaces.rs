@@ -59,6 +59,15 @@ impl TrashedSpace {
 }
 
 impl BrowserCore {
+    /// Rotate new spaces through distinct accents so workspace identity
+    /// reads at a glance; `>space-accent` overrides per space.
+    #[must_use]
+    pub fn next_space_accent(&self) -> u32 {
+        const SPACE_ACCENT_PALETTE: &[u32] =
+            &[0xf54e00, 0x0f7b6c, 0x2f5fe0, 0x8a4bd8, 0xb26b00, 0xc23a63];
+        SPACE_ACCENT_PALETTE[self.spaces.len() % SPACE_ACCENT_PALETTE.len()]
+    }
+
     pub fn create_space(
         &mut self,
         name: impl Into<String>,

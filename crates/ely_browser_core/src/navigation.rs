@@ -123,6 +123,14 @@ pub(crate) fn tab_group_color_hex(command: &str) -> Option<u32> {
     parse_color_hex(value)
 }
 
+pub(crate) fn space_accent_hex(command: &str) -> Option<u32> {
+    let value = command_argument(
+        command,
+        &["set-space-accent ", "set space accent ", "space-accent ", "space accent "],
+    )?;
+    parse_color_hex(value)
+}
+
 pub(crate) fn split_group_name(command: &str) -> Option<&str> {
     command_argument(
         command,

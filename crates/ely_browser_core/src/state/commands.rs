@@ -11,7 +11,7 @@ use crate::{
         move_tab_space_name, new_private_profile_name, new_profile_name, new_space_name, note_body,
         notes_url, plugin_detail_url, plugin_settings_url, plugins_url, reading_list_url,
         reading_progress_percent, rename_tab_group_name, search_url, settings_page_url,
-        settings_url, shortcut_settings_url, site_compatibility_url, space_icon,
+        settings_url, shortcut_settings_url, site_compatibility_url, space_accent_hex, space_icon,
         space_settings_url, split_group_name, switch_profile_name, sync_status_url,
         tab_group_color_hex, tab_group_name, tab_note_body, task_manager_url,
     },
@@ -111,7 +111,11 @@ impl BrowserCore {
     fn submit_named_command(&mut self, command: &str) -> Result<bool, CoreError> {
         let command = command.trim();
         if let Some(name) = new_space_name(command) {
-            self.create_space(name.to_string(), space_icon(name), 0xf54e00)?;
+            self.create_space(name.to_string(), space_icon(name), self.next_space_accent())?;
+            return Ok(true);
+        }
+        if let Some(accent_hex) = space_accent_hex(command) {
+            self.set_active_space_accent(accent_hex)?;
             return Ok(true);
         }
         if let Some(name) = new_profile_name(command) {
