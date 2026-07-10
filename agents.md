@@ -88,6 +88,10 @@ Real and verified:
   (LOAD 1 → LOAD 2). The webview loading state reconciles through
   redirects/pushState (`awaiting_url_change`), and `run_dev.sh` resolves the
   macOS Metal toolchain so `cargo run`'s shader-build failure is fixed.
+- Scroll input: consecutive same-document wheel requests coalesce at the
+  profile worker boundary while preserving total device-pixel distance;
+  clicks, text, and allow-once permission transfers retain strict ordering.
+  Verified by a blocked-worker burst regression and the live-site scroll e2e.
 - Cross-platform: download Open/Reveal use per-OS launchers (macOS `open`,
   Windows `cmd start`/`explorer /select`, Linux `xdg-open`); the command
   overlay closes on Escape.

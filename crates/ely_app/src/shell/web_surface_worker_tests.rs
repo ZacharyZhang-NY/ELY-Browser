@@ -464,3 +464,6 @@ fn ensure_request(tab_id: &str, input: RecordedInput) -> ServoLiveEnsureRequest 
         allow_once_grants: Vec::new(),
     }
 }
+
+#[path = "web_surface_worker_scroll_tests.rs"]
+mod scroll_tests;

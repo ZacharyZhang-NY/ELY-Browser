@@ -13,8 +13,8 @@ use crate::services::servo_live::{
 #[path = "web_surface_worker_dispatch.rs"]
 mod dispatch;
 use dispatch::{
-    dispatch_result, forward_permission_consumptions, preserve_latest_hover,
-    request_has_ordered_input,
+    can_merge_consecutive_scroll, dispatch_result, forward_permission_consumptions,
+    merge_consecutive_scroll, preserve_latest_hover, request_has_ordered_input,
 };
 
 /// Blocking transport for one profile-scoped Servo sidecar.
@@ -225,11 +225,12 @@ impl LiveRuntimeWorker {
         }
         let mut request = WorkerRequest::Ensure { generation, request: Box::new(request) };
         if let Some(pending) = q.pending.get_mut(&tab_id) {
-            let replace_tail = pending.back().is_some_and(|tail| {
-                matches!(tail, WorkerRequest::Poll { .. })
-                    || (!request_has_ordered_input(&request) && !request_has_ordered_input(tail))
-            });
-            if replace_tail && let Some(tail) = pending.back_mut() {
+            if let Some(tail) = pending.back_mut()
+                && (can_merge_consecutive_scroll(&request, tail)
+                    || matches!(tail, WorkerRequest::Poll { .. })
+                    || (!request_has_ordered_input(&request) && !request_has_ordered_input(tail)))
+            {
+                merge_consecutive_scroll(&mut request, tail);
                 preserve_latest_hover(&mut request, tail);
                 *tail = request;
             } else {
@@ -241,7 +242,6 @@ impl LiveRuntimeWorker {
         }
         cvar.notify_one();
     }
-
     pub(super) fn submit_poll(&self, generation: RequestGeneration, tab_id: String) -> bool {
         let (lock, cvar) = &*self.queue;
         let mut q = match lock.lock() {
