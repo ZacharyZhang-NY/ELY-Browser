@@ -7,6 +7,36 @@ domain state, browser orchestration, design tokens, GPUI shell, and Servo host c
 Reference GPUI ecosystem repositories live under `references/` for local review and are excluded
 from version control.
 
+## Build Prerequisites
+
+- Rust toolchain from `rust-toolchain.toml` (installed automatically by `rustup`).
+- **macOS:** the full **Xcode** app plus its **Metal Toolchain** component. GPUI
+  compiles Metal shaders at build time with `xcrun metal`, which the standalone
+  Command Line Tools do not provide — a plain `cargo run` under Command Line
+  Tools fails with `xcrun: error: unable to find utility "metal"`. Install it once:
+
+  ```bash
+  DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+    xcodebuild -downloadComponent MetalToolchain
+  ```
+
+  `scripts/run_dev.sh` then resolves a Metal-capable `DEVELOPER_DIR` automatically
+  and stops with actionable guidance if none is found. Run the desktop shell with
+  it rather than a bare `cargo run` — it also builds the Servo sidecar and wires
+  `ELY_SERVO_SIDECAR`:
+
+  ```bash
+  scripts/run_dev.sh https://servo.org
+  ```
+
+- **Linux:** the native dependencies the CI `portable` job installs
+  (`libasound2-dev libfontconfig1-dev libssl-dev libwayland-dev libx11-dev
+  libx11-xcb-dev libxkbcommon-x11-dev libxrandr-dev`).
+- **Windows:** the MSVC toolchain (Visual Studio Build Tools).
+
+Linux and Windows render web content through Servo's software RGBA path, so they
+need no Metal/Xcode; `scripts/run_dev.sh` selects the software context there.
+
 ## Local Commands
 
 ```bash

@@ -26,6 +26,14 @@ Servo pin: git rev in `Cargo.toml` `[workspace.dependencies]`; the whole
 engine (55 crates) moves with that one rev. Keep
 `docs/servo-embedding-architecture.md` pin reference in sync.
 
+## Run
+
+`scripts/run_dev.sh <url>` is the dev entrypoint: it builds the Servo sidecar,
+wires `ELY_SERVO_SIDECAR`, picks the hardware (macOS) or software (Linux/Windows)
+rendering context, and on macOS resolves a Metal-capable `DEVELOPER_DIR` (raw
+`cargo run` under Command Line Tools fails at gpui's `xcrun metal` shader build —
+see README Build Prerequisites). Screenshot probe: `scripts/verify_render.sh`.
+
 ## Verify (all must pass before commit; capture real exit codes)
 
 ```
