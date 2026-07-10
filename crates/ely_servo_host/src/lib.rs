@@ -16,6 +16,8 @@ mod runtime_waker;
 #[cfg(feature = "servo-engine")]
 mod runtime_webview;
 
+pub const MAX_REQUEST_LINE_BYTES: usize = 1024 * 1024;
+
 pub use error::ServoHostError;
 #[cfg(feature = "hardware-render")]
 pub use hardware_rendering_context::HardwareOffscreenContext;

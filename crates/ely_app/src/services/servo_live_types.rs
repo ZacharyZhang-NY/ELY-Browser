@@ -317,6 +317,9 @@ pub(crate) enum ServoLiveError {
     #[error("servo live sidecar failed: {message}")]
     SidecarFailed { message: String },
 
+    #[error("servo live request requires {bytes} bytes; the line limit is {limit}")]
+    RequestLineTooLarge { bytes: usize, limit: usize },
+
     #[error("servo live sidecar response header exceeded {limit} bytes")]
     ResponseHeaderTooLarge { limit: usize },
 
@@ -375,6 +378,10 @@ pub(crate) enum ServoLiveError {
 }
 
 impl ServoLiveError {
+    pub(crate) fn sidecar_remains_available(&self) -> bool {
+        matches!(self, Self::RequestLineTooLarge { .. })
+    }
+
     pub(crate) fn is_runtime_unavailable(&self) -> bool {
         match self {
             Self::SidecarExited
@@ -403,6 +410,7 @@ impl ServoLiveError {
             Self::SidecarBinaryUnavailable { .. }
             | Self::PipeUnavailable { .. }
             | Self::SidecarFailed { .. }
+            | Self::RequestLineTooLarge { .. }
             | Self::SidecarCommand(_) => false,
         }
     }

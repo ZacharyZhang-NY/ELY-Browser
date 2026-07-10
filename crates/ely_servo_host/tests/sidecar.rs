@@ -2,14 +2,15 @@
 
 use std::{
     error::Error,
-    io,
+    io::{self, BufRead, BufReader, Write},
     process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
 };
 
 use ely_domain::{ProfileId, TabId};
-use serde_json::json;
+use ely_servo_host::MAX_REQUEST_LINE_BYTES;
+use serde_json::{Value, json};
 
 #[cfg(all(feature = "hardware-render", target_os = "macos"))]
 #[path = "sidecar/mach_receiver.rs"]
@@ -171,6 +172,59 @@ fn live_sidecar_rejects_an_incompatible_protocol() -> Result<(), Box<dyn Error>>
 
     assert_eq!(response.protocol_version, Some(LIVE_PROTOCOL_VERSION));
     assert!(response.error.as_deref().is_some_and(|error| error.contains("protocol mismatch")));
+    Ok(())
+}
+
+#[test]
+fn live_sidecar_drains_an_oversized_request_line_and_recovers_the_handshake()
+-> Result<(), Box<dyn Error>> {
+    let root = TestDirectory::new()?;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_ely_servo_sidecar"))
+        .arg("live")
+        .arg("--profile-data-dir")
+        .arg(root.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()?;
+    let mut stdin = child.stdin.take().ok_or_else(|| io::Error::other("missing stdin"))?;
+    let stdout = child.stdout.take().ok_or_else(|| io::Error::other("missing stdout"))?;
+    let mut stdout = BufReader::new(stdout);
+    let mut oversized = br#"{"type":"handshake","protocol_version":3}"#.to_vec();
+    oversized.resize(MAX_REQUEST_LINE_BYTES + 4_096, b' ');
+    oversized.push(b'\n');
+
+    stdin.write_all(&oversized)?;
+    serde_json::to_writer(
+        &mut stdin,
+        &json!({"type": "handshake", "protocol_version": LIVE_PROTOCOL_VERSION}),
+    )?;
+    stdin.write_all(b"\n")?;
+    stdin.flush()?;
+
+    let mut line = String::new();
+    stdout.read_line(&mut line)?;
+    let oversized_response: Value = serde_json::from_str(&line)?;
+    assert_eq!(
+        oversized_response["error"],
+        format!("live request line exceeds the {MAX_REQUEST_LINE_BYTES}-byte protocol limit")
+    );
+
+    line.clear();
+    stdout.read_line(&mut line)?;
+    let handshake_response: Value = serde_json::from_str(&line)?;
+    assert_eq!(handshake_response["protocol_version"], LIVE_PROTOCOL_VERSION);
+    assert!(handshake_response["error"].is_null());
+
+    serde_json::to_writer(&mut stdin, &json!({"type": "shutdown"}))?;
+    stdin.write_all(b"\n")?;
+    stdin.flush()?;
+    line.clear();
+    stdout.read_line(&mut line)?;
+    let shutdown_response: Value = serde_json::from_str(&line)?;
+    assert!(shutdown_response["error"].is_null());
+    drop(stdin);
+    assert!(child.wait()?.success());
     Ok(())
 }
 

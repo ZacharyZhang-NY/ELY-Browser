@@ -248,7 +248,9 @@ impl ServoLiveClient {
         let reply = match self.ipc.exchange(request, timeout, operation) {
             Ok(reply) => reply,
             Err(error) => {
-                self.terminate();
+                if !error.sidecar_remains_available() {
+                    self.terminate();
+                }
                 return Err(error);
             }
         };

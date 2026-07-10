@@ -6,6 +6,7 @@ pub(super) const LIVE_PROTOCOL_VERSION: u32 = 3;
 pub(super) const MAX_FRAME_DIMENSION: u32 = 16_384;
 pub(super) const MAX_FRAME_BYTE_COUNT: usize = 256 * 1024 * 1024;
 pub(super) const MAX_RESPONSE_HEADER_BYTES: usize = 256 * 1024;
+pub(super) const MAX_REQUEST_LINE_BYTES: usize = 1024 * 1024;
 
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -110,7 +111,14 @@ fn default_device_pixel_ratio() -> f32 {
 mod tests {
     use serde_json::json;
 
-    use super::{LIVE_PROTOCOL_VERSION, LiveRequest, ServoLiveSitePermission};
+    use super::{
+        LIVE_PROTOCOL_VERSION, LiveRequest, MAX_REQUEST_LINE_BYTES, ServoLiveSitePermission,
+    };
+
+    #[test]
+    fn request_line_limit_matches_the_host_protocol() {
+        assert_eq!(MAX_REQUEST_LINE_BYTES, ely_servo_host::MAX_REQUEST_LINE_BYTES);
+    }
 
     #[test]
     fn handshake_request_serializes_protocol_version() -> Result<(), serde_json::Error> {

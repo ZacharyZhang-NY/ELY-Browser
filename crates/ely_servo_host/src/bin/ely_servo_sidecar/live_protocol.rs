@@ -297,6 +297,9 @@ pub(super) enum LiveSidecarError {
     #[error("live protocol mismatch: expected {expected}, received {actual}")]
     ProtocolVersionMismatch { expected: u32, actual: u32 },
 
+    #[error("live request line exceeds the {limit}-byte protocol limit")]
+    RequestLineTooLarge { limit: usize },
+
     #[error("request URL exceeds the {limit}-byte live protocol limit")]
     RequestUrlTooLong { limit: usize },
 

@@ -10,7 +10,7 @@ use super::{
     ServoLiveError, ServoLiveFrame, ServoLivePermissionGrant,
     wire::{
         LiveRequest, LiveResponse, LiveSurfaceHandle, MAX_FRAME_BYTE_COUNT, MAX_FRAME_DIMENSION,
-        MAX_RESPONSE_HEADER_BYTES,
+        MAX_REQUEST_LINE_BYTES, MAX_RESPONSE_HEADER_BYTES,
     },
 };
 
@@ -82,7 +82,8 @@ fn run_io(
     while let Ok(message) = requests.recv() {
         let should_shutdown = matches!(message.request, LiveRequest::Shutdown);
         let response = exchange_pipes(&mut stdin, &mut stdout, &message.request);
-        let should_stop = should_shutdown || response.is_err();
+        let should_stop = should_shutdown
+            || response.as_ref().is_err_and(|error| !error.sidecar_remains_available());
         let _ = message.response.send(response);
         if should_stop {
             break;
@@ -95,10 +96,20 @@ fn exchange_pipes(
     stdout: &mut BufReader<ChildStdout>,
     request: &LiveRequest,
 ) -> Result<IpcReply, ServoLiveError> {
-    serde_json::to_writer(&mut *stdin, request)?;
-    stdin.write_all(b"\n").map_err(ServoLiveError::Command)?;
+    let line = serialize_request_line(request)?;
+    stdin.write_all(&line).map_err(ServoLiveError::Command)?;
     stdin.flush().map_err(ServoLiveError::Command)?;
     read_reply(stdout)
+}
+
+fn serialize_request_line(request: &LiveRequest) -> Result<Vec<u8>, ServoLiveError> {
+    let mut line = serde_json::to_vec(request)?;
+    let bytes = line.len().saturating_add(1);
+    if bytes > MAX_REQUEST_LINE_BYTES {
+        return Err(ServoLiveError::RequestLineTooLarge { bytes, limit: MAX_REQUEST_LINE_BYTES });
+    }
+    line.push(b'\n');
+    Ok(line)
 }
 
 fn read_reply(stdout: &mut impl BufRead) -> Result<IpcReply, ServoLiveError> {
@@ -278,6 +289,38 @@ mod tests {
             read_reply(&mut Cursor::new(header)),
             Err(ServoLiveError::ResponseHeaderTooLarge { limit: MAX_RESPONSE_HEADER_BYTES })
         ));
+    }
+
+    #[test]
+    fn request_line_preflight_accepts_the_limit_and_rejects_limit_plus_one()
+    -> Result<(), ServoLiveError> {
+        let empty = LiveRequest::Close { tab_id: String::new() };
+        let fixed_bytes = serde_json::to_vec(&empty)?.len();
+        let exact =
+            LiveRequest::Close { tab_id: "a".repeat(MAX_REQUEST_LINE_BYTES - fixed_bytes - 1) };
+
+        let exact_line = serialize_request_line(&exact)?;
+        assert_eq!(exact_line.len(), MAX_REQUEST_LINE_BYTES);
+
+        let overflow =
+            LiveRequest::Close { tab_id: "a".repeat(MAX_REQUEST_LINE_BYTES - fixed_bytes) };
+        let error = match serialize_request_line(&overflow) {
+            Err(error) => error,
+            Ok(_) => {
+                return Err(ServoLiveError::InvalidResponse {
+                    message: "limit-plus-one request unexpectedly passed preflight",
+                });
+            }
+        };
+        assert!(matches!(
+            &error,
+            ServoLiveError::RequestLineTooLarge {
+                bytes,
+                limit: MAX_REQUEST_LINE_BYTES,
+            } if *bytes == MAX_REQUEST_LINE_BYTES + 1
+        ));
+        assert!(error.sidecar_remains_available());
+        Ok(())
     }
 
     #[test]

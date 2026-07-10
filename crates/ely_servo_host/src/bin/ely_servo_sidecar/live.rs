@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     fs::{self, File, OpenOptions, TryLockError},
-    io::{self, BufRead},
+    io,
     path::Path,
 };
 
@@ -19,6 +19,7 @@ use super::{
         LIVE_PROTOCOL_VERSION, LiveFrameReport, LiveOutcome, LiveRequest, LiveSidecarError,
         MAX_LOADED_URL_BYTES, MAX_PERMISSION_CONSUMPTIONS_PER_RESPONSE, validated_frame_byte_count,
     },
+    live_request::{MAX_REQUEST_LINE_BYTES, RequestLineRead, read_request_line},
     live_session::{
         LiveInput, LiveSession, apply_input, apply_layout, apply_permissions, bind_profile,
         ensure_session,
@@ -57,17 +58,26 @@ pub(super) fn run(args: LiveArgs) -> Result<(), LiveSidecarError> {
     let mut handshake_complete = false;
     let mut pending_permission_consumptions = VecDeque::new();
     let stdin = io::stdin();
+    let mut stdin = stdin.lock();
     let mut stdout = io::stdout().lock();
+    let mut line = Vec::new();
 
-    for line in stdin.lock().lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        let request = serde_json::from_str::<LiveRequest>(&line);
+    loop {
+        let request = match read_request_line(&mut stdin, &mut line)? {
+            RequestLineRead::Eof => break,
+            RequestLineRead::Ready if line.iter().all(|byte| byte.is_ascii_whitespace()) => {
+                continue;
+            }
+            RequestLineRead::Ready => {
+                serde_json::from_slice::<LiveRequest>(&line).map_err(LiveSidecarError::from)
+            }
+            RequestLineRead::TooLarge => {
+                Err(LiveSidecarError::RequestLineTooLarge { limit: MAX_REQUEST_LINE_BYTES })
+            }
+        };
         let should_shutdown =
             request.as_ref().is_ok_and(|request| matches!(request, LiveRequest::Shutdown));
-        let outcome = request.map_err(LiveSidecarError::from).and_then(|request| {
+        let outcome = request.and_then(|request| {
             handle_request(
                 &mut host,
                 &mut sessions,
