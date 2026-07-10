@@ -5,7 +5,7 @@ use ely_domain::{
     DiagnosticsReportingPolicy, DomainError, DownloadEntry, DownloadPolicy, FavoriteLimit,
     HistoryEntry, HistoryRecordingPolicy, NewTabDestination, NoteEntry, Profile, ProfileId,
     ProfileKind, ReadingListEntry, SearchEngine, SitePermissionAuditEvent, SitePermissionEntry,
-    Space, SpaceId, SplitLayout, SyncStatus, TabGroup, TabId, UpdatePolicy, UrlText,
+    Space, SpaceId, SplitLayout, SyncStatus, TabGroup, TabId, UrlText,
 };
 
 use crate::{CoreError, navigation::tab_title};
@@ -138,7 +138,6 @@ pub struct BrowserSnapshot {
     pub history_recording_policy: HistoryRecordingPolicy,
     pub diagnostics_reporting_policy: DiagnosticsReportingPolicy,
     pub favorite_limit: FavoriteLimit,
-    pub update_policy: UpdatePolicy,
     pub appearance: AppearanceSettings,
     pub command_query: String,
 }
@@ -180,7 +179,6 @@ pub struct BrowserCore {
     history_recording_policy: HistoryRecordingPolicy,
     diagnostics_reporting_policy: DiagnosticsReportingPolicy,
     favorite_limit: FavoriteLimit,
-    update_policy: UpdatePolicy,
     appearance: AppearanceSettings,
     sync_object_policies: SyncObjectPolicies,
     sync_connection_state: ely_domain::SyncConnectionState,
@@ -233,7 +231,6 @@ impl BrowserCore {
             history_recording_policy: HistoryRecordingPolicy::default(),
             diagnostics_reporting_policy: DiagnosticsReportingPolicy::default(),
             favorite_limit: FavoriteLimit::default(),
-            update_policy: UpdatePolicy::default(),
             appearance: AppearanceSettings::default(),
             sync_object_policies: SyncObjectPolicies::default(),
             sync_connection_state: ely_domain::SyncConnectionState::SignedOut,
@@ -386,7 +383,6 @@ impl BrowserCore {
             history_recording_policy: self.history_recording_policy,
             diagnostics_reporting_policy: self.diagnostics_reporting_policy,
             favorite_limit: self.favorite_limit,
-            update_policy: self.update_policy,
             appearance: self.appearance,
             command_query: self.command_query.clone(),
         })

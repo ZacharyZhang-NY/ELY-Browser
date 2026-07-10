@@ -214,31 +214,10 @@ fn settings_scoped_search_opens_site_permissions_page() -> Result<(), Box<dyn Er
 }
 
 #[test]
-fn settings_scoped_search_opens_updates_page() -> Result<(), Box<dyn Error>> {
-    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
-
-    core.set_command_query("@settings updates");
-    let intent = core.submit_command()?;
-    let active_tab = core.active_tab()?;
-
-    assert_eq!(
-        intent,
-        Some(CommandIntent::ScopedSearch {
-            scope: CommandScope::Settings,
-            query: "updates".to_string(),
-        })
-    );
-    assert_eq!(active_tab.title(), "Update Settings");
-    assert_eq!(active_tab.url().as_str(), "ely://settings/updates");
-    assert_eq!(core.snapshot()?.command_query, "");
-    Ok(())
-}
-
-#[test]
 fn settings_scoped_search_matches_setting_description_terms() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
 
-    core.set_command_query("@settings build identity");
+    core.set_command_query("@settings sync object scope");
     let intent = core.submit_command()?;
     let active_tab = core.active_tab()?;
 
@@ -246,11 +225,11 @@ fn settings_scoped_search_matches_setting_description_terms() -> Result<(), Box<
         intent,
         Some(CommandIntent::ScopedSearch {
             scope: CommandScope::Settings,
-            query: "build identity".to_string(),
+            query: "sync object scope".to_string(),
         })
     );
-    assert_eq!(active_tab.title(), "Update Settings");
-    assert_eq!(active_tab.url().as_str(), "ely://settings/updates");
+    assert_eq!(active_tab.title(), "Sync Settings");
+    assert_eq!(active_tab.url().as_str(), "ely://settings/sync");
     assert_eq!(core.snapshot()?.command_query, "");
     Ok(())
 }

@@ -44,7 +44,6 @@ fn internal_page_title(url: &str) -> Option<&'static str> {
         "ely://settings/plugins" => Some("Plugin Settings"),
         "ely://settings/profiles" => Some("Profile Settings"),
         "ely://settings/sync" => Some("Sync Settings"),
-        "ely://settings/updates" => Some("Update Settings"),
         "ely://sync/status" => Some("Sync Status"),
         _ => None,
     }
@@ -411,17 +410,6 @@ const SETTINGS_ROUTE_MATCHES: &[SettingsRouteMatch] = &[
         route: "ely://settings/sync",
         exact_terms: &["sync", "sync settings"],
         search_terms: &["Sync", "Local sync state and object scope.", "sync object scope"],
-    },
-    SettingsRouteMatch {
-        route: "ely://settings/updates",
-        exact_terms: &["update", "updates", "auto update", "auto updates", "release", "releases"],
-        search_terms: &[
-            "Updates",
-            "Build identity and Elydora release manifest contract.",
-            "build identity",
-            "release manifest",
-            "artifact integrity",
-        ],
     },
     SettingsRouteMatch {
         route: "ely://settings/profiles",

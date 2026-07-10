@@ -77,11 +77,6 @@ const NAV_GROUPS: &[NavGroup] = &[
         items: &[
             NavItem { icon: IconName::Asterisk, label: "Plugins", route: "ely://settings/plugins" },
             NavItem {
-                icon: IconName::LoaderCircle,
-                label: "Updates",
-                route: "ely://settings/updates",
-            },
-            NavItem {
                 icon: IconName::Inspector,
                 label: "Advanced",
                 route: "ely://settings/advanced",

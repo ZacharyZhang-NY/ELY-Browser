@@ -21,7 +21,6 @@ mod split;
 mod sync;
 mod tab;
 mod tab_group;
-mod update;
 mod url_text;
 
 pub use appearance::{
@@ -72,5 +71,4 @@ pub use tab::{
     ZOOM_PERCENT_STEP, parse_title_unread_count, validate_zoom_percent,
 };
 pub use tab_group::TabGroup;
-pub use update::UpdatePolicy;
 pub use url_text::UrlText;

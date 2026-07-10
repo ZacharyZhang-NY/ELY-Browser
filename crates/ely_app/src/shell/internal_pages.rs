@@ -34,7 +34,6 @@ mod sync;
 mod sync_controls;
 mod tab_context;
 mod task_manager;
-mod updates;
 
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
@@ -135,10 +134,6 @@ impl ElyShell {
             }
             url @ "ely://settings/sync" => {
                 let content = self.render_sync_page(snapshot, cx);
-                render_settings_shell(snapshot, url, content, cx)
-            }
-            url @ "ely://settings/updates" => {
-                let content = self.render_updates_page(snapshot, cx);
                 render_settings_shell(snapshot, url, content, cx)
             }
             "ely://sync/status" => {

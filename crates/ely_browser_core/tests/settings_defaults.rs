@@ -4,7 +4,7 @@ use ely_browser_core::{BrowserCore, InitialBrowserConfig};
 use ely_domain::{
     ArchivePolicy, DEFAULT_SIDEBAR_WIDTH_PX, DiagnosticsReportingPolicy, DownloadPolicy,
     FavoriteLimit, HistoryRecordingPolicy, NewTabDestination, ProfileKind, ProfileSyncPolicy,
-    SearchEngine, SyncObjectKind, SyncObjectPolicy, UpdatePolicy,
+    SearchEngine, SyncObjectKind, SyncObjectPolicy,
 };
 
 #[test]
@@ -51,9 +51,6 @@ fn section_resets_restore_settings_defaults() -> Result<(), Box<dyn Error>> {
     core.reset_sync_settings();
     assert_eq!(core.sync_object_policy(SyncObjectKind::Tabs), SyncObjectPolicy::Enabled);
 
-    core.set_update_policy(UpdatePolicy::Manual);
-    core.reset_update_settings();
-    assert_eq!(core.snapshot()?.update_policy, UpdatePolicy::Automatic);
     Ok(())
 }
 

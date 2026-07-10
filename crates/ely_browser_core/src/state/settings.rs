@@ -1,6 +1,6 @@
 use ely_domain::{
     AppearanceSettings, ArchivePolicy, DEFAULT_SIDEBAR_WIDTH_PX, FavoriteLimit, NewTabDestination,
-    SearchEngine, ThemeMode, UpdatePolicy, WallpaperTheme,
+    SearchEngine, ThemeMode, WallpaperTheme,
 };
 
 use super::BrowserCore;
@@ -48,19 +48,6 @@ impl BrowserCore {
     #[must_use]
     pub fn favorite_limit(&self) -> FavoriteLimit {
         self.favorite_limit
-    }
-
-    pub fn set_update_policy(&mut self, update_policy: UpdatePolicy) {
-        self.update_policy = update_policy;
-    }
-
-    pub fn reset_update_settings(&mut self) {
-        self.set_update_policy(UpdatePolicy::default());
-    }
-
-    #[must_use]
-    pub fn update_policy(&self) -> UpdatePolicy {
-        self.update_policy
     }
 
     #[must_use]

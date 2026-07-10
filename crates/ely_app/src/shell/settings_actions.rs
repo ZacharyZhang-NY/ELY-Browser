@@ -2,7 +2,7 @@ use ely_browser_core::SyncEngine;
 use ely_domain::{
     ArchivePolicy, DEFAULT_TRANSLUCENCY_PCT, DiagnosticsReportingPolicy, DownloadPolicy,
     FavoriteLimit, HistoryRecordingPolicy, NewTabDestination, ProfileId, ProfileSyncPolicy,
-    SearchEngine, SyncObjectKind, SyncObjectPolicy, ThemeMode, UpdatePolicy, WallpaperTheme,
+    SearchEngine, SyncObjectKind, SyncObjectPolicy, ThemeMode, WallpaperTheme,
 };
 use gpui::Context;
 use gpui_component::slider::SliderValue;
@@ -320,24 +320,6 @@ impl ElyShell {
                 error = %error,
                 "failed to spawn ely-sync-upload thread",
             );
-        }
-    }
-
-    pub(super) fn set_update_policy(
-        &mut self,
-        update_policy: UpdatePolicy,
-        cx: &mut Context<Self>,
-    ) {
-        if let ShellState::Ready(core) = &mut self.state {
-            core.set_update_policy(update_policy);
-            cx.notify();
-        }
-    }
-
-    pub(super) fn reset_update_settings(&mut self, cx: &mut Context<Self>) {
-        if let ShellState::Ready(core) = &mut self.state {
-            core.reset_update_settings();
-            cx.notify();
         }
     }
 
