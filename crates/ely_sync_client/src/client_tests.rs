@@ -282,6 +282,52 @@ fn read_complete_request(stream: &mut std::net::TcpStream) -> std::io::Result<Ve
     Ok(request)
 }
 
+#[test]
+fn download_parses_snapshot_bodies_above_ureq_default_cap() -> Result<(), Box<dyn Error>> {
+    let data_base64 = "A".repeat(11 * 1024 * 1024);
+    let (base_url, server) = spawn_snapshot_download_server(data_base64.clone())?;
+    let client = SyncApiClient::new(
+        ApiClientConfig::custom(base_url, "auto"),
+        BearerToken::new("a".repeat(64))?,
+    )?;
+    let requested = SnapshotHeadRef::new(7, "snapshot-big", "ab".repeat(32))?;
+
+    let SnapshotDownloadResult::Downloaded(download) = client.download_snapshot(&requested)? else {
+        return Err("snapshot download body was not preserved".into());
+    };
+    assert_eq!(download.data_base64.len(), data_base64.len());
+    join_server(server)
+}
+
+#[test]
+fn oversized_response_bodies_fail_closed() -> Result<(), Box<dyn Error>> {
+    let (base_url, server) = spawn_snapshot_download_server("A".repeat(14 * 1024 * 1024))?;
+    let client = SyncApiClient::new(
+        ApiClientConfig::custom(base_url, "auto"),
+        BearerToken::new("a".repeat(64))?,
+    )?;
+    let requested = SnapshotHeadRef::new(7, "snapshot-big", "ab".repeat(32))?;
+
+    let result = client.download_snapshot(&requested);
+    assert!(matches!(
+        &result,
+        Err(crate::SyncClientError::HttpStatus { body, .. }) if body.contains("sync wire limit")
+    ));
+    join_server(server)
+}
+
+fn spawn_snapshot_download_server(
+    data_base64: String,
+) -> Result<(String, TestServer), Box<dyn Error>> {
+    let body = format!(
+        r#"{{"version":3,"user_id":"user-01","device_id":"device-remote","snapshot":{{"snapshot_id":"snapshot-big","r2_key":"snapshots/user-01","payload_hash":"{hash}","encryption_version":2,"vault_generation":1,"key_id":"{key}","content_hash":"{content}","schema_rev":1,"logical_clock":9,"head_revision":7,"base_head":null,"device_id":"device-remote","size_bytes":256,"created_at":1}},"data_base64":"{data_base64}"}}"#,
+        hash = "ab".repeat(32),
+        key = "ef".repeat(32),
+        content = "12".repeat(32),
+    );
+    spawn_authenticated_server("GET /api/sync/snapshot?snapshot_id=snapshot-big", "200 OK", &body)
+}
+
 fn spawn_logout_server(
     status_line: &'static str,
     body: &str,

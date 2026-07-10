@@ -44,7 +44,7 @@ impl SyncApiClient {
                 Ok(())
             }
             Err(ureq::Error::Status(status, response)) => {
-                let body = response.into_string().unwrap_or_default();
+                let body = super::read_response_body(response).unwrap_or_default();
                 if response_ends_session(status, &body) {
                     return Ok(());
                 }

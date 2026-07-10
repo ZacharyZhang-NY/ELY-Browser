@@ -1,4 +1,7 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    io::{self, Read},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use serde::de::DeserializeOwned;
 use ureq::{Agent, AgentBuilder};
@@ -13,7 +16,7 @@ use crate::{
     },
     device_revocation::{DeviceRevocationDocument, DeviceRevocationRequest},
     error::SyncClientError,
-    snapshot::{SnapshotDownload, SnapshotUploadRequest},
+    snapshot::{MAX_SNAPSHOT_BYTES, SnapshotDownload, SnapshotUploadRequest},
     vault::SyncVaultDocument,
     vault_bootstrap::SyncVaultBootstrapRequest,
 };
@@ -421,6 +424,20 @@ pub struct SyncDeviceStatusDocument {
     pub current_device_approved: bool,
 }
 
+/// A snapshot download legally carries `MAX_SNAPSHOT_BYTES` of payload as
+/// base64 (4/3 expansion) plus its JSON envelope, which exceeds ureq's
+/// 10 MiB `into_string` cap. Anything above this bound fails closed.
+const MAX_RESPONSE_BODY_BYTES: usize = MAX_SNAPSHOT_BYTES.div_ceil(3) * 4 + 64 * 1024;
+
+fn read_response_body(response: ureq::Response) -> io::Result<String> {
+    let mut body = String::new();
+    response.into_reader().take(MAX_RESPONSE_BODY_BYTES as u64 + 1).read_to_string(&mut body)?;
+    if body.len() > MAX_RESPONSE_BODY_BYTES {
+        return Err(io::Error::other("response body exceeds the sync wire limit"));
+    }
+    Ok(body)
+}
+
 fn read_json_response<T: DeserializeOwned>(
     endpoint: &str,
     response: Result<ureq::Response, ureq::Error>,
@@ -428,7 +445,7 @@ fn read_json_response<T: DeserializeOwned>(
     match response {
         Ok(ok) => read_json_from_response(endpoint, ok),
         Err(ureq::Error::Status(status, raw)) => {
-            let body = raw.into_string().unwrap_or_default();
+            let body = read_response_body(raw).unwrap_or_default();
             if session::response_ends_session(status, &body) {
                 return Err(SyncClientError::SessionEnded);
             }
@@ -445,7 +462,7 @@ fn read_json_from_response<T: DeserializeOwned>(
     response: ureq::Response,
 ) -> Result<T, SyncClientError> {
     let status = response.status();
-    let body = response.into_string().map_err(|error| SyncClientError::HttpStatus {
+    let body = read_response_body(response).map_err(|error| SyncClientError::HttpStatus {
         endpoint: endpoint.to_string(),
         status,
         body: error.to_string(),
