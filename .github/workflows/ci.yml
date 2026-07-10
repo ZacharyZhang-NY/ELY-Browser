@@ -52,6 +52,9 @@ jobs:
       - name: Audit source file size
         run: scripts/audit_source_lines.sh
 
+      - name: Verify Rust advisory exception boundaries
+        run: scripts/verify_rust_advisory_exceptions.sh
+
       - name: Verify macOS bundle metadata
         run: scripts/verify_macos_bundle_metadata.sh
 
@@ -82,6 +85,19 @@ jobs:
         run: |
           test -x target/distribution/ely-browser/ely_app
           test -x target/distribution/ely-browser/ely_servo_sidecar
+
+  rust-advisories:
+    name: Rust dependency advisories
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+    permissions:
+      actions: read
+      contents: read
+    with:
+      scan-args: |-
+        --lockfile=./Cargo.lock
+        --config=./osv-scanner.toml
+      upload-sarif: false
+      fail-on-vuln: true
 
   portable:
     name: Portable app (${{ matrix.os }})
@@ -122,6 +138,7 @@ jobs:
           scripts/create_macos_app_bundle.sh
           scripts/create_native_distribution.sh
           scripts/release_build_env.sh
+          scripts/verify_rust_advisory_exceptions.sh
           scripts/verify_release_artifacts.sh
 
       - name: Build native distribution
