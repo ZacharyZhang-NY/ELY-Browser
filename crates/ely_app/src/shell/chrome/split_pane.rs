@@ -57,16 +57,22 @@ pub(crate) fn render_split_pane_header(
         .into_any_element()
 }
 
-/// Reload affordance on each split-pane header. Real page reload isn't
-/// exposed through `BrowserCore` yet — `refresh_tab` is `pub(super)`
-/// and only flips the discard state. Render the glyph in the disabled
-/// `INK_5` color and skip cursor + on_click rather than ship a button
-/// that pretends to reload by re-selecting the tab. Wire a real
-/// reload action when one lands.
-fn render_reload_glyph(_tab_id: TabId, _cx: &mut Context<ElyShell>) -> AnyElement {
+/// Reload affordance on each split-pane header: select the pane's tab so it
+/// becomes active, then reload it in place (the same select-then-act shape
+/// the close glyph uses).
+fn render_reload_glyph(reload_tab_id: TabId, cx: &mut Context<ElyShell>) -> AnyElement {
+    let id = format!("split-pane-reload-{}", reload_tab_id.as_str());
     div()
-        .text_color(rgb(colors::ink_5()))
+        .id(SharedString::from(id))
+        .text_color(rgb(colors::ink_4()))
         .text_size(px(11.0))
+        .cursor_pointer()
+        .hover(|style| style.text_color(rgb(colors::ink())))
+        .on_click(cx.listener(move |shell, _, window, cx| {
+            shell.select_tab(&reload_tab_id, window, cx);
+            shell.reload_active_tab(window, cx);
+            cx.stop_propagation();
+        }))
         .child(IconName::Redo2)
         .into_any_element()
 }

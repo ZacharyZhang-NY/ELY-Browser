@@ -82,6 +82,15 @@ Real and verified:
 - Site permissions: the per-site UI offers only the 5 features Servo
   actually enforces (`SitePermissionFeature::enforced()`), guarded against
   drift by `ely_servo_host`'s `enforced_features_match_the_servo_mapping`.
+- Reload: Cmd/Ctrl+R (and the File menu) reload the active tab — a discrete
+  `Reload` sidecar command reaches `servo::WebView::reload()`, recovering
+  crashed/discarded tabs. Verified end-to-end against a local counter server
+  (LOAD 1 → LOAD 2). The webview loading state reconciles through
+  redirects/pushState (`awaiting_url_change`), and `run_dev.sh` resolves the
+  macOS Metal toolchain so `cargo run`'s shader-build failure is fixed.
+- Cross-platform: download Open/Reveal use per-OS launchers (macOS `open`,
+  Windows `cmd start`/`explorer /select`, Linux `xdg-open`); the command
+  overlay closes on Escape.
 
 Deferred deliberately (do NOT fake; ship with their subsystem):
 - Updates settings page — returns with a real updater.
