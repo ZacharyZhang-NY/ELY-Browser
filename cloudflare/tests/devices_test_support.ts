@@ -5,9 +5,14 @@ import type {
   ElyR2PutOptions,
   Env,
 } from "../src/bindings.js";
+import { deviceRegistrationProofBytes } from "../src/device_registration_proof.js";
 
 export const ACCESS_TOKEN = "D".repeat(48);
-export const PUBLIC_KEY = "a".repeat(64);
+export const PUBLIC_KEY = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
+export const WRAPPING_PUBLIC_KEY = "b".repeat(64);
+const SIGNING_PRIVATE_KEY_PKCS8 =
+  "302e020100300506032b657004220420" +
+  "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
 
 export interface TestEnvOptions {
   auditEvents?: ElyAnalyticsDataPoint[];
@@ -29,6 +34,7 @@ export interface RecordedD1Database extends ElyD1Database {
   batches: number[];
   binds: unknown[][];
   queries: string[];
+  sessionConstraints?: string[];
 }
 
 export interface RecordedR2Put {
@@ -37,8 +43,54 @@ export interface RecordedR2Put {
   options: ElyR2PutOptions;
 }
 
+export async function deviceRegistrationBody(
+  overrides: Record<string, unknown> = {},
+): Promise<Record<string, unknown>> {
+  const body: Record<string, unknown> = {
+    version: 2,
+    device_id: "device-01",
+    public_key: PUBLIC_KEY,
+    wrapping_public_key: WRAPPING_PUBLIC_KEY,
+    device_name: "MacBook Pro",
+    platform: "macOS",
+    idempotency_key: "device-register-0001",
+    ...overrides,
+  };
+  body.registration_proof = await signDeviceMessage(
+    deviceRegistrationProofBytes({
+      deviceId: stringValue(body.device_id),
+      publicKey: stringValue(body.public_key),
+      wrappingPublicKey: stringValue(body.wrapping_public_key),
+      deviceName: stringValue(body.device_name),
+      platform: stringValue(body.platform),
+      idempotencyKey: stringValue(body.idempotency_key),
+    }),
+  );
+  return body;
+}
+
+export async function signDeviceMessage(message: Uint8Array): Promise<string> {
+  const privateKey = await crypto.subtle.importKey(
+    "pkcs8",
+    hexBytes(SIGNING_PRIVATE_KEY_PKCS8),
+    { name: "Ed25519" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    { name: "Ed25519" },
+    privateKey,
+    message,
+  );
+  return hexString(new Uint8Array(signature));
+}
+
 interface TestD1DatabaseOptions {
   allRows?: unknown[];
+  allRowSets?: unknown[][];
+  batchChanges?: number[][];
+  batchError?: Error;
+  batchRowSets?: unknown[][][];
   firstRows?: unknown[];
   runChanges?: number[];
   sessionRow?: unknown | null;
@@ -48,6 +100,7 @@ const DEFAULT_AUTH_SESSION_ROW = {
   id: "session-01",
   userId: "user-01",
   expiresAt: "2099-01-01T00:00:00.000Z",
+  createdAt: new Date().toISOString(),
   deviceId: "device-01",
 };
 
@@ -108,6 +161,7 @@ export function testD1Database(rows: unknown[] | TestD1DatabaseOptions): Recorde
   const binds: unknown[][] = [];
   const batches: number[] = [];
   const queries: string[] = [];
+  const sessionConstraints: string[] = [];
   const allRows = Array.isArray(rows) ? rows : rows.allRows ?? [];
   const firstRows = Array.isArray(rows) ? rows : rows.firstRows ?? [];
   const sessionRow =
@@ -115,18 +169,21 @@ export function testD1Database(rows: unknown[] | TestD1DatabaseOptions): Recorde
       ? rows.sessionRow ?? null
       : DEFAULT_AUTH_SESSION_ROW;
   let firstIndex = 0;
+  let allIndex = 0;
+  let batchIndex = 0;
   let runIndex = 0;
-  return {
+  const database: RecordedD1Database = {
     authBinds,
     authQueries,
     batches,
     binds,
     queries,
+    sessionConstraints,
     prepare(query: string) {
-      const isAuthSessionQuery = query.includes("FROM better_auth_session AS session");
+      const isAuthSessionQuery = query.includes("WHERE session.token = ?");
       (isAuthSessionQuery ? authQueries : queries).push(query);
       return testD1PreparedStatement(
-        allRows,
+        () => (!Array.isArray(rows) ? rows.allRowSets?.[allIndex++] : undefined) ?? allRows,
         firstRows,
         () => firstIndex++,
         isAuthSessionQuery ? authBinds : binds,
@@ -135,14 +192,33 @@ export function testD1Database(rows: unknown[] | TestD1DatabaseOptions): Recorde
         () => (!Array.isArray(rows) ? rows.runChanges?.[runIndex++] : undefined) ?? 1,
       );
     },
-    batch(statements: ElyD1PreparedStatement[]) {
+    batch<T>(statements: ElyD1PreparedStatement[]) {
       batches.push(statements.length);
-      return Promise.resolve([]);
+      if (!Array.isArray(rows) && rows.batchError !== undefined) {
+        return Promise.reject(rows.batchError);
+      }
+      const currentBatchIndex = batchIndex++;
+      const configuredChanges = !Array.isArray(rows)
+        ? rows.batchChanges?.[currentBatchIndex]
+        : undefined;
+      const configuredRows = !Array.isArray(rows)
+        ? rows.batchRowSets?.[currentBatchIndex]
+        : undefined;
+      const results = statements.map((_, index) => ({
+        results: configuredRows?.[index] ?? [],
+        meta: { changes: configuredChanges?.[index] ?? 1 },
+      }));
+      return Promise.resolve(results as T[]);
     },
     exec() {
       return Promise.resolve({});
     },
+    withSession(constraint) {
+      sessionConstraints.push(constraint);
+      return database;
+    },
   };
+  return database;
 }
 
 export function sessionDocument(deviceId: string | null = "device-01"): string {
@@ -156,7 +232,7 @@ export function sessionDocument(deviceId: string | null = "device-01"): string {
 }
 
 function testD1PreparedStatement(
-  allRows: unknown[],
+  allRows: () => unknown[],
   firstRows: unknown[],
   nextFirstIndex: () => number,
   binds: unknown[][],
@@ -176,7 +252,7 @@ function testD1PreparedStatement(
       return Promise.resolve((firstRows[nextFirstIndex()] as T | undefined) ?? null);
     },
     all<T>() {
-      return Promise.resolve({ results: allRows as T[] });
+      return Promise.resolve({ results: allRows() as T[] });
     },
     run() {
       return Promise.resolve({ results: [], meta: { changes: nextRunChanges() } });
@@ -219,4 +295,23 @@ function testR2Bucket(
       return Promise.resolve();
     },
   };
+}
+
+function stringValue(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new TypeError("registration fixture field must be a string");
+  }
+  return value;
+}
+
+function hexBytes(value: string): Uint8Array {
+  const bytes = new Uint8Array(value.length / 2);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16);
+  }
+  return bytes;
+}
+
+function hexString(bytes: Uint8Array): string {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }

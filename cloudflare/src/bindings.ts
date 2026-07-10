@@ -35,10 +35,18 @@ export interface ElyD1Result<T = unknown> {
   };
 }
 
-export interface ElyD1Database {
+export interface ElyD1DatabaseSession {
   prepare(query: string): ElyD1PreparedStatement;
   batch<T = unknown>(statements: ElyD1PreparedStatement[]): Promise<T[]>;
+}
+
+export interface ElyD1Database extends ElyD1DatabaseSession {
   exec(query: string): Promise<unknown>;
+  withSession?(constraint: "first-primary"): ElyD1DatabaseSession;
+}
+
+export function primaryD1Session(database: ElyD1Database): ElyD1DatabaseSession {
+  return database.withSession?.("first-primary") ?? database;
 }
 
 export interface ElyRateLimit {

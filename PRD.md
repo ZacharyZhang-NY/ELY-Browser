@@ -633,28 +633,27 @@ User Action
   ↓
 Local Encrypted Store
   ↓
-Sync Queue
-  ↓
-Client-side Encryption
+Snapshot Merge + XChaCha20-Poly1305 Encryption
   ↓
 Cloudflare Workers Sync API
   ↓
-D1 Object Index + R2 Encrypted Payload + KV Cache
+D1 Global Head + Vault Metadata + R2 Ciphertext
   ↓
-Other Devices Pull Delta
+Exact Head Token Download
   ↓
 Decrypt + Merge + Apply
 ```
+
+当前 Cloud Sync 数据面使用 encrypted snapshot v3。`/api/sync/push` 与 `/api/sync/pull` 保留为认证后的退役端点，固定返回 `410 sync_object_protocol_retired`。D1 是会话、设备、Vault、head 与 GC 状态的权威源；KV 承担公开配置和历史数据清理。
 
 ### 9.2 登录能力
 
 登录入口：
 
 - Email + password。
-- OAuth provider，可配置 Apple、Google、GitHub。
-- Passkey。
-- 设备二维码登录。
-- Recovery key 登录恢复。
+- Email OTP：5 分钟有效、3 次尝试、重发轮换、服务端加密存储。
+- OAuth provider：当前支持按环境配置 Google、GitHub。
+- 目标能力：Apple、Passkey、设备二维码登录、Recovery Key 恢复。
 
 登录 UX：
 
@@ -665,13 +664,12 @@ Decrypt + Merge + Apply
 - 本地浏览器数据库密钥保存在系统钥匙串。
 - 账号注销时可以选择保留本地数据或清理本地数据。
 
-Better Auth 职责：
+当前 Better Auth 职责：
 
-- 用户注册、登录、邮箱验证、OAuth、Passkey、会话刷新、会话撤销。
-- 设备登录授权。
-- 账号删除流程。
-- 安全事件记录。
-- 与 D1 绑定，存储用户、账号、会话和验证相关表。
+- Email/password、Email OTP、可选 Google/GitHub OAuth。
+- D1 authoritative bearer session，存储用户、账号、会话和验证记录。
+- ELY 自定义 device trust、Vault、Sync reset 与账号删除协议。
+- `better_auth_session_device_context` 将会话绑定到经过证明的设备身份。
 
 Desktop auth callback：
 
@@ -712,25 +710,26 @@ Sync setup starts inside ELY settings
 
 ### 9.4 Sync 加密模型
 
-密钥结构：
+当前密钥结构：
 
 ```text
-User Secret
-  ├─ Account Recovery Key
-  ├─ Device Key Pair
-  └─ Sync Root Key
-       ├─ Spaces Key
-       ├─ Tabs Key
-       ├─ Bookmarks Key
-       ├─ History Key
-       ├─ Settings Key
-       ├─ Plugin Data Key
-       └─ Snapshot Key
+Approved Device
+  ├─ Ed25519 Signing Key
+  └─ X25519 Wrapping Key
+       ↓ HPKE envelope per approved device
+AccountKey generation N
+       ↓ HKDF-SHA256
+Snapshot Encryption Key + Content Authentication Key
 ```
 
 要求：
 
-- Sync Root Key 在客户端生成。
+- 32-byte AccountKey 在客户端生成，服务器保存 `(key_id, generation)` 与每设备 envelope。
+- Envelope suite 固定为 `HPKE-BASE-X25519-HKDF-SHA256-CHACHA20POLY1305`。
+- Snapshot 使用 XChaCha20-Poly1305；AAD 绑定 user、generation、snapshot、schema、logical clock、device 和完整 head lineage。
+- 新设备先进入 pending；approved v2 device 使用 recent Ed25519 proof 与 current-generation envelope 完成批准。
+- 撤销 approved device 时，同一 D1 事务推进 Vault generation、写入剩余 approved v2 devices 的完整 envelope 集合、撤销目标会话并建立旧 R2 manifest。
+- 新写入固定 `encryption_version=2`；legacy v1 仅承担历史解密与迁移。
 - Better Auth 密码、OAuth 账号和服务器会话均不能直接解密 Sync payload。
 - 新设备加入时，需要已登录设备批准、Recovery Key 或 Passkey + Recovery Key 组合。
 - 密文 payload 使用 AEAD 加密。
@@ -738,6 +737,8 @@ User Secret
 - D1 只存索引和小型密文；大型密文写入 R2。
 - R2 object key 不直接暴露 URL、标题、站点名等敏感信息。
 - 服务端日志不得记录 URL 明文、标题明文、书签明文、历史明文。
+- 每个账户使用一个全局 snapshot head；上传通过 base head token 执行 CAS 推进。
+- R2 写入先在 D1 建立带租约的写入记录，head 提交与引用状态在同一 D1 事务完成。
 
 ### 9.5 Sync 冲突处理
 
@@ -751,6 +752,12 @@ User Secret
 
 处理方式：
 
+- 每个账户只有一个 global snapshot head。
+- Genesis 固定 `head_revision=1` 与 `base_head=null`。
+- 后继提交满足 `head_revision=base.revision+1`，base 的 `(revision,snapshot_id,payload_hash)` 精确匹配 current head，logical clock 严格递增。
+- CAS 冲突返回 `{version:1,error,current_head}` 的 structured `409`。
+- 完全相同的提交 replay 返回原 `201`，R2 put 次数保持为零。
+- GET 使用 `(snapshot_id,head_revision,payload_hash)` exact token；历史 token 返回携带 current head 的 `409`。
 - 有序列表使用 CRDT ordered list，保留稳定排序键。
 - 普通对象使用 `updated_at + device_id + logical_clock` 解决。
 - 不可自动合并的冲突进入 Conflict Center。
@@ -789,6 +796,8 @@ Settings / Sync
 - 用户可以按对象类型暂停同步。
 - 用户可以导出加密 Sync 备份。
 - 用户可以从云端删除全部 Sync 数据。
+- Sync reset 清除云端 Sync 对象、快照、head 和变更记录，保留当前 Vault generation、设备信任和设备密钥 envelope。
+- `/api/sync/status` response v2 在一个 `first-primary` D1 batch 中读取 cursor、对象聚合、snapshot count/head 与 device summary；head/count 或存储元数据失配时 fail closed。
 
 ---
 
@@ -801,10 +810,12 @@ ELY Desktop Client
   ↓ HTTPS
 Cloudflare Workers API
   ├─ /api/auth/*             Better Auth
-  ├─ /api/sync/push          Sync object upload
-  ├─ /api/sync/pull          Delta pull
-  ├─ /api/sync/snapshot      Snapshot upload/download
+  ├─ /api/sync/push|pull     Authenticated retired endpoints
+  ├─ /api/sync/snapshot      Encrypted snapshot v3 + global head CAS
+  ├─ /api/sync/vault/*       AccountKey envelope bootstrap/read
+  ├─ /api/sync/reset         Signed destructive action
   ├─ /api/devices/*          Device management
+  ├─ /api/account/delete     Signed account deletion
   ├─ /api/plugins/*          Plugin registry
   ├─ /api/releases/*         Update manifest
   └─ /api/telemetry/*        Minimal diagnostics
@@ -812,9 +823,10 @@ Cloudflare Workers API
 Cloudflare D1
   ├─ better_auth_* tables
   ├─ user_devices
-  ├─ sync_objects
-  ├─ sync_change_log
-  ├─ sync_snapshots
+  ├─ user_device_keys + device trust
+  ├─ sync_snapshots + sync_snapshot_heads
+  ├─ sync_vault_* + rotation manifests
+  ├─ sync_r2_gc_candidates + inventory cursors
   ├─ plugin_registry
   ├─ plugin_reviews
   └─ audit_events
@@ -829,7 +841,7 @@ Cloudflare R2
        ↓
 Cloudflare Workers KV
   ├─ public_config
-  ├─ auth_session_cache
+  ├─ auth_session_cache        legacy cleanup namespace
   ├─ plugin_registry_cache
   ├─ public_signing_keys
   ├─ release_manifest_cache
@@ -847,6 +859,9 @@ D1 存储：
 - Sync 对象索引：对象 ID、对象类型、owner、payload 位置、hash、schema、时间戳。
 - Sync 变更日志：用于增量拉取。
 - Sync 快照索引：指向 R2 snapshot object。
+- Snapshot encryption metadata 与 global head。
+- AccountKey Vault generation、per-device HPKE envelope 与 rotation manifest。
+- R2 write lease、引用状态、删除状态与 inventory cursor。
 - 插件注册表元数据：插件 ID、名称、作者、权限声明、签名状态、包位置。
 - 审计事件：登录、设备加入、设备撤销、权限变更、插件安装、Sync reset。
 
@@ -862,10 +877,10 @@ D1 不存储：
 
 D1 schema 设计要求：
 
-- 所有用户数据表必须有 `user_id`。
-- 所有 Sync 事实表必须有 `object_id`、`object_type`、`logical_clock`、`device_id`。
-- 所有可删除对象必须有 `deleted_at` tombstone。
-- 所有增量拉取必须通过 `sync_change_log` 读取。
+- 用户作用域表使用 `user_id`；账号删除后的 R2 ledger 使用不可逆 `owner_hash` 收尾。
+- Snapshot/Vault/head/GC 表使用各自的严格 key、generation、revision 与状态约束。
+- Snapshot 删除使用 hard delete + durable R2 ledger；对象协议表保留历史 migration compatibility。
+- D1 batch 提供原子 CAS 与 destructive action gate；`first-primary` session 提供顺序一致读取。
 - 所有 D1 写入必须可幂等重放。
 - 单个 D1 数据库接近容量阈值时按地区或账户拆分。
 
@@ -887,7 +902,7 @@ R2 object key 规范：
 
 ```text
 sync-payloads/{region}/{user_hash}/{object_type}/{object_id}/{payload_hash}.bin
-sync-snapshots/{region}/{user_hash}/{snapshot_id}.bin
+sync-snapshots/{region}/{user_hash}/{snapshot_id}/{payload_hash}.bin
 plugin-packages/{plugin_id}/{package_hash}.rplug
 plugin-assets/{plugin_id}/{asset_hash}
 user-avatars/{user_hash}/{avatar_hash}
@@ -899,9 +914,14 @@ exports/{user_hash}/{export_id}.bin
 
 - 所有 Sync payload 上传前在客户端加密。
 - R2 metadata 不写敏感明文。
-- Worker 只签发短期上传/下载访问。
+- Worker 经认证 API 直接执行 checksum-verified R2 put/get。
 - 插件包必须通过签名验证后才进入 registry 可见状态。
 - 用户删除账号时触发 R2 对象清理任务。
+- Sync R2 对象使用 D1 ledger 跟踪 `pending`、`referenced`、`ready`、`deleting`、`deleted` 状态。
+- 定时任务扫描 `sync-payloads/` 与 `sync-snapshots/` 历史对象并重试幂等删除。
+- 账号删除提交后清除 ledger 中的原始 user ID，使用不可逆 owner hash 继续完成 R2 清理。
+- Snapshot 写入先领取 64-hex write token 与 10 分钟 lease；candidate、encryption、head、referenced state、exact head SELECT 在五语句 D1 batch 中提交。
+- Hourly cron `17 * * * *` 分别执行 legacy KV purge、R2 prefix inventory、bounded GC 与 rotation cleanup；完整 prefix 重扫周期为 24 小时。
 
 ### 10.4 Cloudflare Workers KV 使用边界
 
@@ -910,11 +930,11 @@ KV 是缓存和读多写少配置存储。
 KV 存储：
 
 - `public_config`：公开运行配置、服务端开关、地区路由提示。
-- `auth_session_cache`：短期会话验证缓存。
+- `auth_session_cache`：legacy namespace，进入分页清理流程。
 - `plugin_registry_cache`：插件市场列表缓存。
 - `public_signing_keys`：插件签名公钥、服务端公钥。
 - `release_manifest_cache`：自动更新清单缓存。
-- `sync_cursor_cache`：短期同步游标缓存。
+- `sync_cursor_cache`：规划中的短期同步游标缓存。
 
 KV 使用规则：
 
@@ -924,23 +944,24 @@ KV 使用规则：
 - KV 缓存可随时失效，所有关键数据必须可从 D1/R2 重建。
 - KV key 设计必须包含 namespace 和环境前缀。
 - KV TTL 必须按用途设置，默认不得无限期保存短期状态。
+- 定时任务分页清理历史 `auth_session_cache` key。
+- 所有认证请求直接读取 Better Auth D1 session；KV 不参与 session authority。
 
 ### 10.5 Better Auth 集成
 
 Better Auth 在 Cloudflare Workers 中初始化，D1 binding 作为 database 传入。
 
-能力要求：
+当前能力：
 
 - Email/password 注册登录。
-- OAuth provider 配置。
-- Passkey 支持。
-- 邮箱验证。
-- 会话刷新。
-- 会话撤销。
-- 设备登录授权。
-- 安全事件记录。
-- 账号删除。
+- Encrypted Email OTP。
+- Google/GitHub OAuth 按环境启用。
+- D1 session validation 与自定义 device/session binding。
+- 设备注册、rebind、批准、撤销与 Vault rotation。
+- Signed Sync reset 和 signed account deletion。
 - 管理所有 `/api/auth/*` 路由。
+
+目标能力包括 Apple OAuth、Passkey、Recovery Key 与完整服务端 session revoke UX。
 
 会话策略：
 
@@ -949,6 +970,8 @@ Better Auth 在 Cloudflare Workers 中初始化，D1 binding 作为 database 传
 - 服务端可以撤销单设备或全部设备会话。
 - Desktop client 每次启动执行 session validation。
 - 高风险操作要求重新验证。
+- Sync reset 与账号删除 request v2 要求 5 分钟内的 Ed25519 action proof；proof 绑定 action、user、session、device、confirmation、idempotency key 与创建时间。
+- Destructive D1 batch 首条执行 live session/device/key gate；guard failure 与 concurrent replay 触发事务 abort，后续通过 exact audit marker 收敛。
 
 ### 10.6 API 规格
 
@@ -959,19 +982,26 @@ Auth：
 | `/api/auth/*` | Any | Better Auth handler |
 | `/api/devices` | GET | 当前账号设备列表 |
 | `/api/devices/register` | POST | 注册当前设备公钥 |
+| `/api/devices/rebind/challenge` | POST | 为未绑定的新会话签发短期 challenge |
+| `/api/devices/rebind` | POST | 用现有 Ed25519 device key 绑定新会话 |
 | `/api/devices/approve` | POST | 批准新设备加入 |
 | `/api/devices/revoke` | POST | 撤销设备 |
+| `/api/account/delete` | POST | request v2 recent proof + atomic gate 删除账号 |
 
 Sync：
 
 | Endpoint | Method | 说明 |
 |---|---|---|
-| `/api/sync/push` | POST | 上传对象变更 |
-| `/api/sync/pull` | GET | 按 cursor 拉取增量 |
-| `/api/sync/snapshot` | POST | 上传加密快照 |
-| `/api/sync/snapshot` | GET | 下载加密快照 |
-| `/api/sync/reset` | POST | 删除云端 Sync 数据 |
-| `/api/sync/status` | GET | 获取队列和游标状态 |
+| `/api/sync/push` | POST | 认证后返回 `410` 的退役对象协议 |
+| `/api/sync/pull` | GET | 认证后返回 `410` 的退役对象协议 |
+| `/api/sync/snapshot` | POST | request/response v3 encrypted snapshot CAS |
+| `/api/sync/snapshot` | GET | exact head token 下载 encrypted snapshot |
+| `/api/sync/vault/bootstrap` | POST | request v2 proof 创建 generation 1 Vault |
+| `/api/sync/vault` | GET | 读取当前或 exact historical device envelope |
+| `/api/sync/reset` | POST | request v2 recent proof + atomic gate 删除云端 Sync 数据 |
+| `/api/sync/status` | GET | response v2 cursor/object/snapshot/device summary |
+
+`/api/sync/reset` 与账号删除响应中的 `deleted.r2_objects` 表示已识别并进入持久清理队列的 R2 对象数；物理删除由请求内回收和定时重试共同完成。
 
 Plugin：
 
@@ -997,11 +1027,24 @@ Better Auth 表由 Better Auth schema 管理。ELY 自定义表如下：
 | 表 | 用途 |
 |---|---|
 | `user_devices` | 用户设备、公钥、平台、活跃状态 |
+| `user_device_keys` | Ed25519/X25519 public key 与 protocol version |
 | `device_approvals` | 新设备加入批准记录 |
+| `device_rebind_challenges` | 短期 session rebind challenge 与消费状态 |
+| `better_auth_session_device_context` | Better Auth session 与 device identity 绑定 |
 | `sync_objects` | Sync 对象索引 |
 | `sync_change_log` | Sync 增量日志 |
 | `sync_snapshots` | Sync 快照索引 |
+| `sync_snapshot_encryption` | Snapshot encryption version、generation、key/content hash |
+| `sync_snapshot_heads` | 每账户唯一 global snapshot head |
 | `sync_tombstones` | 删除标记 |
+| `sync_vault_accounts` | 当前 AccountKey id 与 generation |
+| `sync_vault_envelopes` | Per-device HPKE AccountKey envelope |
+| `sync_vault_rotations` | Device revoke Vault rotation 状态 |
+| `sync_vault_rotation_envelopes` | Rotation recipient exact set |
+| `sync_vault_rotation_r2_objects` | Rotation 旧 R2 manifest |
+| `pending_device_revocations` | Pending device revoke 幂等记录 |
+| `sync_r2_gc_candidates` | R2 write lease、reference 与 GC state machine |
+| `sync_r2_inventory_cursors` | R2 prefix inventory cursor |
 | `plugin_registry` | 插件注册表 |
 | `plugin_packages` | 插件包和签名 |
 | `plugin_reviews` | 插件审核记录 |
@@ -1303,6 +1346,7 @@ Servo Host 需要实现：
 - Sync 密文与账号会话分离。
 - 本地密钥与云端会话分离。
 - 高风险操作有显式确认和审计日志。
+- Sync reset 与账号删除使用 current-device Ed25519 recent proof；D1 commit 原子复核 live session、session-device binding、approved v2 device 与 exact signing key。
 
 ### 13.2 隐私默认值
 
@@ -1330,6 +1374,8 @@ Servo Host 需要实现：
 - 私有数据清理。
 
 审计日志默认只保存在本地，可选择端到端加密同步。
+
+服务端 `audit_events` 记录 device approval/revoke、Sync reset 与账号删除。账号删除保留 anonymized success marker；marker 绑定 exact proof hash，使已认证的并发请求在 device/key 清理后仍能安全收敛。
 
 ---
 
@@ -1522,14 +1568,16 @@ Servo Host 需要实现：
 |---|---|---|
 | S-001 | Sync encryption | 服务端无法解密 Sync payload |
 | S-002 | Keychain | session token 和本地数据库密钥存入系统钥匙串 |
-| S-003 | Device revoke | 撤销设备后无法继续拉取 Sync delta |
+| S-003 | Device revoke | 撤销设备后目标 sessions 失效、后续 Sync API 被拒绝、approved revoke 原子轮换 Vault generation |
 | S-004 | Plugin sandbox | 插件无声明权限时无法访问 tabs/bookmarks/history/page |
 | S-005 | Plugin signature | 市场插件必须签名验证通过 |
 | S-006 | Site permissions | 所有站点权限按 Profile 隔离 |
 | S-007 | Private Window | 关闭后无持久 Cookie、Storage、History |
 | S-008 | Audit log | 高风险操作全部写入本地审计日志 |
 | S-009 | Cloud logs | 服务端日志不得记录敏感明文 URL、标题、历史、书签 |
-| S-010 | Account deletion | 删除账号触发 D1/R2/KV 数据清理 |
+| S-010 | Account deletion | Signed request 原子删除 D1 权威数据；R2 ledger 与 legacy KV cleanup 持久排队并由请求内 drain + scheduled retry 收口 |
+| S-011 | Snapshot CAS | 单一 global head、exact base CAS、structured 409、exact replay zero R2 put |
+| S-012 | Destructive proof | Stolen bearer 缺少 device private key 时无法执行 Sync reset 或账号删除 |
 
 ### 19.3 性能验收
 
@@ -1658,6 +1706,9 @@ KV namespace: ELY_KV
 - Cloudflare Worker API tests。
 - D1 migration tests。
 - R2 upload/download tests。
+- Real SQLite CAS、rollback 与 proof-after-session-revoke interleaving tests。
+- R2 write lease、late put、101+ drain、inventory、delete retry tests。
+- Legacy encryption metadata backfill 与 structured `409` contract tests。
 - KV cache invalidation tests。
 - Cross-platform smoke tests。
 - Servo site compatibility smoke tests。
@@ -1715,8 +1766,10 @@ KV namespace: ELY_KV
 - D1 write failure。
 - R2 upload/download failure。
 - KV cache hit rate。
-- Sync push/pull latency。
-- Sync conflict rate。
+- Snapshot upload/download latency。
+- Snapshot head conflict rate。
+- R2 pending/ready/deleting backlog 与 inventory cursor age。
+- Scheduled storage maintenance failure 与 Vault rotation cleanup lag。
 - Device revoke events。
 - Plugin install failure。
 - Plugin signature failure。

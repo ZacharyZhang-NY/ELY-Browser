@@ -133,7 +133,7 @@ pub(super) fn render_policy_toggle(
     chrome_motion_feedback(press_id, selection_id, enabled, element)
 }
 
-fn render_secondary_button<F>(
+pub(super) fn render_secondary_button<F>(
     shell: &ElyShell,
     id: &'static str,
     label: &'static str,

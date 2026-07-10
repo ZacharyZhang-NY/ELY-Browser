@@ -1,13 +1,11 @@
 import type { Env } from "./bindings.js";
 import { withApprovedDeviceApiControls } from "./api_controls.js";
+import { DestructiveActionGateError } from "./destructive_action_gate.js";
 import { jsonResponse } from "./responses.js";
-import { SyncRequestError, SyncSchemaError, syncPullDocument } from "./sync_pull.js";
 import {
-  SyncPushConflictError,
-  SyncPushPersistenceError,
-  SyncPushRequestError,
-  syncPushDocument,
-} from "./sync_push.js";
+  RecentDeviceActionPermissionError,
+  RecentDeviceActionPersistenceError,
+} from "./recent_device_action_proof.js";
 import {
   SyncResetPersistenceError,
   SyncResetRequestError,
@@ -22,6 +20,15 @@ import {
   syncSnapshotUploadDocument,
 } from "./sync_snapshot.js";
 import { SyncStatusSchemaError, syncStatusDocument } from "./sync_status.js";
+import {
+  SyncVaultConflictError,
+  SyncVaultNotFoundError,
+  SyncVaultPermissionError,
+  SyncVaultPersistenceError,
+  SyncVaultRequestError,
+  syncVaultBootstrapDocument,
+  syncVaultCurrentDeviceDocument,
+} from "./sync_vault.js";
 
 export async function handleSyncRoute(
   request: Request,
@@ -29,10 +36,10 @@ export async function handleSyncRoute(
   url: URL,
 ): Promise<Response | null> {
   if (url.pathname === "/api/sync/pull") {
-    return handleSyncPull(request, env, url);
+    return handleRetiredSyncObjectRoute(request, env, "sync.pull", ["GET"]);
   }
   if (url.pathname === "/api/sync/push") {
-    return handleSyncPush(request, env);
+    return handleRetiredSyncObjectRoute(request, env, "sync.push", ["POST"]);
   }
   if (url.pathname === "/api/sync/snapshot") {
     return handleSyncSnapshot(request, env, url);
@@ -40,37 +47,33 @@ export async function handleSyncRoute(
   if (url.pathname === "/api/sync/status") {
     return handleSyncStatus(request, env);
   }
+  if (url.pathname === "/api/sync/vault/bootstrap") {
+    return handleSyncVaultBootstrap(request, env);
+  }
+  if (url.pathname === "/api/sync/vault") {
+    return handleSyncVault(request, env, url);
+  }
   if (url.pathname === "/api/sync/reset") {
     return handleSyncReset(request, env);
   }
   return null;
 }
 
-function handleSyncPull(request: Request, env: Env, url: URL): Promise<Response> {
+function handleSyncVaultBootstrap(request: Request, env: Env): Promise<Response> {
   return withApprovedDeviceApiControls(
     request,
     env,
-    "sync.pull",
-    ["GET"],
+    "sync.vault.bootstrap",
+    ["POST"],
     async (context) => {
       try {
-        return jsonResponse(await syncPullDocument(url, env, context), 200, {
+        return jsonResponse(await syncVaultBootstrapDocument(request, env, context), 201, {
           "Cache-Control": "no-store",
         });
       } catch (error) {
-        if (error instanceof SyncRequestError) {
-          return jsonResponse(
-            { error: "invalid_sync_pull" },
-            400,
-            { "Cache-Control": "no-store" },
-          );
-        }
-        if (error instanceof SyncSchemaError) {
-          return jsonResponse(
-            { error: "sync_pull_invalid" },
-            500,
-            { "Cache-Control": "no-store" },
-          );
+        const response = syncVaultErrorResponse(error);
+        if (response !== null) {
+          return response;
         }
         throw error;
       }
@@ -78,38 +81,62 @@ function handleSyncPull(request: Request, env: Env, url: URL): Promise<Response>
   );
 }
 
-function handleSyncPush(request: Request, env: Env): Promise<Response> {
+function handleSyncVault(request: Request, env: Env, url: URL): Promise<Response> {
   return withApprovedDeviceApiControls(
     request,
     env,
-    "sync.push",
-    ["POST"],
+    "sync.vault",
+    ["GET"],
     async (context) => {
       try {
-        return jsonResponse(await syncPushDocument(request, env, context), 201, {
+        return jsonResponse(await syncVaultCurrentDeviceDocument(url, env, context), 200, {
           "Cache-Control": "no-store",
         });
       } catch (error) {
-        if (error instanceof SyncPushRequestError) {
-          return jsonResponse(
-            { error: "invalid_sync_push" },
-            400,
-            { "Cache-Control": "no-store" },
-          );
-        }
-        if (error instanceof SyncPushConflictError) {
-          return jsonResponse({ error: "sync_conflict" }, 409, { "Cache-Control": "no-store" });
-        }
-        if (error instanceof SyncPushPersistenceError) {
-          return jsonResponse(
-            { error: "sync_push_failed" },
-            500,
-            { "Cache-Control": "no-store" },
-          );
+        const response = syncVaultErrorResponse(error);
+        if (response !== null) {
+          return response;
         }
         throw error;
       }
     },
+  );
+}
+
+function syncVaultErrorResponse(error: unknown): Response | null {
+  if (error instanceof SyncVaultPermissionError) {
+    return jsonResponse({ error: "sync_vault_forbidden" }, 403, { "Cache-Control": "no-store" });
+  }
+  if (error instanceof SyncVaultRequestError) {
+    return jsonResponse({ error: "invalid_sync_vault" }, 400, { "Cache-Control": "no-store" });
+  }
+  if (error instanceof SyncVaultNotFoundError) {
+    return jsonResponse({ error: "sync_vault_not_found" }, 404, { "Cache-Control": "no-store" });
+  }
+  if (error instanceof SyncVaultConflictError) {
+    return jsonResponse({ error: "sync_vault_conflict" }, 409, { "Cache-Control": "no-store" });
+  }
+  if (error instanceof SyncVaultPersistenceError) {
+    return jsonResponse({ error: "sync_vault_failed" }, 500, { "Cache-Control": "no-store" });
+  }
+  return null;
+}
+
+function handleRetiredSyncObjectRoute(
+  request: Request,
+  env: Env,
+  route: string,
+  allowedMethods: readonly string[],
+): Promise<Response> {
+  return withApprovedDeviceApiControls(
+    request,
+    env,
+    route,
+    allowedMethods,
+    async () =>
+      jsonResponse({ error: "sync_object_protocol_retired" }, 410, {
+        "Cache-Control": "no-store",
+      }),
   );
 }
 
@@ -145,11 +172,7 @@ function handleSyncSnapshot(request: Request, env: Env, url: URL): Promise<Respo
           );
         }
         if (error instanceof SyncSnapshotConflictError) {
-          return jsonResponse(
-            { error: "sync_snapshot_conflict" },
-            409,
-            { "Cache-Control": "no-store" },
-          );
+          return jsonResponse(error.document(), 409, { "Cache-Control": "no-store" });
         }
         if (error instanceof SyncSnapshotPersistenceError) {
           return jsonResponse(
@@ -208,7 +231,18 @@ function handleSyncReset(request: Request, env: Env): Promise<Response> {
             { "Cache-Control": "no-store" },
           );
         }
-        if (error instanceof SyncResetPersistenceError) {
+        if (error instanceof RecentDeviceActionPermissionError) {
+          return jsonResponse(
+            { error: "sync_reset_forbidden" },
+            403,
+            { "Cache-Control": "no-store" },
+          );
+        }
+        if (
+          error instanceof SyncResetPersistenceError ||
+          error instanceof RecentDeviceActionPersistenceError ||
+          error instanceof DestructiveActionGateError
+        ) {
           return jsonResponse(
             { error: "sync_reset_failed" },
             500,

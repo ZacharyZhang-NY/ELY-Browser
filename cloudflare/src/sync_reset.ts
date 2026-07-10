@@ -1,6 +1,20 @@
 import type { AuthContext } from "./auth.js";
-import type { ElyD1PreparedStatement, Env } from "./bindings.js";
-import { StorageObjectError, deleteKnownObject } from "./storage.js";
+import type { ElyD1DatabaseSession, ElyD1PreparedStatement, ElyD1Result, Env } from "./bindings.js";
+import { primaryD1Session } from "./bindings.js";
+import {
+  assertDestructiveActionGateResult,
+  destructiveActionGateIsLive,
+  destructiveActionGateStatement,
+} from "./destructive_action_gate.js";
+import {
+  type RecentDeviceActionProof,
+  RecentDeviceActionPermissionError,
+  RecentDeviceActionRequestError,
+  assertFreshDeviceActionProof,
+  assertRecentDeviceActionProof,
+  recentDeviceActionProof,
+} from "./recent_device_action_proof.js";
+import { SYNC_R2_FENCE_USER_QUERY, collectSyncR2Garbage } from "./sync_r2_gc.js";
 
 const RESET_CONFIRMATION = "delete-cloud-sync-data";
 const IDEMPOTENCY_KEY_PATTERN = /^[a-zA-Z0-9._:-]{16,128}$/;
@@ -17,33 +31,23 @@ const SYNC_RESET_COUNTS_QUERY = `
     (SELECT COUNT(*) FROM sync_tombstones WHERE user_id = ?) AS tombstones
 `;
 const SYNC_RESET_R2_KEYS_QUERY = `
-  SELECT payload_r2_key AS r2_key
-  FROM sync_objects
-  WHERE user_id = ? AND payload_r2_key IS NOT NULL
-  UNION
-  SELECT r2_key
-  FROM sync_snapshots
-  WHERE user_id = ?
+  SELECT r2_key FROM sync_r2_gc_candidates
+  WHERE user_id = ? AND state <> 'deleted'
   ORDER BY r2_key ASC
-`;
-const SYNC_RESET_AUDIT_INSERT_QUERY = `
-  INSERT INTO audit_events (
-    event_id,
-    user_id,
-    actor_device_id,
-    event_type,
-    subject_type,
-    subject_id,
-    outcome,
-    metadata_hash,
-    created_at
-  ) VALUES (?, ?, ?, 'sync.reset', 'sync', ?, 'success', NULL, ?)
-  ON CONFLICT(event_id) DO NOTHING
 `;
 const SYNC_OBJECTS_DELETE_QUERY = "DELETE FROM sync_objects WHERE user_id = ?";
 const SYNC_CHANGE_LOG_DELETE_QUERY = "DELETE FROM sync_change_log WHERE user_id = ?";
+const SYNC_SNAPSHOT_HEADS_DELETE_QUERY = "DELETE FROM sync_snapshot_heads WHERE user_id = ?";
+const SYNC_SNAPSHOT_ENCRYPTION_DELETE_QUERY =
+  "DELETE FROM sync_snapshot_encryption WHERE user_id = ?";
 const SYNC_SNAPSHOTS_DELETE_QUERY = "DELETE FROM sync_snapshots WHERE user_id = ?";
 const SYNC_TOMBSTONES_DELETE_QUERY = "DELETE FROM sync_tombstones WHERE user_id = ?";
+const START_ROTATION_CLEANUP_QUERY = `
+  UPDATE sync_vault_rotations
+  SET cleanup_snapshot_id = 'sync-reset', cleanup_started_at = ?
+  WHERE user_id = ? AND completed_at IS NOT NULL
+    AND cleanup_started_at IS NULL AND storage_cleaned_at IS NULL
+`;
 
 export interface SyncResetDocument {
   version: 1;
@@ -62,7 +66,7 @@ export interface SyncResetDeletedDocument {
   r2_objects: number;
 }
 
-interface SyncResetRequest {
+interface SyncResetRequest extends RecentDeviceActionProof {
   idempotencyKey: string;
 }
 
@@ -108,19 +112,55 @@ export async function syncResetDocument(
   const deviceId = currentDeviceId(context);
   const reset = await syncResetRequest(request);
   const eventId = syncResetEventId(context.userId, reset.idempotencyKey);
-  const existingEvent = await env.ELY_DB.prepare(SYNC_RESET_EVENT_QUERY)
+  const database = primaryD1Session(env.ELY_DB);
+  const signingPublicKey = await assertRecentDeviceActionProof(
+    database,
+    context,
+    "sync.reset",
+    RESET_CONFIRMATION,
+    reset.idempotencyKey,
+    reset,
+  );
+  const existingEvent = await database.prepare(SYNC_RESET_EVENT_QUERY)
     .bind(context.userId, eventId)
     .first<SyncResetEventRow>();
+  assertFreshDeviceActionProof(reset, nowSeconds, existingEvent === null);
   if (existingEvent !== null) {
+    await collectResetGarbage(env, context.userId, nowSeconds, 100);
     return existingResetDocument(context, deviceId, reset, existingEvent);
   }
 
-  const counts = await syncResetCounts(env, context.userId);
-  const r2Keys = await syncResetR2Keys(env, context.userId);
-  for (const key of r2Keys) {
-    await deleteResetObject(env, key);
+  const counts = await syncResetCounts(database, context.userId);
+  const r2Keys = await syncResetR2Keys(database, context.userId);
+  let results: ElyD1Result[];
+  try {
+    results = await database.batch<ElyD1Result>(syncResetStatements(
+      database,
+      context,
+      signingPublicKey,
+      eventId,
+      nowSeconds,
+    ));
+  } catch (error) {
+    const replayDatabase = primaryD1Session(env.ELY_DB);
+    const racedEvent = await replayDatabase.prepare(SYNC_RESET_EVENT_QUERY)
+      .bind(context.userId, eventId)
+      .first<SyncResetEventRow>();
+    if (racedEvent !== null) {
+      return existingResetDocument(context, deviceId, reset, racedEvent);
+    }
+    if (!(await destructiveActionGateIsLive(
+      replayDatabase,
+      context,
+      signingPublicKey,
+      nowSeconds,
+    ))) {
+      throw new RecentDeviceActionPermissionError("device_action_gate_failed");
+    }
+    throw error;
   }
-  await env.ELY_DB.batch(syncResetStatements(env, context.userId, deviceId, eventId, nowSeconds));
+  assertDestructiveActionGateResult(results[0]);
+  await collectResetGarbage(env, context.userId, nowSeconds, r2Keys.length);
 
   return {
     version: 1,
@@ -152,10 +192,10 @@ function existingResetDocument(
 }
 
 async function syncResetCounts(
-  env: Env,
+  database: ElyD1DatabaseSession,
   userId: string,
 ): Promise<Omit<SyncResetDeletedDocument, "r2_objects">> {
-  const row = await env.ELY_DB.prepare(SYNC_RESET_COUNTS_QUERY)
+  const row = await database.prepare(SYNC_RESET_COUNTS_QUERY)
     .bind(userId, userId, userId, userId)
     .first<SyncResetCountsRow>();
   if (row === null) {
@@ -169,56 +209,91 @@ async function syncResetCounts(
   };
 }
 
-async function syncResetR2Keys(env: Env, userId: string): Promise<string[]> {
-  const result = await env.ELY_DB.prepare(SYNC_RESET_R2_KEYS_QUERY)
-    .bind(userId, userId)
+async function syncResetR2Keys(
+  database: ElyD1DatabaseSession,
+  userId: string,
+): Promise<string[]> {
+  const result = await database.prepare(SYNC_RESET_R2_KEYS_QUERY)
+    .bind(userId)
     .all<SyncResetR2KeyRow>();
   return result.results.map(r2Key);
 }
 
 function syncResetStatements(
-  env: Env,
-  userId: string,
-  deviceId: string,
+  database: ElyD1DatabaseSession,
+  context: AuthContext,
+  signingPublicKey: string,
   eventId: string,
   nowSeconds: number,
 ): ElyD1PreparedStatement[] {
+  const userId = context.userId;
   return [
-    env.ELY_DB.prepare(SYNC_CHANGE_LOG_DELETE_QUERY).bind(userId),
-    env.ELY_DB.prepare(SYNC_TOMBSTONES_DELETE_QUERY).bind(userId),
-    env.ELY_DB.prepare(SYNC_SNAPSHOTS_DELETE_QUERY).bind(userId),
-    env.ELY_DB.prepare(SYNC_OBJECTS_DELETE_QUERY).bind(userId),
-    env.ELY_DB.prepare(SYNC_RESET_AUDIT_INSERT_QUERY).bind(
+    destructiveActionGateStatement(database, context, signingPublicKey, {
       eventId,
-      userId,
-      deviceId,
-      userId,
+      auditUserId: userId,
+      eventType: "sync.reset",
+      subjectType: "sync",
+      subjectId: userId,
+      metadataHash: null,
+    }, nowSeconds),
+    database.prepare(SYNC_R2_FENCE_USER_QUERY).bind(
       nowSeconds,
+      nowSeconds,
+      nowSeconds,
+      userId,
     ),
+    database.prepare(START_ROTATION_CLEANUP_QUERY).bind(nowSeconds, userId),
+    database.prepare(SYNC_CHANGE_LOG_DELETE_QUERY).bind(userId),
+    database.prepare(SYNC_TOMBSTONES_DELETE_QUERY).bind(userId),
+    database.prepare(SYNC_SNAPSHOT_HEADS_DELETE_QUERY).bind(userId),
+    database.prepare(SYNC_SNAPSHOT_ENCRYPTION_DELETE_QUERY).bind(userId),
+    database.prepare(SYNC_SNAPSHOTS_DELETE_QUERY).bind(userId),
+    database.prepare(SYNC_OBJECTS_DELETE_QUERY).bind(userId),
   ];
 }
 
-async function deleteResetObject(env: Env, key: string): Promise<void> {
+async function collectResetGarbage(
+  env: Env,
+  userId: string,
+  nowSeconds: number,
+  candidateCount: number,
+): Promise<void> {
   try {
-    await deleteKnownObject(env.ELY_STORAGE, key);
-  } catch (error) {
-    if (error instanceof StorageObjectError) {
-      throw new SyncResetPersistenceError(error.message);
+    const maxBatches = Math.ceil(candidateCount / 100) + 1;
+    for (let batch = 0; batch < maxBatches; batch += 1) {
+      if (await collectSyncR2Garbage(env, nowSeconds, { userId, limit: 100 }) < 100) break;
     }
-    throw error;
+  } catch {
+    // Scheduled maintenance drains the durable GC ledger.
   }
 }
 
 async function syncResetRequest(request: Request): Promise<SyncResetRequest> {
   const body = await requestBody(request);
-  assertOnlyFields(body, ["version", "confirmation", "idempotency_key"]);
-  if (body.version !== 1) {
+  assertOnlyFields(body, [
+    "version",
+    "confirmation",
+    "idempotency_key",
+    "proof_created_at",
+    "action_proof",
+  ]);
+  if (body.version !== 2) {
     throw new SyncResetRequestError("version_invalid");
   }
   if (body.confirmation !== RESET_CONFIRMATION) {
     throw new SyncResetRequestError("confirmation_invalid");
   }
-  return { idempotencyKey: idempotencyKey(body.idempotency_key) };
+  try {
+    return {
+      idempotencyKey: idempotencyKey(body.idempotency_key),
+      ...recentDeviceActionProof(body.proof_created_at, body.action_proof),
+    };
+  } catch (error) {
+    if (error instanceof RecentDeviceActionRequestError) {
+      throw new SyncResetRequestError(error.message);
+    }
+    throw error;
+  }
 }
 
 async function requestBody(request: Request): Promise<RequestBody> {

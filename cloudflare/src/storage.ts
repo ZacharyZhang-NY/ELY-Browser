@@ -54,11 +54,19 @@ export function syncSnapshotKey(params: {
   region: string;
   userHash: string;
   snapshotId: string;
+  payloadHash: string;
 }): string {
   assertRegion(params.region);
   assertSha256Hex(params.userHash, "user_hash");
   assertSegment(params.snapshotId, "snapshot_id");
-  return ["sync-snapshots", params.region, params.userHash, `${params.snapshotId}.bin`].join("/");
+  assertSha256Hex(params.payloadHash, "payload_hash");
+  return [
+    "sync-snapshots",
+    params.region,
+    params.userHash,
+    params.snapshotId,
+    `${params.payloadHash}.bin`,
+  ].join("/");
 }
 
 export function pluginPackageKey(params: { pluginId: string; packageHash: string }): string {
@@ -101,9 +109,7 @@ export async function putVerifiedObject(
   expectedSha256: string,
   contentType: string,
 ): Promise<StoredObject> {
-  assertKnownObjectKey(key);
-  assertSha256Hex(expectedSha256, "sha256");
-  assertKeyChecksum(key, expectedSha256);
+  assertKnownObjectKeyHash(key, expectedSha256);
   const actualSha256 = await sha256Hex(payload);
   if (actualSha256 !== expectedSha256) {
     throw new StorageObjectError("r2_checksum_mismatch");
@@ -122,9 +128,7 @@ export async function getVerifiedObject(
   key: string,
   expectedSha256: string,
 ): Promise<ArrayBuffer | null> {
-  assertKnownObjectKey(key);
-  assertSha256Hex(expectedSha256, "sha256");
-  assertKeyChecksum(key, expectedSha256);
+  assertKnownObjectKeyHash(key, expectedSha256);
   const object = await bucket.get(key);
   if (object === null) {
     return null;
@@ -143,10 +147,11 @@ export async function deleteKnownObject(bucket: ElyR2Bucket, key: string): Promi
   await bucket.delete(key);
 }
 
-function assertKnownObjectKey(key: string): void {
+export function assertKnownObjectKey(key: string): void {
   const matches = [
     /^sync-payloads\/[a-z0-9][a-z0-9-]{1,31}\/[a-f0-9]{64}\/[a-z0-9][a-z0-9._-]{0,127}\/[a-z0-9][a-z0-9._-]{0,127}\/[a-f0-9]{64}\.bin$/,
     /^sync-snapshots\/[a-z0-9][a-z0-9-]{1,31}\/[a-f0-9]{64}\/[a-z0-9][a-z0-9._-]{0,127}\.bin$/,
+    /^sync-snapshots\/[a-z0-9][a-z0-9-]{1,31}\/[a-f0-9]{64}\/[a-z0-9][a-z0-9._-]{0,127}\/[a-f0-9]{64}\.bin$/,
     /^plugin-packages\/[a-z0-9][a-z0-9._-]{0,127}\/[a-f0-9]{64}\.rplug$/,
     /^plugin-assets\/[a-z0-9][a-z0-9._-]{0,127}\/[a-f0-9]{64}$/,
     /^user-avatars\/[a-f0-9]{64}\/[a-f0-9]{64}$/,
@@ -159,6 +164,12 @@ function assertKnownObjectKey(key: string): void {
   if (key.startsWith("sync-payloads/")) {
     assertSyncObjectType(key.split("/")[3] ?? "");
   }
+}
+
+export function assertKnownObjectKeyHash(key: string, expectedSha256: string): void {
+  assertKnownObjectKey(key);
+  assertSha256Hex(expectedSha256, "sha256");
+  assertKeyChecksum(key, expectedSha256);
 }
 
 function assertKeyChecksum(key: string, expectedSha256: string): void {
@@ -176,7 +187,7 @@ function checksumFromKey(key: string): string | null {
     return null;
   }
 
-  if (prefix === "sync-payloads") {
+  if (prefix === "sync-payloads" || (prefix === "sync-snapshots" && segments.length === 5)) {
     return lastSegment.slice(0, -".bin".length);
   }
   if (prefix === "plugin-packages") {

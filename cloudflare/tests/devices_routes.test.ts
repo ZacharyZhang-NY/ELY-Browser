@@ -7,6 +7,8 @@ import { handleRequest } from "../src/index.js";
 import {
   ACCESS_TOKEN,
   PUBLIC_KEY,
+  WRAPPING_PUBLIC_KEY,
+  deviceRegistrationBody,
   sessionDocument,
   testD1Database,
   testEnv,
@@ -155,19 +157,20 @@ describe("device routes", () => {
     assert.deepEqual(await response.json(), { error: "devices_invalid" });
   });
 
-  it("registers the current device as a pending idempotent D1 write", async () => {
+  it("registers the first current device as an approved idempotent D1 write", async () => {
     const tokenHash = await authTokenHash(ACCESS_TOKEN);
     const sessionCacheKey = authSessionCacheKvKey("local", tokenHash);
     const kvPuts: [string, string][] = [];
     const d1 = testD1Database([
       {
         device_id: "device-01",
-        public_key: PUBLIC_KEY.toUpperCase(),
+        public_key: PUBLIC_KEY,
+        wrapping_public_key: WRAPPING_PUBLIC_KEY,
         device_name: "MacBook Pro",
         platform: "macOS",
-        approval_status: "pending",
+        approval_status: "approved",
         created_at: 1_780_000_100,
-        approved_at: null,
+        approved_at: 1_780_000_100,
         last_active_at: 1_780_000_100,
         revoked_at: null,
       },
@@ -180,7 +183,7 @@ describe("device routes", () => {
           authorization: `Bearer ${ACCESS_TOKEN}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify(deviceRegistrationBody()),
+        body: JSON.stringify(await deviceRegistrationBody()),
       }),
       testEnv({
         d1,
@@ -192,37 +195,49 @@ describe("device routes", () => {
     assert.equal(response.status, 201);
     assert.equal(response.headers.get("cache-control"), "no-store");
     assert.deepEqual(await response.json(), {
-      version: 1,
+      version: 2,
       user_id: "user-01",
       device: {
         device_id: "device-01",
         public_key: PUBLIC_KEY,
+        wrapping_public_key: WRAPPING_PUBLIC_KEY,
         device_name: "MacBook Pro",
         platform: "macOS",
-        approval_status: "pending",
+        approval_status: "approved",
         created_at: 1_780_000_100,
-        approved_at: null,
+        approved_at: 1_780_000_100,
         last_active_at: 1_780_000_100,
         revoked_at: null,
         current: true,
       },
     });
     assert.ok(d1.queries[0]?.includes("INSERT INTO user_devices"));
+    assert.ok(d1.queries[0]?.includes("NOT EXISTS"));
     assert.ok(d1.queries[0]?.includes("ON CONFLICT DO NOTHING"));
-    assert.ok(d1.queries[1]?.includes("WHERE user_id = ? AND idempotency_key = ?"));
-    assert.ok(d1.queries[2]?.includes("better_auth_session_device_context"));
-    assert.deepEqual(d1.binds[0]?.slice(0, 5), [
+    assert.ok(d1.queries[1]?.includes("INSERT INTO user_device_keys"));
+    assert.ok(d1.queries[2]?.includes("idempotency_key = ?"));
+    assert.ok(d1.queries[3]?.includes("better_auth_session_device_context"));
+    assert.deepEqual(d1.binds[0]?.slice(0, 6), [
+      "user-01",
       "user-01",
       "device-01",
       PUBLIC_KEY,
       "MacBook Pro",
       "macOS",
     ]);
-    assert.equal(typeof d1.binds[0]?.[5], "number");
     assert.equal(typeof d1.binds[0]?.[6], "number");
-    assert.equal(d1.binds[0]?.[7], IDEMPOTENCY_KEY);
-    assert.deepEqual(d1.binds[1], ["user-01", IDEMPOTENCY_KEY]);
-    assert.deepEqual(d1.binds[2]?.slice(0, 3), ["session-01", "user-01", "device-01"]);
+    assert.equal(typeof d1.binds[0]?.[7], "number");
+    assert.equal(typeof d1.binds[0]?.[8], "number");
+    assert.equal(d1.binds[0]?.[9], IDEMPOTENCY_KEY);
+    assert.deepEqual(d1.binds[1]?.slice(0, 5), [
+      "user-01",
+      "device-01",
+      PUBLIC_KEY,
+      WRAPPING_PUBLIC_KEY,
+      d1.binds[0]?.[6],
+    ]);
+    assert.deepEqual(d1.binds[2], ["user-01", IDEMPOTENCY_KEY]);
+    assert.deepEqual(d1.binds[3]?.slice(0, 3), ["session-01", "user-01", "device-01"]);
     assert.deepEqual(kvPuts, []);
   });
 
@@ -233,11 +248,12 @@ describe("device routes", () => {
     const deviceRow = {
       device_id: "device-01",
       public_key: PUBLIC_KEY,
+      wrapping_public_key: WRAPPING_PUBLIC_KEY,
       device_name: "MacBook Pro",
       platform: "macOS",
-      approval_status: "pending",
+      approval_status: "approved",
       created_at: 1_780_000_100,
-      approved_at: null,
+      approved_at: 1_780_000_100,
       last_active_at: 1_780_000_100,
       revoked_at: null,
     };
@@ -248,6 +264,7 @@ describe("device routes", () => {
         id: "session-01",
         userId: "user-01",
         expiresAt: "2099-01-01T00:00:00.000Z",
+        createdAt: new Date().toISOString(),
         deviceId: null,
       },
     });
@@ -259,7 +276,7 @@ describe("device routes", () => {
           authorization: `Bearer ${ACCESS_TOKEN}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify(deviceRegistrationBody()),
+        body: JSON.stringify(await deviceRegistrationBody()),
       }),
       testEnv({
         d1,
@@ -269,7 +286,7 @@ describe("device routes", () => {
     );
 
     assert.equal(response.status, 201);
-    assert.deepEqual(d1.binds[2]?.slice(0, 3), ["session-01", "user-01", "device-01"]);
+    assert.deepEqual(d1.binds[3]?.slice(0, 3), ["session-01", "user-01", "device-01"]);
     assert.deepEqual(kvPuts, []);
   });
 
@@ -278,6 +295,7 @@ describe("device routes", () => {
       const existingDevice = {
         device_id: "device-01",
         public_key: PUBLIC_KEY,
+        wrapping_public_key: WRAPPING_PUBLIC_KEY,
         device_name: "MacBook Pro",
         platform: "macOS",
         approval_status: status,
@@ -288,11 +306,12 @@ describe("device routes", () => {
       };
       const d1 = testD1Database({
         firstRows: [existingDevice],
-        runChanges: [0],
+        batchChanges: [[0, 0]],
         sessionRow: {
           id: "session-02",
           userId: "user-01",
           expiresAt: "2099-01-01T00:00:00.000Z",
+          createdAt: new Date().toISOString(),
           deviceId: null,
         },
       });
@@ -304,7 +323,7 @@ describe("device routes", () => {
             authorization: `Bearer ${ACCESS_TOKEN}`,
             "content-type": "application/json",
           },
-          body: JSON.stringify(deviceRegistrationBody()),
+          body: JSON.stringify(await deviceRegistrationBody()),
         }),
         testEnv({ d1 }),
       );
@@ -319,6 +338,7 @@ describe("device routes", () => {
     const pendingDevice = {
       device_id: "device-01",
       public_key: PUBLIC_KEY,
+      wrapping_public_key: WRAPPING_PUBLIC_KEY,
       device_name: "MacBook Pro",
       platform: "macOS",
       approval_status: "pending",
@@ -327,7 +347,7 @@ describe("device routes", () => {
       last_active_at: 1_780_000_020,
       revoked_at: null,
     };
-    const d1 = testD1Database({ firstRows: [pendingDevice], runChanges: [0] });
+    const d1 = testD1Database({ firstRows: [pendingDevice], batchChanges: [[0, 0]] });
 
     const response = await handleRequest(
       new Request("https://elydora.test/api/devices/register", {
@@ -336,7 +356,7 @@ describe("device routes", () => {
           authorization: `Bearer ${ACCESS_TOKEN}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify(deviceRegistrationBody()),
+        body: JSON.stringify(await deviceRegistrationBody()),
       }),
       testEnv({ d1 }),
     );
@@ -352,12 +372,13 @@ describe("device routes", () => {
   it("rejects a device id collision with a different idempotency key", async () => {
     const d1 = testD1Database({
       firstRows: [],
-      runChanges: [0],
+      batchChanges: [[0, 0]],
       sessionRow: {
-        id: "session-02",
-        userId: "user-01",
-        expiresAt: "2099-01-01T00:00:00.000Z",
-        deviceId: null,
+          id: "session-02",
+          userId: "user-01",
+          expiresAt: "2099-01-01T00:00:00.000Z",
+          createdAt: new Date().toISOString(),
+          deviceId: null,
       },
     });
     const response = await handleRequest(
@@ -367,10 +388,9 @@ describe("device routes", () => {
           authorization: `Bearer ${ACCESS_TOKEN}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify({
-          ...deviceRegistrationBody(),
-          idempotency_key: "device-register-0002",
-        }),
+        body: JSON.stringify(
+          await deviceRegistrationBody({ idempotency_key: "device-register-0002" }),
+        ),
       }),
       testEnv({ d1 }),
     );
@@ -390,7 +410,7 @@ describe("device routes", () => {
           authorization: `Bearer ${ACCESS_TOKEN}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify({ ...deviceRegistrationBody(), idempotency_key: "short" }),
+        body: JSON.stringify(await deviceRegistrationBody({ idempotency_key: "short" })),
       }),
       testEnv({
         d1,
@@ -413,7 +433,7 @@ describe("device routes", () => {
           authorization: `Bearer ${ACCESS_TOKEN}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify({ ...deviceRegistrationBody(), device_id: "device-02" }),
+        body: JSON.stringify(await deviceRegistrationBody({ device_id: "device-02" })),
       }),
       testEnv({
         d1,
@@ -422,7 +442,7 @@ describe("device routes", () => {
     );
 
     assert.equal(response.status, 403);
-    assert.deepEqual(await response.json(), { error: "device_context_mismatch" });
+    assert.deepEqual(await response.json(), { error: "device_registration_forbidden" });
     assert.deepEqual(d1.queries, []);
   });
 
@@ -432,7 +452,7 @@ describe("device routes", () => {
       new Request("https://elydora.test/api/devices/register", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(deviceRegistrationBody()),
+        body: JSON.stringify(await deviceRegistrationBody()),
       }),
       testEnv({ d1 }),
     );
@@ -442,14 +462,3 @@ describe("device routes", () => {
     assert.deepEqual(d1.queries, []);
   });
 });
-
-function deviceRegistrationBody(): Record<string, unknown> {
-  return {
-    version: 1,
-    device_id: "device-01",
-    public_key: PUBLIC_KEY,
-    device_name: "MacBook Pro",
-    platform: "macOS",
-    idempotency_key: IDEMPOTENCY_KEY,
-  };
-}

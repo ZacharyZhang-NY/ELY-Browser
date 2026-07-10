@@ -37,8 +37,13 @@ describe("R2 storage contracts", () => {
       `sync-payloads/us-east/${USER_HASH}/tabs/tab-01/${PAYLOAD_HASH}.bin`,
     );
     assert.equal(
-      syncSnapshotKey({ region: "us-east", userHash: USER_HASH, snapshotId: "snapshot-01" }),
-      `sync-snapshots/us-east/${USER_HASH}/snapshot-01.bin`,
+      syncSnapshotKey({
+        region: "us-east",
+        userHash: USER_HASH,
+        snapshotId: "snapshot-01",
+        payloadHash: PAYLOAD_HASH,
+      }),
+      `sync-snapshots/us-east/${USER_HASH}/snapshot-01/${PAYLOAD_HASH}.bin`,
     );
     assert.equal(
       pluginPackageKey({ pluginId: "elydora.reader", packageHash: PACKAGE_HASH }),
@@ -163,6 +168,7 @@ describe("R2 storage contracts", () => {
       region: "us-east",
       userHash: USER_HASH,
       snapshotId: "snapshot-01",
+      payloadHash: checksum,
     });
 
     const downloaded = await getVerifiedObject(bucket, key, checksum);
@@ -176,6 +182,7 @@ describe("R2 storage contracts", () => {
       region: "us-east",
       userHash: USER_HASH,
       snapshotId: "snapshot-01",
+      payloadHash: PAYLOAD_HASH,
     });
 
     await deleteKnownObject(bucket, key);

@@ -14,9 +14,13 @@ export type ApiHandler = () => Promise<Response>;
 export type AuthenticatedApiHandler = (context: AuthContext) => Promise<Response>;
 
 const APPROVED_DEVICE_QUERY = `
-  SELECT device_id
-  FROM user_devices
-  WHERE user_id = ? AND device_id = ? AND approval_status = 'approved' AND revoked_at IS NULL
+  SELECT device.device_id
+  FROM user_devices AS device
+  INNER JOIN user_device_keys AS keys
+    ON keys.user_id = device.user_id AND keys.device_id = device.device_id
+  WHERE device.user_id = ? AND device.device_id = ?
+    AND device.approval_status = 'approved' AND device.revoked_at IS NULL
+    AND keys.key_protocol_version = 2 AND keys.wrapping_public_key IS NOT NULL
 `;
 
 export async function withPublicApiControls(

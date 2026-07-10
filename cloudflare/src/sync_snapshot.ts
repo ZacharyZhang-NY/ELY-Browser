@@ -1,59 +1,66 @@
 import type { AuthContext } from "./auth.js";
-import type { Env } from "./bindings.js";
-import { StorageObjectError, getVerifiedObject, putVerifiedObject, syncSnapshotKey } from "./storage.js";
+import type { ElyD1DatabaseSession, ElyD1Result, Env } from "./bindings.js";
+import { primaryD1Session } from "./bindings.js";
+import { StorageObjectError, getVerifiedObject } from "./storage.js";
+import {
+  SyncSnapshotRequestError,
+  assertOnlyFields,
+  assertOnlyQueryParams,
+  assertPayloadHash,
+  base64FromBytes,
+  deviceIdValue,
+  exactInteger,
+  integer,
+  payloadBytes,
+  regionValue,
+  requestBody,
+  sha256HexValue,
+  snapshotIdValue,
+} from "./sync_snapshot_codec.js";
+import {
+  type SnapshotHeadRefDocument,
+  type SyncSnapshotDocument,
+  type SyncSnapshotRow,
+  SyncSnapshotConflictError,
+  SyncSnapshotHeadSchemaError,
+  currentSyncSnapshotHead,
+  sameSnapshotHead,
+  snapshotDocumentFromResult,
+  snapshotHeadRef,
+  snapshotHeadRefValue,
+  syncSnapshotByToken,
+} from "./sync_snapshot_head.js";
+import {
+  syncSnapshotStatements,
+} from "./sync_snapshot_sql.js";
+import {
+  SyncR2WriteFenceError,
+} from "./sync_r2_gc.js";
+import {
+  type SyncR2WriteLease,
+  claimSnapshotStorageWrite,
+  persistClaimedSnapshot,
+  releaseFailedSnapshotWrite,
+  snapshotStorageKey,
+} from "./sync_snapshot_write.js";
+import {
+  SyncVaultConflictError,
+  SyncVaultNotFoundError,
+  assertCurrentSyncVaultKey,
+} from "./sync_vault.js";
+import {
+  SyncVaultRotationCleanupError,
+  cleanupRotatedVaultStorage,
+} from "./sync_vault_rotation_cleanup.js";
+
+export { SyncSnapshotRequestError } from "./sync_snapshot_codec.js";
+export { SyncSnapshotConflictError } from "./sync_snapshot_head.js";
+export type { SyncSnapshotDocument } from "./sync_snapshot_head.js";
 
 const MAX_SNAPSHOT_BYTES = 10 * 1024 * 1024;
-const SNAPSHOT_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,127}$/;
-const DEVICE_ID_PATTERN = /^[a-zA-Z0-9._:-]{3,128}$/;
-const SHA256_HEX = /^[a-f0-9]{64}$/;
-const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-const REGION = /^[a-z0-9][a-z0-9-]{1,31}$/;
-const SYNC_SNAPSHOT_BY_ID_QUERY = `
-  SELECT
-    snapshot_id,
-    r2_key,
-    payload_hash,
-    schema_rev,
-    logical_clock,
-    device_id,
-    size_bytes,
-    created_at
-  FROM sync_snapshots
-  WHERE user_id = ? AND snapshot_id = ?
-`;
-const SYNC_SNAPSHOT_UPSERT_QUERY = `
-  INSERT INTO sync_snapshots (
-    user_id,
-    snapshot_id,
-    r2_key,
-    payload_hash,
-    schema_rev,
-    logical_clock,
-    device_id,
-    size_bytes,
-    created_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  ON CONFLICT(user_id, snapshot_id) DO UPDATE SET
-    r2_key = excluded.r2_key,
-    payload_hash = excluded.payload_hash,
-    schema_rev = excluded.schema_rev,
-    logical_clock = excluded.logical_clock,
-    device_id = excluded.device_id,
-    size_bytes = excluded.size_bytes,
-    created_at = excluded.created_at
-  WHERE excluded.logical_clock > sync_snapshots.logical_clock
-    OR (
-      excluded.logical_clock = sync_snapshots.logical_clock
-      AND sync_snapshots.r2_key = excluded.r2_key
-      AND sync_snapshots.payload_hash = excluded.payload_hash
-      AND sync_snapshots.schema_rev = excluded.schema_rev
-      AND sync_snapshots.device_id = excluded.device_id
-      AND sync_snapshots.size_bytes = excluded.size_bytes
-    )
-`;
 
 export interface SyncSnapshotUploadDocument {
-  version: 1;
+  version: 3;
   user_id: string;
   device_id: string;
   snapshot: SyncSnapshotDocument;
@@ -63,51 +70,19 @@ export interface SyncSnapshotDownloadDocument extends SyncSnapshotUploadDocument
   data_base64: string;
 }
 
-export interface SyncSnapshotDocument {
-  snapshot_id: string;
-  r2_key: string;
-  payload_hash: string;
-  schema_rev: number;
-  logical_clock: number;
-  device_id: string;
-  size_bytes: number;
-  created_at: number;
-}
-
 interface SyncSnapshotUploadRequest {
   snapshotId: string;
   r2Key: string;
   payloadHash: string;
+  encryptionVersion: 2;
+  vaultGeneration: number;
+  keyId: string;
+  contentHash: string;
   schemaRev: number;
   logicalClock: number;
+  headRevision: number;
+  baseHead: SnapshotHeadRefDocument | null;
   bytes: ArrayBuffer;
-}
-
-interface SyncSnapshotRow {
-  snapshot_id: unknown;
-  r2_key: unknown;
-  payload_hash: unknown;
-  schema_rev: unknown;
-  logical_clock: unknown;
-  device_id: unknown;
-  size_bytes: unknown;
-  created_at: unknown;
-}
-
-type RequestBody = Record<string, unknown>;
-
-export class SyncSnapshotRequestError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "SyncSnapshotRequestError";
-  }
-}
-
-export class SyncSnapshotConflictError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "SyncSnapshotConflictError";
-  }
 }
 
 export class SyncSnapshotNotFoundError extends Error {
@@ -131,40 +106,127 @@ export async function syncSnapshotUploadDocument(
   nowSeconds = Math.floor(Date.now() / 1000),
 ): Promise<SyncSnapshotUploadDocument> {
   const deviceId = currentDeviceId(context);
-  const snapshot = await syncSnapshotUploadRequest(request, context.userId);
-  const existingRow = await snapshotRow(env, context.userId, snapshot.snapshotId);
-  if (existingRow !== null) {
-    assertSnapshotCanReplaceExisting(snapshot, deviceId, syncSnapshotDocumentFromRow(existingRow));
+  const upload = await syncSnapshotUploadRequest(request, context.userId);
+  const database = primaryD1Session(env.ELY_DB);
+  const currentHead = await readCurrentHead(database, context.userId);
+  if (currentHead !== null && snapshotMatchesUpload(upload, deviceId, currentHead)) {
+    try {
+      await assertCurrentSyncVaultKey(
+        env,
+        context.userId,
+        upload.keyId,
+        upload.vaultGeneration,
+        database,
+      );
+    } catch (error) {
+      if (error instanceof SyncVaultConflictError || error instanceof SyncVaultNotFoundError) {
+        return uploadDocument(context.userId, deviceId, currentHead);
+      }
+      throw error;
+    }
+    await cleanupAfterSnapshot(env, context.userId, currentHead, nowSeconds);
+    return uploadDocument(context.userId, deviceId, currentHead);
   }
-
-  await persistSnapshot(env, snapshot);
-  await env.ELY_DB.batch([
-    env.ELY_DB.prepare(SYNC_SNAPSHOT_UPSERT_QUERY).bind(
+  try {
+    await assertCurrentSyncVaultKey(
+      env,
       context.userId,
-      snapshot.snapshotId,
-      snapshot.r2Key,
-      snapshot.payloadHash,
-      snapshot.schemaRev,
-      snapshot.logicalClock,
-      deviceId,
-      snapshot.bytes.byteLength,
-      nowSeconds,
-    ),
-  ]);
-
-  const savedRow = await snapshotRow(env, context.userId, snapshot.snapshotId);
-  if (savedRow === null) {
-    throw new SyncSnapshotPersistenceError("sync_snapshot_missing");
+      upload.keyId,
+      upload.vaultGeneration,
+      database,
+    );
+  } catch (error) {
+    if (error instanceof SyncVaultConflictError || error instanceof SyncVaultNotFoundError) {
+      throw new SyncSnapshotConflictError("sync_vault_key_not_current", currentHead);
+    }
+    throw error;
   }
-  const savedSnapshot = syncSnapshotDocumentFromRow(savedRow);
-  assertSavedSnapshotMatchesUpload(snapshot, deviceId, savedSnapshot);
 
-  return {
-    version: 1,
-    user_id: context.userId,
-    device_id: deviceId,
-    snapshot: savedSnapshot,
-  };
+  assertUploadBase(upload, currentHead);
+  let writeLease: SyncR2WriteLease;
+  try {
+    writeLease = await claimSnapshotStorageWrite(
+      env,
+      database,
+      context.userId,
+      deviceId,
+      upload,
+      nowSeconds,
+    );
+  } catch (error) {
+    if (error instanceof SyncR2WriteFenceError) {
+      const head = await readCurrentHead(database, context.userId);
+      throw new SyncSnapshotConflictError("sync_snapshot_head_conflict", head);
+    }
+    throw error;
+  }
+  try {
+    await persistClaimedSnapshot(env, upload);
+  } catch (error) {
+    await releaseFailedSnapshotWrite(
+      env,
+      database,
+      context.userId,
+      upload.r2Key,
+      writeLease,
+      nowSeconds,
+    );
+    throw error;
+  }
+
+  let results: ElyD1Result<SyncSnapshotRow>[];
+  try {
+    results = await database.batch<ElyD1Result<SyncSnapshotRow>>(syncSnapshotStatements(
+      database,
+      context.userId,
+      deviceId,
+      { ...upload, sizeBytes: upload.bytes.byteLength },
+      writeLease,
+      nowSeconds,
+    ));
+  } catch (error) {
+    await releaseFailedSnapshotWrite(
+      env,
+      database,
+      context.userId,
+      upload.r2Key,
+      writeLease,
+      nowSeconds,
+    );
+    if (!isSnapshotHeadConflict(error)) {
+      throw error;
+    }
+    return concurrentUploadResult(env, database, context.userId, deviceId, upload, nowSeconds);
+  }
+  if (
+    results.length !== 5 ||
+    results.slice(0, 4).some((result) => changedRowCount(result) !== 1)
+  ) {
+    await releaseFailedSnapshotWrite(
+      env,
+      database,
+      context.userId,
+      upload.r2Key,
+      writeLease,
+      nowSeconds,
+    );
+    return concurrentUploadResult(env, database, context.userId, deviceId, upload, nowSeconds);
+  }
+
+  let saved: SyncSnapshotDocument;
+  try {
+    saved = snapshotDocumentFromResult(results[4]);
+  } catch (error) {
+    if (error instanceof SyncSnapshotHeadSchemaError) {
+      throw new SyncSnapshotPersistenceError(error.message);
+    }
+    throw error;
+  }
+  if (!snapshotMatchesUpload(upload, deviceId, saved)) {
+    throw new SyncSnapshotPersistenceError("sync_snapshot_mismatch");
+  }
+  await cleanupAfterSnapshot(env, context.userId, saved, nowSeconds);
+  return uploadDocument(context.userId, deviceId, saved);
 }
 
 export async function syncSnapshotDownloadDocument(
@@ -173,31 +235,36 @@ export async function syncSnapshotDownloadDocument(
   context: AuthContext,
 ): Promise<SyncSnapshotDownloadDocument> {
   const deviceId = currentDeviceId(context);
-  const snapshotId = syncSnapshotDownloadQuery(url);
-  const row = await snapshotRow(env, context.userId, snapshotId);
-  if (row === null) {
-    throw new SyncSnapshotNotFoundError("sync_snapshot_missing");
+  const database = primaryD1Session(env.ELY_DB);
+  const token = syncSnapshotDownloadQuery(url);
+  const snapshot = await readSnapshotByToken(database, context.userId, token);
+  if (snapshot === null) {
+    const currentHead = await readCurrentHead(database, context.userId);
+    if (currentHead === null) {
+      throw new SyncSnapshotNotFoundError("sync_snapshot_missing");
+    }
+    throw new SyncSnapshotConflictError("sync_snapshot_download_token_stale", currentHead);
   }
 
-  const snapshot = syncSnapshotDocumentFromRow(row);
   let payload: ArrayBuffer | null;
   try {
     payload = await getVerifiedObject(env.ELY_STORAGE, snapshot.r2_key, snapshot.payload_hash);
   } catch (error) {
     if (error instanceof StorageObjectError) {
-      throw new SyncSnapshotPersistenceError(error.message);
+      await throwDownloadStorageFailure(env, context.userId, token, error.message);
     }
     throw error;
   }
   if (payload === null) {
-    throw new SyncSnapshotPersistenceError("sync_snapshot_payload_missing");
+    return throwDownloadStorageFailure(
+      env,
+      context.userId,
+      token,
+      "sync_snapshot_payload_missing",
+    );
   }
-
   return {
-    version: 1,
-    user_id: context.userId,
-    device_id: deviceId,
-    snapshot,
+    ...uploadDocument(context.userId, deviceId, snapshot),
     data_base64: base64FromBytes(payload),
   };
 }
@@ -212,282 +279,216 @@ async function syncSnapshotUploadRequest(
     "snapshot_id",
     "region",
     "payload_hash",
+    "encryption_version",
+    "vault_generation",
+    "key_id",
+    "content_hash",
     "schema_rev",
     "logical_clock",
+    "head_revision",
+    "base_head",
     "data_base64",
   ]);
-  if (body.version !== 1) {
+  if (body.version !== 3) {
     throw new SyncSnapshotRequestError("version_invalid");
   }
 
   const snapshotId = snapshotIdValue(body.snapshot_id);
-  const region = regionValue(body.region);
   const payloadHash = sha256HexValue(body.payload_hash, "payload_hash");
+  const headRevision = integer(
+    body.head_revision,
+    "head_revision",
+    1,
+    Number.MAX_SAFE_INTEGER,
+  );
+  const baseHead = snapshotHeadRefValue(body.base_head, headRevision);
   const bytes = payloadBytes(body.data_base64, "data_base64", MAX_SNAPSHOT_BYTES);
   await assertPayloadHash(bytes, payloadHash);
   return {
     snapshotId,
-    r2Key: await snapshotStorageKey(region, userId, snapshotId),
+    r2Key: await snapshotStorageKey(
+      regionValue(body.region),
+      userId,
+      snapshotId,
+      payloadHash,
+    ),
     payloadHash,
+    encryptionVersion: exactInteger(body.encryption_version, "encryption_version", 2),
+    vaultGeneration: integer(
+      body.vault_generation,
+      "vault_generation",
+      1,
+      Number.MAX_SAFE_INTEGER,
+    ),
+    keyId: sha256HexValue(body.key_id, "key_id"),
+    contentHash: sha256HexValue(body.content_hash, "content_hash"),
     schemaRev: integer(body.schema_rev, "schema_rev", 1, Number.MAX_SAFE_INTEGER),
     logicalClock: integer(body.logical_clock, "logical_clock", 0, Number.MAX_SAFE_INTEGER),
+    headRevision,
+    baseHead,
     bytes,
   };
 }
 
-function syncSnapshotDownloadQuery(url: URL): string {
-  assertOnlyQueryParams(url, ["snapshot_id"]);
-  return snapshotIdValue(url.searchParams.get("snapshot_id"));
+function syncSnapshotDownloadQuery(url: URL): SnapshotHeadRefDocument {
+  assertOnlyQueryParams(url, ["snapshot_id", "head_revision", "payload_hash"]);
+  return {
+    snapshot_id: snapshotIdValue(url.searchParams.get("snapshot_id")),
+    revision: integer(
+      numberQueryValue(url.searchParams.get("head_revision")),
+      "head_revision",
+      1,
+      Number.MAX_SAFE_INTEGER,
+    ),
+    payload_hash: sha256HexValue(url.searchParams.get("payload_hash"), "payload_hash"),
+  };
 }
 
-async function snapshotStorageKey(
-  region: string,
-  userId: string,
-  snapshotId: string,
-): Promise<string> {
-  try {
-    return syncSnapshotKey({
-      region,
-      userHash: await sha256Hex(arrayBufferFromBytes(new TextEncoder().encode(userId))),
-      snapshotId,
-    });
-  } catch (error) {
-    if (error instanceof StorageObjectError) {
-      throw new SyncSnapshotRequestError(error.message);
-    }
-    throw error;
+function assertUploadBase(
+  upload: SyncSnapshotUploadRequest,
+  currentHead: SyncSnapshotDocument | null,
+): void {
+  const currentRef = currentHead === null ? null : snapshotHeadRef(currentHead);
+  if (!sameSnapshotHead(upload.baseHead, currentRef)) {
+    throw new SyncSnapshotConflictError("sync_snapshot_head_conflict", currentHead);
+  }
+  if (currentHead !== null && upload.logicalClock <= currentHead.logical_clock) {
+    throw new SyncSnapshotConflictError("logical_clock_stale", currentHead);
   }
 }
 
-async function snapshotRow(
-  env: Env,
-  userId: string,
-  snapshotId: string,
-): Promise<SyncSnapshotRow | null> {
-  return env.ELY_DB.prepare(SYNC_SNAPSHOT_BY_ID_QUERY).bind(userId, snapshotId).first();
+function snapshotMatchesUpload(
+  upload: SyncSnapshotUploadRequest,
+  deviceId: string,
+  snapshot: SyncSnapshotDocument,
+): boolean {
+  return snapshot.snapshot_id === upload.snapshotId &&
+    snapshot.r2_key === upload.r2Key &&
+    snapshot.payload_hash === upload.payloadHash &&
+    snapshot.encryption_version === upload.encryptionVersion &&
+    snapshot.vault_generation === upload.vaultGeneration &&
+    snapshot.key_id === upload.keyId &&
+    snapshot.content_hash === upload.contentHash &&
+    snapshot.schema_rev === upload.schemaRev &&
+    snapshot.logical_clock === upload.logicalClock &&
+    snapshot.head_revision === upload.headRevision &&
+    sameSnapshotHead(snapshot.base_head, upload.baseHead) &&
+    snapshot.device_id === deviceId &&
+    snapshot.size_bytes === upload.bytes.byteLength;
 }
 
-function syncSnapshotDocumentFromRow(row: SyncSnapshotRow): SyncSnapshotDocument {
+async function readCurrentHead(
+  database: ElyD1DatabaseSession,
+  userId: string,
+): Promise<SyncSnapshotDocument | null> {
   try {
-    return syncSnapshotDocument(row);
+    return await currentSyncSnapshotHead(database, userId);
   } catch (error) {
-    if (error instanceof SyncSnapshotRequestError) {
+    if (error instanceof SyncSnapshotHeadSchemaError) {
       throw new SyncSnapshotPersistenceError(error.message);
     }
     throw error;
   }
 }
 
-function syncSnapshotDocument(row: SyncSnapshotRow): SyncSnapshotDocument {
-  return {
-    snapshot_id: snapshotIdValue(row.snapshot_id),
-    r2_key: text(row.r2_key, "r2_key"),
-    payload_hash: sha256HexValue(row.payload_hash, "payload_hash"),
-    schema_rev: integer(row.schema_rev, "schema_rev", 1, Number.MAX_SAFE_INTEGER),
-    logical_clock: integer(row.logical_clock, "logical_clock", 0, Number.MAX_SAFE_INTEGER),
-    device_id: deviceIdValue(row.device_id),
-    size_bytes: integer(row.size_bytes, "size_bytes", 1, MAX_SNAPSHOT_BYTES),
-    created_at: integer(row.created_at, "created_at", 0, Number.MAX_SAFE_INTEGER),
-  };
-}
-
-function assertSnapshotCanReplaceExisting(
-  snapshot: SyncSnapshotUploadRequest,
-  deviceId: string,
-  existing: SyncSnapshotDocument,
-): void {
-  if (existing.logical_clock > snapshot.logicalClock) {
-    throw new SyncSnapshotConflictError("logical_clock_stale");
-  }
-  if (existing.logical_clock < snapshot.logicalClock) {
-    return;
-  }
-  if (
-    existing.payload_hash !== snapshot.payloadHash ||
-    existing.schema_rev !== snapshot.schemaRev ||
-    existing.device_id !== deviceId ||
-    existing.size_bytes !== snapshot.bytes.byteLength
-  ) {
-    throw new SyncSnapshotConflictError("logical_clock_conflict");
-  }
-}
-
-function assertSavedSnapshotMatchesUpload(
-  upload: SyncSnapshotUploadRequest,
-  deviceId: string,
-  snapshot: SyncSnapshotDocument,
-): void {
-  if (snapshot.logical_clock > upload.logicalClock) {
-    throw new SyncSnapshotConflictError("logical_clock_stale");
-  }
-  if (
-    snapshot.logical_clock === upload.logicalClock &&
-    (snapshot.r2_key !== upload.r2Key ||
-      snapshot.payload_hash !== upload.payloadHash ||
-      snapshot.schema_rev !== upload.schemaRev ||
-      snapshot.device_id !== deviceId ||
-      snapshot.size_bytes !== upload.bytes.byteLength)
-  ) {
-    throw new SyncSnapshotConflictError("logical_clock_conflict");
-  }
-  if (
-    snapshot.snapshot_id !== upload.snapshotId ||
-    snapshot.r2_key !== upload.r2Key ||
-    snapshot.payload_hash !== upload.payloadHash ||
-    snapshot.schema_rev !== upload.schemaRev ||
-    snapshot.logical_clock !== upload.logicalClock ||
-    snapshot.device_id !== deviceId ||
-    snapshot.size_bytes !== upload.bytes.byteLength
-  ) {
-    throw new SyncSnapshotPersistenceError("sync_snapshot_mismatch");
-  }
-}
-
-async function persistSnapshot(env: Env, snapshot: SyncSnapshotUploadRequest): Promise<void> {
+async function readSnapshotByToken(
+  database: ElyD1DatabaseSession,
+  userId: string,
+  token: SnapshotHeadRefDocument,
+): Promise<SyncSnapshotDocument | null> {
   try {
-    await putVerifiedObject(
-      env.ELY_STORAGE,
-      snapshot.r2Key,
-      snapshot.bytes,
-      snapshot.payloadHash,
-      "application/octet-stream",
-    );
+    return await syncSnapshotByToken(database, userId, token);
   } catch (error) {
-    if (error instanceof StorageObjectError) {
-      throw new SyncSnapshotRequestError(error.message);
+    if (error instanceof SyncSnapshotHeadSchemaError) {
+      throw new SyncSnapshotPersistenceError(error.message);
     }
     throw error;
   }
 }
 
-function currentDeviceId(context: AuthContext): string {
-  if (context.deviceId === undefined) {
-    throw new SyncSnapshotRequestError("device_context_required");
+async function concurrentUploadResult(
+  env: Env,
+  database: ElyD1DatabaseSession,
+  userId: string,
+  deviceId: string,
+  upload: SyncSnapshotUploadRequest,
+  nowSeconds: number,
+): Promise<SyncSnapshotUploadDocument> {
+  const currentHead = await readCurrentHead(database, userId);
+  if (currentHead !== null && snapshotMatchesUpload(upload, deviceId, currentHead)) {
+    await cleanupAfterSnapshot(env, userId, currentHead, nowSeconds);
+    return uploadDocument(userId, deviceId, currentHead);
   }
-  return context.deviceId;
+  throw new SyncSnapshotConflictError("sync_snapshot_head_conflict", currentHead);
 }
 
-async function requestBody(request: Request): Promise<RequestBody> {
-  let value: unknown;
+async function throwDownloadStorageFailure(
+  env: Env,
+  userId: string,
+  token: SnapshotHeadRefDocument,
+  message: string,
+): Promise<never> {
+  const currentHead = await readCurrentHead(primaryD1Session(env.ELY_DB), userId);
+  if (currentHead === null || !sameSnapshotHead(token, snapshotHeadRef(currentHead))) {
+    throw new SyncSnapshotConflictError("sync_snapshot_download_token_stale", currentHead);
+  }
+  throw new SyncSnapshotPersistenceError(message);
+}
+
+async function cleanupAfterSnapshot(
+  env: Env,
+  userId: string,
+  snapshot: SyncSnapshotDocument,
+  nowSeconds: number,
+): Promise<void> {
   try {
-    value = await request.json();
-  } catch {
-    throw new SyncSnapshotRequestError("json_invalid");
-  }
-  return record(value, "body");
-}
-
-function record(value: unknown, label: string): RequestBody {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new SyncSnapshotRequestError(`${label}_invalid`);
-  }
-  return value as RequestBody;
-}
-
-function assertOnlyFields(value: RequestBody, fields: string[]): void {
-  const allowed = new Set(fields);
-  for (const field of Object.keys(value)) {
-    if (!allowed.has(field)) {
-      throw new SyncSnapshotRequestError(`unexpected_field:${field}`);
+    await cleanupRotatedVaultStorage(
+      env,
+      userId,
+      snapshot.snapshot_id,
+      snapshot.key_id,
+      snapshot.vault_generation,
+      nowSeconds,
+    );
+  } catch (error) {
+    if (error instanceof SyncVaultRotationCleanupError) {
+      throw new SyncSnapshotPersistenceError(error.message);
     }
+    throw error;
   }
 }
 
-function assertOnlyQueryParams(url: URL, fields: string[]): void {
-  const allowed = new Set(fields);
-  for (const field of url.searchParams.keys()) {
-    if (!allowed.has(field)) {
-      throw new SyncSnapshotRequestError(`unexpected_query:${field}`);
-    }
-  }
+function uploadDocument(
+  userId: string,
+  deviceId: string,
+  snapshot: SyncSnapshotDocument,
+): SyncSnapshotUploadDocument {
+  return { version: 3, user_id: userId, device_id: deviceId, snapshot };
 }
 
-function snapshotIdValue(value: unknown): string {
-  if (typeof value !== "string" || !SNAPSHOT_ID_PATTERN.test(value)) {
-    throw new SyncSnapshotRequestError("snapshot_id_invalid");
-  }
-  return value;
+function currentDeviceId(context: AuthContext): string {
+  return deviceIdValue(context.deviceId);
 }
 
-function deviceIdValue(value: unknown): string {
-  if (typeof value !== "string" || !DEVICE_ID_PATTERN.test(value)) {
-    throw new SyncSnapshotRequestError("device_id_invalid");
+function numberQueryValue(value: string | null): number {
+  if (value === null || !/^[1-9][0-9]*$/.test(value)) {
+    throw new SyncSnapshotRequestError("head_revision_invalid");
   }
-  return value;
+  return Number(value);
 }
 
-function regionValue(value: unknown): string {
-  if (typeof value !== "string" || !REGION.test(value)) {
-    throw new SyncSnapshotRequestError("region_invalid");
-  }
-  return value;
+function changedRowCount(result: ElyD1Result): number {
+  const changes = result.meta?.changes;
+  return typeof changes === "number" && Number.isSafeInteger(changes) && changes >= 0 ? changes : -1;
 }
 
-function sha256HexValue(value: unknown, label: string): string {
-  if (typeof value !== "string" || !SHA256_HEX.test(value)) {
-    throw new SyncSnapshotRequestError(`${label}_invalid`);
+function isSnapshotHeadConflict(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
   }
-  return value;
-}
-
-function integer(value: unknown, label: string, min: number, max: number): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) {
-    throw new SyncSnapshotRequestError(`${label}_invalid`);
-  }
-  return value;
-}
-
-function text(value: unknown, label: string): string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new SyncSnapshotRequestError(`${label}_invalid`);
-  }
-  return value;
-}
-
-function payloadBytes(value: unknown, label: string, maxBytes: number): ArrayBuffer {
-  const encoded = text(value, label);
-  if (!BASE64.test(encoded)) {
-    throw new SyncSnapshotRequestError(`${label}_invalid`);
-  }
-  const bytes = bytesFromBase64(encoded);
-  if (bytes.byteLength === 0 || bytes.byteLength > maxBytes) {
-    throw new SyncSnapshotRequestError(`${label}_size_invalid`);
-  }
-  return bytes;
-}
-
-function bytesFromBase64(value: string): ArrayBuffer {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes.buffer;
-}
-
-function base64FromBytes(payload: ArrayBuffer): string {
-  const bytes = new Uint8Array(payload);
-  const parts: string[] = [];
-  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-    parts.push(String.fromCharCode(...bytes.subarray(offset, offset + 0x8000)));
-  }
-  return btoa(parts.join(""));
-}
-
-function arrayBufferFromBytes(bytes: Uint8Array): ArrayBuffer {
-  const copy = new Uint8Array(bytes.byteLength);
-  copy.set(bytes);
-  return copy.buffer;
-}
-
-async function assertPayloadHash(payload: ArrayBuffer, expectedHash: string): Promise<void> {
-  const actualHash = await sha256Hex(payload);
-  if (actualHash !== expectedHash) {
-    throw new SyncSnapshotRequestError("payload_hash_mismatch");
-  }
-}
-
-async function sha256Hex(payload: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", payload);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return error.message.includes("sync_snapshot_head_cas_failed") ||
+    error.message.includes("sync_r2_write_fenced") ||
+    error.message.includes("sync_r2_reference_commit_invalid") ||
+    error.message.includes("UNIQUE constraint failed: sync_snapshot_heads.user_id") ||
+    error.message.includes("sync_snapshots.user_id, sync_snapshots.head_revision");
 }

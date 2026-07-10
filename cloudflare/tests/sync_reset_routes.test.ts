@@ -4,7 +4,15 @@ import { describe, it } from "node:test";
 
 import { authSessionCacheKvKey, authTokenHash } from "../src/auth.js";
 import { handleRequest } from "../src/index.js";
-import { ACCESS_TOKEN, sessionDocument, testD1Database, testEnv } from "./devices_test_support.js";
+import { recentDeviceActionProofBytes } from "../src/recent_device_action_proof.js";
+import {
+  ACCESS_TOKEN,
+  PUBLIC_KEY,
+  sessionDocument,
+  signDeviceMessage,
+  testD1Database,
+  testEnv,
+} from "./devices_test_support.js";
 
 const USER_ID = "user-01";
 const DEVICE_ID = "device-01";
@@ -19,12 +27,17 @@ describe("sync reset routes", () => {
     const r2Deletes: string[] = [];
     const tokenHash = await authTokenHash(ACCESS_TOKEN);
     const d1 = testD1Database({
-      firstRows: [{ device_id: DEVICE_ID }, null, resetCountsRow()],
+      firstRows: [
+        { device_id: DEVICE_ID },
+        { signing_public_key: PUBLIC_KEY },
+        null,
+        resetCountsRow(),
+      ],
       allRows: [{ r2_key: PAYLOAD_KEY }, { r2_key: SNAPSHOT_KEY }],
     });
 
     const response = await handleRequest(
-      syncResetRequest(syncResetBody()),
+      syncResetRequest(await syncResetBody()),
       testEnv({
         d1,
         r2Deletes,
@@ -55,16 +68,31 @@ describe("sync reset routes", () => {
       r2_objects: 2,
     });
     assert.deepEqual(r2Deletes, [PAYLOAD_KEY, SNAPSHOT_KEY]);
-    assert.equal(d1.batches[0], 5);
-    assert.ok(d1.queries[1]?.includes("FROM audit_events"));
-    assert.ok(d1.queries[2]?.includes("FROM sync_objects"));
-    assert.ok(d1.queries[3]?.includes("UNION"));
-    assert.ok(d1.queries[4]?.includes("DELETE FROM sync_change_log"));
-    assert.ok(d1.queries[8]?.includes("INSERT INTO audit_events"));
-    assert.deepEqual(d1.binds[1], [USER_ID, syncResetEventId()]);
-    assert.deepEqual(d1.binds[2], [USER_ID, USER_ID, USER_ID, USER_ID]);
-    assert.deepEqual(d1.binds[3], [USER_ID, USER_ID]);
-    assert.deepEqual(d1.binds[8]?.slice(0, 4), [syncResetEventId(), USER_ID, DEVICE_ID, USER_ID]);
+    assert.equal(d1.batches[0], 9);
+    assert.ok(d1.queries[1]?.includes("signing_public_key"));
+    assert.ok(d1.queries[2]?.includes("FROM audit_events"));
+    assert.ok(d1.queries[3]?.includes("FROM sync_objects"));
+    assert.ok(d1.queries[4]?.includes("FROM sync_r2_gc_candidates"));
+    assert.deepEqual(d1.binds[2], [USER_ID, syncResetEventId()]);
+    assert.deepEqual(d1.binds[3], [USER_ID, USER_ID, USER_ID, USER_ID]);
+    assert.deepEqual(d1.binds[4], [USER_ID]);
+    assert.ok(d1.queries[5]?.includes("CASE WHEN EXISTS"));
+    assert.ok(d1.queries[6]?.includes("UPDATE sync_r2_gc_candidates"));
+    assert.ok(d1.queries[7]?.includes("UPDATE sync_vault_rotations"));
+    assert.ok(d1.queries[8]?.includes("DELETE FROM sync_change_log"));
+    assert.ok(d1.queries[10]?.includes("DELETE FROM sync_snapshot_heads"));
+    assert.ok(d1.queries[11]?.includes("DELETE FROM sync_snapshot_encryption"));
+    assert.ok(d1.queries[12]?.includes("DELETE FROM sync_snapshots"));
+    assert.equal(d1.queries.some((query) => query.includes("DELETE FROM sync_vault")), false);
+    assert.deepEqual(d1.binds[5]?.slice(0, 6), [
+      syncResetEventId(),
+      USER_ID,
+      DEVICE_ID,
+      "sync.reset",
+      "sync",
+      USER_ID,
+    ]);
+    assert.equal(d1.binds[5]?.[11], PUBLIC_KEY);
   });
 
   it("returns an idempotent reset document for existing audit events", async () => {
@@ -73,13 +101,14 @@ describe("sync reset routes", () => {
     const d1 = testD1Database({
       firstRows: [
         { device_id: DEVICE_ID },
+        { signing_public_key: PUBLIC_KEY },
         { actor_device_id: DEVICE_ID, outcome: "success", created_at: 1_780_001_000 },
       ],
       allRows: [{ r2_key: PAYLOAD_KEY }],
     });
 
     const response = await handleRequest(
-      syncResetRequest(syncResetBody()),
+      syncResetRequest(await syncResetBody()),
       testEnv({
         d1,
         r2Deletes,
@@ -96,8 +125,8 @@ describe("sync reset routes", () => {
       reset_at: 1_780_001_000,
       deleted: { objects: 0, changes: 0, snapshots: 0, tombstones: 0, r2_objects: 0 },
     });
-    assert.deepEqual(r2Deletes, []);
-    assert.equal(d1.queries.length, 2);
+    assert.deepEqual(r2Deletes, [PAYLOAD_KEY]);
+    assert.equal(d1.queries.length, 6);
     assert.deepEqual(d1.batches, []);
   });
 
@@ -107,12 +136,13 @@ describe("sync reset routes", () => {
     const d1 = testD1Database({
       firstRows: [
         { device_id: DEVICE_ID },
+        { signing_public_key: PUBLIC_KEY },
         { actor_device_id: "device-02", outcome: "success", created_at: 1_780_001_000 },
       ],
     });
 
     const response = await handleRequest(
-      syncResetRequest(syncResetBody()),
+      syncResetRequest(await syncResetBody()),
       testEnv({
         d1,
         r2Deletes,
@@ -132,7 +162,7 @@ describe("sync reset routes", () => {
     const d1 = testD1Database({ firstRows: [{ device_id: DEVICE_ID }] });
 
     const response = await handleRequest(
-      syncResetRequest(syncResetBody({ confirmation: "delete" })),
+      syncResetRequest(await syncResetBody({ confirmation: "delete" })),
       testEnv({
         d1,
         r2Deletes,
@@ -152,7 +182,7 @@ describe("sync reset routes", () => {
     const d1 = testD1Database({ firstRows: [null] });
 
     const response = await handleRequest(
-      syncResetRequest(syncResetBody()),
+      syncResetRequest(await syncResetBody()),
       testEnv({
         d1,
         kvEntries: [[authSessionCacheKvKey("local", tokenHash), sessionDocument(DEVICE_ID)]],
@@ -165,16 +195,21 @@ describe("sync reset routes", () => {
     assert.deepEqual(d1.batches, []);
   });
 
-  it("fails closed when stored R2 keys are malformed", async () => {
+  it("keeps reset successful when scheduled GC must handle a malformed legacy key", async () => {
     const r2Deletes: string[] = [];
     const tokenHash = await authTokenHash(ACCESS_TOKEN);
     const d1 = testD1Database({
-      firstRows: [{ device_id: DEVICE_ID }, null, resetCountsRow()],
+      firstRows: [
+        { device_id: DEVICE_ID },
+        { signing_public_key: PUBLIC_KEY },
+        null,
+        resetCountsRow(),
+      ],
       allRows: [{ r2_key: "sync-snapshots/../bad.bin" }],
     });
 
     const response = await handleRequest(
-      syncResetRequest(syncResetBody()),
+      syncResetRequest(await syncResetBody()),
       testEnv({
         d1,
         r2Deletes,
@@ -182,10 +217,9 @@ describe("sync reset routes", () => {
       }),
     );
 
-    assert.equal(response.status, 500);
-    assert.deepEqual(await response.json(), { error: "sync_reset_failed" });
+    assert.equal(response.status, 200);
     assert.deepEqual(r2Deletes, []);
-    assert.deepEqual(d1.batches, []);
+    assert.deepEqual(d1.batches, [9]);
   });
 });
 
@@ -200,13 +234,26 @@ function syncResetRequest(body: Record<string, unknown>): Request {
   });
 }
 
-function syncResetBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    version: 1,
+async function syncResetBody(
+  overrides: Record<string, unknown> = {},
+): Promise<Record<string, unknown>> {
+  const body: Record<string, unknown> = {
+    version: 2,
     confirmation: "delete-cloud-sync-data",
     idempotency_key: IDEMPOTENCY_KEY,
+    proof_created_at: Math.floor(Date.now() / 1000),
     ...overrides,
   };
+  body.action_proof = await signDeviceMessage(recentDeviceActionProofBytes({
+    action: "sync.reset",
+    userId: USER_ID,
+    sessionId: "session-01",
+    deviceId: DEVICE_ID,
+    confirmation: String(body.confirmation),
+    idempotencyKey: String(body.idempotency_key),
+    proofCreatedAt: Number(body.proof_created_at),
+  }));
+  return body;
 }
 
 function resetCountsRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {

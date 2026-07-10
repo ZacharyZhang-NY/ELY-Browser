@@ -18,14 +18,42 @@
 
 pub mod auth;
 pub mod client;
+mod credential_store;
 pub mod device;
+mod device_api;
+mod device_proof;
+mod device_revocation;
+pub mod device_secret_store;
 pub mod email_otp;
+pub mod encryption;
 pub mod error;
+pub mod key_store;
 pub mod snapshot;
+pub mod vault;
+mod vault_bootstrap;
 
 pub use auth::{BearerToken, BearerTokenStore};
-pub use client::{ApiClientConfig, SyncApiClient, SyncLatestSnapshotDocument, SyncStatusDocument};
+pub use client::{
+    ApiClientConfig, SnapshotDownloadResult, SnapshotUploadResult, SyncApiClient,
+    SyncLatestSnapshotDocument, SyncSnapshotHeadConflictDocument, SyncStatusDocument,
+};
 pub use device::{DeviceIdentity, DeviceListResponse, DeviceRecord, DeviceRegistration};
+pub use device_api::{DeviceApprovalDocument, DeviceApprovalRequest, DeviceRebindDocument};
+pub use device_revocation::{DeviceRevocationDocument, DeviceRevocationRequest};
+pub use device_secret_store::DeviceSecretStore;
 pub use email_otp::{send_email_otp, verify_email_otp};
+pub use encryption::{
+    AccountKey, EncryptedSnapshot, SNAPSHOT_ENCRYPTION_VERSION, SnapshotCryptoContext,
+    SnapshotHeadRef,
+};
 pub use error::SyncClientError;
-pub use snapshot::{SnapshotDownload, SnapshotPayload, SnapshotUploadRequest};
+pub use key_store::{AccountKeyStore, StoredAccountKeys};
+pub use snapshot::{
+    AuthenticatedSnapshot, AuthenticatedSnapshotHead, SnapshotDownload, SnapshotPayload,
+    SnapshotUploadRequest,
+};
+pub use vault::{
+    ACCOUNT_KEY_WRAP_SUITE, ACCOUNT_KEY_WRAP_VERSION, SyncVaultDocument, VaultContext,
+    WrappedAccountKey,
+};
+pub use vault_bootstrap::SyncVaultBootstrapRequest;

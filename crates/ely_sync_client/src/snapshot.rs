@@ -1,7 +1,13 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::error::SyncClientError;
+use crate::{
+    encryption::{
+        AccountKey, EncryptedSnapshot, SNAPSHOT_ENCRYPTION_VERSION, SnapshotCryptoContext,
+        SnapshotHeadRef,
+    },
+    error::SyncClientError,
+};
 
 /// Hard cap from `cloudflare/src/sync_snapshot.ts`: a single snapshot
 /// upload may not exceed 10 MiB. We enforce the same limit client-side
@@ -56,28 +62,51 @@ pub struct SnapshotUploadRequest<'a> {
     pub snapshot_id: &'a str,
     pub region: &'a str,
     pub payload_hash: &'a str,
+    pub encryption_version: u32,
+    pub vault_generation: u64,
+    pub key_id: &'a str,
+    pub content_hash: &'a str,
     pub schema_rev: u32,
     pub logical_clock: u64,
+    pub head_revision: u64,
+    pub base_head: Option<&'a SnapshotHeadRef>,
     pub data_base64: String,
 }
 
 impl<'a> SnapshotUploadRequest<'a> {
     pub fn new(
-        snapshot_id: &'a str,
         region: &'a str,
-        schema_rev: u32,
-        logical_clock: u64,
+        context: &SnapshotCryptoContext<'a>,
+        base_head: Option<&'a AuthenticatedSnapshotHead>,
+        encrypted: &'a EncryptedSnapshot,
         payload: &'a SnapshotPayload,
-    ) -> Self {
-        Self {
-            version: 1,
-            snapshot_id,
+    ) -> Result<Self, SyncClientError> {
+        let head_revision = match base_head {
+            Some(base) => base.next_revision()?,
+            None => 1,
+        };
+        if context.head_revision != head_revision
+            || context.base_head != base_head.map(AuthenticatedSnapshotHead::head_ref)
+        {
+            return Err(SyncClientError::SnapshotEncryption {
+                reason: "snapshot upload context does not match authenticated base",
+            });
+        }
+        Ok(Self {
+            version: 3,
+            snapshot_id: context.snapshot_id,
             region,
             payload_hash: payload.payload_hash(),
-            schema_rev,
-            logical_clock,
+            encryption_version: SNAPSHOT_ENCRYPTION_VERSION,
+            vault_generation: context.vault_generation,
+            key_id: encrypted.key_id(),
+            content_hash: encrypted.content_hash(),
+            schema_rev: context.schema_rev,
+            logical_clock: context.logical_clock,
+            head_revision,
+            base_head: base_head.map(AuthenticatedSnapshotHead::head_ref),
             data_base64: encode_base64(payload.bytes()),
-        }
+        })
     }
 }
 
@@ -96,6 +125,12 @@ impl SnapshotDownload {
     /// worker enforces on upload — we re-check on download so a
     /// tampered storage layer doesn't silently desync the user.
     pub fn payload(&self) -> Result<SnapshotPayload, SyncClientError> {
+        if self.data_base64.len() > MAX_SNAPSHOT_BYTES.div_ceil(3) * 4 {
+            return Err(SyncClientError::SnapshotTooLarge {
+                bytes: self.data_base64.len(),
+                limit: MAX_SNAPSHOT_BYTES.div_ceil(3) * 4,
+            });
+        }
         let bytes = decode_base64(&self.data_base64)
             .map_err(|error| SyncClientError::SnapshotBase64(error.to_string()))?;
         let payload = SnapshotPayload::new(bytes)?;
@@ -106,6 +141,54 @@ impl SnapshotDownload {
         }
         Ok(payload)
     }
+
+    pub fn authenticate(
+        &self,
+        expected_head: &SnapshotHeadRef,
+        key: &AccountKey,
+    ) -> Result<AuthenticatedSnapshot, SyncClientError> {
+        if self.version != 3 {
+            return Err(SyncClientError::SnapshotEncryption {
+                reason: "snapshot response version is unsupported",
+            });
+        }
+        let actual_head = self.snapshot.head_ref()?;
+        if &actual_head != expected_head {
+            return Err(SyncClientError::SnapshotEncryption {
+                reason: "snapshot response head does not match request",
+            });
+        }
+        let payload = self.payload()?;
+        let context = SnapshotCryptoContext {
+            user_id: &self.user_id,
+            vault_generation: self.snapshot.vault_generation,
+            snapshot_id: &self.snapshot.snapshot_id,
+            schema_rev: self.snapshot.schema_rev,
+            logical_clock: self.snapshot.logical_clock,
+            device_id: &self.snapshot.device_id,
+            head_revision: self.snapshot.head_revision,
+            base_head: self.snapshot.base_head.as_ref(),
+        };
+        let plaintext = key.decrypt(
+            &context,
+            self.snapshot.encryption_version,
+            &self.snapshot.key_id,
+            &self.snapshot.content_hash,
+            payload.bytes(),
+        )?;
+        Ok(AuthenticatedSnapshot {
+            plaintext,
+            head: AuthenticatedSnapshotHead {
+                head: actual_head,
+                logical_clock: self.snapshot.logical_clock,
+                content_hash: self.snapshot.content_hash.clone(),
+                vault_generation: self.snapshot.vault_generation,
+                key_id: self.snapshot.key_id.clone(),
+                device_id: self.snapshot.device_id.clone(),
+                size_bytes: self.snapshot.size_bytes,
+            },
+        })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -113,11 +196,99 @@ pub struct SnapshotDocument {
     pub snapshot_id: String,
     pub r2_key: String,
     pub payload_hash: String,
+    pub encryption_version: u32,
+    pub vault_generation: u64,
+    pub key_id: String,
+    pub content_hash: String,
     pub schema_rev: u32,
     pub logical_clock: u64,
+    pub head_revision: u64,
+    pub base_head: Option<SnapshotHeadRef>,
     pub device_id: String,
     pub size_bytes: u64,
     pub created_at: u64,
+}
+
+impl SnapshotDocument {
+    fn head_ref(&self) -> Result<SnapshotHeadRef, SyncClientError> {
+        SnapshotHeadRef::new(
+            self.head_revision,
+            self.snapshot_id.clone(),
+            self.payload_hash.clone(),
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthenticatedSnapshotHead {
+    head: SnapshotHeadRef,
+    logical_clock: u64,
+    content_hash: String,
+    vault_generation: u64,
+    key_id: String,
+    device_id: String,
+    size_bytes: u64,
+}
+
+impl AuthenticatedSnapshotHead {
+    pub fn revision(&self) -> u64 {
+        self.head.revision()
+    }
+
+    pub fn logical_clock(&self) -> u64 {
+        self.logical_clock
+    }
+
+    pub fn content_hash(&self) -> &str {
+        &self.content_hash
+    }
+
+    pub fn vault_generation(&self) -> u64 {
+        self.vault_generation
+    }
+
+    pub fn key_id(&self) -> &str {
+        &self.key_id
+    }
+
+    pub fn snapshot_id(&self) -> &str {
+        self.head.snapshot_id()
+    }
+
+    pub fn device_id(&self) -> &str {
+        &self.device_id
+    }
+
+    pub fn size_bytes(&self) -> u64 {
+        self.size_bytes
+    }
+
+    pub fn next_revision(&self) -> Result<u64, SyncClientError> {
+        if self.head.revision >= 9_007_199_254_740_991 {
+            return Err(SyncClientError::SnapshotEncryption {
+                reason: "snapshot head revision exceeds the wire limit",
+            });
+        }
+        self.head.revision.checked_add(1).ok_or(SyncClientError::SnapshotEncryption {
+            reason: "snapshot head revision overflowed",
+        })
+    }
+
+    pub fn head_ref(&self) -> &SnapshotHeadRef {
+        &self.head
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthenticatedSnapshot {
+    plaintext: Vec<u8>,
+    head: AuthenticatedSnapshotHead,
+}
+
+impl AuthenticatedSnapshot {
+    pub fn into_parts(self) -> (Vec<u8>, AuthenticatedSnapshotHead) {
+        (self.plaintext, self.head)
+    }
 }
 
 const BASE64_CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -226,6 +397,92 @@ mod tests {
             let decoded = decode_base64(&encoded)?;
             assert_eq!(decoded.as_slice(), sample);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn upload_request_serializes_encrypted_wire_v3() -> Result<(), SyncClientError> {
+        let key = AccountKey::from_bytes([23; 32]);
+        let context = SnapshotCryptoContext {
+            user_id: "user-01",
+            vault_generation: 1,
+            snapshot_id: "device-01",
+            schema_rev: 1,
+            logical_clock: 42,
+            device_id: "device-01",
+            head_revision: 1,
+            base_head: None,
+        };
+        let encrypted = key.encrypt(&context, br#"{"secret":"value"}"#)?;
+        let payload = SnapshotPayload::new(encrypted.bytes().to_vec())?;
+        let request = SnapshotUploadRequest::new("auto", &context, None, &encrypted, &payload)?;
+        let value = serde_json::to_value(request)
+            .map_err(|source| SyncClientError::Json { endpoint: "test".to_string(), source })?;
+
+        assert_eq!(value["version"], 3);
+        assert_eq!(value["encryption_version"], SNAPSHOT_ENCRYPTION_VERSION);
+        assert_eq!(value["head_revision"], 1);
+        assert!(value["base_head"].is_null());
+        assert_eq!(value["key_id"], encrypted.key_id());
+        assert_eq!(value["content_hash"], encrypted.content_hash());
+        assert!(!value["data_base64"].as_str().unwrap_or_default().contains("secret"));
+        Ok(())
+    }
+
+    #[test]
+    fn downloaded_head_becomes_a_merge_base_after_authentication() -> Result<(), SyncClientError> {
+        let key = AccountKey::from_bytes([25; 32]);
+        let expected_head = SnapshotHeadRef::new(1, "device-01", "00".repeat(32))?;
+        let context = SnapshotCryptoContext {
+            user_id: "user-01",
+            vault_generation: 1,
+            snapshot_id: expected_head.snapshot_id(),
+            schema_rev: 1,
+            logical_clock: 42,
+            device_id: "device-01",
+            head_revision: 1,
+            base_head: None,
+        };
+        let encrypted = key.encrypt(&context, b"authenticated head")?;
+        let payload = SnapshotPayload::new(encrypted.bytes().to_vec())?;
+        let expected_head =
+            SnapshotHeadRef::new(1, context.snapshot_id, payload.payload_hash().to_string())?;
+        let download = SnapshotDownload {
+            version: 3,
+            user_id: context.user_id.to_string(),
+            device_id: context.device_id.to_string(),
+            snapshot: SnapshotDocument {
+                snapshot_id: context.snapshot_id.to_string(),
+                r2_key: "sync-snapshots/test".to_string(),
+                payload_hash: payload.payload_hash().to_string(),
+                encryption_version: SNAPSHOT_ENCRYPTION_VERSION,
+                vault_generation: context.vault_generation,
+                key_id: encrypted.key_id().to_string(),
+                content_hash: encrypted.content_hash().to_string(),
+                schema_rev: context.schema_rev,
+                logical_clock: context.logical_clock,
+                head_revision: context.head_revision,
+                base_head: None,
+                device_id: context.device_id.to_string(),
+                size_bytes: u64::try_from(payload.bytes().len()).unwrap_or_default(),
+                created_at: 1,
+            },
+            data_base64: encode_base64(payload.bytes()),
+        };
+        let (plaintext, authenticated_head) =
+            download.authenticate(&expected_head, &key)?.into_parts();
+
+        assert_eq!(plaintext, b"authenticated head");
+        assert_eq!(authenticated_head.revision(), 1);
+        assert_eq!(authenticated_head.content_hash(), encrypted.content_hash());
+        assert!(
+            download
+                .authenticate(
+                    &SnapshotHeadRef::new(1, "device-02", payload.payload_hash().to_string())?,
+                    &key,
+                )
+                .is_err()
+        );
         Ok(())
     }
 }

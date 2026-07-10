@@ -18,13 +18,21 @@ license = "Apache-2.0"
 rust-version = "1.95"
 
 [workspace.dependencies]
+base64 = "0.22.1"
+chacha20poly1305 = "0.11.0"
 directories = "6.0.0"
 dpi = "0.1"
 ed25519-dalek = "2.2.0"
+fs2 = "0.4.3"
+getrandom = "0.4.2"
 gpui = "0.2.2"
 gpui-component = "0.5.1"
 gpui-component-assets = "0.5.1"
+hkdf = "0.12.4"
+hmac = "0.12.1"
+hpke = { version = "0.14.0", default-features = false, features = ["alloc", "chacha", "getrandom", "x25519"] }
 image = "0.25.10"
+keyring = "4.1.4"
 servo = { version = "0.4.0", git = "https://github.com/servo/servo.git", rev = "c983c232385edf1170118b24637d2eb2564674d7" }
 sha2 = "0.10.9"
 semver = "1.0.28"
@@ -38,6 +46,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ureq = "2.12.1"
 url = "2.5.4"
 uuid = { version = "1.12.1", features = ["v7"] }
+zeroize = "1.8.2"
 
 [patch.crates-io]
 # Local GPUI 0.2.2 patch used by the native shell while the upstream crate is pinned.

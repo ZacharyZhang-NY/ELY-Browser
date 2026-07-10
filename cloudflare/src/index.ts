@@ -1,6 +1,5 @@
 import type { Env } from "./bindings.js";
 import {
-  withApprovedDeviceApiControls,
   withAuthenticatedApiControls,
   withPublicApiControls,
 } from "./api_controls.js";
@@ -10,16 +9,12 @@ import {
   accountDeletionDocument,
 } from "./account_deletion.js";
 import { handleBetterAuthRoute } from "./better_auth.js";
+import { handleDeviceRoute } from "./device_routes.js";
+import { DestructiveActionGateError } from "./destructive_action_gate.js";
 import {
-  DeviceConflictError,
-  DevicePermissionError,
-  DevicePersistenceError,
-  DeviceSchemaError,
-  approveDeviceDocument,
-  deviceListDocument,
-  registerDeviceDocument,
-  revokeDeviceDocument,
-} from "./devices.js";
+  RecentDeviceActionPermissionError,
+  RecentDeviceActionPersistenceError,
+} from "./recent_device_action_proof.js";
 import {
   PluginRegistrySchemaError,
   parsePluginRegistryDocument,
@@ -43,6 +38,7 @@ import {
   publicSigningKeysKvKey,
 } from "./signing_keys.js";
 import { handleSyncRoute } from "./sync_routes.js";
+import { maintainSyncR2Storage } from "./sync_r2_maintenance.js";
 import {
   TelemetrySchemaError,
   telemetryEventAcceptedDocument,
@@ -53,6 +49,9 @@ export default {
   fetch(request: Request, env: Env): Promise<Response> {
     return handleRequest(request, env);
   },
+  scheduled(controller: { scheduledTime: number }, env: Env): Promise<void> {
+    return maintainSyncR2Storage(env, Math.floor(controller.scheduledTime / 1000));
+  },
 };
 
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
@@ -60,143 +59,12 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   if (url.pathname === "/api/auth" || url.pathname.startsWith("/api/auth/")) {
     return handleBetterAuthRoute(request, env);
   }
-  if (url.pathname === "/api/devices") {
-    return withAuthenticatedApiControls(request, env, "devices.list", ["GET"], async (context) => {
-      try {
-        return jsonResponse(await deviceListDocument(env, context), 200, {
-          "Cache-Control": "no-store",
-        });
-      } catch (error) {
-        if (error instanceof DeviceSchemaError) {
-          return jsonResponse({ error: "devices_invalid" }, 500, { "Cache-Control": "no-store" });
-        }
-        throw error;
-      }
-    });
-  }
-  if (url.pathname === "/api/devices/register") {
-    return withAuthenticatedApiControls(
-      request,
-      env,
-      "devices.register",
-      ["POST"],
-      async (context) => {
-        try {
-          return jsonResponse(await registerDeviceDocument(request, env, context), 201, {
-            "Cache-Control": "no-store",
-          });
-        } catch (error) {
-          if (error instanceof DeviceConflictError) {
-            return jsonResponse(
-              { error: "device_registration_conflict" },
-              409,
-              { "Cache-Control": "no-store" },
-            );
-          }
-          if (error instanceof DevicePermissionError) {
-            return jsonResponse(
-              { error: "device_context_mismatch" },
-              403,
-              { "Cache-Control": "no-store" },
-            );
-          }
-          if (error instanceof DeviceSchemaError) {
-            return jsonResponse(
-              { error: "invalid_device_registration" },
-              400,
-              { "Cache-Control": "no-store" },
-            );
-          }
-          if (error instanceof DevicePersistenceError) {
-            return jsonResponse(
-              { error: "device_registration_failed" },
-              500,
-              { "Cache-Control": "no-store" },
-            );
-          }
-          throw error;
-        }
-      },
-    );
-  }
-  if (url.pathname === "/api/devices/approve") {
-    return withAuthenticatedApiControls(
-      request,
-      env,
-      "devices.approve",
-      ["POST"],
-      async (context) => {
-        try {
-          return jsonResponse(await approveDeviceDocument(request, env, context), 200, {
-            "Cache-Control": "no-store",
-          });
-        } catch (error) {
-          if (error instanceof DevicePermissionError) {
-            return jsonResponse(
-              { error: "device_approval_forbidden" },
-              403,
-              { "Cache-Control": "no-store" },
-            );
-          }
-          if (error instanceof DeviceSchemaError) {
-            return jsonResponse(
-              { error: "invalid_device_approval" },
-              400,
-              { "Cache-Control": "no-store" },
-            );
-          }
-          if (error instanceof DevicePersistenceError) {
-            return jsonResponse(
-              { error: "device_approval_failed" },
-              500,
-              { "Cache-Control": "no-store" },
-            );
-          }
-          throw error;
-        }
-      },
-    );
-  }
-  if (url.pathname === "/api/devices/revoke") {
-    return withAuthenticatedApiControls(
-      request,
-      env,
-      "devices.revoke",
-      ["POST"],
-      async (context) => {
-        try {
-          return jsonResponse(await revokeDeviceDocument(request, env, context), 200, {
-            "Cache-Control": "no-store",
-          });
-        } catch (error) {
-          if (error instanceof DevicePermissionError) {
-            return jsonResponse(
-              { error: "device_revocation_forbidden" },
-              403,
-              { "Cache-Control": "no-store" },
-            );
-          }
-          if (error instanceof DeviceSchemaError) {
-            return jsonResponse(
-              { error: "invalid_device_revocation" },
-              400,
-              { "Cache-Control": "no-store" },
-            );
-          }
-          if (error instanceof DevicePersistenceError) {
-            return jsonResponse(
-              { error: "device_revocation_failed" },
-              500,
-              { "Cache-Control": "no-store" },
-            );
-          }
-          throw error;
-        }
-      },
-    );
+  const deviceResponse = await handleDeviceRoute(request, env, url);
+  if (deviceResponse !== null) {
+    return deviceResponse;
   }
   if (url.pathname === "/api/account/delete") {
-    return withApprovedDeviceApiControls(
+    return withAuthenticatedApiControls(
       request,
       env,
       "account.delete",
@@ -214,7 +82,18 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
               { "Cache-Control": "no-store" },
             );
           }
-          if (error instanceof AccountDeletionPersistenceError) {
+          if (error instanceof RecentDeviceActionPermissionError) {
+            return jsonResponse(
+              { error: "account_deletion_forbidden" },
+              403,
+              { "Cache-Control": "no-store" },
+            );
+          }
+          if (
+            error instanceof AccountDeletionPersistenceError ||
+            error instanceof RecentDeviceActionPersistenceError ||
+            error instanceof DestructiveActionGateError
+          ) {
             return jsonResponse(
               { error: "account_deletion_failed" },
               500,

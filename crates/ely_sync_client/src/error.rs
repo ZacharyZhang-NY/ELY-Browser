@@ -34,6 +34,30 @@ pub enum SyncClientError {
     #[error("Snapshot schema is invalid: {0}")]
     SnapshotSchema(String),
 
+    #[error("Snapshot encryption failed: {reason}")]
+    SnapshotEncryption { reason: &'static str },
+
+    #[error("Cloud Sync snapshot head is changing; retry shortly")]
+    SnapshotBusy,
+
+    #[error("Sync account key storage is unavailable: {0}")]
+    AccountKeyStorage(String),
+
+    #[error("Sync account key is unavailable for encrypted cloud data")]
+    AccountKeyUnavailable,
+
+    #[error("Device private key storage is unavailable: {0}")]
+    DeviceKeyStorage(String),
+
+    #[error("Device private keys are unavailable for {device_id}")]
+    DeviceKeyUnavailable { device_id: String },
+
+    #[error("Device trust protocol failed: {reason}")]
+    DeviceTrust { reason: &'static str },
+
+    #[error("Sync account key vault operation failed: {reason}")]
+    VaultCrypto { reason: &'static str },
+
     #[error("Sync policy blocks this operation: {reason}")]
     SyncPolicy { reason: String },
 

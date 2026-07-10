@@ -3,6 +3,9 @@ main = "src/index.ts"
 compatibility_date = "2026-05-08"
 compatibility_flags = ["nodejs_compat"]
 
+[triggers]
+crons = ["17 * * * *"]
+
 [[d1_databases]]
 binding = "ELY_DB"
 database_name = "elydora-browser-db"

@@ -4,18 +4,27 @@ use std::{
 };
 
 use ely_sync_client::{
-    ApiClientConfig, BearerToken, BearerTokenStore, DeviceIdentity, SnapshotPayload,
-    SnapshotUploadRequest, SyncApiClient, SyncClientError, SyncLatestSnapshotDocument,
+    AccountKey, ApiClientConfig, AuthenticatedSnapshotHead, BearerToken, BearerTokenStore,
+    DeviceIdentity, SNAPSHOT_ENCRYPTION_VERSION, SnapshotCryptoContext, SnapshotDownloadResult,
+    SnapshotPayload, SnapshotUploadRequest, SnapshotUploadResult, SyncApiClient, SyncClientError,
+    SyncLatestSnapshotDocument,
 };
 
 use crate::state::BrowserCore;
 use crate::sync_records::{SNAPSHOT_SCHEMA_REV, SyncSnapshotBody};
+
+mod concurrency;
+mod device_management;
+mod vault_management;
+
+use concurrency::{conflict_head, ensure_remote_generation_is_available};
 
 /// Per-profile sync engine for device identity, bearer-token storage, and snapshot IO.
 #[derive(Debug)]
 pub struct SyncEngine {
     api_config: ApiClientConfig,
     bearer_store: BearerTokenStore,
+    account_key_lock_dir: PathBuf,
     identity: DeviceIdentity,
     last_outcome: Option<SyncOutcome>,
 }
@@ -30,12 +39,18 @@ impl SyncEngine {
         platform: impl Into<String>,
     ) -> Result<Self, SyncClientError> {
         let sync_dir = profile_data_dir.join("sync");
+        let account_key_lock_dir = profile_data_dir
+            .parent()
+            .and_then(Path::parent)
+            .unwrap_or(profile_data_dir)
+            .join(".sync-key-locks");
         let identity =
             DeviceIdentity::load_or_create(&sync_dir.join("device.json"), device_name, platform)?;
         let bearer_store = BearerTokenStore::new(sync_dir.join("bearer.token"));
         Ok(Self {
             api_config: ApiClientConfig::production(),
             bearer_store,
+            account_key_lock_dir,
             identity,
             last_outcome: None,
         })
@@ -71,40 +86,42 @@ impl SyncEngine {
         self.bearer_store.load().map(|token| token.is_some())
     }
 
-    /// Run the snapshot sync plan for a pre-serialised local payload.
-    /// The engine registers the device, checks the worker's latest
-    /// snapshot, downloads a newer remote payload when another device
-    /// wrote one, and uploads when the local payload is ready to win.
+    /// Reconcile a pre-serialised local payload with the authenticated global snapshot head.
     pub fn sync_bytes(&mut self, bytes: Vec<u8>) -> Result<SyncOutcome, SyncClientError> {
         let Some(bearer) = self.bearer_store.load()? else {
             let outcome = SyncOutcome::SignedOut;
             self.last_outcome = Some(outcome.clone());
             return Ok(outcome);
         };
-        let payload = SnapshotPayload::new(bytes)?;
         let client = SyncApiClient::new(self.api_config.clone(), bearer)?;
-        let Some(client) = self.approved_client(client)? else {
+        let Some((client, user_id)) = self.approved_client(client)? else {
             let outcome =
                 SyncOutcome::AwaitingDeviceApproval { device_id: self.identity.device_id.clone() };
             self.last_outcome = Some(outcome.clone());
             return Ok(outcome);
         };
 
+        let vault = self.resolve_vault(&client, &user_id)?;
         let status = client.sync_status()?;
-        let outcome = match status.snapshots.latest {
-            Some(latest) if latest.payload_hash == payload.payload_hash() => {
-                SyncOutcome::AlreadyCurrent {
-                    snapshot_id: latest.snapshot_id,
-                    logical_clock: latest.logical_clock,
-                    payload_bytes: latest.size_bytes,
-                    device_id: latest.device_id,
+        validate_sync_status(&status, &user_id, &self.identity.device_id)?;
+        let outcome = match status.snapshots.head {
+            Some(head) => {
+                let remote = self.download_remote_snapshot(&client, &user_id, &vault, head)?;
+                if remote.bytes == bytes && remote.merge_base.vault_generation() == vault.generation
+                {
+                    SyncOutcome::AlreadyCurrent {
+                        snapshot_id: remote.merge_base.snapshot_id().to_string(),
+                        logical_clock: remote.merge_base.logical_clock(),
+                        payload_bytes: remote.merge_base.size_bytes(),
+                        device_id: remote.merge_base.device_id().to_string(),
+                    }
+                } else if remote.bytes == bytes {
+                    self.upload_payload(&client, &user_id, &vault, bytes, Some(&remote.merge_base))?
+                } else {
+                    remote.into_outcome(false)
                 }
             }
-            Some(latest) if latest.device_id != self.identity.device_id => {
-                self.download_remote_snapshot(&client, latest)?
-            }
-            Some(latest) => self.upload_payload(&client, payload, latest.logical_clock)?,
-            None => self.upload_payload(&client, payload, 0)?,
+            None => self.upload_payload(&client, &user_id, &vault, bytes, None)?,
         };
         self.last_outcome = Some(outcome.clone());
         Ok(outcome)
@@ -116,22 +133,22 @@ impl SyncEngine {
     pub fn upload_merged_bytes(
         &mut self,
         bytes: Vec<u8>,
-        logical_clock_floor: u64,
+        merge_base: AuthenticatedSnapshotHead,
     ) -> Result<SyncOutcome, SyncClientError> {
         let Some(bearer) = self.bearer_store.load()? else {
             let outcome = SyncOutcome::SignedOut;
             self.last_outcome = Some(outcome.clone());
             return Ok(outcome);
         };
-        let payload = SnapshotPayload::new(bytes)?;
         let client = SyncApiClient::new(self.api_config.clone(), bearer)?;
-        let Some(client) = self.approved_client(client)? else {
+        let Some((client, user_id)) = self.approved_client(client)? else {
             let outcome =
                 SyncOutcome::AwaitingDeviceApproval { device_id: self.identity.device_id.clone() };
             self.last_outcome = Some(outcome.clone());
             return Ok(outcome);
         };
-        let outcome = self.upload_payload(&client, payload, logical_clock_floor)?;
+        let vault = self.resolve_vault(&client, &user_id)?;
+        let outcome = self.upload_payload(&client, &user_id, &vault, bytes, Some(&merge_base))?;
         self.last_outcome = Some(outcome.clone());
         Ok(outcome)
     }
@@ -139,13 +156,10 @@ impl SyncEngine {
     fn approved_client(
         &self,
         client: SyncApiClient,
-    ) -> Result<Option<SyncApiClient>, SyncClientError> {
-        let registration = client.register_device(
-            &self.identity,
-            &device_registration_idempotency_key(&self.identity),
-        )?;
+    ) -> Result<Option<(SyncApiClient, String)>, SyncClientError> {
+        let (client, registration) = self.registered_client(client)?;
         if registration.device.is_approved() {
-            return Ok(Some(client));
+            return Ok(Some((client, registration.user_id)));
         }
         if registration.device.approval_status == "pending" {
             return Ok(None);
@@ -156,44 +170,173 @@ impl SyncEngine {
         })
     }
 
+    fn registered_client(
+        &self,
+        client: SyncApiClient,
+    ) -> Result<(SyncApiClient, ely_sync_client::client::DeviceRecordDocument), SyncClientError>
+    {
+        let idempotency_key = device_registration_idempotency_key(&self.identity);
+        let registration = match client.register_device(&self.identity, &idempotency_key) {
+            Ok(registration) => registration,
+            Err(SyncClientError::HttpStatus { status: 409, .. }) => {
+                let rebound = client.rebind_device(&self.identity)?;
+                let registration = client.register_device(&self.identity, &idempotency_key)?;
+                if registration.user_id != rebound.user_id {
+                    return Err(SyncClientError::DeviceTrust {
+                        reason: "device rebind account does not match registration",
+                    });
+                }
+                registration
+            }
+            Err(error) => return Err(error),
+        };
+        Ok((client, registration))
+    }
+
     fn upload_payload(
         &self,
         client: &SyncApiClient,
-        payload: SnapshotPayload,
-        logical_clock_floor: u64,
+        user_id: &str,
+        vault: &ResolvedVault,
+        bytes: Vec<u8>,
+        base: Option<&AuthenticatedSnapshotHead>,
     ) -> Result<SyncOutcome, SyncClientError> {
+        let logical_clock_floor = base.map_or(0, AuthenticatedSnapshotHead::logical_clock);
         let logical_clock = current_logical_clock().max(logical_clock_floor.saturating_add(1));
         let snapshot_id = snapshot_id_for_user(&self.identity);
-        let request = SnapshotUploadRequest::new(
-            &snapshot_id,
-            self.api_config.region(),
-            SNAPSHOT_SCHEMA_REV,
+        let head_revision = match base {
+            Some(base) => base.next_revision()?,
+            None => 1,
+        };
+        let context = SnapshotCryptoContext {
+            user_id,
+            vault_generation: vault.generation,
+            snapshot_id: &snapshot_id,
+            schema_rev: SNAPSHOT_SCHEMA_REV,
             logical_clock,
+            device_id: &self.identity.device_id,
+            head_revision,
+            base_head: base.map(AuthenticatedSnapshotHead::head_ref),
+        };
+        let encrypted = vault.account_key.encrypt(&context, &bytes)?;
+        let payload = SnapshotPayload::new(encrypted.bytes().to_vec())?;
+        let request = SnapshotUploadRequest::new(
+            self.api_config.region(),
+            &context,
+            base,
+            &encrypted,
             &payload,
-        );
-        let document = client.upload_snapshot(&request)?;
-        Ok(SyncOutcome::Uploaded {
-            snapshot_id: document.snapshot.snapshot_id,
-            logical_clock: document.snapshot.logical_clock,
-            payload_bytes: document.snapshot.size_bytes,
-            device_id: document.device_id,
-        })
+        )?;
+        match client.upload_snapshot(&request)? {
+            SnapshotUploadResult::Committed(document) => {
+                if document.version != 3
+                    || document.user_id != user_id
+                    || document.device_id != self.identity.device_id
+                    || document.snapshot.snapshot_id != snapshot_id
+                    || document.snapshot.head_revision != head_revision
+                    || document.snapshot.base_head.as_ref()
+                        != base.map(AuthenticatedSnapshotHead::head_ref)
+                    || document.snapshot.payload_hash != payload.payload_hash()
+                    || document.snapshot.encryption_version != SNAPSHOT_ENCRYPTION_VERSION
+                    || document.snapshot.key_id != vault.account_key.key_id()
+                    || document.snapshot.vault_generation != vault.generation
+                    || document.snapshot.content_hash != encrypted.content_hash()
+                    || document.snapshot.schema_rev != SNAPSHOT_SCHEMA_REV
+                    || document.snapshot.logical_clock != logical_clock
+                    || document.snapshot.size_bytes
+                        != u64::try_from(payload.bytes().len()).map_err(|_| {
+                            SyncClientError::SnapshotEncryption {
+                                reason: "snapshot payload size is invalid",
+                            }
+                        })?
+                {
+                    return Err(SyncClientError::SnapshotEncryption {
+                        reason: "snapshot upload response does not match request",
+                    });
+                }
+                Ok(SyncOutcome::Uploaded {
+                    snapshot_id: document.snapshot.snapshot_id,
+                    logical_clock: document.snapshot.logical_clock,
+                    payload_bytes: document.snapshot.size_bytes,
+                    device_id: document.device_id,
+                })
+            }
+            SnapshotUploadResult::Conflict(conflict) => {
+                let head = conflict_head(conflict)?;
+                self.download_remote_snapshot(client, user_id, vault, head)
+                    .map(|remote| remote.into_outcome(true))
+            }
+        }
     }
 
     fn download_remote_snapshot(
         &self,
         client: &SyncApiClient,
-        latest: SyncLatestSnapshotDocument,
-    ) -> Result<SyncOutcome, SyncClientError> {
-        let download = client.download_snapshot(&latest.snapshot_id)?;
-        let payload = download.payload()?;
-        Ok(SyncOutcome::RemoteSnapshot {
-            snapshot_id: latest.snapshot_id,
-            logical_clock: latest.logical_clock,
-            payload_bytes: latest.size_bytes,
-            device_id: latest.device_id,
-            bytes: payload.into_bytes(),
-        })
+        user_id: &str,
+        vault: &ResolvedVault,
+        mut latest: SyncLatestSnapshotDocument,
+    ) -> Result<AuthenticatedRemote, SyncClientError> {
+        for _ in 0..3 {
+            let account_key = self.key_for_snapshot(client, user_id, vault, &latest)?;
+            let expected_head = latest.head_ref()?;
+            match client.download_snapshot(&expected_head)? {
+                SnapshotDownloadResult::Downloaded(download) => {
+                    let (bytes, merge_base) =
+                        download.authenticate(&expected_head, &account_key)?.into_parts();
+                    return Ok(AuthenticatedRemote { bytes, merge_base });
+                }
+                SnapshotDownloadResult::Conflict(conflict) => {
+                    latest = conflict_head(conflict)?;
+                }
+            }
+        }
+        Err(SyncClientError::SnapshotBusy)
+    }
+
+    fn key_for_snapshot(
+        &self,
+        client: &SyncApiClient,
+        user_id: &str,
+        vault: &ResolvedVault,
+        snapshot: &SyncLatestSnapshotDocument,
+    ) -> Result<AccountKey, SyncClientError> {
+        if !matches!(snapshot.encryption_version, 1 | SNAPSHOT_ENCRYPTION_VERSION) {
+            return Err(SyncClientError::SnapshotEncryption {
+                reason: "remote snapshot encryption version is unsupported",
+            });
+        }
+        ensure_remote_generation_is_available(snapshot.vault_generation, vault.generation)?;
+        if snapshot.vault_generation == vault.generation {
+            if snapshot.key_id != vault.account_key.key_id() {
+                return Err(SyncClientError::AccountKeyUnavailable);
+            }
+            return Ok(vault.account_key.clone());
+        }
+        self.resolve_historical_key(client, user_id, snapshot)
+    }
+}
+
+struct ResolvedVault {
+    account_key: AccountKey,
+    generation: u64,
+}
+
+struct AuthenticatedRemote {
+    bytes: Vec<u8>,
+    merge_base: AuthenticatedSnapshotHead,
+}
+
+impl AuthenticatedRemote {
+    fn into_outcome(self, cas_conflict: bool) -> SyncOutcome {
+        SyncOutcome::RemoteSnapshot {
+            snapshot_id: self.merge_base.snapshot_id().to_string(),
+            logical_clock: self.merge_base.logical_clock(),
+            payload_bytes: self.merge_base.size_bytes(),
+            device_id: self.merge_base.device_id().to_string(),
+            bytes: self.bytes,
+            merge_base: self.merge_base,
+            cas_conflict,
+        }
     }
 }
 
@@ -215,6 +358,8 @@ pub enum SyncOutcome {
         payload_bytes: u64,
         device_id: String,
         bytes: Vec<u8>,
+        merge_base: AuthenticatedSnapshotHead,
+        cas_conflict: bool,
     },
     Uploaded {
         snapshot_id: String,
@@ -222,6 +367,23 @@ pub enum SyncOutcome {
         payload_bytes: u64,
         device_id: String,
     },
+}
+
+fn validate_sync_status(
+    status: &ely_sync_client::SyncStatusDocument,
+    user_id: &str,
+    device_id: &str,
+) -> Result<(), SyncClientError> {
+    if status.version != 2
+        || status.user_id != user_id
+        || status.device_id != device_id
+        || status.devices.current_device_id != device_id
+        || !status.devices.current_device_approved
+        || (status.snapshots.total_snapshots == 0) != status.snapshots.head.is_none()
+    {
+        return Err(SyncClientError::DeviceTrust { reason: "sync status identity is invalid" });
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

@@ -1,8 +1,10 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::{ProfileKind, SyncConnectionState, SyncObjectKind, SyncObjectStatus};
+use ely_domain::{ProfileId, ProfileKind, SyncConnectionState, SyncObjectKind, SyncObjectStatus};
+use ely_sync_client::DeviceRecord;
 use gpui::{
-    AnyElement, Context, FontWeight, IntoElement, ParentElement, Styled, div, px, rgb, rgba,
+    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, div, prelude::FluentBuilder, px, rgb, rgba,
 };
 use gpui_component::{input::Input, scroll::ScrollableElement};
 
@@ -10,7 +12,7 @@ use crate::shell::auth::AuthFlowPhase;
 
 use super::sync_controls::{
     button_bg, render_dual_button_row, render_policy_toggle, render_primary_button,
-    render_reset_button, render_sign_out_button,
+    render_reset_button, render_secondary_button, render_sign_out_button,
 };
 use super::{ElyShell, render_canvas_surface};
 
@@ -20,6 +22,11 @@ impl ElyShell {
         snapshot: &BrowserSnapshot,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        if profile_allows_sync_controls(&snapshot.active_profile_kind)
+            && !matches!(snapshot.sync_status.connection(), SyncConnectionState::SignedOut)
+        {
+            self.ensure_sync_devices_loaded(cx);
+        }
         render_canvas_surface(
             div()
                 .size_full()
@@ -83,7 +90,7 @@ fn render_private_profile_card() -> AnyElement {
 }
 
 fn render_account_card(
-    shell: &ElyShell,
+    shell: &mut ElyShell,
     snapshot: &BrowserSnapshot,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
@@ -93,21 +100,229 @@ fn render_account_card(
     match snapshot.sync_status.connection() {
         SyncConnectionState::SignedOut => card
             .child(render_card_heading("Account"))
-            .children(account_form(shell, cx))
+            .children(account_form(shell, &snapshot.active_profile_id, cx))
             .into_any_element(),
         SyncConnectionState::SignedIn
         | SyncConnectionState::AwaitingDeviceApproval
         | SyncConnectionState::SyncReady { .. }
         | SyncConnectionState::SyncError { .. } => card
-            .child(render_card_heading("Account"))
-            .child(render_sign_out_button(shell, cx))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(render_card_heading("Account"))
+                    .child(render_sign_out_button(shell, cx)),
+            )
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .text_color(rgb(colors::ink_3()))
+                    .child("End-to-end encrypted"),
+            )
+            .child(render_devices(shell, cx))
             .into_any_element(),
     }
 }
 
-fn account_form(shell: &ElyShell, cx: &mut Context<ElyShell>) -> Vec<AnyElement> {
+fn render_devices(shell: &mut ElyShell, cx: &mut Context<ElyShell>) -> AnyElement {
+    let loading = shell.sync_devices.is_loading();
+    let header =
+        div().flex().items_center().justify_between().child(render_card_heading("Devices")).child(
+            render_secondary_button(
+                shell,
+                "sync-devices-refresh",
+                "Refresh",
+                loading,
+                cx,
+                |shell, cx| shell.refresh_sync_devices(cx),
+            ),
+        );
+    let mut section = div()
+        .pt(px(12.0))
+        .border_t_1()
+        .border_color(rgba(colors::divider()))
+        .flex()
+        .flex_col()
+        .gap(px(10.0))
+        .child(header);
+    if shell.sync_devices.is_loading() {
+        return section.child(render_device_note("Loading devices")).into_any_element();
+    }
+    if let Some(message) = shell.sync_devices.error() {
+        section = section.child(render_inline_error(message));
+    }
+    let devices = shell.sync_devices.devices().to_vec();
+    if devices.is_empty() {
+        return section.child(render_device_note("No devices")).into_any_element();
+    }
+    let current_approved = devices.iter().any(|device| device.current && device.is_approved());
+    if current_approved
+        && devices.iter().any(|device| !device.current && device.approval_status == "pending")
+    {
+        section = section.child(
+            div().px(px(10.0)).py(px(7.0)).rounded(px(8.0)).bg(rgba(button_bg())).child(
+                Input::new(&shell.sync_verification_input).appearance(false).cleanable(false),
+            ),
+        );
+    }
+    for device in devices {
+        section = section.child(render_device_row(shell, &device, current_approved, cx));
+    }
+    section.into_any_element()
+}
+
+fn render_device_row(
+    shell: &ElyShell,
+    device: &DeviceRecord,
+    current_approved: bool,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let status = if device.current {
+        "This device"
+    } else if device.is_approved() {
+        "Approved"
+    } else if device.approval_status == "pending" {
+        "Pending"
+    } else {
+        "Revoked"
+    };
+    let mut row = div()
+        .py(px(8.0))
+        .border_b_1()
+        .border_color(rgba(colors::divider()))
+        .flex()
+        .flex_col()
+        .gap(px(7.0))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap(px(10.0))
+                .child(
+                    div()
+                        .min_w_0()
+                        .text_size(px(12.5))
+                        .font_weight(FontWeight(500.0))
+                        .text_color(rgb(colors::ink()))
+                        .child(device.device_name.clone()),
+                )
+                .child(div().text_size(px(11.0)).text_color(rgb(colors::ink_4())).child(status)),
+        );
+    let code = if device.current {
+        shell.sync_devices.current_code().map(str::to_string)
+    } else {
+        device.verification_code().ok()
+    };
+    if let Some(code) = code {
+        row = row.child(div().text_size(px(11.5)).text_color(rgb(colors::ink_3())).child(code));
+    }
+    let can_revoke = current_approved
+        && !device.current
+        && device.revoked_at.is_none()
+        && matches!(device.approval_status.as_str(), "pending" | "approved");
+    if can_revoke {
+        let device_id = device.device_id.clone();
+        let busy = shell.sync_devices.is_acting_on(&device_id);
+        let confirmed = shell.sync_devices.is_revoke_confirmation(&device_id);
+        row = row.child(
+            div()
+                .flex()
+                .items_center()
+                .justify_end()
+                .gap(px(8.0))
+                .when(device.approval_status == "pending", |buttons| {
+                    buttons.child(render_device_approve_button(device_id.clone(), busy, cx))
+                })
+                .when(can_revoke, |buttons| {
+                    buttons.child(render_device_revoke_button(device_id, confirmed, busy, cx))
+                }),
+        );
+    }
+    row.into_any_element()
+}
+
+fn render_device_approve_button(
+    device_id: String,
+    disabled: bool,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let id = SharedString::from(format!("sync-device-approve-{device_id}"));
+    div()
+        .id(id)
+        .px(px(12.0))
+        .py(px(8.0))
+        .rounded(px(8.0))
+        .bg(rgba(colors::accent()))
+        .text_size(px(12.0))
+        .font_weight(FontWeight(500.0))
+        .text_color(rgb(0xfff5e6))
+        .when(!disabled, |element| {
+            element
+                .cursor_pointer()
+                .hover(|style| style.opacity(0.92))
+                .active(|style| style.opacity(0.78))
+                .on_click(cx.listener(move |shell, _, _, cx| {
+                    shell.approve_sync_device(device_id.clone(), cx);
+                }))
+        })
+        .when(disabled, |element| element.opacity(0.6))
+        .child(if disabled { "Approving" } else { "Approve" })
+        .into_any_element()
+}
+
+fn render_device_revoke_button(
+    device_id: String,
+    confirmed: bool,
+    disabled: bool,
+    cx: &mut Context<ElyShell>,
+) -> AnyElement {
+    let id = SharedString::from(format!("sync-device-revoke-{device_id}"));
+    div()
+        .id(id)
+        .px(px(12.0))
+        .py(px(8.0))
+        .rounded(px(8.0))
+        .bg(rgba(if confirmed { colors::error() } else { button_bg() }))
+        .text_size(px(12.0))
+        .font_weight(FontWeight(500.0))
+        .text_color(rgb(if confirmed { 0xffffff } else { colors::error() }))
+        .when(!disabled, |element| {
+            element
+                .cursor_pointer()
+                .hover(|style| style.opacity(0.9))
+                .active(|style| style.opacity(0.78))
+                .on_click(cx.listener(move |shell, _, _, cx| {
+                    shell.revoke_sync_device(device_id.clone(), cx);
+                }))
+        })
+        .when(disabled, |element| element.opacity(0.6))
+        .child(if disabled {
+            "Revoking"
+        } else if confirmed {
+            "Confirm revoke"
+        } else {
+            "Revoke"
+        })
+        .into_any_element()
+}
+
+fn render_device_note(message: &'static str) -> AnyElement {
+    div().text_size(px(11.5)).text_color(rgb(colors::ink_4())).child(message).into_any_element()
+}
+
+fn account_form(
+    shell: &ElyShell,
+    profile_id: &ProfileId,
+    cx: &mut Context<ElyShell>,
+) -> Vec<AnyElement> {
     let mut elements: Vec<AnyElement> = Vec::new();
-    let phase = shell.auth_flow_phase.clone();
+    let phase = if shell.auth_flow_phase.belongs_to(profile_id) {
+        shell.auth_flow_phase.clone()
+    } else {
+        AuthFlowPhase::Idle
+    };
 
     elements.push(render_field_label("Email"));
     elements.push(render_input(&shell.auth_email_input));

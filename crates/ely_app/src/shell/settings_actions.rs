@@ -9,7 +9,7 @@ use gpui_component::slider::SliderValue;
 
 use crate::services::servo_profile_data::{default_profile_data_root, sync_profile_data_dir};
 
-use super::sync_state::{SyncStateUpdate, sync_platform_label};
+use super::sync_state::{PendingMergeUpload, SyncStateUpdate, sync_platform_label};
 use super::{ElyShell, ShellState};
 
 impl ElyShell {
@@ -247,14 +247,14 @@ impl ElyShell {
     }
 
     pub(crate) fn trigger_cloud_sync_upload(&mut self) {
-        self.trigger_cloud_sync_upload_with_clock_floor(None);
+        self.trigger_cloud_sync_upload_with_merge(None);
     }
 
-    pub(crate) fn trigger_cloud_sync_upload_after_remote(&mut self, logical_clock_floor: u64) {
-        self.trigger_cloud_sync_upload_with_clock_floor(Some(logical_clock_floor));
+    pub(super) fn trigger_cloud_sync_upload_after_remote(&mut self, merge: PendingMergeUpload) {
+        self.trigger_cloud_sync_upload_with_merge(Some(merge));
     }
 
-    fn trigger_cloud_sync_upload_with_clock_floor(&mut self, logical_clock_floor: Option<u64>) {
+    fn trigger_cloud_sync_upload_with_merge(&mut self, mut merge: Option<PendingMergeUpload>) {
         let active_profile_allows_sync = match &self.state {
             ShellState::Ready(core) => core.active_profile_allows_sync(),
             ShellState::StartupError(_) => false,
@@ -266,7 +266,7 @@ impl ElyShell {
         }
         if self.sync_upload_in_flight {
             self.sync_upload_scheduled = false;
-            self.queue_cloud_sync_upload(logical_clock_floor);
+            self.queue_cloud_sync_upload(merge);
             return;
         }
         self.sync_upload_scheduled = false;
@@ -278,6 +278,9 @@ impl ElyShell {
             return;
         };
         let active_profile_id = snapshot.active_profile_id.clone();
+        if merge.as_ref().is_some_and(|merge| merge.profile_id != active_profile_id) {
+            merge = None;
+        }
         let device_name = format!("ELY · {}", snapshot.active_profile_name);
         let Some(profile_root) = default_profile_data_root() else {
             tracing::warn!(target: "ely::sync", "profile data root is unavailable");
@@ -296,12 +299,12 @@ impl ElyShell {
             }
         };
         let tx = self.sync_inbox_tx.clone();
-        let thread_name =
-            if logical_clock_floor.is_some() { "ely-sync-merge-upload" } else { "ely-sync-upload" };
+        let worker_profile_id = active_profile_id.clone();
+        let thread_name = if merge.is_some() { "ely-sync-merge-upload" } else { "ely-sync-upload" };
         self.sync_upload_in_flight = true;
         if let Err(error) =
             std::thread::Builder::new().name(thread_name.to_string()).spawn(move || {
-                run_sync_upload(profile_dir, device_name, bytes, logical_clock_floor, tx)
+                run_sync_upload(worker_profile_id, profile_dir, device_name, bytes, merge, tx)
             })
         {
             self.sync_upload_in_flight = false;
@@ -341,10 +344,11 @@ impl ElyShell {
 }
 
 fn run_sync_upload(
+    profile_id: ProfileId,
     profile_dir: std::path::PathBuf,
     device_name: String,
     bytes: Vec<u8>,
-    logical_clock_floor: Option<u64>,
+    merge: Option<PendingMergeUpload>,
     inbox: std::sync::mpsc::Sender<SyncStateUpdate>,
 ) {
     let mut engine = match SyncEngine::for_profile_dir(
@@ -356,18 +360,19 @@ fn run_sync_upload(
         Err(error) => {
             let message = error.to_string();
             tracing::warn!(target: "ely::sync", error = %message, "could not initialise sync engine");
-            let _ = inbox.send(SyncStateUpdate::SyncError { message });
+            let _ = inbox.send(SyncStateUpdate::SyncError { profile_id, message });
             return;
         }
     };
-    let outcome = match logical_clock_floor {
-        Some(floor) => engine.upload_merged_bytes(bytes, floor),
+    let prior_conflict_count = merge.as_ref().map_or(0, |merge| merge.conflict_count);
+    let outcome = match merge {
+        Some(merge) => engine.upload_merged_bytes(bytes, merge.base),
         None => engine.sync_bytes(bytes),
     };
     match outcome {
         Ok(ely_browser_core::SyncOutcome::SignedOut) => {
             tracing::info!(target: "ely::sync", "no bearer token on disk; sync skipped");
-            let _ = inbox.send(SyncStateUpdate::SignedOut);
+            let _ = inbox.send(SyncStateUpdate::SignedOut { profile_id });
         }
         Ok(ely_browser_core::SyncOutcome::AwaitingDeviceApproval { device_id }) => {
             tracing::info!(
@@ -375,7 +380,7 @@ fn run_sync_upload(
                 device_id = %device_id,
                 "sync device is awaiting approval",
             );
-            let _ = inbox.send(SyncStateUpdate::AwaitingDeviceApproval);
+            let _ = inbox.send(SyncStateUpdate::AwaitingDeviceApproval { profile_id });
         }
         Ok(ely_browser_core::SyncOutcome::RemoteSnapshot {
             snapshot_id,
@@ -383,6 +388,8 @@ fn run_sync_upload(
             payload_bytes,
             device_id,
             bytes,
+            merge_base,
+            cas_conflict,
         }) => {
             tracing::info!(
                 target: "ely::sync",
@@ -392,7 +399,13 @@ fn run_sync_upload(
                 device_id = %device_id,
                 "remote snapshot downloaded",
             );
-            let _ = inbox.send(SyncStateUpdate::RemoteSnapshot { bytes, logical_clock });
+            let conflict_count =
+                if cas_conflict { prior_conflict_count.saturating_add(1) } else { 0 };
+            let _ = inbox.send(SyncStateUpdate::RemoteSnapshot {
+                profile_id: profile_id.clone(),
+                bytes,
+                merge: PendingMergeUpload { profile_id, base: merge_base, conflict_count },
+            });
         }
         Ok(ely_browser_core::SyncOutcome::AlreadyCurrent {
             snapshot_id,
@@ -412,7 +425,7 @@ fn run_sync_upload(
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            let _ = inbox.send(SyncStateUpdate::SyncReady { last_synced_at_secs });
+            let _ = inbox.send(SyncStateUpdate::SyncReady { profile_id, last_synced_at_secs });
         }
         Ok(ely_browser_core::SyncOutcome::Uploaded {
             snapshot_id,
@@ -432,15 +445,19 @@ fn run_sync_upload(
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            let _ = inbox.send(SyncStateUpdate::SyncReady { last_synced_at_secs });
+            let _ = inbox.send(SyncStateUpdate::SyncReady { profile_id, last_synced_at_secs });
+        }
+        Err(ely_sync_client::SyncClientError::SnapshotBusy) => {
+            tracing::info!(target: "ely::sync", "snapshot head is busy; retry scheduled");
+            let _ = inbox.send(SyncStateUpdate::SyncBusy { profile_id });
         }
         Err(error) => {
             let message = error.to_string();
             tracing::warn!(target: "ely::sync", error = %message, "snapshot upload failed");
             let update = if message.contains("device_not_approved") {
-                SyncStateUpdate::AwaitingDeviceApproval
+                SyncStateUpdate::AwaitingDeviceApproval { profile_id }
             } else {
-                SyncStateUpdate::SyncError { message }
+                SyncStateUpdate::SyncError { profile_id, message }
             };
             let _ = inbox.send(update);
         }

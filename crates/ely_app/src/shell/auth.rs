@@ -34,17 +34,17 @@ pub(crate) enum AuthFlowPhase {
     Idle,
     /// `send_email_otp` is in flight. UI disables the form so the
     /// user can't resend before the worker confirms acceptance.
-    SendingCode { email: String },
+    SendingCode { profile_id: ProfileId, email: String },
     /// The worker accepted the request and Cloudflare's `SEND_EMAIL`
     /// binding handed the message to the recipient's MTA. UI now
     /// reveals the OTP field.
-    AwaitingOtp { email: String },
+    AwaitingOtp { profile_id: ProfileId, email: String },
     /// `verify_email_otp` is in flight. UI shows a transient
     /// "Verifying…" state.
-    Verifying { email: String },
+    Verifying { profile_id: ProfileId, email: String },
     /// Last attempt failed. UI surfaces the message inline so the
     /// user knows what to retry.
-    Error { email: String, message: String },
+    Error { profile_id: ProfileId, email: String, message: String },
 }
 
 impl AuthFlowPhase {
@@ -58,6 +58,16 @@ impl AuthFlowPhase {
     pub(crate) fn is_busy(&self) -> bool {
         matches!(self, Self::SendingCode { .. } | Self::Verifying { .. })
     }
+
+    pub(crate) fn belongs_to(&self, profile_id: &ProfileId) -> bool {
+        match self {
+            Self::Idle => true,
+            Self::SendingCode { profile_id: owner, .. }
+            | Self::AwaitingOtp { profile_id: owner, .. }
+            | Self::Verifying { profile_id: owner, .. }
+            | Self::Error { profile_id: owner, .. } => owner == profile_id,
+        }
+    }
 }
 
 impl ElyShell {
@@ -66,54 +76,66 @@ impl ElyShell {
     /// through the shared `SyncStateUpdate` channel, which the next
     /// shell tick reconciles into the `auth_flow_phase`.
     pub(crate) fn submit_email_otp_request(&mut self, cx: &mut Context<Self>) {
-        if active_profile_sync_context_for(&self.state).is_none() {
+        let Some(active_profile) = active_profile_sync_context_for(&self.state) else {
             return;
-        }
+        };
         let email = self.read_auth_email_input(cx);
         let Some(email) = normalize_email(&email) else {
             self.auth_flow_phase = AuthFlowPhase::Error {
+                profile_id: active_profile.id,
                 email: String::new(),
                 message: "Enter a valid email to receive a code.".to_string(),
             };
             return;
         };
-        self.auth_flow_phase = AuthFlowPhase::SendingCode { email: email.clone() };
+        let profile_id = active_profile.id;
+        self.auth_flow_phase =
+            AuthFlowPhase::SendingCode { profile_id: profile_id.clone(), email: email.clone() };
         let tx = self.sync_inbox_tx.clone();
-        spawn_send_otp(email, tx);
+        spawn_send_otp(profile_id, email, tx);
     }
 
     /// Hand the typed OTP to the worker thread that calls
     /// `verify_email_otp`, persists the bearer token, and triggers
     /// the first snapshot upload on success.
     pub(crate) fn submit_email_otp_verify(&mut self, cx: &mut Context<Self>) {
-        let email = match self.auth_flow_phase.clone() {
-            AuthFlowPhase::AwaitingOtp { email }
-            | AuthFlowPhase::Error { email, .. }
-            | AuthFlowPhase::Verifying { email } => email,
+        let (profile_id, email) = match self.auth_flow_phase.clone() {
+            AuthFlowPhase::AwaitingOtp { profile_id, email }
+            | AuthFlowPhase::Error { profile_id, email, .. }
+            | AuthFlowPhase::Verifying { profile_id, email } => (profile_id, email),
             _ => return,
         };
         let otp = self.read_auth_otp_input(cx);
         let normalized_otp = otp.trim().replace(['-', ' '], "");
         if normalized_otp.is_empty() {
-            self.auth_flow_phase =
-                AuthFlowPhase::Error { email, message: "Enter the code you received.".to_string() };
+            self.auth_flow_phase = AuthFlowPhase::Error {
+                profile_id,
+                email,
+                message: "Enter the code you received.".to_string(),
+            };
             return;
         }
         let active_profile = match active_profile_sync_context_for(&self.state) {
             Some(profile) => profile,
             None => return,
         };
+        if active_profile.id != profile_id {
+            self.auth_flow_phase = AuthFlowPhase::Idle;
+            return;
+        }
         let Some(profile_root) = default_profile_data_root() else {
             self.auth_flow_phase = AuthFlowPhase::Error {
+                profile_id,
                 email,
                 message: "Profile data root is unavailable on this machine.".to_string(),
             };
             return;
         };
-        let profile_dir = sync_profile_data_dir(&profile_root, &active_profile.id);
-        self.auth_flow_phase = AuthFlowPhase::Verifying { email: email.clone() };
+        let profile_dir = sync_profile_data_dir(&profile_root, &profile_id);
+        self.auth_flow_phase =
+            AuthFlowPhase::Verifying { profile_id: profile_id.clone(), email: email.clone() };
         let tx = self.sync_inbox_tx.clone();
-        spawn_verify_otp(email, normalized_otp, profile_dir, tx);
+        spawn_verify_otp(profile_id, email, normalized_otp, profile_dir, tx);
     }
 
     /// Drop the persisted bearer token and reset the local form.
@@ -121,6 +143,9 @@ impl ElyShell {
     /// call to make, the token is the only artefact we own.
     pub(crate) fn submit_sign_out(&mut self, _cx: &mut Context<Self>) {
         self.auth_flow_phase = AuthFlowPhase::Idle;
+        self.sync_devices.reset();
+        self.sync_retry_at = None;
+        self.clear_pending_cloud_sync_upload();
         let active_profile_id = match active_profile_id_for(&self.state) {
             Some(profile_id) => profile_id,
             None => return,
@@ -180,18 +205,21 @@ pub(super) fn clear_persisted_bearer(profile_dir: &Path) -> Result<(), SyncClien
     BearerTokenStore::new(profile_dir.join("sync").join("bearer.token")).clear()
 }
 
-fn spawn_send_otp(email: String, tx: Sender<SyncStateUpdate>) {
+fn spawn_send_otp(profile_id: ProfileId, email: String, tx: Sender<SyncStateUpdate>) {
     std::thread::Builder::new()
         .name("ely-sync-auth-send".to_string())
         .spawn(move || {
             let config = ApiClientConfig::production();
             match send_email_otp(&config, &email) {
                 Ok(()) => {
-                    let _ = tx.send(SyncStateUpdate::AuthOtpSent { email });
+                    let _ = tx.send(SyncStateUpdate::AuthOtpSent { profile_id, email });
                 }
                 Err(error) => {
-                    let _ =
-                        tx.send(SyncStateUpdate::AuthError { email, message: error.to_string() });
+                    let _ = tx.send(SyncStateUpdate::AuthError {
+                        profile_id,
+                        email,
+                        message: error.to_string(),
+                    });
                 }
             }
         })
@@ -202,6 +230,7 @@ fn spawn_send_otp(email: String, tx: Sender<SyncStateUpdate>) {
 }
 
 fn spawn_verify_otp(
+    profile_id: ProfileId,
     email: String,
     otp: String,
     profile_dir: std::path::PathBuf,
@@ -215,6 +244,7 @@ fn spawn_verify_otp(
                 Ok(token) => token,
                 Err(error) => {
                     let _ = tx.send(SyncStateUpdate::AuthError {
+                        profile_id,
                         email,
                         message: error.to_string(),
                     });
@@ -226,6 +256,7 @@ fn spawn_verify_otp(
                     Ok(engine) => engine,
                     Err(error) => {
                         let _ = tx.send(SyncStateUpdate::AuthError {
+                            profile_id,
                             email,
                             message: error.to_string(),
                         });
@@ -233,10 +264,14 @@ fn spawn_verify_otp(
                     }
                 };
             if let Err(error) = engine.install_bearer(token.as_str()) {
-                let _ = tx.send(SyncStateUpdate::AuthError { email, message: error.to_string() });
+                let _ = tx.send(SyncStateUpdate::AuthError {
+                    profile_id,
+                    email,
+                    message: error.to_string(),
+                });
                 return;
             }
-            let _ = tx.send(SyncStateUpdate::AuthSucceeded { email });
+            let _ = tx.send(SyncStateUpdate::AuthSucceeded { profile_id, email });
         })
         .map(|_| ())
         .unwrap_or_else(|error| {
@@ -247,6 +282,7 @@ fn spawn_verify_otp(
 #[cfg(test)]
 mod tests {
     use ely_browser_core::{BrowserCore, InitialBrowserConfig};
+    use ely_domain::ProfileId;
 
     use super::{AuthFlowPhase, active_profile_sync_context_for, normalize_email};
     use crate::shell::ShellState;
@@ -266,11 +302,18 @@ mod tests {
 
     #[test]
     fn auth_phase_helpers() {
-        let phase = AuthFlowPhase::Verifying { email: "you@there".to_string() };
+        let profile_id = ProfileId::new();
+        let phase = AuthFlowPhase::Verifying {
+            profile_id: profile_id.clone(),
+            email: "you@there".to_string(),
+        };
         assert!(phase.is_busy());
+        assert!(phase.belongs_to(&profile_id));
+        assert!(!phase.belongs_to(&ProfileId::new()));
         assert_eq!(phase.error_message(), None);
 
         let phase = AuthFlowPhase::Error {
+            profile_id,
             email: "you@there".to_string(),
             message: "rate limited".to_string(),
         };

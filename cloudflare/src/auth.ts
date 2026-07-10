@@ -10,6 +10,7 @@ const BETTER_AUTH_SESSION_QUERY = `
     session.id,
     session.userId,
     session.expiresAt,
+    session.createdAt,
     device_context.device_id AS deviceId
   FROM better_auth_session AS session
   LEFT JOIN better_auth_session_device_context AS device_context
@@ -22,6 +23,7 @@ export interface AuthContext {
   sessionId: string;
   tokenHash: string;
   expiresAt: string;
+  createdAt: string;
   deviceId?: string;
 }
 
@@ -29,6 +31,7 @@ interface BetterAuthSessionRow extends Record<string, unknown> {
   id: unknown;
   userId: unknown;
   expiresAt: unknown;
+  createdAt: unknown;
   deviceId?: unknown;
 }
 
@@ -111,6 +114,7 @@ async function readBetterAuthSessionContext(
     sessionId: subjectId(stringField(row, "id"), "session_id"),
     tokenHash,
     expiresAt: timestampField(row, "expiresAt"),
+    createdAt: timestampField(row, "createdAt"),
   };
   const deviceId = optionalStringField(row, "deviceId");
   if (deviceId !== undefined) {

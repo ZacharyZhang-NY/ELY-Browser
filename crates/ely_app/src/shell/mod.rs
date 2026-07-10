@@ -24,6 +24,7 @@ mod site_permissions;
 mod space_files;
 mod spaces;
 mod splits;
+mod sync_devices;
 mod sync_state;
 mod tab_groups;
 mod tab_lifecycle;
@@ -57,7 +58,8 @@ use bookmarks::PendingBookmarkEdit;
 use downloads::PendingDownloadFileAction;
 use history::{PendingHistoryDomainClear, PendingHistoryTimeClear};
 use plugins::{PendingPluginInstall, PendingPluginUninstall};
-use sync_state::SyncStateUpdate;
+use sync_devices::SyncDeviceUiState;
+use sync_state::{PendingMergeUpload, SyncStateUpdate};
 use web_surface::WebSurfaceStore;
 
 enum ShellState {
@@ -111,7 +113,10 @@ pub struct ElyShell {
     sync_upload_scheduled: bool,
     sync_upload_in_flight: bool,
     sync_upload_pending: bool,
-    sync_upload_pending_logical_clock_floor: Option<u64>,
+    sync_upload_pending_merge: Option<PendingMergeUpload>,
+    sync_retry_at: Option<std::time::Instant>,
+    pub(crate) sync_devices: SyncDeviceUiState,
+    pub(crate) sync_verification_input: Entity<InputState>,
     pub(crate) auth_email_input: Entity<InputState>,
     pub(crate) auth_otp_input: Entity<InputState>,
     pub(crate) auth_flow_phase: auth::AuthFlowPhase,
@@ -153,6 +158,8 @@ impl ElyShell {
         let auth_email_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("you@elydora.com"));
         let auth_otp_input = cx.new(|cx| InputState::new(window, cx).placeholder("123456"));
+        let sync_verification_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("ABCD-EF01-2345-6789"));
         let translucency_slider = cx.new(|_cx| {
             SliderState::new()
                 .min(0.0)
@@ -252,7 +259,10 @@ impl ElyShell {
             sync_upload_scheduled: false,
             sync_upload_in_flight: false,
             sync_upload_pending: false,
-            sync_upload_pending_logical_clock_floor: None,
+            sync_upload_pending_merge: None,
+            sync_retry_at: None,
+            sync_devices: SyncDeviceUiState::default(),
+            sync_verification_input,
             auth_email_input,
             auth_otp_input,
             auth_flow_phase: auth::AuthFlowPhase::Idle,
@@ -308,6 +318,10 @@ impl ElyShell {
         if let ShellState::Ready(core) = &mut self.state
             && core.select_profile(profile_id).is_ok()
         {
+            self.auth_flow_phase = auth::AuthFlowPhase::Idle;
+            self.sync_devices.reset();
+            self.sync_retry_at = None;
+            self.clear_pending_cloud_sync_upload();
             self.sync_address_input(window, cx);
             self.schedule_cloud_sync_upload(cx);
             cx.notify();

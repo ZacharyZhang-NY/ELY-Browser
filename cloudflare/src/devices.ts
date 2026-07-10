@@ -1,28 +1,17 @@
 import type { AuthContext } from "./auth.js";
 import type { Env } from "./bindings.js";
+import { assertDeviceRegistrationProof } from "./device_registration_proof.js";
 import {
-  type DeviceApprovalDocument,
-  type DeviceApprovalRequest,
-  type DeviceApprovalRow,
   type DeviceListDocument,
   type DeviceRegistrationDocument,
   type DeviceRegistrationRequest,
-  type DeviceRevocationDocument,
-  type DeviceRevocationRequest,
-  type DeviceRevocationRow,
   type DeviceRow,
   DeviceConflictError,
   DevicePermissionError,
   DevicePersistenceError,
-  approvedDeviceDocument,
   currentDeviceId,
-  deviceApprovalRequest,
   deviceDocument,
-  deviceIdValue,
   deviceRegistrationRequest,
-  deviceRevocationRequest,
-  revokedDeviceDocument,
-  timestamp,
 } from "./device_schema.js";
 
 export {
@@ -32,149 +21,87 @@ export {
   DeviceSchemaError,
 } from "./device_schema.js";
 
+const UNBOUND_SESSION_MAX_AGE_SECONDS = 10 * 60;
+const SESSION_CLOCK_SKEW_SECONDS = 30;
+
+const DEVICE_COLUMNS = `
+  device.device_id,
+  device.public_key,
+  device.device_name,
+  device.platform,
+  device.approval_status,
+  device.created_at,
+  device.approved_at,
+  device.last_active_at,
+  device.revoked_at,
+  keys.wrapping_public_key
+`;
+const DEVICE_FROM = `
+  FROM user_devices AS device
+  LEFT JOIN user_device_keys AS keys
+    ON keys.user_id = device.user_id AND keys.device_id = device.device_id
+`;
 const DEVICE_LIST_QUERY = `
-  SELECT
-    device_id,
-    public_key,
-    device_name,
-    platform,
-    approval_status,
-    created_at,
-    approved_at,
-    last_active_at,
-    revoked_at
-  FROM user_devices
-  WHERE user_id = ?
+  SELECT ${DEVICE_COLUMNS}
+  ${DEVICE_FROM}
+  WHERE device.user_id = ?
   ORDER BY
-    revoked_at IS NOT NULL,
-    COALESCE(last_active_at, approved_at, created_at) DESC,
-    device_id ASC
+    device.revoked_at IS NOT NULL,
+    COALESCE(device.last_active_at, device.approved_at, device.created_at) DESC,
+    device.device_id ASC
 `;
 const DEVICE_REGISTER_QUERY = `
+  WITH registration AS (
+    SELECT CASE
+      WHEN NOT EXISTS (SELECT 1 FROM user_devices WHERE user_id = ?) THEN 'approved'
+      ELSE 'pending'
+    END AS approval_status
+  )
   INSERT INTO user_devices (
-    user_id,
-    device_id,
-    public_key,
-    device_name,
-    platform,
-    approval_status,
-    created_at,
-    approved_at,
-    last_active_at,
-    revoked_at,
-    idempotency_key
-  ) VALUES (?, ?, ?, ?, ?, 'pending', ?, NULL, ?, NULL, ?)
+    user_id, device_id, public_key, device_name, platform,
+    approval_status, created_at, approved_at, last_active_at, revoked_at, idempotency_key
+  )
+  SELECT ?, ?, ?, ?, ?, approval_status, ?,
+    CASE WHEN approval_status = 'approved' THEN ? ELSE NULL END,
+    ?, NULL, ?
+  FROM registration
+  WHERE EXISTS (
+    SELECT 1 FROM better_auth_session
+    WHERE id = ? AND userId = ?
+  )
+  ON CONFLICT DO NOTHING
+`;
+const DEVICE_KEYS_INSERT_QUERY = `
+  INSERT INTO user_device_keys (
+    user_id, device_id, signing_public_key,
+    wrapping_public_key, key_protocol_version, created_at
+  )
+  SELECT ?, ?, ?, ?, 2, ?
+  WHERE EXISTS (
+    SELECT 1 FROM user_devices
+    WHERE user_id = ? AND device_id = ? AND public_key = ?
+      AND device_name = ? AND platform = ? AND idempotency_key = ?
+      AND revoked_at IS NULL
+  )
+    AND EXISTS (
+      SELECT 1 FROM better_auth_session
+      WHERE id = ? AND userId = ?
+    )
   ON CONFLICT DO NOTHING
 `;
 const DEVICE_BY_IDEMPOTENCY_KEY_QUERY = `
-  SELECT
-    device_id,
-    public_key,
-    device_name,
-    platform,
-    approval_status,
-    created_at,
-    approved_at,
-    last_active_at,
-    revoked_at
-  FROM user_devices
-  WHERE user_id = ? AND idempotency_key = ?
+  SELECT ${DEVICE_COLUMNS}
+  ${DEVICE_FROM}
+  WHERE device.user_id = ? AND device.idempotency_key = ?
 `;
 const DEVICE_BY_ID_QUERY = `
-  SELECT
-    device_id,
-    public_key,
-    device_name,
-    platform,
-    approval_status,
-    created_at,
-    approved_at,
-    last_active_at,
-    revoked_at
-  FROM user_devices
-  WHERE user_id = ? AND device_id = ?
-`;
-const APPROVED_DEVICE_QUERY = `
-  SELECT
-    device_id,
-    public_key,
-    device_name,
-    platform,
-    approval_status,
-    created_at,
-    approved_at,
-    last_active_at,
-    revoked_at
-  FROM user_devices
-  WHERE user_id = ? AND device_id = ? AND approval_status = 'approved' AND revoked_at IS NULL
-`;
-const DEVICE_APPROVAL_BY_IDEMPOTENCY_KEY_QUERY = `
-  SELECT
-    device_id,
-    requester_device_id,
-    status,
-    decided_at
-  FROM device_approvals
-  WHERE user_id = ? AND idempotency_key = ?
-`;
-const DEVICE_APPROVAL_INSERT_QUERY = `
-  INSERT INTO device_approvals (
-    user_id,
-    approval_id,
-    device_id,
-    requester_device_id,
-    status,
-    requested_at,
-    decided_at,
-    expires_at,
-    idempotency_key
-  ) VALUES (?, ?, ?, ?, 'approved', ?, ?, ?, ?)
-  ON CONFLICT(user_id, idempotency_key) DO NOTHING
-`;
-const DEVICE_APPROVE_QUERY = `
-  UPDATE user_devices
-  SET
-    approval_status = 'approved',
-    approved_at = COALESCE(approved_at, ?),
-    last_active_at = ?
-  WHERE user_id = ? AND device_id = ? AND approval_status = 'pending' AND revoked_at IS NULL
-`;
-const DEVICE_REVOCATION_BY_IDEMPOTENCY_KEY_QUERY = `
-  SELECT
-    actor_device_id,
-    subject_id,
-    outcome,
-    created_at
-  FROM audit_events
-  WHERE user_id = ? AND event_id = ? AND event_type = 'device.revoke'
-`;
-const DEVICE_REVOCATION_INSERT_QUERY = `
-  INSERT INTO audit_events (
-    event_id,
-    user_id,
-    actor_device_id,
-    event_type,
-    subject_type,
-    subject_id,
-    outcome,
-    metadata_hash,
-    created_at
-  ) VALUES (?, ?, ?, 'device.revoke', 'device', ?, 'success', NULL, ?)
-  ON CONFLICT(event_id) DO NOTHING
-`;
-const DEVICE_REVOKE_QUERY = `
-  UPDATE user_devices
-  SET
-    approval_status = 'revoked',
-    revoked_at = COALESCE(revoked_at, ?)
-  WHERE user_id = ? AND device_id = ? AND revoked_at IS NULL
+  SELECT ${DEVICE_COLUMNS}
+  ${DEVICE_FROM}
+  WHERE device.user_id = ? AND device.device_id = ?
 `;
 const SESSION_DEVICE_CONTEXT_UPSERT_QUERY = `
   INSERT INTO better_auth_session_device_context (
-    session_id,
-    user_id,
-    device_id,
-    updated_at
+    session_id, user_id, device_id, updated_at
   )
   SELECT ?, ?, ?, ?
   WHERE EXISTS (
@@ -182,10 +109,7 @@ const SESSION_DEVICE_CONTEXT_UPSERT_QUERY = `
     FROM better_auth_session
     WHERE id = ? AND userId = ?
   )
-  ON CONFLICT(session_id) DO UPDATE SET
-    user_id = excluded.user_id,
-    device_id = excluded.device_id,
-    updated_at = excluded.updated_at
+  ON CONFLICT(session_id) DO NOTHING
 `;
 
 export async function deviceListDocument(
@@ -210,9 +134,12 @@ export async function registerDeviceDocument(
   if (context.deviceId !== undefined && context.deviceId !== registration.deviceId) {
     throw new DevicePermissionError("device_context_mismatch");
   }
+  await assertDeviceRegistrationProof(registration);
+  assertFreshUnboundSession(context, nowSeconds);
 
-  const writeResult = await env.ELY_DB.prepare(DEVICE_REGISTER_QUERY)
-    .bind(
+  const [deviceWriteResult, keyWriteResult] = await env.ELY_DB.batch([
+    env.ELY_DB.prepare(DEVICE_REGISTER_QUERY).bind(
+      context.userId,
       context.userId,
       registration.deviceId,
       registration.publicKey,
@@ -220,11 +147,30 @@ export async function registerDeviceDocument(
       registration.platform,
       nowSeconds,
       nowSeconds,
+      nowSeconds,
       registration.idempotencyKey,
-    )
-    .run();
-  const insertedRows = changedRowCount(writeResult);
-  if (insertedRows > 1) {
+      context.sessionId,
+      context.userId,
+    ),
+    env.ELY_DB.prepare(DEVICE_KEYS_INSERT_QUERY).bind(
+      context.userId,
+      registration.deviceId,
+      registration.publicKey,
+      registration.wrappingPublicKey,
+      nowSeconds,
+      context.userId,
+      registration.deviceId,
+      registration.publicKey,
+      registration.deviceName,
+      registration.platform,
+      registration.idempotencyKey,
+      context.sessionId,
+      context.userId,
+    ),
+  ]);
+  const insertedRows = changedRowCount(deviceWriteResult, "device_registration");
+  const insertedKeyRows = changedRowCount(keyWriteResult, "device_key_registration");
+  if (insertedRows > 1 || insertedKeyRows > 1 || insertedRows !== insertedKeyRows) {
     throw new DevicePersistenceError("device_registration_write_count_invalid");
   }
   const row = await env.ELY_DB.prepare(DEVICE_BY_IDEMPOTENCY_KEY_QUERY)
@@ -249,21 +195,34 @@ export async function registerDeviceDocument(
       throw new DeviceConflictError("device_registration_conflict");
     }
     return {
-      version: 1,
+      version: 2,
       user_id: context.userId,
       device,
     };
   }
-  if (device.approval_status !== "pending" || device.revoked_at !== null) {
+  if (device.revoked_at !== null) {
     throw new DevicePersistenceError("device_registration_state_invalid");
   }
   await bindSessionDeviceContext(env, context, device.device_id, nowSeconds);
 
   return {
-    version: 1,
+    version: 2,
     user_id: context.userId,
     device,
   };
+}
+
+function assertFreshUnboundSession(context: AuthContext, nowSeconds: number): void {
+  if (context.deviceId !== undefined) {
+    return;
+  }
+  const createdAtSeconds = Math.floor(Date.parse(context.createdAt) / 1000);
+  if (
+    createdAtSeconds < nowSeconds - UNBOUND_SESSION_MAX_AGE_SECONDS ||
+    createdAtSeconds > nowSeconds + SESSION_CLOCK_SKEW_SECONDS
+  ) {
+    throw new DevicePermissionError("fresh_session_required");
+  }
 }
 
 function registrationMatches(
@@ -273,22 +232,23 @@ function registrationMatches(
   return (
     device.device_id === registration.deviceId &&
     device.public_key === registration.publicKey &&
+    device.wrapping_public_key === registration.wrappingPublicKey &&
     device.device_name === registration.deviceName &&
     device.platform === registration.platform
   );
 }
 
-function changedRowCount(result: unknown): number {
+function changedRowCount(result: unknown, label: string): number {
   if (typeof result !== "object" || result === null || !("meta" in result)) {
-    throw new DevicePersistenceError("device_registration_write_result_invalid");
+    throw new DevicePersistenceError(`${label}_write_result_invalid`);
   }
   const meta = result.meta;
   if (typeof meta !== "object" || meta === null || !("changes" in meta)) {
-    throw new DevicePersistenceError("device_registration_write_result_invalid");
+    throw new DevicePersistenceError(`${label}_write_result_invalid`);
   }
   const changes = meta.changes;
   if (typeof changes !== "number" || !Number.isSafeInteger(changes) || changes < 0) {
-    throw new DevicePersistenceError("device_registration_write_result_invalid");
+    throw new DevicePersistenceError(`${label}_write_result_invalid`);
   }
   return changes;
 }
@@ -299,187 +259,10 @@ async function bindSessionDeviceContext(
   deviceId: string,
   nowSeconds: number,
 ): Promise<void> {
-  await env.ELY_DB.prepare(SESSION_DEVICE_CONTEXT_UPSERT_QUERY)
+  const result = await env.ELY_DB.prepare(SESSION_DEVICE_CONTEXT_UPSERT_QUERY)
     .bind(context.sessionId, context.userId, deviceId, nowSeconds, context.sessionId, context.userId)
     .run();
-}
-
-export async function approveDeviceDocument(
-  request: Request,
-  env: Env,
-  context: AuthContext,
-  nowSeconds = Math.floor(Date.now() / 1000),
-): Promise<DeviceApprovalDocument> {
-  const approval = await deviceApprovalRequest(request);
-  const requesterDeviceId = currentDeviceId(context);
-  if (requesterDeviceId === approval.deviceId) {
-    throw new DevicePermissionError("device_self_approval_forbidden");
+  if (changedRowCount(result, "device_session_binding") !== 1) {
+    throw new DeviceConflictError("device_session_binding_conflict");
   }
-
-  await assertApprovedRequester(env, context.userId, requesterDeviceId);
-  const existingApproval = await env.ELY_DB.prepare(DEVICE_APPROVAL_BY_IDEMPOTENCY_KEY_QUERY)
-    .bind(context.userId, approval.idempotencyKey)
-    .first<DeviceApprovalRow>();
-  if (existingApproval !== null) {
-    return existingApprovalDocument(env, context, approval, requesterDeviceId, existingApproval);
-  }
-
-  const pendingDevice = await deviceRowById(env, context.userId, approval.deviceId);
-  if (pendingDevice === null) {
-    throw new DevicePermissionError("device_not_found");
-  }
-  const pendingDocument = deviceDocument(pendingDevice, requesterDeviceId);
-  if (pendingDocument.approval_status !== "pending" || pendingDocument.revoked_at !== null) {
-    throw new DevicePermissionError("device_not_pending");
-  }
-
-  await env.ELY_DB.batch([
-    env.ELY_DB.prepare(DEVICE_APPROVAL_INSERT_QUERY).bind(
-      context.userId,
-      approval.idempotencyKey,
-      approval.deviceId,
-      requesterDeviceId,
-      nowSeconds,
-      nowSeconds,
-      nowSeconds,
-      approval.idempotencyKey,
-    ),
-    env.ELY_DB.prepare(DEVICE_APPROVE_QUERY).bind(
-      nowSeconds,
-      nowSeconds,
-      context.userId,
-      approval.deviceId,
-    ),
-  ]);
-
-  const approvedDevice = await deviceRowById(env, context.userId, approval.deviceId);
-  if (approvedDevice === null) {
-    throw new DevicePersistenceError("device_approval_missing");
-  }
-  return approvedDeviceDocument(context.userId, requesterDeviceId, approvedDevice);
-}
-
-export async function revokeDeviceDocument(
-  request: Request,
-  env: Env,
-  context: AuthContext,
-  nowSeconds = Math.floor(Date.now() / 1000),
-): Promise<DeviceRevocationDocument> {
-  const revocation = await deviceRevocationRequest(request);
-  const requesterDeviceId = currentDeviceId(context);
-  if (requesterDeviceId === revocation.deviceId) {
-    throw new DevicePermissionError("device_self_revocation_forbidden");
-  }
-
-  const revocationEventId = deviceRevocationEventId(context.userId, revocation.idempotencyKey);
-  await assertApprovedRequester(env, context.userId, requesterDeviceId);
-  const existingRevocation = await env.ELY_DB.prepare(DEVICE_REVOCATION_BY_IDEMPOTENCY_KEY_QUERY)
-    .bind(context.userId, revocationEventId)
-    .first<DeviceRevocationRow>();
-  if (existingRevocation !== null) {
-    return existingRevocationDocument(env, context, revocation, requesterDeviceId, existingRevocation);
-  }
-
-  const targetDevice = await deviceRowById(env, context.userId, revocation.deviceId);
-  if (targetDevice === null) {
-    throw new DevicePermissionError("device_not_found");
-  }
-  const targetDocument = deviceDocument(targetDevice, requesterDeviceId);
-  if (targetDocument.revoked_at !== null) {
-    throw new DevicePermissionError("device_already_revoked");
-  }
-
-  await env.ELY_DB.batch([
-    env.ELY_DB.prepare(DEVICE_REVOCATION_INSERT_QUERY).bind(
-      revocationEventId,
-      context.userId,
-      requesterDeviceId,
-      revocation.deviceId,
-      nowSeconds,
-    ),
-    env.ELY_DB.prepare(DEVICE_REVOKE_QUERY).bind(nowSeconds, context.userId, revocation.deviceId),
-  ]);
-
-  const revokedDevice = await deviceRowById(env, context.userId, revocation.deviceId);
-  if (revokedDevice === null) {
-    throw new DevicePersistenceError("device_revocation_missing");
-  }
-  return revokedDeviceDocument(context.userId, requesterDeviceId, revokedDevice);
-}
-
-function deviceRevocationEventId(userId: string, idempotencyKey: string): string {
-  return `device-revoke:${userId}:${idempotencyKey}`;
-}
-
-async function existingApprovalDocument(
-  env: Env,
-  context: AuthContext,
-  approval: DeviceApprovalRequest,
-  requesterDeviceId: string,
-  row: DeviceApprovalRow,
-): Promise<DeviceApprovalDocument> {
-  const approvedDeviceId = deviceIdValue(row.device_id, "device_id");
-  const approvedByDeviceId = deviceIdValue(row.requester_device_id, "requester_device_id");
-  if (
-    approvedDeviceId !== approval.deviceId ||
-    approvedByDeviceId !== requesterDeviceId ||
-    row.status !== "approved"
-  ) {
-    throw new DevicePermissionError("device_approval_replay_mismatch");
-  }
-
-  const approvedDevice = await deviceRowById(env, context.userId, approvedDeviceId);
-  if (approvedDevice === null) {
-    throw new DevicePersistenceError("device_approval_missing");
-  }
-
-  return {
-    ...approvedDeviceDocument(context.userId, requesterDeviceId, approvedDevice),
-    approved_at: timestamp(row.decided_at, "decided_at"),
-  };
-}
-
-async function existingRevocationDocument(
-  env: Env,
-  context: AuthContext,
-  revocation: DeviceRevocationRequest,
-  requesterDeviceId: string,
-  row: DeviceRevocationRow,
-): Promise<DeviceRevocationDocument> {
-  const revokedDeviceId = deviceIdValue(row.subject_id, "subject_id");
-  const revokedByDeviceId = deviceIdValue(row.actor_device_id, "actor_device_id");
-  if (
-    revokedDeviceId !== revocation.deviceId ||
-    revokedByDeviceId !== requesterDeviceId ||
-    row.outcome !== "success"
-  ) {
-    throw new DevicePermissionError("device_revocation_replay_mismatch");
-  }
-
-  const revokedDevice = await deviceRowById(env, context.userId, revokedDeviceId);
-  if (revokedDevice === null) {
-    throw new DevicePersistenceError("device_revocation_missing");
-  }
-
-  return {
-    ...revokedDeviceDocument(context.userId, requesterDeviceId, revokedDevice),
-    revoked_at: timestamp(row.created_at, "created_at"),
-  };
-}
-
-async function assertApprovedRequester(
-  env: Env,
-  userId: string,
-  requesterDeviceId: string,
-): Promise<void> {
-  const requester = await env.ELY_DB.prepare(APPROVED_DEVICE_QUERY)
-    .bind(userId, requesterDeviceId)
-    .first<DeviceRow>();
-  if (requester === null) {
-    throw new DevicePermissionError("requester_device_unapproved");
-  }
-}
-
-async function deviceRowById(env: Env, userId: string, deviceId: string): Promise<DeviceRow | null> {
-  return env.ELY_DB.prepare(DEVICE_BY_ID_QUERY).bind(userId, deviceId).first<DeviceRow>();
 }

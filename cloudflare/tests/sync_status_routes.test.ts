@@ -12,17 +12,17 @@ describe("sync status routes", () => {
   it("returns cloud sync cursor, object, snapshot, and device status", async () => {
     const tokenHash = await authTokenHash(ACCESS_TOKEN);
     const d1 = testD1Database({
-      firstRows: [
-        { device_id: DEVICE_ID },
-        { latest_change_id: 51, total_changes: 7 },
-        { total_snapshots: 2 },
-        latestSnapshotRow(),
-        { approved_devices: 3 },
-      ],
-      allRows: [
-        objectStatusRow({ object_type: "bookmarks", active_count: 4, deleted_count: 1 }),
-        objectStatusRow({ object_type: "tabs", active_count: 9, latest_logical_clock: 44 }),
-      ],
+      firstRows: [{ device_id: DEVICE_ID }],
+      batchRowSets: [[
+        [{ latest_change_id: 51, total_changes: 7 }],
+        [
+          objectStatusRow({ object_type: "bookmarks", active_count: 4, deleted_count: 1 }),
+          objectStatusRow({ object_type: "tabs", active_count: 9, latest_logical_clock: 44 }),
+        ],
+        [{ total_snapshots: 2 }],
+        [snapshotHeadRow()],
+        [{ approved_devices: 3 }],
+      ]],
     });
 
     const response = await handleRequest(
@@ -36,7 +36,7 @@ describe("sync status routes", () => {
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("cache-control"), "no-store");
     assert.deepEqual(await response.json(), {
-      version: 1,
+      version: 2,
       user_id: USER_ID,
       device_id: DEVICE_ID,
       cursor: { latest_change_id: 51, total_changes: 7 },
@@ -46,7 +46,7 @@ describe("sync status routes", () => {
       ],
       snapshots: {
         total_snapshots: 2,
-        latest: latestSnapshotRow(),
+        head: snapshotHeadStatus(),
       },
       devices: {
         approved_count: 3,
@@ -58,7 +58,7 @@ describe("sync status routes", () => {
     assert.ok(d1.queries[1]?.includes("FROM sync_change_log"));
     assert.ok(d1.queries[2]?.includes("FROM sync_objects"));
     assert.ok(d1.queries[3]?.includes("FROM sync_snapshots"));
-    assert.ok(d1.queries[4]?.includes("FROM sync_snapshots"));
+    assert.ok(d1.queries[4]?.includes("FROM sync_snapshot_heads"));
     assert.ok(d1.queries[5]?.includes("FROM user_devices"));
     assert.deepEqual(d1.binds, [
       [USER_ID, DEVICE_ID],
@@ -68,18 +68,21 @@ describe("sync status routes", () => {
       [USER_ID],
       [USER_ID],
     ]);
+    assert.deepEqual(d1.batches, [5]);
+    assert.deepEqual(d1.sessionConstraints, ["first-primary"]);
   });
 
   it("returns empty status when the account has no sync facts", async () => {
     const tokenHash = await authTokenHash(ACCESS_TOKEN);
     const d1 = testD1Database({
-      firstRows: [
-        { device_id: DEVICE_ID },
-        { latest_change_id: 0, total_changes: 0 },
-        { total_snapshots: 0 },
-        null,
-        { approved_devices: 1 },
-      ],
+      firstRows: [{ device_id: DEVICE_ID }],
+      batchRowSets: [[
+        [{ latest_change_id: 0, total_changes: 0 }],
+        [],
+        [{ total_snapshots: 0 }],
+        [],
+        [{ approved_devices: 1 }],
+      ]],
     });
 
     const response = await handleRequest(
@@ -94,18 +97,17 @@ describe("sync status routes", () => {
     const body = (await response.json()) as {
       cursor: { latest_change_id: number; total_changes: number };
       objects: [];
-      snapshots: { total_snapshots: number; latest: null };
+      snapshots: { total_snapshots: number; head: null };
     };
     assert.deepEqual(body.cursor, { latest_change_id: 0, total_changes: 0 });
     assert.deepEqual(body.objects, []);
-    assert.deepEqual(body.snapshots, { total_snapshots: 0, latest: null });
+    assert.deepEqual(body.snapshots, { total_snapshots: 0, head: null });
   });
 
   it("rejects revoked devices before reading sync status", async () => {
     const tokenHash = await authTokenHash(ACCESS_TOKEN);
     const d1 = testD1Database({
-      firstRows: [null, { latest_change_id: 51, total_changes: 7 }],
-      allRows: [objectStatusRow()],
+      firstRows: [null],
     });
 
     const response = await handleRequest(
@@ -138,14 +140,64 @@ describe("sync status routes", () => {
   it("returns a server error for malformed status rows", async () => {
     const tokenHash = await authTokenHash(ACCESS_TOKEN);
     const d1 = testD1Database({
-      firstRows: [
-        { device_id: DEVICE_ID },
-        { latest_change_id: 51, total_changes: 7 },
-        { total_snapshots: 1 },
-        latestSnapshotRow(),
-        { approved_devices: 1 },
-      ],
-      allRows: [objectStatusRow({ object_type: "passwords" })],
+      firstRows: [{ device_id: DEVICE_ID }],
+      batchRowSets: [[
+        [{ latest_change_id: 51, total_changes: 7 }],
+        [objectStatusRow({ object_type: "passwords" })],
+        [{ total_snapshots: 1 }],
+        [snapshotHeadRow()],
+        [{ approved_devices: 1 }],
+      ]],
+    });
+
+    const response = await handleRequest(
+      syncStatusRequest(),
+      testEnv({
+        d1,
+        kvEntries: [[authSessionCacheKvKey("local", tokenHash), sessionDocument(DEVICE_ID)]],
+      }),
+    );
+
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), { error: "sync_status_invalid" });
+  });
+
+  it("fails closed when encrypted snapshots exist without a global head", async () => {
+    const tokenHash = await authTokenHash(ACCESS_TOKEN);
+    const d1 = testD1Database({
+      firstRows: [{ device_id: DEVICE_ID }],
+      batchRowSets: [[
+        [{ latest_change_id: 0, total_changes: 0 }],
+        [],
+        [{ total_snapshots: 1 }],
+        [],
+        [{ approved_devices: 1 }],
+      ]],
+    });
+
+    const response = await handleRequest(
+      syncStatusRequest(),
+      testEnv({
+        d1,
+        kvEntries: [[authSessionCacheKvKey("local", tokenHash), sessionDocument(DEVICE_ID)]],
+      }),
+    );
+
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), { error: "sync_status_invalid" });
+  });
+
+  it("fails closed when global head storage metadata is malformed", async () => {
+    const tokenHash = await authTokenHash(ACCESS_TOKEN);
+    const d1 = testD1Database({
+      firstRows: [{ device_id: DEVICE_ID }],
+      batchRowSets: [[
+        [{ latest_change_id: 0, total_changes: 0 }],
+        [],
+        [{ total_snapshots: 1 }],
+        [snapshotHeadRow({ r2_key: "invalid" })],
+        [{ approved_devices: 1 }],
+      ]],
     });
 
     const response = await handleRequest(
@@ -182,14 +234,39 @@ function objectStatusDocument(overrides: Record<string, unknown> = {}): Record<s
   return objectStatusRow(overrides);
 }
 
-function latestSnapshotRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+function snapshotHeadRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     snapshot_id: "snapshot-01",
+    r2_key: `sync-snapshots/us-east/${"d".repeat(64)}/snapshot-01/${"a".repeat(64)}.bin`,
     payload_hash: "a".repeat(64),
+    encryption_version: 2,
+    vault_generation: 1,
+    key_id: "b".repeat(64),
+    content_hash: "c".repeat(64),
+    schema_rev: 1,
     logical_clock: 42,
+    head_revision: 1,
+    base_head_revision: null,
+    base_snapshot_id: null,
+    base_payload_hash: null,
     device_id: DEVICE_ID,
     size_bytes: 26,
     created_at: 1_780_000_900,
     ...overrides,
+  };
+}
+
+function snapshotHeadStatus(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const {
+    r2_key: _r2Key,
+    schema_rev: _schemaRev,
+    base_head_revision: _baseHeadRevision,
+    base_snapshot_id: _baseSnapshotId,
+    base_payload_hash: _basePayloadHash,
+    ...status
+  } = snapshotHeadRow(overrides);
+  return {
+    ...status,
+    base_head: null,
   };
 }

@@ -1,11 +1,21 @@
 use std::{path::Path, time::Duration};
 
-use ely_domain::{ProfileKind, SyncConnectionState};
+use ely_domain::{ProfileId, ProfileKind, SyncConnectionState};
+use ely_sync_client::{AuthenticatedSnapshotHead, DeviceRecord};
 use gpui::{Context, Timer};
 
 use super::{ElyShell, ShellState, auth};
 
 const CLOUD_SYNC_UPLOAD_DEBOUNCE: Duration = Duration::from_millis(750);
+const CAS_RETRY_LIMIT: u8 = 3;
+const CAS_RETRY_DELAY: Duration = Duration::from_secs(2);
+
+#[derive(Clone, Debug)]
+pub(crate) struct PendingMergeUpload {
+    pub(super) profile_id: ProfileId,
+    pub(super) base: AuthenticatedSnapshotHead,
+    pub(super) conflict_count: u8,
+}
 
 /// Messages the off-thread sync workers push back to the shell so
 /// `SyncConnectionState` on `BrowserCore` and the in-flight auth
@@ -14,14 +24,17 @@ const CLOUD_SYNC_UPLOAD_DEBOUNCE: Duration = Duration::from_millis(750);
 /// on shell startup and does not flow through this channel.
 #[derive(Clone, Debug)]
 pub(crate) enum SyncStateUpdate {
-    SignedOut,
-    AwaitingDeviceApproval,
-    RemoteSnapshot { bytes: Vec<u8>, logical_clock: u64 },
-    SyncReady { last_synced_at_secs: u64 },
-    SyncError { message: String },
-    AuthOtpSent { email: String },
-    AuthSucceeded { email: String },
-    AuthError { email: String, message: String },
+    SignedOut { profile_id: ProfileId },
+    AwaitingDeviceApproval { profile_id: ProfileId },
+    RemoteSnapshot { profile_id: ProfileId, bytes: Vec<u8>, merge: PendingMergeUpload },
+    SyncReady { profile_id: ProfileId, last_synced_at_secs: u64 },
+    SyncBusy { profile_id: ProfileId },
+    SyncError { profile_id: ProfileId, message: String },
+    DevicesLoaded { profile_id: ProfileId, devices: Vec<DeviceRecord>, current_code: String },
+    DevicesError { profile_id: ProfileId, message: String },
+    AuthOtpSent { profile_id: ProfileId, email: String },
+    AuthSucceeded { profile_id: ProfileId, email: String },
+    AuthError { profile_id: ProfileId, email: String, message: String },
 }
 
 /// Stable label for the current OS used by the device registration
@@ -64,13 +77,18 @@ impl ElyShell {
         .detach();
     }
 
-    pub(super) fn queue_cloud_sync_upload(&mut self, logical_clock_floor: Option<u64>) {
+    pub(super) fn queue_cloud_sync_upload(&mut self, merge: Option<PendingMergeUpload>) {
         self.sync_upload_pending = true;
-        if let Some(floor) = logical_clock_floor {
-            self.sync_upload_pending_logical_clock_floor = Some(
-                self.sync_upload_pending_logical_clock_floor
-                    .map_or(floor, |current| current.max(floor)),
-            );
+        if let Some(candidate) = merge {
+            let replace = self.sync_upload_pending_merge.as_ref().is_none_or(|current| {
+                candidate.profile_id != current.profile_id
+                    || candidate.base.revision() > current.base.revision()
+                    || candidate.base.revision() == current.base.revision()
+                        && candidate.conflict_count > current.conflict_count
+            });
+            if replace {
+                self.sync_upload_pending_merge = Some(candidate);
+            }
         }
     }
 
@@ -80,9 +98,9 @@ impl ElyShell {
         }
 
         self.sync_upload_pending = false;
-        let logical_clock_floor = self.sync_upload_pending_logical_clock_floor.take();
-        match logical_clock_floor {
-            Some(floor) => self.trigger_cloud_sync_upload_after_remote(floor),
+        let merge = self.sync_upload_pending_merge.take();
+        match merge {
+            Some(merge) => self.trigger_cloud_sync_upload_after_remote(merge),
             None => self.trigger_cloud_sync_upload(),
         }
         true
@@ -90,7 +108,7 @@ impl ElyShell {
 
     pub(super) fn clear_pending_cloud_sync_upload(&mut self) {
         self.sync_upload_pending = false;
-        self.sync_upload_pending_logical_clock_floor = None;
+        self.sync_upload_pending_merge = None;
     }
 
     fn can_schedule_cloud_sync_upload(&self) -> bool {
@@ -118,23 +136,36 @@ impl ElyShell {
     /// state on `BrowserCore`. Returns `true` when at least one
     /// update was applied so callers can `cx.notify()` accordingly.
     pub(super) fn drain_sync_updates(&mut self) -> bool {
+        let retry_due =
+            self.sync_retry_at.is_some_and(|deadline| deadline <= std::time::Instant::now());
+        if retry_due {
+            self.sync_retry_at = None;
+        }
         let mut latest_connection: Option<SyncConnectionState> = None;
         let mut auth_changed = false;
         let mut trigger_initial_sync = false;
         let mut trigger_merged_upload = None;
         let mut upload_finished = false;
+        let mut devices_changed = false;
         while let Ok(update) = self.sync_inbox_rx.try_recv() {
             match update {
-                SyncStateUpdate::SignedOut => {
-                    latest_connection = Some(SyncConnectionState::SignedOut);
+                SyncStateUpdate::SignedOut { profile_id } => {
                     upload_finished = true;
+                    if active_profile_id(&self.state).as_ref() == Some(&profile_id) {
+                        latest_connection = Some(SyncConnectionState::SignedOut);
+                    }
                 }
-                SyncStateUpdate::AwaitingDeviceApproval => {
-                    latest_connection = Some(SyncConnectionState::AwaitingDeviceApproval);
+                SyncStateUpdate::AwaitingDeviceApproval { profile_id } => {
                     upload_finished = true;
+                    if active_profile_id(&self.state).as_ref() == Some(&profile_id) {
+                        latest_connection = Some(SyncConnectionState::AwaitingDeviceApproval);
+                    }
                 }
-                SyncStateUpdate::RemoteSnapshot { bytes, logical_clock } => {
+                SyncStateUpdate::RemoteSnapshot { profile_id, bytes, merge } => {
                     upload_finished = true;
+                    if active_profile_id(&self.state).as_ref() != Some(&profile_id) {
+                        continue;
+                    }
                     if let ShellState::Ready(core) = &mut self.state {
                         match core.apply_sync_snapshot_bytes(&bytes) {
                             Ok(summary) => {
@@ -145,7 +176,15 @@ impl ElyShell {
                                     skipped = summary.skipped(),
                                     "remote snapshot applied",
                                 );
-                                trigger_merged_upload = Some(logical_clock);
+                                if merge.conflict_count >= CAS_RETRY_LIMIT {
+                                    latest_connection = Some(SyncConnectionState::SyncError {
+                                        message: "Cloud Sync is busy; retrying shortly".to_string(),
+                                    });
+                                    self.sync_retry_at =
+                                        Some(std::time::Instant::now() + CAS_RETRY_DELAY);
+                                } else {
+                                    trigger_merged_upload = Some(merge);
+                                }
                             }
                             Err(error) => {
                                 latest_connection = Some(SyncConnectionState::SyncError {
@@ -155,29 +194,63 @@ impl ElyShell {
                         }
                     }
                 }
-                SyncStateUpdate::SyncReady { last_synced_at_secs } => {
-                    latest_connection =
-                        Some(SyncConnectionState::SyncReady { last_synced_at_secs });
+                SyncStateUpdate::SyncReady { profile_id, last_synced_at_secs } => {
                     upload_finished = true;
+                    if active_profile_id(&self.state).as_ref() == Some(&profile_id) {
+                        latest_connection =
+                            Some(SyncConnectionState::SyncReady { last_synced_at_secs });
+                    }
                 }
-                SyncStateUpdate::SyncError { message } => {
-                    latest_connection = Some(SyncConnectionState::SyncError { message });
+                SyncStateUpdate::SyncBusy { profile_id } => {
                     upload_finished = true;
+                    if active_profile_id(&self.state).as_ref() == Some(&profile_id) {
+                        latest_connection = Some(SyncConnectionState::SyncError {
+                            message: "Cloud Sync is busy; retrying shortly".to_string(),
+                        });
+                        self.sync_retry_at = Some(std::time::Instant::now() + CAS_RETRY_DELAY);
+                    }
                 }
-                SyncStateUpdate::AuthOtpSent { email } => {
-                    self.auth_flow_phase = auth::AuthFlowPhase::AwaitingOtp { email };
-                    auth_changed = true;
+                SyncStateUpdate::SyncError { profile_id, message } => {
+                    upload_finished = true;
+                    if active_profile_id(&self.state).as_ref() == Some(&profile_id) {
+                        latest_connection = Some(SyncConnectionState::SyncError { message });
+                    }
                 }
-                SyncStateUpdate::AuthSucceeded { email } => {
-                    self.auth_flow_phase = auth::AuthFlowPhase::Idle;
-                    latest_connection = Some(SyncConnectionState::SignedIn);
-                    trigger_initial_sync = true;
-                    tracing::info!(target: "ely::sync", email = %email, "email OTP sign-in succeeded");
-                    auth_changed = true;
+                SyncStateUpdate::DevicesLoaded { profile_id, devices, current_code } => {
+                    if active_profile_id(&self.state).as_ref() == Some(&profile_id) {
+                        self.sync_devices.set_ready(profile_id, devices, current_code);
+                        devices_changed = true;
+                    }
                 }
-                SyncStateUpdate::AuthError { email, message } => {
-                    self.auth_flow_phase = auth::AuthFlowPhase::Error { email, message };
-                    auth_changed = true;
+                SyncStateUpdate::DevicesError { profile_id, message } => {
+                    if active_profile_id(&self.state).as_ref() == Some(&profile_id) {
+                        self.sync_devices.set_error(profile_id, message);
+                        devices_changed = true;
+                    }
+                }
+                SyncStateUpdate::AuthOtpSent { profile_id, email } => {
+                    if active_profile_id(&self.state).as_ref() == Some(&profile_id) {
+                        self.auth_flow_phase =
+                            auth::AuthFlowPhase::AwaitingOtp { profile_id, email };
+                        auth_changed = true;
+                    }
+                }
+                SyncStateUpdate::AuthSucceeded { profile_id, email } => {
+                    if active_profile_id(&self.state).as_ref() == Some(&profile_id) {
+                        self.auth_flow_phase = auth::AuthFlowPhase::Idle;
+                        self.sync_devices.reset();
+                        latest_connection = Some(SyncConnectionState::SignedIn);
+                        trigger_initial_sync = true;
+                        tracing::info!(target: "ely::sync", email = %email, "email OTP sign-in succeeded");
+                        auth_changed = true;
+                    }
+                }
+                SyncStateUpdate::AuthError { profile_id, email, message } => {
+                    if active_profile_id(&self.state).as_ref() == Some(&profile_id) {
+                        self.auth_flow_phase =
+                            auth::AuthFlowPhase::Error { profile_id, email, message };
+                        auth_changed = true;
+                    }
                 }
             }
         }
@@ -194,15 +267,30 @@ impl ElyShell {
         }
 
         let merged_upload_requested = trigger_merged_upload.is_some();
-        if let Some(logical_clock_floor) = trigger_merged_upload {
+        if let Some(merge) = trigger_merged_upload {
             self.clear_pending_cloud_sync_upload();
-            self.trigger_cloud_sync_upload_after_remote(logical_clock_floor);
+            self.trigger_cloud_sync_upload_after_remote(merge);
         } else if upload_finished {
             self.trigger_pending_cloud_sync_upload();
         }
+        if retry_due {
+            self.trigger_cloud_sync_upload();
+        }
 
-        auth_changed || trigger_initial_sync || merged_upload_requested || connection_changed
+        auth_changed
+            || devices_changed
+            || trigger_initial_sync
+            || merged_upload_requested
+            || retry_due
+            || connection_changed
     }
+}
+
+fn active_profile_id(state: &ShellState) -> Option<ProfileId> {
+    let ShellState::Ready(core) = state else {
+        return None;
+    };
+    core.snapshot().ok().map(|snapshot| snapshot.active_profile_id)
 }
 
 fn probe_initial_sync_state_at(

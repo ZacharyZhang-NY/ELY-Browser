@@ -1,7 +1,13 @@
 import type { AuthContext } from "./auth.js";
+import {
+  type WrappedAccountKeyDocument,
+  SyncVaultRequestError,
+  parseWrappedAccountKey,
+} from "./sync_vault.js";
 
 const DEVICE_ID_PATTERN = /^[a-zA-Z0-9._:-]{3,128}$/;
-const PUBLIC_KEY_PATTERN = /^[a-fA-F0-9]{64,256}$/;
+const PUBLIC_KEY_PATTERN = /^[a-f0-9]{64}$/;
+const SIGNATURE_PATTERN = /^[a-f0-9]{128}$/;
 const DEVICE_TEXT_PATTERN = /^[^\p{Cc}\p{Cs}]{1,128}$/u;
 const APPROVAL_STATUS = new Set(["pending", "approved", "revoked"]);
 
@@ -12,7 +18,7 @@ export interface DeviceListDocument {
 }
 
 export interface DeviceRegistrationDocument {
-  version: 1;
+  version: 2;
   user_id: string;
   device: DeviceDocument;
 }
@@ -25,17 +31,32 @@ export interface DeviceApprovalDocument {
   device: DeviceDocument;
 }
 
-export interface DeviceRevocationDocument {
-  version: 1;
+interface DeviceRevocationDocumentBase {
+  version: 2;
   user_id: string;
   revoked_by_device_id: string;
   revoked_at: number;
   device: DeviceDocument;
 }
 
+export interface ApprovedDeviceRevocationDocument extends DeviceRevocationDocumentBase {
+  mode: "approved_rotate";
+  key_id: string;
+  generation: number;
+}
+
+export interface PendingDeviceRevocationDocument extends DeviceRevocationDocumentBase {
+  mode: "pending_revoke";
+}
+
+export type DeviceRevocationDocument =
+  | ApprovedDeviceRevocationDocument
+  | PendingDeviceRevocationDocument;
+
 export interface DeviceDocument {
   device_id: string;
   public_key: string;
+  wrapping_public_key?: string;
   device_name: string;
   platform: string;
   approval_status: "pending" | "approved" | "revoked";
@@ -49,6 +70,7 @@ export interface DeviceDocument {
 export interface DeviceRow {
   device_id: unknown;
   public_key: unknown;
+  wrapping_public_key?: unknown;
   device_name: unknown;
   platform: unknown;
   approval_status: unknown;
@@ -61,26 +83,27 @@ export interface DeviceRow {
 export interface DeviceRegistrationRequest {
   deviceId: string;
   publicKey: string;
+  wrappingPublicKey: string;
+  registrationProof: string;
   deviceName: string;
   platform: string;
   idempotencyKey: string;
 }
 
-export type DeviceApprovalRequest = { deviceId: string; idempotencyKey: string };
-export type DeviceRevocationRequest = { deviceId: string; idempotencyKey: string };
-
+export interface DeviceApprovalRequest {
+  deviceId: string;
+  keyId: string;
+  generation: number;
+  envelope: WrappedAccountKeyDocument;
+  idempotencyKey: string;
+  proofCreatedAt: number;
+  approvalProof: string;
+}
 export interface DeviceApprovalRow {
   device_id: unknown;
   requester_device_id: unknown;
   status: unknown;
   decided_at: unknown;
-}
-
-export interface DeviceRevocationRow {
-  actor_device_id: unknown;
-  subject_id: unknown;
-  outcome: unknown;
-  created_at: unknown;
 }
 
 type DeviceRequestBody = Record<string, unknown>;
@@ -121,17 +144,21 @@ export async function deviceRegistrationRequest(
     "version",
     "device_id",
     "public_key",
+    "wrapping_public_key",
+    "registration_proof",
     "device_name",
     "platform",
     "idempotency_key",
   ]);
-  if (value.version !== 1) {
+  if (value.version !== 2) {
     throw new DeviceSchemaError("device_registration_version_invalid");
   }
 
   return {
     deviceId: deviceIdValue(value.device_id, "device_id"),
-    publicKey: publicKeyValue(value.public_key),
+    publicKey: publicKeyValue(value.public_key, "public_key"),
+    wrappingPublicKey: publicKeyValue(value.wrapping_public_key, "wrapping_public_key"),
+    registrationProof: signatureValue(value.registration_proof, "registration_proof"),
     deviceName: deviceText(value.device_name, "device_name"),
     platform: deviceText(value.platform, "platform"),
     idempotencyKey: idempotencyKeyValue(value.idempotency_key),
@@ -140,27 +167,28 @@ export async function deviceRegistrationRequest(
 
 export async function deviceApprovalRequest(request: Request): Promise<DeviceApprovalRequest> {
   const value = await deviceRequestBody(request, "device_approval");
-  assertOnlyFields(value, ["version", "device_id", "idempotency_key"]);
-  if (value.version !== 1) {
+  assertOnlyFields(value, [
+    "version",
+    "device_id",
+    "key_id",
+    "generation",
+    "envelope",
+    "idempotency_key",
+    "proof_created_at",
+    "approval_proof",
+  ]);
+  if (value.version !== 2) {
     throw new DeviceSchemaError("device_approval_version_invalid");
   }
 
   return {
     deviceId: deviceIdValue(value.device_id, "device_id"),
+    keyId: keyIdValue(value.key_id),
+    generation: positiveInteger(value.generation, "generation"),
+    envelope: wrappedAccountKey(value.envelope),
     idempotencyKey: idempotencyKeyValue(value.idempotency_key),
-  };
-}
-
-export async function deviceRevocationRequest(request: Request): Promise<DeviceRevocationRequest> {
-  const value = await deviceRequestBody(request, "device_revocation");
-  assertOnlyFields(value, ["version", "device_id", "idempotency_key"]);
-  if (value.version !== 1) {
-    throw new DeviceSchemaError("device_revocation_version_invalid");
-  }
-
-  return {
-    deviceId: deviceIdValue(value.device_id, "device_id"),
-    idempotencyKey: idempotencyKeyValue(value.idempotency_key),
+    proofCreatedAt: positiveInteger(value.proof_created_at, "proof_created_at"),
+    approvalProof: signatureValue(value.approval_proof, "approval_proof"),
   };
 }
 
@@ -182,24 +210,6 @@ export function approvedDeviceDocument(
   };
 }
 
-export function revokedDeviceDocument(
-  userId: string,
-  revokedByDeviceId: string,
-  row: DeviceRow,
-): DeviceRevocationDocument {
-  const device = deviceDocument(row, revokedByDeviceId);
-  if (device.approval_status !== "revoked" || device.revoked_at === null) {
-    throw new DevicePersistenceError("device_revocation_missing");
-  }
-  return {
-    version: 1,
-    user_id: userId,
-    revoked_by_device_id: revokedByDeviceId,
-    revoked_at: device.revoked_at,
-    device,
-  };
-}
-
 export function currentDeviceId(context: AuthContext): string {
   if (context.deviceId === undefined) {
     throw new DevicePermissionError("device_context_required");
@@ -212,9 +222,16 @@ export function deviceDocument(
   currentDeviceIdValue: string | undefined,
 ): DeviceDocument {
   const deviceId = deviceIdValue(row.device_id, "device_id");
+  const wrappingPublicKey = optionalPublicKeyValue(
+    row.wrapping_public_key,
+    "wrapping_public_key",
+  );
   return {
     device_id: deviceId,
-    public_key: publicKeyValue(row.public_key),
+    public_key: publicKeyValue(row.public_key, "public_key"),
+    ...(wrappingPublicKey === undefined
+      ? {}
+      : { wrapping_public_key: wrappingPublicKey }),
     device_name: deviceText(row.device_name, "device_name"),
     platform: deviceText(row.platform, "platform"),
     approval_status: approvalStatus(row.approval_status),
@@ -240,11 +257,25 @@ export function timestamp(value: unknown, label: string): number {
   return value;
 }
 
-function publicKeyValue(value: unknown): string {
+export function publicKeyValue(value: unknown, label: string): string {
   if (typeof value !== "string" || !PUBLIC_KEY_PATTERN.test(value)) {
-    throw new DeviceSchemaError("public_key_invalid");
+    throw new DeviceSchemaError(`${label}_invalid`);
   }
-  return value.toLowerCase();
+  return value;
+}
+
+export function signatureValue(value: unknown, label: string): string {
+  if (typeof value !== "string" || !SIGNATURE_PATTERN.test(value)) {
+    throw new DeviceSchemaError(`${label}_invalid`);
+  }
+  return value;
+}
+
+function optionalPublicKeyValue(value: unknown, label: string): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  return publicKeyValue(value, label);
 }
 
 function deviceText(value: unknown, label: string): string {
@@ -265,11 +296,36 @@ function approvalStatus(value: unknown): DeviceDocument["approval_status"] {
   return value as DeviceDocument["approval_status"];
 }
 
-function idempotencyKeyValue(value: unknown): string {
+export function idempotencyKeyValue(value: unknown): string {
   if (typeof value !== "string" || !/^[a-zA-Z0-9._:-]{16,128}$/.test(value)) {
     throw new DeviceSchemaError("idempotency_key_invalid");
   }
   return value;
+}
+
+export function keyIdValue(value: unknown): string {
+  if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) {
+    throw new DeviceSchemaError("key_id_invalid");
+  }
+  return value;
+}
+
+export function positiveInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
+    throw new DeviceSchemaError(`${label}_invalid`);
+  }
+  return value;
+}
+
+export function wrappedAccountKey(value: unknown): WrappedAccountKeyDocument {
+  try {
+    return parseWrappedAccountKey(value);
+  } catch (error) {
+    if (error instanceof SyncVaultRequestError) {
+      throw new DeviceSchemaError("envelope_invalid");
+    }
+    throw error;
+  }
 }
 
 function nullableTimestamp(value: unknown, label: string): number | null {
@@ -279,7 +335,7 @@ function nullableTimestamp(value: unknown, label: string): number | null {
   return timestamp(value, label);
 }
 
-function assertOnlyFields(value: DeviceRequestBody, fields: string[]): void {
+export function assertOnlyFields(value: DeviceRequestBody, fields: string[]): void {
   const allowed = new Set(fields);
   for (const field of Object.keys(value)) {
     if (!allowed.has(field)) {
@@ -288,7 +344,10 @@ function assertOnlyFields(value: DeviceRequestBody, fields: string[]): void {
   }
 }
 
-async function deviceRequestBody(request: Request, label: string): Promise<DeviceRequestBody> {
+export async function deviceRequestBody(
+  request: Request,
+  label: string,
+): Promise<DeviceRequestBody> {
   let value: unknown;
   try {
     value = await request.json();
