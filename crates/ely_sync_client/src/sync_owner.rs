@@ -250,17 +250,15 @@ fn publish_owner(directory: &Dir, temporary: &str) -> io::Result<()> {
     .map_err(Into::into)
 }
 
-#[cfg(windows)]
-fn publish_owner(directory: &Dir, temporary: &str) -> io::Result<()> {
-    directory.rename(temporary, directory, OWNER_FILE)
-}
-
+/// Windows `rename` replaces an existing target (MOVEFILE_REPLACE_EXISTING
+/// semantics), which would let a losing concurrent claim overwrite the
+/// winner. `hard_link` fails with `AlreadyExists` on every platform, so it
+/// preserves first-claim-wins.
 #[cfg(not(any(
     target_vendor = "apple",
     target_os = "linux",
     target_os = "android",
-    target_os = "redox",
-    windows
+    target_os = "redox"
 )))]
 fn publish_owner(directory: &Dir, temporary: &str) -> io::Result<()> {
     directory.hard_link(temporary, directory, OWNER_FILE)?;
