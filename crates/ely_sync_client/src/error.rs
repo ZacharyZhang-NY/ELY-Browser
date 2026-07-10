@@ -14,6 +14,12 @@ pub enum SyncClientError {
     #[error("Session logout response is invalid")]
     SessionLogoutInvalid,
 
+    #[error("Authenticated session ended")]
+    SessionEnded,
+
+    #[error("Authenticated session changed during reconciliation")]
+    SessionChanged,
+
     #[error("HTTP request failed for {endpoint}: {source}")]
     Http {
         endpoint: String,

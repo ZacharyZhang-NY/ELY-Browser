@@ -90,6 +90,46 @@ fn sign_out_preserves_retryable_failures() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn runtime_requests_classify_only_strict_terminal_sessions() -> Result<(), Box<dyn Error>> {
+    for code in ["session_not_found", "session_expired"] {
+        let body = format!(r#"{{"error":"{code}"}}"#);
+        let (base_url, server) =
+            spawn_authenticated_server("GET /api/devices HTTP/1.1\r\n", "401 Unauthorized", &body)?;
+        let client = SyncApiClient::new(
+            ApiClientConfig::custom(base_url, "auto"),
+            BearerToken::new("a".repeat(64))?,
+        )?;
+
+        assert!(matches!(client.list_devices(), Err(crate::SyncClientError::SessionEnded)));
+        join_server(server)?;
+    }
+
+    for (status_line, body, expected_status) in [
+        ("401 Unauthorized", r#"{"error":"authorization_missing"}"#, 401),
+        ("401 Unauthorized", r#"{"error":"authorization_invalid"}"#, 401),
+        ("401 Unauthorized", r#"{"error":"unknown"}"#, 401),
+        ("401 Unauthorized", r#"{"error":"session_not_found","extra":true}"#, 401),
+        ("401 Unauthorized", "{", 401),
+        ("403 Forbidden", r#"{"error":"session_not_found"}"#, 403),
+        ("500 Internal Server Error", r#"{"error":"session_expired"}"#, 500),
+    ] {
+        let (base_url, server) =
+            spawn_authenticated_server("GET /api/devices HTTP/1.1\r\n", status_line, body)?;
+        let client = SyncApiClient::new(
+            ApiClientConfig::custom(base_url, "auto"),
+            BearerToken::new("a".repeat(64))?,
+        )?;
+
+        assert!(matches!(
+            client.list_devices(),
+            Err(crate::SyncClientError::HttpStatus { status, .. }) if status == expected_status
+        ));
+        join_server(server)?;
+    }
+    Ok(())
+}
+
+#[test]
 fn upload_parses_structured_snapshot_head_conflict() -> Result<(), Box<dyn Error>> {
     let (base_url, server) = spawn_conflict_server()?;
     let client = SyncApiClient::new(
@@ -180,6 +220,14 @@ fn spawn_logout_server(
     status_line: &'static str,
     body: &str,
 ) -> Result<(String, TestServer), Box<dyn Error>> {
+    spawn_authenticated_server("POST /api/session/logout HTTP/1.1\r\n", status_line, body)
+}
+
+fn spawn_authenticated_server(
+    expected_request_line: &'static str,
+    status_line: &'static str,
+    body: &str,
+) -> Result<(String, TestServer), Box<dyn Error>> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let address = listener.local_addr()?;
     let body = body.to_string();
@@ -195,7 +243,7 @@ fn spawn_logout_server(
             request.extend_from_slice(&chunk[..read]);
         }
         let request = String::from_utf8_lossy(&request);
-        if !request.starts_with("POST /api/session/logout HTTP/1.1\r\n")
+        if !request.starts_with(expected_request_line)
             || !request.contains(&format!("Authorization: Bearer {}\r\n", "a".repeat(64)))
         {
             return Err(std::io::Error::other("logout request contract mismatch"));

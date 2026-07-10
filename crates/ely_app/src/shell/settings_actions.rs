@@ -380,7 +380,7 @@ fn run_sync_upload(
     match outcome {
         Ok(ely_browser_core::SyncOutcome::SignedOut) => {
             tracing::info!(target: "ely::sync", "no bearer token on disk; sync skipped");
-            let _ = inbox.send(SyncStateUpdate::SignedOut { profile_id });
+            let _ = inbox.send(SyncStateUpdate::AuthenticationExpired { profile_id });
         }
         Ok(ely_browser_core::SyncOutcome::AwaitingDeviceApproval { device_id }) => {
             tracing::info!(

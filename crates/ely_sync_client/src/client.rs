@@ -429,6 +429,9 @@ fn read_json_response<T: DeserializeOwned>(
         Ok(ok) => read_json_from_response(endpoint, ok),
         Err(ureq::Error::Status(status, raw)) => {
             let body = raw.into_string().unwrap_or_default();
+            if session::response_ends_session(status, &body) {
+                return Err(SyncClientError::SessionEnded);
+            }
             Err(SyncClientError::HttpStatus { endpoint: endpoint.to_string(), status, body })
         }
         Err(other) => {

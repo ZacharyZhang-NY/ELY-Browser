@@ -80,8 +80,23 @@ fn credential_storage_failures_use_the_unavailable_update() {
         update,
         SyncStateUpdate::CredentialUnavailable {
             profile_id: owner,
-            finishes_upload: true,
             ..
         } if owner == profile_id
     ));
+}
+
+#[test]
+fn terminal_sessions_expire_upload_authentication() {
+    let profile_id = ely_domain::ProfileId::new();
+    for error in [
+        ely_sync_client::SyncClientError::SessionEnded,
+        ely_sync_client::SyncClientError::SessionChanged,
+    ] {
+        let update = sync_failure_update(profile_id.clone(), error);
+
+        assert!(matches!(
+            update,
+            SyncStateUpdate::AuthenticationExpired { profile_id: owner } if owner == profile_id
+        ));
+    }
 }

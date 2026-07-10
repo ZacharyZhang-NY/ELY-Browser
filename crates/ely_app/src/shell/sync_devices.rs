@@ -300,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn credential_failures_do_not_finish_an_upload() {
+    fn credential_failures_use_the_unavailable_update() {
         let profile_id = ProfileId::new();
         let update = device_failure_update(
             profile_id.clone(),
@@ -311,10 +311,25 @@ mod tests {
             update,
             SyncStateUpdate::CredentialUnavailable {
                 profile_id: owner,
-                finishes_upload: false,
                 ..
             } if owner == profile_id
         ));
+    }
+
+    #[test]
+    fn terminal_sessions_expire_profile_authentication() {
+        let profile_id = ProfileId::new();
+        for error in [
+            ely_sync_client::SyncClientError::SessionEnded,
+            ely_sync_client::SyncClientError::SessionChanged,
+        ] {
+            let update = device_failure_update(profile_id.clone(), error);
+
+            assert!(matches!(
+                update,
+                SyncStateUpdate::AuthenticationExpired { profile_id: owner } if owner == profile_id
+            ));
+        }
     }
 
     #[test]

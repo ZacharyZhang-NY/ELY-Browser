@@ -4,10 +4,14 @@ use ely_domain::{ProfileId, ProfileKind, SyncConnectionState};
 use ely_sync_client::{AuthenticatedSnapshotHead, BearerToken, BearerTokenStore, DeviceRecord};
 use gpui::{Context, Timer};
 
-use super::{ElyShell, ShellState, auth};
+use super::{
+    ElyShell, ShellState, auth,
+    sync_inbox::{early_reconciliation_messages, early_reconciliation_priority},
+};
 
 mod failure;
 mod legacy_sync_migration;
+mod session_expiry;
 mod sign_out;
 
 pub(super) use failure::{device_failure_update, sync_failure_update};
@@ -26,17 +30,16 @@ pub(crate) struct PendingMergeUpload {
 /// Messages the off-thread sync workers push back to the shell so
 /// `SyncConnectionState` on `BrowserCore` and the in-flight auth
 /// form reflect live state without the UI thread ever touching the
-/// network. `SignedIn` is the initial-probe state set synchronously
-/// on shell startup and does not flow through this channel.
+/// network. Startup seeds `SignedIn` outside this channel.
 #[derive(Clone, Debug)]
 pub(crate) enum SyncStateUpdate {
-    SignedOut { profile_id: ProfileId },
+    AuthenticationExpired { profile_id: ProfileId },
     AwaitingDeviceApproval { profile_id: ProfileId, finishes_upload: bool },
     RemoteSnapshot { profile_id: ProfileId, bytes: Vec<u8>, merge: PendingMergeUpload },
     SyncReady { profile_id: ProfileId, last_synced_at_secs: u64 },
     SyncBusy { profile_id: ProfileId },
     SyncError { profile_id: ProfileId, message: String },
-    CredentialUnavailable { profile_id: ProfileId, message: String, finishes_upload: bool },
+    CredentialUnavailable { profile_id: ProfileId, message: String },
     DevicesLoaded { profile_id: ProfileId, devices: Vec<DeviceRecord>, current_code: String },
     DevicesError { profile_id: ProfileId, message: String },
     SignOutSucceeded { profile_id: ProfileId },
@@ -172,7 +175,48 @@ impl ElyShell {
         let mut trigger_merged_upload = None;
         let mut upload_finished = false;
         let mut devices_changed = false;
-        while let Ok(message) = self.sync_inbox_rx.try_recv() {
+        let messages = self.sync_inbox_rx.try_iter().collect::<Vec<_>>();
+        for state_message in early_reconciliation_messages(&messages) {
+            match &state_message.update {
+                SyncStateUpdate::AuthenticationExpired { profile_id } => {
+                    let current = state_message.belongs_to(self.sync_generation);
+                    match self.reconcile_authentication_expiry(profile_id, current) {
+                        session_expiry::AuthenticationExpiryResolution::Ignored => {}
+                        session_expiry::AuthenticationExpiryResolution::ReplacementCredential => {
+                            latest_connection = Some(SyncConnectionState::SignedIn);
+                            trigger_initial_sync = true;
+                            devices_changed = true;
+                            auth_changed = true;
+                        }
+                        session_expiry::AuthenticationExpiryResolution::Connection(connection) => {
+                            latest_connection = Some(connection);
+                            trigger_initial_sync = false;
+                            trigger_merged_upload = None;
+                            devices_changed = true;
+                            auth_changed = true;
+                        }
+                    }
+                }
+                SyncStateUpdate::CredentialUnavailable { profile_id, message }
+                    if state_message.belongs_to(self.sync_generation)
+                        && active_profile_id(&self.state).as_ref() == Some(profile_id) =>
+                {
+                    self.reconcile_credential_unavailable(profile_id);
+                    latest_connection = Some(SyncConnectionState::CredentialUnavailable {
+                        message: message.clone(),
+                    });
+                    trigger_initial_sync = false;
+                    trigger_merged_upload = None;
+                    devices_changed = true;
+                    auth_changed = true;
+                }
+                _ => {}
+            }
+        }
+        for message in messages {
+            if early_reconciliation_priority(&message.update).is_some() {
+                continue;
+            }
             if let Some((profile_id, connection)) =
                 self.reconcile_sign_out_update(message.generation, &message.update)
             {
@@ -191,12 +235,8 @@ impl ElyShell {
             }
             let update = message.update;
             match update {
-                SyncStateUpdate::SignedOut { profile_id } => {
-                    upload_finished = true;
-                    if active_profile_id(&self.state).as_ref() == Some(&profile_id) {
-                        latest_connection = Some(SyncConnectionState::SignedOut);
-                    }
-                }
+                SyncStateUpdate::AuthenticationExpired { .. }
+                | SyncStateUpdate::CredentialUnavailable { .. } => {}
                 SyncStateUpdate::AwaitingDeviceApproval { profile_id, finishes_upload } => {
                     upload_finished |= finishes_upload;
                     if active_profile_id(&self.state).as_ref() == Some(&profile_id) {
@@ -256,20 +296,6 @@ impl ElyShell {
                     upload_finished = true;
                     if active_profile_id(&self.state).as_ref() == Some(&profile_id) {
                         latest_connection = Some(SyncConnectionState::SyncError { message });
-                    }
-                }
-                SyncStateUpdate::CredentialUnavailable { profile_id, message, finishes_upload } => {
-                    upload_finished |= finishes_upload;
-                    if active_profile_id(&self.state).as_ref() == Some(&profile_id) {
-                        latest_connection =
-                            Some(SyncConnectionState::CredentialUnavailable { message });
-                        self.sync_devices.reset();
-                        self.sync_upload_scheduled = false;
-                        self.sync_retry_at = None;
-                        self.clear_pending_cloud_sync_upload();
-                        trigger_initial_sync = false;
-                        trigger_merged_upload = None;
-                        devices_changed = true;
                     }
                 }
                 SyncStateUpdate::DevicesLoaded { profile_id, devices, current_code } => {

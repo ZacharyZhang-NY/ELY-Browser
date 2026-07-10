@@ -9,7 +9,13 @@ use super::SyncEngine;
 
 impl SyncEngine {
     pub fn cloud_devices(&self) -> Result<DeviceListResponse, SyncClientError> {
-        let client = self.authenticated_client()?;
+        self.with_required_authenticated_client(|client| self.cloud_devices_with_client(client))
+    }
+
+    fn cloud_devices_with_client(
+        &self,
+        client: SyncApiClient,
+    ) -> Result<DeviceListResponse, SyncClientError> {
         let (client, registration) = self.registered_client(client)?;
         let devices = client.list_devices()?;
         validate_device_list(
@@ -26,7 +32,18 @@ impl SyncEngine {
         target_device_id: &str,
         verification_code: &str,
     ) -> Result<DeviceApprovalDocument, SyncClientError> {
-        let (client, user_id) = self.approved_device_client()?;
+        self.with_required_authenticated_client(|client| {
+            self.approve_cloud_device_with_client(client, target_device_id, verification_code)
+        })
+    }
+
+    fn approve_cloud_device_with_client(
+        &self,
+        client: SyncApiClient,
+        target_device_id: &str,
+        verification_code: &str,
+    ) -> Result<DeviceApprovalDocument, SyncClientError> {
+        let (client, user_id) = self.approved_device_client(client)?;
         let devices = client.list_devices()?;
         validate_device_list(&devices, &user_id, &self.identity.device_id, true)?;
         let target = pending_device(&devices.devices, target_device_id)?;
@@ -72,7 +89,17 @@ impl SyncEngine {
         &self,
         target_device_id: &str,
     ) -> Result<DeviceRevocationDocument, SyncClientError> {
-        let (client, user_id) = self.approved_device_client()?;
+        self.with_required_authenticated_client(|client| {
+            self.revoke_cloud_device_with_client(client, target_device_id)
+        })
+    }
+
+    fn revoke_cloud_device_with_client(
+        &self,
+        client: SyncApiClient,
+        target_device_id: &str,
+    ) -> Result<DeviceRevocationDocument, SyncClientError> {
+        let (client, user_id) = self.approved_device_client(client)?;
         let devices = client.list_devices()?;
         validate_device_list(&devices, &user_id, &self.identity.device_id, true)?;
         let target = revocable_device(&devices.devices, target_device_id)?;
@@ -134,19 +161,14 @@ impl SyncEngine {
         Ok(document)
     }
 
-    fn approved_device_client(&self) -> Result<(SyncApiClient, String), SyncClientError> {
-        let client = self.authenticated_client()?;
+    fn approved_device_client(
+        &self,
+        client: SyncApiClient,
+    ) -> Result<(SyncApiClient, String), SyncClientError> {
         self.approved_client(client)?.ok_or_else(|| SyncClientError::DeviceApprovalStatus {
             device_id: self.identity.device_id.clone(),
             status: "pending".to_string(),
         })
-    }
-
-    fn authenticated_client(&self) -> Result<SyncApiClient, SyncClientError> {
-        let bearer = self.bearer_store.load()?.ok_or(SyncClientError::DeviceTrust {
-            reason: "device management requires an authenticated session",
-        })?;
-        SyncApiClient::new(self.api_config.clone(), bearer)
     }
 }
 

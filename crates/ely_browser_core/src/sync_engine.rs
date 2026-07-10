@@ -16,6 +16,7 @@ use crate::sync_records::{SNAPSHOT_SCHEMA_REV, SyncSnapshotBody};
 
 mod concurrency;
 mod device_management;
+mod session;
 mod vault_management;
 
 use concurrency::{conflict_head, ensure_remote_generation_is_available};
@@ -82,73 +83,6 @@ impl SyncEngine {
 
     pub fn is_signed_in(&self) -> Result<bool, SyncClientError> {
         self.bearer_store.load().map(|token| token.is_some())
-    }
-
-    /// Reconcile a pre-serialised local payload with the authenticated global snapshot head.
-    pub fn sync_bytes(&mut self, bytes: Vec<u8>) -> Result<SyncOutcome, SyncClientError> {
-        let Some(bearer) = self.bearer_store.load()? else {
-            let outcome = SyncOutcome::SignedOut;
-            self.last_outcome = Some(outcome.clone());
-            return Ok(outcome);
-        };
-        let client = SyncApiClient::new(self.api_config.clone(), bearer)?;
-        let Some((client, user_id)) = self.approved_client(client)? else {
-            let outcome =
-                SyncOutcome::AwaitingDeviceApproval { device_id: self.identity.device_id.clone() };
-            self.last_outcome = Some(outcome.clone());
-            return Ok(outcome);
-        };
-
-        let vault = self.resolve_vault(&client, &user_id)?;
-        let status = client.sync_status()?;
-        validate_sync_status(&status, &user_id, &self.identity.device_id)?;
-        let outcome = match status.snapshots.head {
-            Some(head) => {
-                let remote = self.download_remote_snapshot(&client, &user_id, &vault, head)?;
-                if remote.bytes == bytes && remote.merge_base.vault_generation() == vault.generation
-                {
-                    SyncOutcome::AlreadyCurrent {
-                        snapshot_id: remote.merge_base.snapshot_id().to_string(),
-                        logical_clock: remote.merge_base.logical_clock(),
-                        payload_bytes: remote.merge_base.size_bytes(),
-                        device_id: remote.merge_base.device_id().to_string(),
-                    }
-                } else if remote.bytes == bytes {
-                    self.upload_payload(&client, &user_id, &vault, bytes, Some(&remote.merge_base))?
-                } else {
-                    remote.into_outcome(false)
-                }
-            }
-            None => self.upload_payload(&client, &user_id, &vault, bytes, None)?,
-        };
-        self.last_outcome = Some(outcome.clone());
-        Ok(outcome)
-    }
-
-    /// Upload a local payload after the UI thread has applied a remote
-    /// snapshot. The caller passes the remote logical clock so the new
-    /// merged snapshot is ordered after the downloaded one.
-    pub fn upload_merged_bytes(
-        &mut self,
-        bytes: Vec<u8>,
-        merge_base: AuthenticatedSnapshotHead,
-    ) -> Result<SyncOutcome, SyncClientError> {
-        let Some(bearer) = self.bearer_store.load()? else {
-            let outcome = SyncOutcome::SignedOut;
-            self.last_outcome = Some(outcome.clone());
-            return Ok(outcome);
-        };
-        let client = SyncApiClient::new(self.api_config.clone(), bearer)?;
-        let Some((client, user_id)) = self.approved_client(client)? else {
-            let outcome =
-                SyncOutcome::AwaitingDeviceApproval { device_id: self.identity.device_id.clone() };
-            self.last_outcome = Some(outcome.clone());
-            return Ok(outcome);
-        };
-        let vault = self.resolve_vault(&client, &user_id)?;
-        let outcome = self.upload_payload(&client, &user_id, &vault, bytes, Some(&merge_base))?;
-        self.last_outcome = Some(outcome.clone());
-        Ok(outcome)
     }
 
     fn approved_client(

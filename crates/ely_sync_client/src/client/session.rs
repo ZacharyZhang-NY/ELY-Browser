@@ -35,7 +35,7 @@ impl SyncApiClient {
             }
             Err(ureq::Error::Status(status, response)) => {
                 let body = response.into_string().unwrap_or_default();
-                if status == 401 && logout_is_already_complete(&body) {
+                if response_ends_session(status, &body) {
                     return Ok(());
                 }
                 Err(SyncClientError::HttpStatus { endpoint, status, body })
@@ -45,8 +45,32 @@ impl SyncApiClient {
     }
 }
 
-fn logout_is_already_complete(body: &str) -> bool {
-    serde_json::from_str::<AuthErrorDocument>(body).is_ok_and(|document| {
-        matches!(document.error.as_str(), "session_not_found" | "session_expired")
-    })
+pub(super) fn response_ends_session(status: u16, body: &str) -> bool {
+    status == 401
+        && serde_json::from_str::<AuthErrorDocument>(body).is_ok_and(|document| {
+            matches!(document.error.as_str(), "session_not_found" | "session_expired")
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::response_ends_session;
+
+    #[test]
+    fn terminal_session_parser_is_exact() {
+        for body in [r#"{"error":"session_not_found"}"#, r#"{"error":"session_expired"}"#] {
+            assert!(response_ends_session(401, body));
+        }
+        for (status, body) in [
+            (401, r#"{"error":"authorization_missing"}"#),
+            (401, r#"{"error":"authorization_invalid"}"#),
+            (401, r#"{"error":"unknown"}"#),
+            (401, r#"{"error":"session_not_found","extra":true}"#),
+            (401, "{"),
+            (403, r#"{"error":"session_not_found"}"#),
+            (500, r#"{"error":"session_expired"}"#),
+        ] {
+            assert!(!response_ends_session(status, body));
+        }
+    }
 }
