@@ -114,24 +114,22 @@ file:line evidence lives in the 2026-07-10 bug-sweep report):
    the syncable entities persist, but back/forward stacks, splits, tab
    groups, archived tabs, and downloads do not yet — extend the local-state
    document (its `settings`/`body` split is built to grow).
-3. Engine/webview: redirect or pushState leaves tab state "loading"
-   forever and pins stale pixels (`ely_servo_host/src/runtime_webview.rs`
-   requested-vs-current URL reconciliation); persistent-profile sidecars
-   are never reclaimed while the app runs; sidecar stderr is nulled;
-   final URLs >32KiB cause a reload loop.
+3. Engine/webview (partial): persistent-profile sidecars are never
+   reclaimed while the app runs; sidecar stderr is nulled; final URLs
+   >32KiB cause a reload loop. (Fixed: redirect/pushState loading-state
+   reconciliation.)
 4. Downloads engine: pause/resume/cancel/retry are UI-only, progress
-   never updates, checksum runs on the UI thread, open/reveal hardcode
-   `/usr/bin/open`; `ely://auth/callback` exchange and save-page commands
-   are unimplemented.
+   never updates, checksum runs on the UI thread; `ely://auth/callback`
+   exchange and save-page commands are unimplemented. (Fixed:
+   cross-platform open/reveal.)
 5. Smaller confirmed papercuts: several synced mutations never schedule
    an upload (splits, group toggles, deletions), trash_space leaks split
-   layouts, reload of the current URL is a no-op (crashed tabs can't
-   reload in place), mid-Vec tab inserts skip sort normalization, Esc
-   doesn't close the command overlay, "Switch workspace" palette entry
-   mislabels its action, Profiles page cannot create/delete profiles,
-   vault rotation silently skips devices without wrapping keys,
-   SyncStatus counters are hardcoded, second in-process Servo host panics
-   (upstream OnceLock).
+   layouts, mid-Vec tab inserts skip sort normalization, "Switch
+   workspace" palette entry mislabels its action, Profiles page cannot
+   create/delete profiles, vault rotation silently skips devices without
+   wrapping keys, SyncStatus counters are hardcoded, second in-process
+   Servo host panics (upstream OnceLock). (Fixed: Esc closes the command
+   overlay; the current-URL reload is real now — Cmd/Ctrl+R.)
 6. Integration tests litter the real data root with `profile_*` dirs
    (`~/Library/Application Support/com.elydora.ELY-Browser/profiles/`);
    tests should take an overridable data root.
