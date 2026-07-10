@@ -345,7 +345,6 @@ fn diagnostic_report(
         format!("Space: {}", snapshot.active_space_name),
         format!("Profile: {}", snapshot.active_profile_name),
         format!("Profile kind: {}", profile_kind_label(&snapshot.active_profile_kind)),
-        format!("Diagnostics reporting: {}", snapshot.diagnostics_reporting_policy.status()),
         format!("Local diagnostics: {}", snapshot.diagnostic_events.len()),
         format!("URL scope: {}", diagnostic_url_scope(active_tab)),
         format!("Tab title: {}", active_tab.title()),
@@ -439,8 +438,7 @@ mod tests {
     }
 
     #[test]
-    fn diagnostic_report_includes_privacy_and_local_event_count()
-    -> Result<(), Box<dyn std::error::Error>> {
+    fn diagnostic_report_includes_local_event_count() -> Result<(), Box<dyn std::error::Error>> {
         let core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
         let snapshot = core.snapshot()?;
         let active_tab = active_tab(&snapshot)
@@ -448,8 +446,8 @@ mod tests {
         let origin = origin_for_tab(active_tab);
         let report = diagnostic_report(&snapshot, active_tab, origin.as_ref());
 
-        assert!(report.contains("Diagnostics reporting: Diagnostics reporting is on"));
         assert!(report.contains("Local diagnostics: 1"));
+        assert!(!report.contains("Diagnostics reporting:"));
         Ok(())
     }
 }

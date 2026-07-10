@@ -2,10 +2,10 @@ use std::{collections::BTreeMap, time::SystemTime};
 
 use ely_domain::{
     AppearanceSettings, ArchivePolicy, ArchivedTab, BookmarkEntry, BrowserTab, DiagnosticEvent,
-    DiagnosticsReportingPolicy, DomainError, DownloadEntry, DownloadPolicy, FavoriteLimit,
-    HistoryEntry, HistoryRecordingPolicy, NewTabDestination, NoteEntry, Profile, ProfileId,
-    ProfileKind, ReadingListEntry, SearchEngine, SitePermissionAuditEvent, SitePermissionEntry,
-    Space, SpaceId, SplitLayout, SyncStatus, TabGroup, TabId, UrlText,
+    DomainError, DownloadEntry, DownloadPolicy, FavoriteLimit, HistoryEntry,
+    HistoryRecordingPolicy, NewTabDestination, NoteEntry, Profile, ProfileId, ProfileKind,
+    ReadingListEntry, SearchEngine, SitePermissionAuditEvent, SitePermissionEntry, Space, SpaceId,
+    SplitLayout, SyncStatus, TabGroup, TabId, UrlText,
 };
 
 use crate::{CoreError, navigation::tab_title};
@@ -136,7 +136,6 @@ pub struct BrowserSnapshot {
     pub search_engine: SearchEngine,
     pub new_tab_destination: NewTabDestination,
     pub history_recording_policy: HistoryRecordingPolicy,
-    pub diagnostics_reporting_policy: DiagnosticsReportingPolicy,
     pub favorite_limit: FavoriteLimit,
     pub appearance: AppearanceSettings,
     pub command_query: String,
@@ -177,7 +176,6 @@ pub struct BrowserCore {
     search_engine: SearchEngine,
     new_tab_destination: NewTabDestination,
     history_recording_policy: HistoryRecordingPolicy,
-    diagnostics_reporting_policy: DiagnosticsReportingPolicy,
     favorite_limit: FavoriteLimit,
     appearance: AppearanceSettings,
     sync_object_policies: SyncObjectPolicies,
@@ -229,7 +227,6 @@ impl BrowserCore {
             search_engine: SearchEngine::default(),
             new_tab_destination,
             history_recording_policy: HistoryRecordingPolicy::default(),
-            diagnostics_reporting_policy: DiagnosticsReportingPolicy::default(),
             favorite_limit: FavoriteLimit::default(),
             appearance: AppearanceSettings::default(),
             sync_object_policies: SyncObjectPolicies::default(),
@@ -381,7 +378,6 @@ impl BrowserCore {
             search_engine: self.search_engine,
             new_tab_destination: self.new_tab_destination,
             history_recording_policy: self.history_recording_policy,
-            diagnostics_reporting_policy: self.diagnostics_reporting_policy,
             favorite_limit: self.favorite_limit,
             appearance: self.appearance,
             command_query: self.command_query.clone(),

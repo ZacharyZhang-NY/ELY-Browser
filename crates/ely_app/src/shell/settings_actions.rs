@@ -1,8 +1,8 @@
 use ely_browser_core::SyncEngine;
 use ely_domain::{
-    ArchivePolicy, DEFAULT_TRANSLUCENCY_PCT, DiagnosticsReportingPolicy, DownloadPolicy,
-    FavoriteLimit, HistoryRecordingPolicy, NewTabDestination, ProfileId, ProfileSyncPolicy,
-    SearchEngine, SyncObjectKind, SyncObjectPolicy, ThemeMode, WallpaperTheme,
+    ArchivePolicy, DEFAULT_TRANSLUCENCY_PCT, DownloadPolicy, FavoriteLimit, HistoryRecordingPolicy,
+    NewTabDestination, ProfileId, ProfileSyncPolicy, SearchEngine, SyncObjectKind,
+    SyncObjectPolicy, ThemeMode, WallpaperTheme,
 };
 use gpui::Context;
 use gpui_component::slider::SliderValue;
@@ -145,17 +145,6 @@ impl ElyShell {
     ) {
         if let ShellState::Ready(core) = &mut self.state {
             core.set_history_recording_policy(policy);
-            cx.notify();
-        }
-    }
-
-    pub(super) fn set_diagnostics_reporting_policy(
-        &mut self,
-        policy: DiagnosticsReportingPolicy,
-        cx: &mut Context<Self>,
-    ) {
-        if let ShellState::Ready(core) = &mut self.state {
-            core.set_diagnostics_reporting_policy(policy);
             cx.notify();
         }
     }

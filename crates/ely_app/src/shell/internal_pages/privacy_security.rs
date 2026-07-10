@@ -1,6 +1,6 @@
 use ely_browser_core::BrowserSnapshot;
 use ely_design_system::colors;
-use ely_domain::{DiagnosticsReportingPolicy, HistoryRecordingPolicy};
+use ely_domain::HistoryRecordingPolicy;
 use gpui::prelude::FluentBuilder;
 use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, px, rgb};
 use gpui_component::{
@@ -148,8 +148,6 @@ fn render_privacy_settings_rows(
         .flex_col()
         .child(section_label("History"))
         .child(render_history_policy_rows(snapshot.history_recording_policy, cx))
-        .child(section_label("Diagnostics"))
-        .child(render_diagnostics_policy_rows(snapshot.diagnostics_reporting_policy, cx))
         .into_any_element()
 }
 
@@ -177,85 +175,6 @@ fn render_history_policy_rows(
                 .copied()
                 .enumerate()
                 .map(|(index, policy)| render_history_policy_row(index, policy, active_policy, cx)),
-        )
-        .into_any_element()
-}
-
-fn render_diagnostics_policy_rows(
-    active_policy: DiagnosticsReportingPolicy,
-    cx: &mut Context<ElyShell>,
-) -> AnyElement {
-    div()
-        .flex()
-        .flex_col()
-        .children(
-            DiagnosticsReportingPolicy::ALL.iter().copied().enumerate().map(|(index, policy)| {
-                render_diagnostics_policy_row(index, policy, active_policy, cx)
-            }),
-        )
-        .into_any_element()
-}
-
-fn render_diagnostics_policy_row(
-    index: usize,
-    policy: DiagnosticsReportingPolicy,
-    active_policy: DiagnosticsReportingPolicy,
-    cx: &mut Context<ElyShell>,
-) -> AnyElement {
-    let selected = policy == active_policy;
-
-    div()
-        .py_3()
-        .border_b_1()
-        .border_color(rgb(colors::hairline()))
-        .flex()
-        .items_center()
-        .justify_between()
-        .gap_4()
-        .child(
-            div()
-                .min_w_0()
-                .flex()
-                .items_center()
-                .gap_3()
-                .child(
-                    div()
-                        .text_color(rgb(diagnostics_policy_icon_color(policy, selected)))
-                        .child(diagnostics_policy_icon(policy, selected)),
-                )
-                .child(
-                    div()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .child(
-                            div()
-                                .text_sm()
-                                .font_semibold()
-                                .truncate()
-                                .text_color(rgb(colors::ink()))
-                                .child(policy.name()),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .truncate()
-                                .text_color(rgb(colors::muted()))
-                                .child(policy.detail()),
-                        ),
-                ),
-        )
-        .child(
-            Button::new(("diagnostics-reporting-policy", index))
-                .ghost()
-                .xsmall()
-                .selected(selected)
-                .label(diagnostics_policy_button_label(policy, selected))
-                .tooltip(policy.name())
-                .on_click(cx.listener(move |shell, _, _, cx| {
-                    shell.set_diagnostics_reporting_policy(policy, cx);
-                })),
         )
         .into_any_element()
 }
@@ -331,13 +250,6 @@ fn privacy_icon(policy: HistoryRecordingPolicy) -> IconName {
     }
 }
 
-fn diagnostics_icon(policy: DiagnosticsReportingPolicy) -> IconName {
-    match policy {
-        DiagnosticsReportingPolicy::Minimal => IconName::Info,
-        DiagnosticsReportingPolicy::Paused => IconName::EyeOff,
-    }
-}
-
 fn policy_color(policy: HistoryRecordingPolicy) -> u32 {
     match policy {
         HistoryRecordingPolicy::Record => colors::success(),
@@ -345,43 +257,17 @@ fn policy_color(policy: HistoryRecordingPolicy) -> u32 {
     }
 }
 
-fn diagnostics_policy_color(policy: DiagnosticsReportingPolicy) -> u32 {
-    match policy {
-        DiagnosticsReportingPolicy::Minimal => colors::success(),
-        DiagnosticsReportingPolicy::Paused => colors::primary(),
-    }
-}
-
 fn history_policy_icon(policy: HistoryRecordingPolicy, selected: bool) -> IconName {
     if selected { IconName::CircleCheck } else { privacy_icon(policy) }
-}
-
-fn diagnostics_policy_icon(policy: DiagnosticsReportingPolicy, selected: bool) -> IconName {
-    if selected { IconName::CircleCheck } else { diagnostics_icon(policy) }
 }
 
 fn history_policy_icon_color(policy: HistoryRecordingPolicy, selected: bool) -> u32 {
     if selected { policy_color(policy) } else { colors::muted_soft() }
 }
 
-fn diagnostics_policy_icon_color(policy: DiagnosticsReportingPolicy, selected: bool) -> u32 {
-    if selected { diagnostics_policy_color(policy) } else { colors::muted_soft() }
-}
-
 fn history_policy_button_label(policy: HistoryRecordingPolicy, selected: bool) -> &'static str {
     match (policy, selected) {
         (HistoryRecordingPolicy::Record, true) => "Default",
-        (_, true) => "Active",
-        _ => "Select",
-    }
-}
-
-fn diagnostics_policy_button_label(
-    policy: DiagnosticsReportingPolicy,
-    selected: bool,
-) -> &'static str {
-    match (policy, selected) {
-        (DiagnosticsReportingPolicy::Minimal, true) => "Default",
         (_, true) => "Active",
         _ => "Select",
     }
