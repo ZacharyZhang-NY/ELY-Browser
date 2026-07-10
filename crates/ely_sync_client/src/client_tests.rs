@@ -238,8 +238,7 @@ fn spawn_conflict_server() -> Result<(String, TestServer), Box<dyn Error>> {
     .to_string();
     let server = thread::spawn(move || -> std::io::Result<()> {
         let (mut stream, _) = listener.accept()?;
-        let mut request = [0_u8; 16 * 1024];
-        let _ = stream.read(&mut request)?;
+        read_complete_request(&mut stream)?;
         let response = format!(
             "HTTP/1.1 409 Conflict\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
             body.len()
@@ -248,6 +247,39 @@ fn spawn_conflict_server() -> Result<(String, TestServer), Box<dyn Error>> {
         stream.flush()
     });
     Ok((format!("http://{address}"), server))
+}
+
+/// Reads headers plus the full `Content-Length` body. Responding before the
+/// client finishes writing resets the connection and makes tests flaky.
+fn read_complete_request(stream: &mut std::net::TcpStream) -> std::io::Result<Vec<u8>> {
+    let mut request = Vec::new();
+    let mut chunk = [0_u8; 1024];
+    let header_end = loop {
+        if let Some(position) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+            break position + 4;
+        }
+        let read = stream.read(&mut chunk)?;
+        if read == 0 || request.len() + read > 64 * 1024 {
+            return Err(std::io::Error::other("request headers are incomplete"));
+        }
+        request.extend_from_slice(&chunk[..read]);
+    };
+    let headers = String::from_utf8_lossy(&request[..header_end]);
+    let content_length = headers
+        .split("\r\n")
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length").then(|| value.trim().parse().ok())?
+        })
+        .unwrap_or(0_usize);
+    while request.len() < header_end + content_length {
+        let read = stream.read(&mut chunk)?;
+        if read == 0 {
+            return Err(std::io::Error::other("request body is incomplete"));
+        }
+        request.extend_from_slice(&chunk[..read]);
+    }
+    Ok(request)
 }
 
 fn spawn_logout_server(
