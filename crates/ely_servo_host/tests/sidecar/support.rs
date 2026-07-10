@@ -16,6 +16,11 @@ use std::{
 use ely_domain::{ProfileId, TabId};
 use serde_json::{Value, json};
 
+use super::pages::{
+    HISTORY_PAGE, OVERSIZED_HISTORY_PAGE, READ_PAGE, RSA_PRIVATE_KEY, RSA_PRIVATE_OPERATION_PAGE,
+    RSA_PUBLIC_KEY, SET_PAGE, WHITE_PAGE,
+};
+
 pub(super) const WIDTH: u32 = 360;
 pub(super) const HEIGHT: u32 = 240;
 pub(super) const RESPONSE_TIMEOUT: Duration = Duration::from_secs(20);
@@ -461,33 +466,30 @@ fn serve_connection(
     }
     let path = request_line.split_whitespace().nth(1).unwrap_or("/");
     let is_set = path == "/set";
-    let body = if is_set {
-        SET_PAGE
+    let (body, content_type): (&[u8], &str) = if is_set {
+        (SET_PAGE.as_bytes(), "text/html; charset=utf-8")
     } else if path.starts_with("/history") {
-        HISTORY_PAGE
+        (HISTORY_PAGE.as_bytes(), "text/html; charset=utf-8")
     } else if path == "/oversized-history" {
-        OVERSIZED_HISTORY_PAGE
+        (OVERSIZED_HISTORY_PAGE.as_bytes(), "text/html; charset=utf-8")
     } else if path == "/white" {
-        WHITE_PAGE
+        (WHITE_PAGE.as_bytes(), "text/html; charset=utf-8")
+    } else if path == "/rsa-private-operations" {
+        (RSA_PRIVATE_OPERATION_PAGE.as_bytes(), "text/html; charset=utf-8")
+    } else if path == "/rsa-private.der" {
+        (RSA_PRIVATE_KEY, "application/octet-stream")
+    } else if path == "/rsa-public.der" {
+        (RSA_PUBLIC_KEY, "application/octet-stream")
     } else {
-        READ_PAGE
+        (READ_PAGE.as_bytes(), "text/html; charset=utf-8")
     };
     let cookie_header =
         if is_set { "Set-Cookie: ely_cookie=persisted; Path=/; SameSite=Lax\r\n" } else { "" };
-    let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\n{cookie_header}Connection: close\r\n\r\n{body}",
+    let headers = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nCache-Control: no-store\r\n{cookie_header}Connection: close\r\n\r\n",
         body.len()
     );
-    reader.get_mut().write_all(response.as_bytes())?;
+    reader.get_mut().write_all(headers.as_bytes())?;
+    reader.get_mut().write_all(body)?;
     reader.get_mut().flush()
 }
-
-const SET_PAGE: &str = r#"<!doctype html><title>loading</title><style>body{font:24px sans-serif;color:#111;background:#fff}</style><body>Profile persistence</body><script>localStorage.setItem('ely_storage','persisted');const cookie=document.cookie.includes('ely_cookie=persisted')?'yes':'no';const storage=localStorage.getItem('ely_storage')==='persisted'?'yes':'no';document.title=`stored-cookie-${cookie}-storage-${storage}`;</script>"#;
-
-const READ_PAGE: &str = r#"<!doctype html><title>loading</title><style>body{font:24px sans-serif;color:#111;background:#fff}</style><body>Profile persistence</body><script>const cookie=document.cookie.includes('ely_cookie=persisted')?'yes':'no';const storage=localStorage.getItem('ely_storage')==='persisted'?'yes':'no';document.title=`read-cookie-${cookie}-storage-${storage}`;</script>"#;
-
-const HISTORY_PAGE: &str = r#"<!doctype html><title>loading</title><style>body{font:24px sans-serif;color:#111;background:#fff}</style><body>History mutation</body><script>history.replaceState({},'', '/history?state=1');document.title='history-ready';</script>"#;
-
-const OVERSIZED_HISTORY_PAGE: &str = r#"<!doctype html><title>oversized-history</title><script>history.replaceState({},'', '/oversized?' + 'a'.repeat(32768));</script>"#;
-
-const WHITE_PAGE: &str = r#"<!doctype html><title>white-ready</title><style>html,body{margin:0;width:100%;height:100%;background:#fff}</style>"#;

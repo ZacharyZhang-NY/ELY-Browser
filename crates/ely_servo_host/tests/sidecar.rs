@@ -15,6 +15,8 @@ use serde_json::{Value, json};
 #[cfg(all(feature = "hardware-render", target_os = "macos"))]
 #[path = "sidecar/mach_receiver.rs"]
 mod mach_receiver;
+#[path = "sidecar/pages.rs"]
+mod pages;
 #[path = "sidecar/support.rs"]
 mod support;
 
@@ -156,6 +158,22 @@ fn live_sidecar_delivers_a_valid_white_page() -> Result<(), Box<dyn Error>> {
 
     assert_eq!(frame.non_white_pixel_count, 0);
     assert_eq!(frame.content_pixel_count, 0);
+    sidecar.shutdown()?;
+    Ok(())
+}
+
+#[test]
+fn live_sidecar_gates_rsa_private_operations() -> Result<(), Box<dyn Error>> {
+    let server = TestServer::start()?;
+    let root = TestDirectory::new()?;
+    let mut sidecar = Sidecar::spawn(root.path())?;
+
+    sidecar.ensure_and_wait(
+        &ProfileId::new(),
+        &server.url("/rsa-private-operations"),
+        "rsa-private-operations-gated",
+    )?;
+
     sidecar.shutdown()?;
     Ok(())
 }

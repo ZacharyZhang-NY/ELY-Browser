@@ -8,6 +8,7 @@ members = [
     "crates/ely_sync_client",
     "third_party/wayland-scanner",
 ]
+exclude = ["third_party/rsa"]
 default-members = ["crates/ely_app"]
 resolver = "2"
 
@@ -44,6 +45,7 @@ gpui = { path = "third_party/gpui" }
 gpui_http_client = { path = "third_party/gpui_support/gpui_http_client" }
 gpui_sum_tree = { path = "third_party/gpui_support/gpui_sum_tree" }
 gpui_util = { path = "third_party/gpui_support/gpui_util" }
+rsa = { path = "third_party/rsa" }
 wayland-scanner = { path = "third_party/wayland-scanner" }
 zed-sum-tree = { path = "third_party/gpui_support/zed-sum-tree" }
 
