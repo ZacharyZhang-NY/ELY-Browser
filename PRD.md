@@ -390,8 +390,8 @@ Settings
 ├─ Site Permissions
 ├─ Plugins
 ├─ Shortcuts
-├─ Updates
-├─ Advanced
+├─ Updates（随自动更新子系统交付；无更新器时不得展示空策略页）
+├─ Advanced（并入所属分区；仅当出现无归属的真实高级设置时恢复）
 └─ About ELY Browser
 ```
 
