@@ -104,18 +104,28 @@ impl BrowserCore {
         let closed_space_id = closed_tab.space_id().clone();
         let closed_profile_id = closed_tab.profile_id().clone();
         let was_space_active_tab = self.active_tabs_by_space.get(&closed_space_id) == Some(tab_id);
+        let was_profile_active_tab = self
+            .active_tabs_by_space_profile
+            .get(&(closed_space_id.clone(), closed_profile_id.clone()))
+            == Some(tab_id);
         closed_tab.clear_split_id();
         self.detach_tab_from_split(tab_id);
-        self.active_tabs_by_space_profile
-            .remove(&(closed_space_id.clone(), closed_profile_id.clone()));
+        if was_profile_active_tab {
+            self.active_tabs_by_space_profile
+                .remove(&(closed_space_id.clone(), closed_profile_id.clone()));
+        }
         self.archived_tabs.push(ArchivedTab::new(closed_tab, ArchiveSource::ManualClose));
 
         if let Some(next_tab_id) = self.nearest_tab_in_space(&closed_space_id, close_index) {
             if was_space_active_tab {
                 self.active_tabs_by_space.insert(closed_space_id.clone(), next_tab_id.clone());
             }
-            if let Some(next_profile_tab_id) =
-                self.nearest_tab_in_space_profile(&closed_space_id, &closed_profile_id, close_index)
+            if was_profile_active_tab
+                && let Some(next_profile_tab_id) = self.nearest_tab_in_space_profile(
+                    &closed_space_id,
+                    &closed_profile_id,
+                    close_index,
+                )
             {
                 self.active_tabs_by_space_profile
                     .insert((closed_space_id, closed_profile_id), next_profile_tab_id);
