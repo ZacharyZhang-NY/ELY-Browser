@@ -112,3 +112,68 @@ fn paused_profile_data_is_omitted_from_sync_snapshots() -> Result<(), Box<dyn Er
     assert!(target.snapshot()?.history_entries.is_empty());
     Ok(())
 }
+
+#[test]
+fn standard_profile_sync_preserves_a_same_named_private_profile() -> Result<(), Box<dyn Error>> {
+    let mut source_config = InitialBrowserConfig::ely_defaults()?;
+    source_config.profile_name = "Private".to_string();
+    let mut source = BrowserCore::new(source_config)?;
+    source.navigate_active_tab(UrlText::parse("https://example.com/remote")?)?;
+    let bytes = source.build_sync_snapshot_bytes()?;
+
+    let mut target = BrowserCore::new(InitialBrowserConfig::private_window()?)?;
+    let private_profile_id = target.snapshot()?.active_profile_id;
+    target.navigate_active_tab(UrlText::parse("https://private.example/secret")?)?;
+    target.apply_sync_snapshot_bytes(&bytes)?;
+    let snapshot = target.snapshot()?;
+
+    assert!(snapshot.profiles.iter().any(|profile| {
+        profile.id() == &private_profile_id && profile.kind() == &ProfileKind::Private
+    }));
+    assert!(snapshot.profiles.iter().any(|profile| {
+        profile.id() != &private_profile_id
+            && profile.name() == "Private"
+            && profile.kind() == &ProfileKind::Standard
+    }));
+    let outbound = String::from_utf8(target.build_sync_snapshot_bytes()?)?;
+    assert!(!outbound.contains("https://private.example/secret"));
+    assert!(outbound.contains("https://example.com/remote"));
+    Ok(())
+}
+
+#[test]
+fn standard_profile_sync_remaps_a_private_profile_id_collision() -> Result<(), Box<dyn Error>> {
+    let mut target = BrowserCore::new(InitialBrowserConfig::private_window()?)?;
+    let private_profile_id = target.snapshot()?.active_profile_id;
+    target.navigate_active_tab(UrlText::parse("https://private.example/id-secret")?)?;
+
+    let mut source_config = InitialBrowserConfig::ely_defaults()?;
+    source_config.profile_id = Some(private_profile_id.clone());
+    source_config.profile_name = " Synced ".to_string();
+    let mut source = BrowserCore::new(source_config)?;
+    source.navigate_active_tab(UrlText::parse("https://example.com/id-remote")?)?;
+    let bytes = source.build_sync_snapshot_bytes()?;
+    target.apply_sync_snapshot_bytes(&bytes)?;
+    target.apply_sync_snapshot_bytes(&bytes)?;
+    let snapshot = target.snapshot()?;
+
+    assert!(snapshot.profiles.iter().any(|profile| {
+        profile.id() == &private_profile_id && profile.kind() == &ProfileKind::Private
+    }));
+    assert_eq!(
+        snapshot
+            .profiles
+            .iter()
+            .filter(|profile| {
+                profile.id() != &private_profile_id
+                    && profile.name() == "Synced"
+                    && profile.kind() == &ProfileKind::Standard
+            })
+            .count(),
+        1
+    );
+    let outbound = String::from_utf8(target.build_sync_snapshot_bytes()?)?;
+    assert!(!outbound.contains("https://private.example/id-secret"));
+    assert!(outbound.contains("https://example.com/id-remote"));
+    Ok(())
+}

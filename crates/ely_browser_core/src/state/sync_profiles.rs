@@ -24,18 +24,28 @@ impl BrowserCore {
             summary.record_skipped();
             return Ok(());
         }
+        let name = record.name.trim().to_string();
 
-        let existing_index =
-            self.profiles.iter().position(|profile| profile.id() == &profile_id).or_else(|| {
-                self.profiles
-                    .iter()
-                    .position(|profile| profile.name().eq_ignore_ascii_case(record.name.trim()))
+        let existing_index = self
+            .profiles
+            .iter()
+            .position(|profile| profile.id() == &profile_id && profile.kind() == &kind)
+            .or_else(|| {
+                self.profiles.iter().position(|profile| {
+                    profile.kind() == &kind && profile.name().eq_ignore_ascii_case(&name)
+                })
             });
         let id = existing_index
             .and_then(|index| self.profiles.get(index).map(|profile| profile.id().clone()))
-            .unwrap_or_else(|| profile_id.clone());
+            .unwrap_or_else(|| {
+                if self.profiles.iter().any(|profile| profile.id() == &profile_id) {
+                    ProfileId::new()
+                } else {
+                    profile_id.clone()
+                }
+            });
         context.register_profile_alias(profile_id, id.clone());
-        let mut profile = Profile::new(record.name, record.color_hex, kind);
+        let mut profile = Profile::new(name, record.color_hex, kind);
         profile.set_sync_policy(record.sync_policy.into());
         let profile = Profile::restore(id, profile);
 
