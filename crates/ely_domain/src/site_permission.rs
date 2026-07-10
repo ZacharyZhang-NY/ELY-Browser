@@ -4,6 +4,8 @@ use url::Url;
 
 use crate::{DomainError, ProfileId, UrlText};
 
+pub const MAX_SITE_ORIGIN_BYTES: usize = 512;
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SiteOrigin(String);
 
@@ -297,5 +299,36 @@ fn site_origin_from_url(url: &Url) -> Result<SiteOrigin, DomainError> {
         return Err(DomainError::InvalidSiteOrigin { value: url.to_string() });
     }
 
-    Ok(SiteOrigin(url.origin().ascii_serialization()))
+    let origin = url.origin().ascii_serialization();
+    if origin.len() > MAX_SITE_ORIGIN_BYTES {
+        return Err(DomainError::InvalidSiteOrigin { value: origin });
+    }
+    Ok(SiteOrigin(origin))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn canonical_site_origin_accepts_512_bytes_and_rejects_513() -> Result<(), DomainError> {
+        let exact = SiteOrigin::parse(format!("https://{}", ascii_host(504)))?;
+        assert_eq!(exact.as_str().len(), MAX_SITE_ORIGIN_BYTES);
+
+        assert!(matches!(
+            SiteOrigin::parse(format!("https://{}", ascii_host(505))),
+            Err(DomainError::InvalidSiteOrigin { .. })
+        ));
+        Ok(())
+    }
+
+    fn ascii_host(mut bytes: usize) -> String {
+        let mut labels = Vec::new();
+        while bytes > 63 {
+            labels.push("a".repeat(63));
+            bytes -= 64;
+        }
+        labels.push("a".repeat(bytes));
+        labels.join(".")
+    }
 }

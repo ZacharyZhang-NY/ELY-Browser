@@ -20,11 +20,11 @@ pub use error::ServoHostError;
 #[cfg(feature = "hardware-render")]
 pub use hardware_rendering_context::HardwareOffscreenContext;
 pub use host::{
-    ConsumedPermission, HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest,
-    MouseDragRequest, MouseHoverRequest, NavigationRequest, PageZoomRequest, PermissionDecision,
-    PermissionSnapshotEntry, PermissionSnapshotRequest, PermissionSnapshotState, RenderedFrame,
-    RenderedFrameSummary, ResizeRequest, ScrollRequest, ServoHost, TouchTapRequest,
-    WebViewSnapshot, WebViewSnapshotPending, WebViewState,
+    ConsumedPermission, HidpiScaleRequest, KeyboardTextRequest, MAX_PAGE_TITLE_BYTES,
+    MouseClickRequest, MouseDragRequest, MouseHoverRequest, NavigationRequest, PageZoomRequest,
+    PermissionDecision, PermissionSnapshotEntry, PermissionSnapshotRequest,
+    PermissionSnapshotState, RenderedFrame, RenderedFrameSummary, ResizeRequest, ScrollRequest,
+    ServoHost, TouchTapRequest, WebViewSnapshot, WebViewSnapshotPending, WebViewState,
 };
 pub use iosurface_handle::{IOSurfaceHandle, IOSurfaceIdentity};
 #[cfg(feature = "servo-engine")]

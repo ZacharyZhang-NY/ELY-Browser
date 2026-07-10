@@ -55,8 +55,8 @@ pub use profile::{Profile, ProfileKind, ProfileSyncPolicy};
 pub use reading_list::{ReadingListEntry, ReadingProgress, ReadingProgressPercent};
 pub use search::SearchEngine;
 pub use site_permission::{
-    SiteOrigin, SitePermissionAuditAction, SitePermissionAuditEvent, SitePermissionDecision,
-    SitePermissionEntry, SitePermissionFeature,
+    MAX_SITE_ORIGIN_BYTES, SiteOrigin, SitePermissionAuditAction, SitePermissionAuditEvent,
+    SitePermissionDecision, SitePermissionEntry, SitePermissionFeature,
 };
 pub use space::{
     ArchivePolicy, COLLAPSED_SIDEBAR_WIDTH_PX, DEFAULT_SIDEBAR_WIDTH_PX, HIDDEN_SIDEBAR_WIDTH_PX,

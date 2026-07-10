@@ -10,10 +10,9 @@ use super::{
     ServoLiveError, ServoLiveFrame, ServoLivePermissionGrant,
     wire::{
         LiveRequest, LiveResponse, LiveSurfaceHandle, MAX_FRAME_BYTE_COUNT, MAX_FRAME_DIMENSION,
+        MAX_RESPONSE_HEADER_BYTES,
     },
 };
-
-const MAX_RESPONSE_HEADER_BYTES: usize = 256 * 1024;
 
 pub(super) struct ServoLiveIpc {
     requests: Option<Sender<IpcRequest>>,
@@ -254,6 +253,30 @@ mod tests {
         assert!(matches!(
             read_reply(&mut input),
             Err(ServoLiveError::FrameByteLimitExceeded { .. })
+        ));
+    }
+
+    #[test]
+    fn reply_accepts_the_exact_header_limit() -> Result<(), ServoLiveError> {
+        let mut header = br#"{"protocol_version":3,"error":null,"frame":null}"#.to_vec();
+        header.resize(MAX_RESPONSE_HEADER_BYTES - 1, b' ');
+        header.push(b'\n');
+
+        let reply = read_reply(&mut Cursor::new(header))?;
+
+        assert_eq!(reply.protocol_version, Some(3));
+        Ok(())
+    }
+
+    #[test]
+    fn reply_rejects_one_byte_over_the_header_limit() {
+        let mut header = br#"{"protocol_version":3,"error":null,"frame":null}"#.to_vec();
+        header.resize(MAX_RESPONSE_HEADER_BYTES, b' ');
+        header.push(b'\n');
+
+        assert!(matches!(
+            read_reply(&mut Cursor::new(header)),
+            Err(ServoLiveError::ResponseHeaderTooLarge { limit: MAX_RESPONSE_HEADER_BYTES })
         ));
     }
 

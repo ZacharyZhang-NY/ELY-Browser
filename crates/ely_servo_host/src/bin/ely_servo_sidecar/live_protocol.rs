@@ -13,6 +13,11 @@ use super::iosurface_mach::IOSurfaceMachError;
 pub(super) const LIVE_PROTOCOL_VERSION: u32 = 3;
 pub(super) const MAX_FRAME_DIMENSION: u32 = 16_384;
 pub(super) const MAX_FRAME_BYTE_COUNT: usize = 256 * 1024 * 1024;
+pub(super) const MAX_RESPONSE_HEADER_BYTES: usize = 256 * 1024;
+pub(super) const MAX_TITLE_BYTES: usize = ely_servo_host::MAX_PAGE_TITLE_BYTES;
+pub(super) const MAX_LOADED_URL_BYTES: usize = 32 * 1024;
+pub(super) const MAX_ERROR_BYTES: usize = 32 * 1024;
+pub(super) const MAX_PERMISSION_CONSUMPTIONS_PER_RESPONSE: usize = 8;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -208,12 +213,12 @@ impl LiveFrameReport {
         frame: &RenderedFrame,
         device_pixel_ratio: f32,
         pixels_changed: bool,
-    ) -> Self {
+    ) -> Result<Self, LiveSidecarError> {
         let device_pixel_ratio = normalized_device_pixel_ratio(device_pixel_ratio);
         let css_viewport_width = css_dimension(frame.width(), device_pixel_ratio);
         let css_viewport_height = css_dimension(frame.height(), device_pixel_ratio);
-        Self {
-            loaded_url: snapshot.url().map(str::to_string),
+        Ok(Self {
+            loaded_url: loaded_url_for_response(snapshot.url())?,
             title: snapshot.title().map(str::to_string),
             state: state_label(snapshot.state()),
             width: frame.width(),
@@ -226,7 +231,7 @@ impl LiveFrameReport {
             non_white_pixel_count: frame.non_white_pixel_count(),
             content_pixel_count: frame.content_pixel_count(),
             sample_hash: frame.sample_hash(),
-        }
+        })
     }
 
     #[cfg(all(feature = "hardware-render", target_os = "macos"))]
@@ -236,10 +241,10 @@ impl LiveFrameReport {
         height: u32,
         device_pixel_ratio: f32,
         pixels_changed: bool,
-    ) -> Self {
+    ) -> Result<Self, LiveSidecarError> {
         let device_pixel_ratio = normalized_device_pixel_ratio(device_pixel_ratio);
-        Self {
-            loaded_url: snapshot.url().map(str::to_string),
+        Ok(Self {
+            loaded_url: loaded_url_for_response(snapshot.url())?,
             title: snapshot.title().map(str::to_string),
             state: state_label(snapshot.state()),
             width,
@@ -252,7 +257,17 @@ impl LiveFrameReport {
             non_white_pixel_count: 0,
             content_pixel_count: 0,
             sample_hash: 0,
+        })
+    }
+}
+
+fn loaded_url_for_response(value: Option<&str>) -> Result<Option<String>, LiveSidecarError> {
+    match value {
+        Some(url) if url.len() > MAX_LOADED_URL_BYTES => {
+            Err(LiveSidecarError::LoadedUrlTooLong { limit: MAX_LOADED_URL_BYTES })
         }
+        Some(url) => Ok(Some(url.to_string())),
+        None => Ok(None),
     }
 }
 
@@ -281,6 +296,15 @@ pub(super) enum LiveSidecarError {
 
     #[error("live protocol mismatch: expected {expected}, received {actual}")]
     ProtocolVersionMismatch { expected: u32, actual: u32 },
+
+    #[error("request URL exceeds the {limit}-byte live protocol limit")]
+    RequestUrlTooLong { limit: usize },
+
+    #[error("loaded URL exceeds the {limit}-byte live protocol limit")]
+    LoadedUrlTooLong { limit: usize },
+
+    #[error("response header requires {bytes} bytes; the live protocol limit is {limit}")]
+    ResponseHeaderTooLarge { bytes: usize, limit: usize },
 
     #[cfg(all(feature = "hardware-render", target_os = "macos"))]
     #[error("hardware rendering requires --iosurface-mach-service")]

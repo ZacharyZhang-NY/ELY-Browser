@@ -5,7 +5,8 @@ use servo::{LoadStatus, RenderingContext, WebView, WebViewDelegate};
 use url::Url;
 
 use crate::{
-    PermissionDecision, WebViewSnapshot, WebViewSnapshotPending, WebViewState,
+    MAX_PAGE_TITLE_BYTES, PermissionDecision, WebViewSnapshot, WebViewSnapshotPending,
+    WebViewState,
     runtime_permissions::{PermissionStore, permission_decision_for_webview},
 };
 
@@ -56,7 +57,7 @@ impl HostWebView {
     }
 
     fn current_title(&self) -> Option<String> {
-        self.webview.page_title().or_else(|| self.delegate.title())
+        self.delegate.title().or_else(|| self.webview.page_title().map(bound_page_title))
     }
 }
 
@@ -105,7 +106,7 @@ impl HostWebViewDelegate {
     }
 
     fn record_title_change(&self, title: Option<String>) {
-        self.title.replace(title);
+        self.title.replace(title.map(bound_page_title));
         self.has_pending_metadata.set(true);
     }
 
@@ -137,6 +138,19 @@ impl HostWebViewDelegate {
     pub(super) fn mark_metadata_observed(&self) {
         self.has_pending_metadata.set(false);
     }
+}
+
+fn bound_page_title(mut title: String) -> String {
+    if title.len() <= MAX_PAGE_TITLE_BYTES {
+        return title;
+    }
+    let mut end = MAX_PAGE_TITLE_BYTES - "…".len();
+    while !title.is_char_boundary(end) {
+        end -= 1;
+    }
+    title.truncate(end);
+    title.push('…');
+    title
 }
 
 impl WebViewDelegate for HostWebViewDelegate {
@@ -208,5 +222,16 @@ mod tests {
         assert_eq!(delegate.url().as_deref(), Some("https://example.com/"));
         assert!(!delegate.has_pending_frame());
         assert!(delegate.has_pending_metadata());
+    }
+
+    #[test]
+    fn snapshot_title_source_bounds_multibyte_metadata() {
+        let delegate = HostWebViewDelegate::new(ProfileId::new(), PermissionStore::default());
+
+        delegate.record_title_change(Some("界".repeat(super::MAX_PAGE_TITLE_BYTES)));
+
+        let title = delegate.title().unwrap_or_default();
+        assert!(title.len() <= super::MAX_PAGE_TITLE_BYTES);
+        assert!(title.ends_with('…'));
     }
 }

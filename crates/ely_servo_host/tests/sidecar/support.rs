@@ -465,6 +465,8 @@ fn serve_connection(
         SET_PAGE
     } else if path.starts_with("/history") {
         HISTORY_PAGE
+    } else if path == "/oversized-history" {
+        OVERSIZED_HISTORY_PAGE
     } else if path == "/white" {
         WHITE_PAGE
     } else {
@@ -485,5 +487,7 @@ const SET_PAGE: &str = r#"<!doctype html><title>loading</title><style>body{font:
 const READ_PAGE: &str = r#"<!doctype html><title>loading</title><style>body{font:24px sans-serif;color:#111;background:#fff}</style><body>Profile persistence</body><script>const cookie=document.cookie.includes('ely_cookie=persisted')?'yes':'no';const storage=localStorage.getItem('ely_storage')==='persisted'?'yes':'no';document.title=`read-cookie-${cookie}-storage-${storage}`;</script>"#;
 
 const HISTORY_PAGE: &str = r#"<!doctype html><title>loading</title><style>body{font:24px sans-serif;color:#111;background:#fff}</style><body>History mutation</body><script>history.replaceState({},'', '/history?state=1');document.title='history-ready';</script>"#;
+
+const OVERSIZED_HISTORY_PAGE: &str = r#"<!doctype html><title>oversized-history</title><script>history.replaceState({},'', '/oversized?' + 'a'.repeat(32768));</script>"#;
 
 const WHITE_PAGE: &str = r#"<!doctype html><title>white-ready</title><style>html,body{margin:0;width:100%;height:100%;background:#fff}</style>"#;

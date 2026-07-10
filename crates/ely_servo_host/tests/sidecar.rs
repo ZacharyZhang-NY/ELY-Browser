@@ -191,6 +191,81 @@ fn live_sidecar_rejects_oversized_frame_dimensions() -> Result<(), Box<dyn Error
 }
 
 #[test]
+fn live_sidecar_rejects_overlong_request_url_without_exiting() -> Result<(), Box<dyn Error>> {
+    let root = TestDirectory::new()?;
+    let profile_id = ProfileId::new();
+    let tab_id = TabId::new();
+    let mut sidecar = Sidecar::spawn(root.path())?;
+    let overlong_url = format!("https://example.com/{}", "a".repeat(32 * 1024));
+
+    let response = sidecar.exchange(&ensure_request(&tab_id, &profile_id, &overlong_url))?;
+
+    assert!(response.frame.is_none());
+    assert!(
+        response
+            .error
+            .as_deref()
+            .is_some_and(|error| error == "request URL exceeds the 32768-byte live protocol limit")
+    );
+    sidecar.shutdown()?;
+    Ok(())
+}
+
+#[test]
+fn live_sidecar_retires_a_session_with_an_overlong_loaded_url() -> Result<(), Box<dyn Error>> {
+    let server = TestServer::start()?;
+    let root = TestDirectory::new()?;
+    let profile_id = ProfileId::new();
+    let tab_id = TabId::new();
+    let mut sidecar = Sidecar::spawn(root.path())?;
+    let mut response = sidecar.exchange(&ensure_request(
+        &tab_id,
+        &profile_id,
+        &server.url("/oversized-history"),
+    ))?;
+    let started_at = Instant::now();
+
+    loop {
+        if response.error.as_deref()
+            == Some("loaded URL exceeds the 32768-byte live protocol limit")
+        {
+            assert!(response.frame.is_none());
+            break;
+        }
+        if started_at.elapsed() >= RESPONSE_TIMEOUT {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "timed out waiting for oversized loaded URL rejection",
+            )
+            .into());
+        }
+        thread::sleep(Duration::from_millis(2));
+        response = sidecar.exchange(&json!({ "type": "poll", "tab_id": tab_id.as_str() }))?;
+    }
+
+    let mut response =
+        sidecar.exchange(&ensure_request(&tab_id, &profile_id, &server.url("/white")))?;
+    let started_at = Instant::now();
+    while response.frame.as_ref().and_then(|frame| frame.title.as_deref()) != Some("white-ready") {
+        if let Some(error) = response.error {
+            return Err(io::Error::other(format!("replacement session failed: {error}")).into());
+        }
+        if started_at.elapsed() >= RESPONSE_TIMEOUT {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "timed out waiting for replacement session",
+            )
+            .into());
+        }
+        thread::sleep(Duration::from_millis(2));
+        response = sidecar.exchange(&json!({ "type": "poll", "tab_id": tab_id.as_str() }))?;
+    }
+
+    sidecar.shutdown()?;
+    Ok(())
+}
+
+#[test]
 fn live_sidecar_rejects_duplicate_permission_snapshot_entries() -> Result<(), Box<dyn Error>> {
     let root = TestDirectory::new()?;
     let profile_id = ProfileId::new();

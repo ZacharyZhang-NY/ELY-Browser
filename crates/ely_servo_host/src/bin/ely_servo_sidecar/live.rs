@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     fs::{self, File, OpenOptions, TryLockError},
     io::{self, BufRead},
     path::Path,
@@ -17,7 +17,7 @@ use super::{
     live_output::write_outcome,
     live_protocol::{
         LIVE_PROTOCOL_VERSION, LiveFrameReport, LiveOutcome, LiveRequest, LiveSidecarError,
-        validated_frame_byte_count,
+        MAX_LOADED_URL_BYTES, MAX_PERMISSION_CONSUMPTIONS_PER_RESPONSE, validated_frame_byte_count,
     },
     live_session::{
         LiveInput, LiveSession, apply_input, apply_layout, apply_permissions, bind_profile,
@@ -55,6 +55,7 @@ pub(super) fn run(args: LiveArgs) -> Result<(), LiveSidecarError> {
     let mut sessions = HashMap::new();
     let mut active_profile = None;
     let mut handshake_complete = false;
+    let mut pending_permission_consumptions = VecDeque::new();
     let stdin = io::stdin();
     let mut stdout = io::stdout().lock();
 
@@ -78,14 +79,23 @@ pub(super) fn run(args: LiveArgs) -> Result<(), LiveSidecarError> {
                 request,
             )
         });
-        let outcome = outcome
-            .map(|outcome| outcome.with_permission_consumptions(host.take_consumed_permissions()));
-        write_outcome(&mut stdout, outcome)?;
+        pending_permission_consumptions.extend(host.take_consumed_permissions());
+        let outcome = match outcome {
+            Ok(outcome) => outcome,
+            Err(error) => LiveOutcome::error(error.to_string()),
+        }
+        .with_permission_consumptions(take_permission_batch(&mut pending_permission_consumptions));
+        write_outcome(&mut stdout, Ok(outcome))?;
         if should_shutdown {
             break;
         }
     }
     Ok(())
+}
+
+fn take_permission_batch<T>(pending: &mut VecDeque<T>) -> Vec<T> {
+    let count = pending.len().min(MAX_PERMISSION_CONSUMPTIONS_PER_RESPONSE);
+    pending.drain(..count).collect()
 }
 
 fn acquire_profile_data_lease(profile_data_dir: &Path) -> Result<File, LiveSidecarError> {
@@ -110,7 +120,7 @@ fn handle_request(
     active_profile: &mut Option<ProfileId>,
     handshake_complete: &mut bool,
     rendering_context_kind: RenderingContextKind,
-    #[cfg(all(feature = "hardware-render", target_os = "macos"))] hardware_transport: Option<
+    #[cfg(all(feature = "hardware-render", target_os = "macos"))] mut hardware_transport: Option<
         &mut HardwareSurfaceTransport,
     >,
     request: LiveRequest,
@@ -154,6 +164,9 @@ fn handle_request(
             pending_surface_ids,
         } => {
             validated_frame_byte_count(width, height)?;
+            if url.len() > MAX_LOADED_URL_BYTES {
+                return Err(LiveSidecarError::RequestUrlTooLong { limit: MAX_LOADED_URL_BYTES });
+            }
             let tab = TabId::parse(tab_id.clone())?;
             let profile = ProfileId::parse(profile_id)?;
             bind_profile(active_profile, &profile)?;
@@ -205,7 +218,16 @@ fn handle_request(
                 rendering_context_kind,
                 &ready_surface_ids,
                 &pending_surface_ids,
-            )?;
+            );
+            retire_oversized_loaded_url_session(
+                host,
+                sessions,
+                &tab_id,
+                &outcome,
+                #[cfg(all(feature = "hardware-render", target_os = "macos"))]
+                hardware_transport.as_deref_mut(),
+            );
+            let outcome = outcome?;
             #[cfg(all(feature = "hardware-render", target_os = "macos"))]
             let outcome = {
                 let mut outcome = outcome;
@@ -236,7 +258,16 @@ fn handle_request(
                 rendering_context_kind,
                 &ready_surface_ids,
                 &pending_surface_ids,
-            )?;
+            );
+            retire_oversized_loaded_url_session(
+                host,
+                sessions,
+                &tab_id,
+                &outcome,
+                #[cfg(all(feature = "hardware-render", target_os = "macos"))]
+                hardware_transport.as_deref_mut(),
+            );
+            let outcome = outcome?;
             #[cfg(all(feature = "hardware-render", target_os = "macos"))]
             let outcome = {
                 let mut outcome = outcome;
@@ -267,6 +298,27 @@ fn handle_request(
             Ok(LiveOutcome::empty())
         }
         LiveRequest::Shutdown => Ok(LiveOutcome::empty()),
+    }
+}
+
+fn retire_oversized_loaded_url_session(
+    host: &mut SoftwareServoHost,
+    sessions: &mut HashMap<String, LiveSession>,
+    tab_id: &str,
+    outcome: &Result<LiveOutcome, LiveSidecarError>,
+    #[cfg(all(feature = "hardware-render", target_os = "macos"))] hardware_transport: Option<
+        &mut HardwareSurfaceTransport,
+    >,
+) {
+    if !matches!(outcome, Err(LiveSidecarError::LoadedUrlTooLong { .. })) {
+        return;
+    }
+    if let Some(session) = sessions.remove(tab_id) {
+        host.close_webview(&session.webview_id);
+    }
+    #[cfg(all(feature = "hardware-render", target_os = "macos"))]
+    if let Some(transport) = hardware_transport {
+        transport.close_tab(tab_id);
     }
 }
 
@@ -303,7 +355,7 @@ fn poll_software_frame(
         {
             let snapshot = host.snapshot_and_mark_metadata_observed(&session.webview_id)?;
             let report =
-                LiveFrameReport::new(&snapshot, &frame, session.device_pixel_ratio(), false);
+                LiveFrameReport::new(&snapshot, &frame, session.device_pixel_ratio(), false)?;
             return Ok(LiveOutcome::frame(report, frame));
         }
         return Ok(LiveOutcome::empty());
@@ -313,7 +365,7 @@ fn poll_software_frame(
     let snapshot = host.snapshot_and_mark_metadata_observed(&session.webview_id)?;
     let frame = host.last_rendered_frame()?;
     session.last_frame = Some(frame.clone());
-    let report = LiveFrameReport::new(&snapshot, &frame, session.device_pixel_ratio(), true);
+    let report = LiveFrameReport::new(&snapshot, &frame, session.device_pixel_ratio(), true)?;
     Ok(LiveOutcome::frame(report, frame))
 }
 
@@ -358,7 +410,7 @@ fn poll_hardware_frame(
                 identity.height,
                 session.device_pixel_ratio(),
                 false,
-            );
+            )?;
             return Ok(LiveOutcome::surface(report));
         }
         HardwarePollAction::Empty => return Ok(LiveOutcome::empty()),
@@ -380,7 +432,7 @@ fn poll_hardware_frame(
         identity.height,
         session.device_pixel_ratio(),
         true,
-    );
+    )?;
     Ok(LiveOutcome::surface(report))
 }
 
@@ -414,35 +466,6 @@ fn hardware_poll_action(
     }
 }
 
-#[cfg(all(test, feature = "hardware-render", target_os = "macos"))]
-mod tests {
-    use super::{HardwarePollAction, hardware_poll_action};
-
-    #[test]
-    fn newly_ready_surface_replays_before_pending_frame() {
-        assert_eq!(
-            hardware_poll_action(true, false, true, false, true, true),
-            HardwarePollAction::ReplaySurface
-        );
-        assert_eq!(
-            hardware_poll_action(true, false, false, false, true, true),
-            HardwarePollAction::PaintFrame
-        );
-    }
-
-    #[test]
-    fn awaiting_ready_surface_backpressures_pending_frame() {
-        assert_eq!(
-            hardware_poll_action(true, true, false, false, true, false),
-            HardwarePollAction::Empty
-        );
-    }
-
-    #[test]
-    fn missing_surface_replays_before_first_ready() {
-        assert_eq!(
-            hardware_poll_action(true, false, false, true, true, false),
-            HardwarePollAction::ReplaySurface
-        );
-    }
-}
+#[cfg(test)]
+#[path = "live_tests.rs"]
+mod tests;

@@ -5,6 +5,7 @@ use super::ServoLiveSitePermission;
 pub(super) const LIVE_PROTOCOL_VERSION: u32 = 3;
 pub(super) const MAX_FRAME_DIMENSION: u32 = 16_384;
 pub(super) const MAX_FRAME_BYTE_COUNT: usize = 256 * 1024 * 1024;
+pub(super) const MAX_RESPONSE_HEADER_BYTES: usize = 256 * 1024;
 
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

@@ -4,6 +4,8 @@ use ely_domain::{
 
 use crate::ServoHostError;
 
+pub const MAX_PAGE_TITLE_BYTES: usize = 4 * 1024;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WebViewState {
     Created,
