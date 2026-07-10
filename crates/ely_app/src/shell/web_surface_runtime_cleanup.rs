@@ -1,6 +1,19 @@
-use crate::services::servo_profile_data::TransientProfileDataDir;
+use std::path::PathBuf;
 
-use super::LiveRuntimeWorker;
+use crate::services::{servo_live::ServoLiveClient, servo_profile_data::TransientProfileDataDir};
+
+use super::{LiveRuntimeClient, LiveRuntimeWorker};
+
+pub(super) type LiveRuntimeClientFactory =
+    fn(PathBuf) -> Result<Box<dyn LiveRuntimeClient>, String>;
+
+pub(super) fn new_servo_live_client(
+    config_dir: PathBuf,
+) -> Result<Box<dyn LiveRuntimeClient>, String> {
+    ServoLiveClient::new(config_dir)
+        .map(|client| Box::new(client) as Box<dyn LiveRuntimeClient>)
+        .map_err(|error| error.to_string())
+}
 
 pub(super) struct ScopedWorker {
     pub(super) worker: LiveRuntimeWorker,

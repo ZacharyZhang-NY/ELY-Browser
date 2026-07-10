@@ -50,11 +50,20 @@ transfers the IOSurface send right; the JSON port number is diagnostic metadata.
 
 The protocol supports:
 
-- `handshake`: verify protocol version `2` before accepting browser commands.
+- `handshake`: verify protocol version `3` before accepting browser commands.
 - `ensure`: create or update a WebView, navigation, viewport, zoom, permissions, and input.
 - `poll`: advance Servo and return pending frame or metadata state.
 - `close`: destroy one tab's WebView.
 - `shutdown`: acknowledge graceful process shutdown so Servo flushes profile storage.
+
+Each `ensure` carries the complete permission snapshot for its Profile. The sidecar
+atomically replaces that Profile at the newest request generation, so cross-tab round-robin cannot
+restore an older grant. Entries carry per-key revisions plus explicit `transferred-allow-once`
+state and full-snapshot removal semantics. BrowserCore moves an accepted one-time grant into
+revocable transferred state, the worker preserves the grant request from idle
+coalescing, and the sidecar returns a consumption receipt after the first matching request. A fresh
+worker interprets transferred state as consumed and returns the same completion receipt, which
+keeps process-restart behavior fail closed.
 
 `ensure` and `poll` carry `ready_surface_ids` and `pending_surface_ids`. The app distinguishes
 completed imports from handles queued behind bounded importer backpressure. Cache entries retain

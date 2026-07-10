@@ -53,16 +53,14 @@ fn consume_pending_then_paint(delegate: &HostWebViewDelegate, paint: impl FnOnce
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, collections::HashMap, rc::Rc};
-
     use ely_domain::ProfileId;
 
     use super::{HostWebViewDelegate, consume_pending_then_paint};
+    use crate::runtime_permissions::PermissionStore;
 
     #[test]
     fn frame_arriving_during_paint_remains_pending() {
-        let delegate =
-            HostWebViewDelegate::new(ProfileId::new(), Rc::new(RefCell::new(HashMap::new())));
+        let delegate = HostWebViewDelegate::new(ProfileId::new(), PermissionStore::default());
         delegate.mark_frame_ready();
 
         consume_pending_then_paint(&delegate, || delegate.mark_frame_ready());

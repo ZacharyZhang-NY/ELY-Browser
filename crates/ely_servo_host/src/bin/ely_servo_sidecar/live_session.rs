@@ -3,7 +3,8 @@ use std::collections::{HashMap, hash_map::Entry};
 use ely_domain::{ProfileId, TabId, validate_zoom_percent};
 use ely_servo_host::{
     HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest, MouseHoverRequest, PageZoomRequest,
-    PermissionDecision, PermissionRequest, RenderedFrame, ResizeRequest, ScrollRequest, ServoHost,
+    PermissionDecision, PermissionSnapshotEntry, PermissionSnapshotRequest,
+    PermissionSnapshotState, RenderedFrame, ResizeRequest, ScrollRequest, ServoHost,
     ServoSurfaceSize, SoftwareServoHost,
 };
 
@@ -132,22 +133,41 @@ pub(super) fn apply_permissions(
     host: &mut SoftwareServoHost,
     session: &LiveSession,
     profile_id: &ProfileId,
+    generation: u64,
     permissions: Vec<LiveSitePermission>,
 ) -> Result<(), LiveSidecarError> {
-    for permission in permissions {
-        host.set_permission(
-            PermissionRequest {
-                webview_id: session.webview_id.clone(),
-                profile_id: profile_id.clone(),
+    let entries = permissions
+        .into_iter()
+        .map(|permission| {
+            let state = match permission.state.as_str() {
+                "allow-once" => PermissionSnapshotState::Decision(PermissionDecision::AllowOnce),
+                "allow-always" => {
+                    PermissionSnapshotState::Decision(PermissionDecision::AllowAlways)
+                }
+                "deny-always" => PermissionSnapshotState::Decision(PermissionDecision::DenyAlways),
+                "transferred-allow-once" => PermissionSnapshotState::TransferredAllowOnce,
+                value => {
+                    return Err(ely_domain::DomainError::InvalidSitePermissionDecision {
+                        value: value.to_string(),
+                    }
+                    .into());
+                }
+            };
+            Ok(PermissionSnapshotEntry {
                 origin: ely_domain::SiteOrigin::parse(permission.origin)?,
                 feature: ely_domain::SitePermissionFeature::parse(&permission.feature)?,
-            },
-            PermissionDecision::from(ely_domain::SitePermissionDecision::parse(
-                &permission.decision,
-            )?),
-        )?;
-    }
-    Ok(())
+                state,
+                revision: permission.revision,
+            })
+        })
+        .collect::<Result<Vec<_>, LiveSidecarError>>()?;
+    host.replace_permissions(PermissionSnapshotRequest {
+        webview_id: session.webview_id.clone(),
+        profile_id: profile_id.clone(),
+        generation,
+        entries,
+    })
+    .map_err(LiveSidecarError::from)
 }
 
 pub(super) struct LiveInput {

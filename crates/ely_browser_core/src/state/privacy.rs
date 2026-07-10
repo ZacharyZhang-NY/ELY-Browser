@@ -132,6 +132,7 @@ impl BrowserCore {
                 .site_permissions
                 .iter()
                 .filter(|entry| entry.profile_id() == profile_id)
+                .filter(|entry| entry.decision() != ely_domain::SitePermissionDecision::AllowOnce)
                 .count(),
             site_permission_audit_events: self
                 .site_permission_audit_events

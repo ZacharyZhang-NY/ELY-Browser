@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 use crate::services::{
     ProfileDataMode,
+    servo_live::ServoLivePermissionGrant,
     servo_profile_data::{
         TransientProfileDataDir, create_profile_data_dir, default_profile_data_root,
         transient_profile_data_dir,
@@ -102,6 +103,8 @@ pub(super) struct WebSurfaceEnsureResult {
 pub(super) enum WebSurfaceRuntimeFrame {
     Ready { tab_id: TabId, frame: Box<WebSurfaceFrame>, url_change: Option<WebSurfaceUrlChange> },
     Failed { tab_id: TabId, message: String },
+    PermissionSnapshotAccepted(ServoLivePermissionGrant),
+    PermissionConsumed(ServoLivePermissionGrant),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

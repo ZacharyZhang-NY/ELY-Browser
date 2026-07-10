@@ -136,6 +136,32 @@ fn export_local_data_command_opens_privacy_security_page() -> Result<(), Box<dyn
     Ok(())
 }
 
+#[test]
+fn local_data_export_omits_ephemeral_allow_once_state() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let profile_id = core.snapshot()?.active_profile_id;
+    let origin = SiteOrigin::parse("https://example.com")?;
+    let feature = SitePermissionFeature::Camera;
+    core.set_site_permission(origin.clone(), feature, SitePermissionDecision::AllowOnce)?;
+
+    let document: serde_json::Value =
+        serde_json::from_str(&core.export_local_data_package_json()?)?;
+    let inventory = core.active_profile_local_data_inventory();
+
+    assert_eq!(inventory.site_permissions(), 0);
+    assert_eq!(array_len(&document, "site_permissions"), 0);
+    assert_eq!(array_len(&document, "site_permission_audit_events"), 1);
+
+    let revision = core.site_permission_revision(&profile_id, &origin, feature);
+    assert!(core.transfer_site_permission_once(&profile_id, &origin, feature, revision)?);
+    assert!(core.finish_site_permission_once(&profile_id, &origin, feature, revision)?);
+    let consumed: serde_json::Value =
+        serde_json::from_str(&core.export_local_data_package_json()?)?;
+    assert_eq!(array_len(&consumed, "site_permission_audit_events"), 3);
+    assert_eq!(consumed["site_permission_audit_events"][2]["action"]["kind"], "consumed");
+    Ok(())
+}
+
 fn array_len(document: &serde_json::Value, field: &str) -> usize {
     document[field].as_array().map_or(0, Vec::len)
 }

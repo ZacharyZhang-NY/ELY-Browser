@@ -20,8 +20,9 @@ pub use error::ServoHostError;
 #[cfg(feature = "hardware-render")]
 pub use hardware_rendering_context::HardwareOffscreenContext;
 pub use host::{
-    HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest, MouseDragRequest, MouseHoverRequest,
-    NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest, RenderedFrame,
+    ConsumedPermission, HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest,
+    MouseDragRequest, MouseHoverRequest, NavigationRequest, PageZoomRequest, PermissionDecision,
+    PermissionSnapshotEntry, PermissionSnapshotRequest, PermissionSnapshotState, RenderedFrame,
     RenderedFrameSummary, ResizeRequest, ScrollRequest, ServoHost, TouchTapRequest,
     WebViewSnapshot, WebViewSnapshotPending, WebViewState,
 };

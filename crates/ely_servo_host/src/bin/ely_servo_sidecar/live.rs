@@ -74,6 +74,8 @@ pub(super) fn run(args: LiveArgs) -> Result<(), LiveSidecarError> {
                 request,
             )
         });
+        let outcome = outcome
+            .map(|outcome| outcome.with_permission_consumptions(host.take_consumed_permissions()));
         write_outcome(&mut stdout, outcome)?;
         if should_shutdown {
             break;
@@ -126,6 +128,7 @@ fn handle_request(
             hover_x,
             hover_y,
             typed_text,
+            site_permission_generation,
             site_permissions,
             ready_surface_ids,
             pending_surface_ids,
@@ -138,7 +141,13 @@ fn handle_request(
             let session =
                 ensure_session(host, sessions, tab_id.clone(), &tab, &profile, width, height)?;
             apply_layout(host, session, width, height, page_zoom_percent, device_pixel_ratio)?;
-            apply_permissions(host, session, &profile, site_permissions)?;
+            apply_permissions(
+                host,
+                session,
+                &profile,
+                site_permission_generation,
+                site_permissions,
+            )?;
             if session.requested_url != url.as_str() {
                 let servo_current_url =
                     host.snapshot(&session.webview_id)?.url().map(str::to_string);

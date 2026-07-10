@@ -1,6 +1,5 @@
 use std::{
     collections::BTreeMap,
-    path::PathBuf,
     thread::JoinHandle,
     time::{Duration, Instant},
 };
@@ -9,7 +8,7 @@ use ely_domain::{BrowserTab, TabId};
 
 use crate::services::{
     ProfileDataMode,
-    servo_live::{ServoLiveClient, ServoLiveEnsureRequest, ServoLiveSitePermission},
+    servo_live::{ServoLiveEnsureRequest, ServoLiveSitePermission},
     servo_profile_data::cleanup_stale_transient_profile_data_dirs,
 };
 
@@ -21,13 +20,15 @@ use super::{
         WebSurfaceRuntimeScope, WebSurfaceSession, config_dir_for_scope, session_for_scope,
     },
     web_surface_runtime_wire::{
-        input_requests_history_navigation, log_ensure_submitted, pending_input_kind,
-        scroll_wire_fields,
+        allow_once_grants, input_requests_history_navigation, log_ensure_submitted,
+        pending_input_kind, scroll_wire_fields,
     },
     web_surface_state::WebSurfacePendingInput,
     web_surface_worker::{LiveRuntimeClient, LiveRuntimeWorker, RequestGeneration, WorkerResponse},
 };
-use cleanup::{ScopedWorker, shutdown_scoped_worker};
+use cleanup::{
+    LiveRuntimeClientFactory, ScopedWorker, new_servo_live_client, shutdown_scoped_worker,
+};
 
 pub(super) use super::web_surface_runtime_session::{
     WebSurfaceEnsureResult, WebSurfaceRuntimeFrame, WebSurfaceUrlChange, WebSurfaceUrlChangeKind,
@@ -130,7 +131,9 @@ impl WebSurfaceRuntime {
             hover_x: input.hover_point.map(|point| point.x()),
             hover_y: input.hover_point.map(|point| point.y()),
             typed_text: input.typed_text,
+            site_permission_generation: generation.value(),
             site_permissions: permissions.iter().map(ServoLiveSitePermission::from).collect(),
+            allow_once_grants: allow_once_grants(tab.profile_id(), permissions),
         };
 
         let Some(scoped) = self.workers.get(&scope) else {
@@ -168,22 +171,24 @@ impl WebSurfaceRuntime {
 
         let poll_now = Instant::now();
         for tab_id in visible_tab_ids {
-            let Some(scope) = self.sessions.get(tab_id).and_then(|session| {
-                session.cadence.should_poll(poll_now).then(|| session.scope.clone())
+            let Some((scope, generation)) = self.sessions.get(tab_id).and_then(|session| {
+                session
+                    .cadence
+                    .should_poll(poll_now)
+                    .then(|| (session.scope.clone(), session.generation))
             }) else {
+                continue;
+            };
+            let Some(generation) = generation else {
                 continue;
             };
             if !self.workers.contains_key(&scope) {
                 continue;
             }
-            let generation = self.next_request_generation();
-            let submitted = self.workers.get(&scope).is_some_and(|scoped| {
+            let _ = self.workers.get(&scope).is_some_and(|scoped| {
                 scoped.worker.submit_poll(generation, tab_id.as_str().to_string())
             });
             if let Some(session) = self.sessions.get_mut(tab_id) {
-                if submitted {
-                    session.generation = Some(generation);
-                }
                 session.cadence.note_poll_submitted(poll_now);
             }
         }
@@ -353,6 +358,12 @@ impl WebSurfaceRuntime {
                     }
                 }
                 WorkerResponse::RuntimeUnavailable => runtime_unavailable = true,
+                WorkerResponse::PermissionSnapshotAccepted(grant) => {
+                    frames.push(WebSurfaceRuntimeFrame::PermissionSnapshotAccepted(grant));
+                }
+                WorkerResponse::PermissionConsumed(consumed) => {
+                    frames.push(WebSurfaceRuntimeFrame::PermissionConsumed(consumed));
+                }
             }
         }
         runtime_unavailable
@@ -446,15 +457,6 @@ impl Drop for WebSurfaceRuntime {
         }
         self.reap_retired_workers(true);
     }
-}
-
-pub(super) type LiveRuntimeClientFactory =
-    fn(PathBuf) -> Result<Box<dyn LiveRuntimeClient>, String>;
-
-fn new_servo_live_client(config_dir: PathBuf) -> Result<Box<dyn LiveRuntimeClient>, String> {
-    ServoLiveClient::new(config_dir)
-        .map(|client| Box::new(client) as Box<dyn LiveRuntimeClient>)
-        .map_err(|error| error.to_string())
 }
 
 #[derive(Clone, Copy, Debug)]

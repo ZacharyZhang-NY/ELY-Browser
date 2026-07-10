@@ -7,7 +7,7 @@ use std::{
 };
 
 use super::{
-    ServoLiveError, ServoLiveFrame,
+    ServoLiveError, ServoLiveFrame, ServoLivePermissionGrant,
     wire::{
         LiveRequest, LiveResponse, LiveSurfaceHandle, MAX_FRAME_BYTE_COUNT, MAX_FRAME_DIMENSION,
     },
@@ -26,6 +26,7 @@ pub(super) struct IpcReply {
     pub(super) frame: Option<ServoLiveFrame>,
     pub(super) surface_handle: Option<LiveSurfaceHandle>,
     pub(super) current_surface_id: Option<u64>,
+    pub(super) permission_consumptions: Vec<ServoLivePermissionGrant>,
 }
 
 struct IpcRequest {
@@ -194,6 +195,11 @@ fn read_reply(stdout: &mut impl BufRead) -> Result<IpcReply, ServoLiveError> {
         frame: frame.transpose()?,
         surface_handle: response.surface_handle,
         current_surface_id: response.current_surface_id,
+        permission_consumptions: response
+            .permission_consumptions
+            .into_iter()
+            .map(ServoLivePermissionGrant::try_from)
+            .collect::<Result<Vec<_>, _>>()?,
     })
 }
 
@@ -240,7 +246,7 @@ mod tests {
     #[test]
     fn reply_rejects_oversized_frame_before_readback_allocation() {
         let header = format!(
-            "{{\"protocol_version\":2,\"error\":null,\"frame\":{{\"loaded_url\":null,\"title\":null,\"state\":\"complete\",\"width\":{0},\"height\":{0},\"device_pixel_ratio\":1.0,\"css_viewport_width\":{0},\"css_viewport_height\":{0},\"rgba_byte_count\":1073741824,\"pixels_changed\":true}}}}\n",
+            "{{\"protocol_version\":3,\"error\":null,\"frame\":{{\"loaded_url\":null,\"title\":null,\"state\":\"complete\",\"width\":{0},\"height\":{0},\"device_pixel_ratio\":1.0,\"css_viewport_width\":{0},\"css_viewport_height\":{0},\"rgba_byte_count\":1073741824,\"pixels_changed\":true}}}}\n",
             MAX_FRAME_DIMENSION
         );
         let mut input = Cursor::new(header.into_bytes());
@@ -251,11 +257,34 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn reply_parses_permission_consumption_without_a_frame() -> Result<(), ServoLiveError> {
+        let profile_id = ely_domain::ProfileId::new();
+        let header = format!(
+            "{{\"protocol_version\":3,\"error\":null,\"frame\":null,\"permission_consumptions\":[{{\"profile_id\":\"{}\",\"origin\":\"https://example.com\",\"feature\":\"camera\",\"grant_revision\":7}}]}}\n",
+            profile_id.as_str(),
+        );
+        let mut input = Cursor::new(header.into_bytes());
+
+        let reply = read_reply(&mut input)?;
+
+        let [consumed] = reply.permission_consumptions.as_slice() else {
+            return Err(ServoLiveError::InvalidResponse {
+                message: "permission consumption was missing",
+            });
+        };
+        assert_eq!(consumed.profile_id(), &profile_id);
+        assert_eq!(consumed.origin().as_str(), "https://example.com");
+        assert_eq!(consumed.feature(), ely_domain::SitePermissionFeature::Camera);
+        assert_eq!(consumed.grant_revision(), 7);
+        Ok(())
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn hardware_reply_uses_surface_without_rgba_allocation() -> Result<(), ServoLiveError> {
         let header = concat!(
-            "{\"protocol_version\":2,\"error\":null,",
+            "{\"protocol_version\":3,\"error\":null,",
             "\"surface_handle\":{\"mach_port_name\":91,\"surface_id\":7,\"width\":64,\"height\":48},",
             "\"current_surface_id\":7,",
             "\"frame\":{\"loaded_url\":null,\"title\":null,\"state\":\"complete\",",
@@ -307,7 +336,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     fn hardware_header(current_surface_id: u64, handle_width: u32, handle_height: u32) -> String {
         format!(
-            "{{\"protocol_version\":2,\"error\":null,\"surface_handle\":{{\"mach_port_name\":91,\"surface_id\":7,\"width\":{handle_width},\"height\":{handle_height}}},\"current_surface_id\":{current_surface_id},\"frame\":{{\"loaded_url\":null,\"title\":null,\"state\":\"complete\",\"width\":64,\"height\":48,\"device_pixel_ratio\":1.0,\"css_viewport_width\":64,\"css_viewport_height\":48,\"rgba_byte_count\":0,\"pixels_changed\":true}}}}\n"
+            "{{\"protocol_version\":3,\"error\":null,\"surface_handle\":{{\"mach_port_name\":91,\"surface_id\":7,\"width\":{handle_width},\"height\":{handle_height}}},\"current_surface_id\":{current_surface_id},\"frame\":{{\"loaded_url\":null,\"title\":null,\"state\":\"complete\",\"width\":64,\"height\":48,\"device_pixel_ratio\":1.0,\"css_viewport_width\":64,\"css_viewport_height\":48,\"rgba_byte_count\":0,\"pixels_changed\":true}}}}\n"
         )
     }
 }

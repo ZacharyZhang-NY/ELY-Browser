@@ -1,4 +1,4 @@
-use ely_domain::{ProfileId, WebViewId};
+use ely_domain::{ProfileId, SiteOrigin, SitePermissionFeature, WebViewId};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -14,6 +14,13 @@ pub enum ServoHostError {
 
     #[error("permission profile mismatch for {webview_id}: expected {expected}, got {actual}")]
     PermissionProfileMismatch { webview_id: WebViewId, expected: ProfileId, actual: ProfileId },
+
+    #[error("duplicate permission snapshot entry for {profile_id} {origin:?} {feature:?}")]
+    DuplicatePermissionSnapshotEntry {
+        profile_id: ProfileId,
+        origin: SiteOrigin,
+        feature: SitePermissionFeature,
+    },
 
     #[error("servo runtime is already started in this process")]
     RuntimeAlreadyStarted,

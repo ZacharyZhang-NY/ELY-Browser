@@ -13,11 +13,14 @@ use std::collections::BTreeSet;
 mod iosurface_importer;
 #[path = "servo_live_ipc.rs"]
 mod ipc;
+#[path = "servo_live_permission_grant.rs"]
+mod permission_grant;
 #[path = "servo_live_types.rs"]
 mod types;
 #[path = "servo_live_wire.rs"]
 mod wire;
 
+pub(crate) use permission_grant::ServoLivePermissionGrant;
 pub(crate) use types::{
     ServoLiveEnsureRequest, ServoLiveError, ServoLiveFrame, ServoLiveSitePermission,
 };
@@ -53,6 +56,7 @@ pub(crate) struct ServoLiveClient {
     ipc: ServoLiveIpc,
     timeouts: SidecarTimeouts,
     active: bool,
+    pending_permission_consumptions: Vec<ServoLivePermissionGrant>,
     #[cfg(target_os = "macos")]
     iosurface_cache: IOSurfaceCache,
     #[cfg(target_os = "macos")]
@@ -115,6 +119,7 @@ impl ServoLiveClient {
             ipc: ServoLiveIpc::spawn(stdin, stdout),
             timeouts,
             active: true,
+            pending_permission_consumptions: Vec::new(),
             #[cfg(target_os = "macos")]
             iosurface_cache: IOSurfaceCache::new(),
             #[cfg(target_os = "macos")]
@@ -155,6 +160,7 @@ impl ServoLiveClient {
             hover_x: request.hover_x,
             hover_y: request.hover_y,
             typed_text: request.typed_text,
+            site_permission_generation: request.site_permission_generation,
             site_permissions: request.site_permissions,
             ready_surface_ids,
             pending_surface_ids,
@@ -184,6 +190,7 @@ impl ServoLiveClient {
         if reply.frame.is_some()
             || reply.surface_handle.is_some()
             || reply.current_surface_id.is_some()
+            || !reply.permission_consumptions.is_empty()
         {
             return Err(ServoLiveError::InvalidResponse {
                 message: "handshake response contains a frame",
@@ -197,6 +204,7 @@ impl ServoLiveClient {
 
     fn request(&mut self, request: LiveRequest) -> Result<Option<ServoLiveFrame>, ServoLiveError> {
         let reply = self.exchange(request, self.timeouts.request, "request")?;
+        self.pending_permission_consumptions.extend(reply.permission_consumptions);
         if let Some(message) = reply.error {
             return Err(ServoLiveError::SidecarFailed { message });
         }
@@ -222,6 +230,10 @@ impl ServoLiveClient {
             frame.set_hardware_surface(surface_id, hardware_surface);
         }
         Ok(frame)
+    }
+
+    pub(crate) fn take_permission_consumptions(&mut self) -> Vec<ServoLivePermissionGrant> {
+        std::mem::take(&mut self.pending_permission_consumptions)
     }
 
     fn exchange(

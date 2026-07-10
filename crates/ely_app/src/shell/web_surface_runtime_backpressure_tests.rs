@@ -121,11 +121,21 @@ fn pending_poll_advances_deadline_under_worker_backpressure() -> Result<(), Stri
     let tab = web_tab("Backpressure")?;
     runtime.ensure_tab(&tab, surface_size(), ProfileDataMode::Transient, &[], pending_input())?;
     runtime.flush_for_test();
+    let ensure_generation = runtime
+        .sessions
+        .get(tab.id())
+        .and_then(|session| session.generation)
+        .ok_or_else(|| "ensure generation was missing".to_string())?;
 
     thread::sleep(Duration::from_millis(10));
     runtime.tick(std::slice::from_ref(tab.id()));
     thread::sleep(Duration::from_millis(10));
     runtime.tick(std::slice::from_ref(tab.id()));
+
+    assert_eq!(
+        runtime.sessions.get(tab.id()).and_then(|session| session.generation),
+        Some(ensure_generation),
+    );
 
     let delay = runtime
         .next_poll_delay(std::slice::from_ref(tab.id()), std::time::Instant::now())

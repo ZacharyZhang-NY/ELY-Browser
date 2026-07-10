@@ -9,8 +9,9 @@ use std::{
 use ely_domain::{ProfileId, SiteOrigin, SitePermissionFeature, TabId, UrlText};
 use ely_servo_host::{
     HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest, MouseDragRequest, NavigationRequest,
-    PageZoomRequest, PermissionDecision, PermissionRequest, ResizeRequest, ScrollRequest,
-    ServoHost, ServoHostError, ServoSurfaceSize, SoftwareServoHost, TouchTapRequest, WebViewState,
+    PageZoomRequest, PermissionDecision, PermissionSnapshotEntry, PermissionSnapshotRequest,
+    PermissionSnapshotState, ResizeRequest, ScrollRequest, ServoHost, ServoHostError,
+    ServoSurfaceSize, SoftwareServoHost, TouchTapRequest, WebViewState,
 };
 
 const MINIMUM_CONTENT_PIXELS: u64 = 1_000;
@@ -202,25 +203,29 @@ fn exercise_real_servo_webview_lifecycle() -> Result<(), Box<dyn Error>> {
     assert_eq!(snapshot.profile_id(), &profile_id);
     assert_eq!(snapshot.state(), &WebViewState::Created);
 
-    host.set_permission(
-        PermissionRequest {
-            webview_id: webview_id.clone(),
-            profile_id: profile_id.clone(),
+    host.replace_permissions(PermissionSnapshotRequest {
+        webview_id: webview_id.clone(),
+        profile_id: profile_id.clone(),
+        generation: 1,
+        entries: vec![PermissionSnapshotEntry {
             origin: SiteOrigin::parse("https://example.com")?,
             feature: SitePermissionFeature::Camera,
-        },
-        PermissionDecision::AllowOnce,
-    )?;
+            state: PermissionSnapshotState::Decision(PermissionDecision::AllowOnce),
+            revision: 1,
+        }],
+    })?;
     let other_profile_id = ProfileId::new();
-    let mismatch = host.set_permission(
-        PermissionRequest {
-            webview_id: webview_id.clone(),
-            profile_id: other_profile_id.clone(),
+    let mismatch = host.replace_permissions(PermissionSnapshotRequest {
+        webview_id: webview_id.clone(),
+        profile_id: other_profile_id.clone(),
+        generation: 2,
+        entries: vec![PermissionSnapshotEntry {
             origin: SiteOrigin::parse("https://example.com")?,
             feature: SitePermissionFeature::Camera,
-        },
-        PermissionDecision::AllowAlways,
-    );
+            state: PermissionSnapshotState::Decision(PermissionDecision::AllowAlways),
+            revision: 1,
+        }],
+    });
     assert!(
         matches!(
             mismatch,

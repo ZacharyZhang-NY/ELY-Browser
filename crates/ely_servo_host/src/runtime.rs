@@ -1,6 +1,5 @@
 use std::{
-    cell::RefCell,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::PathBuf,
     rc::Rc,
     sync::{
@@ -13,8 +12,8 @@ use dpi::PhysicalSize;
 use ely_domain::{ProfileId, TabId, WebViewId};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use servo::{
-    DevicePoint, DeviceVector2D, Opts, Preferences, Scroll, Servo, ServoBuilder, WebViewBuilder,
-    WebViewPoint, WebViewVector,
+    DevicePoint, DeviceVector2D, Opts, Scroll, Servo, ServoBuilder, WebViewBuilder, WebViewPoint,
+    WebViewVector,
 };
 
 #[path = "runtime_context.rs"]
@@ -24,20 +23,25 @@ mod runtime_context;
 mod runtime_hardware;
 #[path = "runtime_paint.rs"]
 mod runtime_paint;
+#[path = "runtime_preferences.rs"]
+mod runtime_preferences;
 
 use runtime_context::hidpi_scale_from_factor;
 pub use runtime_context::{RenderingContextKind, ServoSurfaceSize};
+use runtime_preferences::ely_servo_preferences;
 use url::Url;
 
 use crate::{
-    HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest, MouseDragRequest, MouseHoverRequest,
-    NavigationRequest, PageZoomRequest, PermissionDecision, PermissionRequest, RenderedFrame,
-    ResizeRequest, ScrollRequest, ServoHost, ServoHostError, TouchTapRequest, WebViewSnapshot,
-    WebViewState,
+    ConsumedPermission, HidpiScaleRequest, KeyboardTextRequest, MouseClickRequest,
+    MouseDragRequest, MouseHoverRequest, NavigationRequest, PageZoomRequest,
+    PermissionSnapshotRequest, RenderedFrame, ResizeRequest, ScrollRequest, ServoHost,
+    ServoHostError, TouchTapRequest, WebViewSnapshot, WebViewState,
     runtime_input::{
         send_keyboard_text, send_mouse_click, send_mouse_drag, send_mouse_hover, send_touch_tap,
     },
-    runtime_permissions::{PermissionStore, set_permission_decision},
+    runtime_permissions::{
+        PermissionStore, drain_consumed_permissions, replace_permission_decisions,
+    },
     runtime_waker::ServoWakeFlag,
     runtime_webview::{HostWebView, HostWebViewDelegate},
 };
@@ -135,7 +139,7 @@ impl SoftwareServoHost {
             default_surface_size: size,
             rendering_context_kind,
             webviews: HashMap::new(),
-            permissions: Rc::new(RefCell::new(HashMap::new())),
+            permissions: PermissionStore::default(),
             wake_requested,
             last_rendered_frame: None,
         })
@@ -164,25 +168,6 @@ fn install_rustls_provider() {
     RUSTLS_PROVIDER.call_once(|| {
         let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     });
-}
-
-fn ely_servo_preferences() -> Preferences {
-    // `Preferences::default()` is Servo's conservative *library* default: it ships
-    // modern-layout features off even though servo-layout/Stylo implement them and
-    // Servo's own servoshell browser enables them. `Servo::new` forwards these to
-    // Stylo via `prefs::set`, so an embedder building a browser must turn them on or
-    // pages render wrong:
-    //   - `layout.grid.enabled` off => Stylo blockifies `display: grid`, collapsing
-    //     grid layouts into one stacked column (the "broken" modern-site render).
-    //   - `layout.variable_fonts.enabled` off => `font-variation-settings` and
-    //     variable weight/width axes are ignored, so a variable font only ever
-    //     renders its default instance (every requested weight looks identical).
-    Preferences {
-        dom_intersection_observer_enabled: true,
-        layout_grid_enabled: true,
-        layout_variable_fonts_enabled: true,
-        ..Preferences::default()
-    }
 }
 
 impl ServoHost for SoftwareServoHost {
@@ -332,10 +317,9 @@ impl ServoHost for SoftwareServoHost {
         Ok(())
     }
 
-    fn set_permission(
+    fn replace_permissions(
         &mut self,
-        request: PermissionRequest,
-        decision: PermissionDecision,
+        request: PermissionSnapshotRequest,
     ) -> Result<(), ServoHostError> {
         let webview = self
             .webviews
@@ -348,9 +332,27 @@ impl ServoHost for SoftwareServoHost {
                 actual: request.profile_id,
             });
         }
-
-        set_permission_decision(&self.permissions, request, decision);
+        let mut keys = HashSet::new();
+        for entry in &request.entries {
+            if !keys.insert((entry.origin.clone(), entry.feature)) {
+                return Err(ServoHostError::DuplicatePermissionSnapshotEntry {
+                    profile_id: request.profile_id,
+                    origin: entry.origin.clone(),
+                    feature: entry.feature,
+                });
+            }
+        }
+        replace_permission_decisions(
+            &self.permissions,
+            &request.profile_id,
+            request.generation,
+            request.entries,
+        );
         Ok(())
+    }
+
+    fn take_consumed_permissions(&mut self) -> Vec<ConsumedPermission> {
+        drain_consumed_permissions(&self.permissions)
     }
 
     fn state(&self, webview_id: &WebViewId) -> Result<WebViewState, ServoHostError> {

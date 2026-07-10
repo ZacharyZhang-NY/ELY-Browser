@@ -1,13 +1,13 @@
 use std::time::Instant;
 
-use ely_domain::BrowserTab;
+use ely_domain::{BrowserTab, ProfileId, SitePermissionDecision};
 
-use crate::services::servo_live::ServoLiveSitePermission;
+use crate::services::servo_live::{ServoLivePermissionGrant, ServoLiveSitePermission};
 
 use super::{
     web_surface_cadence::WebSurfaceInputKind,
     web_surface_geometry::{WebSurfaceClickPoint, WebSurfaceScrollDelta, WebSurfaceSize},
-    web_surface_permissions::WebSurfaceSitePermission,
+    web_surface_permissions::{WebSurfaceSitePermission, WebSurfaceSitePermissionState},
     web_surface_state::WebSurfacePendingInput,
 };
 
@@ -28,6 +28,27 @@ pub(super) fn scroll_wire_fields(
 pub(super) fn input_requests_history_navigation(input: &WebSurfacePendingInput) -> bool {
     input.click_point.is_some()
         || input.typed_text.as_deref().is_some_and(|text| text.contains('\n'))
+}
+
+pub(super) fn allow_once_grants(
+    profile_id: &ProfileId,
+    permissions: &[WebSurfaceSitePermission],
+) -> Vec<ServoLivePermissionGrant> {
+    permissions
+        .iter()
+        .filter(|permission| {
+            permission.state()
+                == WebSurfaceSitePermissionState::Decision(SitePermissionDecision::AllowOnce)
+        })
+        .map(|permission| {
+            ServoLivePermissionGrant::new(
+                profile_id.clone(),
+                permission.origin().clone(),
+                permission.feature(),
+                permission.revision(),
+            )
+        })
+        .collect()
 }
 
 pub(super) fn pending_input_kind(input: &WebSurfacePendingInput) -> WebSurfaceInputKind {
@@ -74,7 +95,8 @@ impl From<&WebSurfaceSitePermission> for ServoLiveSitePermission {
         Self::new(
             permission.origin().as_str(),
             permission.feature().as_str(),
-            permission.decision(),
+            permission.state().as_str(),
+            permission.revision(),
         )
     }
 }

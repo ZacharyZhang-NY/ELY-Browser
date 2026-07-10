@@ -3,9 +3,25 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use ely_domain::{ProfileId, SiteOrigin, SitePermissionFeature};
 use servo::WebView;
 
-use crate::{PermissionDecision, PermissionRequest};
+use crate::{
+    ConsumedPermission, PermissionDecision, PermissionSnapshotEntry, PermissionSnapshotState,
+};
 
-pub(super) type PermissionStore = Rc<RefCell<HashMap<PermissionKey, PermissionDecision>>>;
+pub(super) type PermissionStore = Rc<RefCell<PermissionState>>;
+
+#[derive(Default)]
+pub(super) struct PermissionState {
+    entries: HashMap<PermissionKey, StoredPermission>,
+    generations: HashMap<ProfileId, u64>,
+    consumed: Vec<ConsumedPermission>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct StoredPermission {
+    decision: PermissionDecision,
+    grant_revision: u64,
+    consumed: bool,
+}
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(super) struct PermissionKey {
@@ -20,14 +36,64 @@ impl PermissionKey {
     }
 }
 
-pub(super) fn set_permission_decision(
+pub(super) fn replace_permission_decisions(
     permissions: &PermissionStore,
-    request: PermissionRequest,
-    decision: PermissionDecision,
+    profile_id: &ProfileId,
+    generation: u64,
+    entries: Vec<PermissionSnapshotEntry>,
 ) {
-    permissions
-        .borrow_mut()
-        .insert(PermissionKey::new(request.profile_id, request.origin, request.feature), decision);
+    let mut state = permissions.borrow_mut();
+    if state.generations.get(profile_id).is_some_and(|current| generation < *current) {
+        return;
+    }
+    let mut freshly_consumed = Vec::new();
+    let replacements = entries
+        .into_iter()
+        .map(|entry| {
+            let key = PermissionKey::new(profile_id.clone(), entry.origin, entry.feature);
+            let stored = match entry.state {
+                PermissionSnapshotState::Decision(decision) => {
+                    let consumed = decision == PermissionDecision::AllowOnce
+                        && state.entries.get(&key).is_some_and(|current| {
+                            current.decision == PermissionDecision::AllowOnce
+                                && current.grant_revision == entry.revision
+                                && current.consumed
+                        });
+                    StoredPermission { decision, grant_revision: entry.revision, consumed }
+                }
+                PermissionSnapshotState::TransferredAllowOnce => match state.entries.get(&key) {
+                    Some(current)
+                        if current.decision == PermissionDecision::AllowOnce
+                            && current.grant_revision == entry.revision =>
+                    {
+                        StoredPermission {
+                            decision: PermissionDecision::AllowOnce,
+                            grant_revision: current.grant_revision,
+                            consumed: current.consumed,
+                        }
+                    }
+                    _ => {
+                        freshly_consumed.push(ConsumedPermission {
+                            profile_id: profile_id.clone(),
+                            origin: key.origin.clone(),
+                            feature: key.feature,
+                            grant_revision: entry.revision,
+                        });
+                        StoredPermission {
+                            decision: PermissionDecision::AllowOnce,
+                            grant_revision: entry.revision,
+                            consumed: true,
+                        }
+                    }
+                },
+            };
+            (key, stored)
+        })
+        .collect::<Vec<_>>();
+    state.entries.retain(|key, _| &key.profile_id != profile_id);
+    state.entries.extend(replacements);
+    state.consumed.extend(freshly_consumed);
+    state.generations.insert(profile_id.clone(), generation);
 }
 
 pub(super) fn permission_decision_for_webview(
@@ -49,11 +115,31 @@ fn take_permission_decision(
     feature: SitePermissionFeature,
 ) -> Option<PermissionDecision> {
     let key = PermissionKey::new(profile_id.clone(), origin, feature);
-    let mut permissions = permissions.borrow_mut();
-    match permissions.get(&key).cloned() {
-        Some(PermissionDecision::AllowOnce) => permissions.remove(&key),
-        decision => decision,
+    let mut state = permissions.borrow_mut();
+    let (decision, grant_revision) = {
+        let stored = state.entries.get_mut(&key)?;
+        match stored.decision {
+            PermissionDecision::AllowOnce if stored.consumed => return None,
+            PermissionDecision::AllowOnce => {
+                stored.consumed = true;
+                (PermissionDecision::AllowOnce, Some(stored.grant_revision))
+            }
+            decision => (decision, None),
+        }
+    };
+    if let Some(grant_revision) = grant_revision {
+        state.consumed.push(ConsumedPermission {
+            profile_id: key.profile_id,
+            origin: key.origin,
+            feature: key.feature,
+            grant_revision,
+        });
     }
+    Some(decision)
+}
+
+pub(super) fn drain_consumed_permissions(permissions: &PermissionStore) -> Vec<ConsumedPermission> {
+    std::mem::take(&mut permissions.borrow_mut().consumed)
 }
 
 fn site_origin_for_webview(webview: &WebView, fallback_url: Option<String>) -> Option<SiteOrigin> {
@@ -87,121 +173,5 @@ fn site_permission_feature_for_servo(
 }
 
 #[cfg(test)]
-mod tests {
-    use ely_domain::{ProfileId, SiteOrigin, SitePermissionFeature};
-
-    use crate::{PermissionDecision, PermissionRequest};
-
-    use super::{
-        PermissionStore, set_permission_decision, site_permission_feature_for_servo,
-        take_permission_decision,
-    };
-
-    #[test]
-    fn keeps_disabled_servo_permissions_out_of_site_settings() {
-        for feature in [
-            servo::PermissionFeature::ScreenWakeLock(servo::WakeLockType::Screen),
-            servo::PermissionFeature::Gamepad,
-        ] {
-            assert_eq!(site_permission_feature_for_servo(feature), None);
-        }
-    }
-
-    #[test]
-    fn allow_once_is_consumed_after_one_matching_origin_request()
-    -> Result<(), Box<dyn std::error::Error>> {
-        let permissions = PermissionStore::default();
-        let profile_id = ProfileId::new();
-        let origin = SiteOrigin::parse("https://example.com/path")?;
-
-        set_permission_decision(
-            &permissions,
-            PermissionRequest {
-                webview_id: ely_domain::WebViewId::new(),
-                profile_id: profile_id.clone(),
-                origin: origin.clone(),
-                feature: SitePermissionFeature::Camera,
-            },
-            PermissionDecision::AllowOnce,
-        );
-
-        assert_eq!(
-            take_permission_decision(
-                &permissions,
-                &profile_id,
-                origin.clone(),
-                SitePermissionFeature::Camera,
-            ),
-            Some(PermissionDecision::AllowOnce)
-        );
-        assert_eq!(
-            take_permission_decision(
-                &permissions,
-                &profile_id,
-                origin,
-                SitePermissionFeature::Camera
-            ),
-            None
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn allow_always_stays_scoped_to_profile_origin_and_feature()
-    -> Result<(), Box<dyn std::error::Error>> {
-        let permissions = PermissionStore::default();
-        let profile_id = ProfileId::new();
-        let other_profile_id = ProfileId::new();
-        let origin = SiteOrigin::parse("https://example.com")?;
-        let other_origin = SiteOrigin::parse("https://example.org")?;
-
-        set_permission_decision(
-            &permissions,
-            PermissionRequest {
-                webview_id: ely_domain::WebViewId::new(),
-                profile_id: profile_id.clone(),
-                origin: origin.clone(),
-                feature: SitePermissionFeature::Notifications,
-            },
-            PermissionDecision::AllowAlways,
-        );
-
-        assert_eq!(
-            take_permission_decision(
-                &permissions,
-                &profile_id,
-                origin.clone(),
-                SitePermissionFeature::Notifications,
-            ),
-            Some(PermissionDecision::AllowAlways)
-        );
-        assert_eq!(
-            take_permission_decision(
-                &permissions,
-                &other_profile_id,
-                origin,
-                SitePermissionFeature::Notifications,
-            ),
-            None
-        );
-        assert_eq!(
-            take_permission_decision(
-                &permissions,
-                &profile_id,
-                other_origin,
-                SitePermissionFeature::Notifications,
-            ),
-            None
-        );
-        assert_eq!(
-            take_permission_decision(
-                &permissions,
-                &profile_id,
-                SiteOrigin::parse("https://example.com")?,
-                SitePermissionFeature::Camera,
-            ),
-            None
-        );
-        Ok(())
-    }
-}
+#[path = "runtime_permissions_tests.rs"]
+mod tests;

@@ -11,7 +11,7 @@ use super::local_data_export_records::{
 };
 use crate::CoreError;
 
-pub const ELYDATA_SCHEMA_VERSION: u16 = 1;
+pub const ELYDATA_SCHEMA_VERSION: u16 = 2;
 pub const ELYDATA_FILE_EXTENSION: &str = "elydata";
 
 impl BrowserCore {
@@ -79,6 +79,7 @@ impl BrowserCore {
                 .site_permissions
                 .iter()
                 .filter(|entry| entry.profile_id() == profile_id)
+                .filter(|entry| entry.decision() != ely_domain::SitePermissionDecision::AllowOnce)
                 .map(ElyLocalSitePermissionRecord::from_site_permission)
                 .collect(),
             site_permission_audit_events: self

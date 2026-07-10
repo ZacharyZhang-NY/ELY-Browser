@@ -141,6 +141,73 @@ fn clear_site_permissions_without_entries_is_empty_change() -> Result<(), Box<dy
 }
 
 #[test]
+fn allow_once_transfer_and_finish_require_the_token_revision() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let snapshot = core.snapshot()?;
+    let profile_id = snapshot.active_profile_id;
+    let origin = SiteOrigin::parse("https://example.com")?;
+    let feature = SitePermissionFeature::Camera;
+    core.set_site_permission(origin.clone(), feature, SitePermissionDecision::AllowOnce)?;
+    let revision = core.site_permission_revision(&profile_id, &origin, feature);
+
+    assert!(!core.transfer_site_permission_once(&profile_id, &origin, feature, revision + 1,)?);
+    assert!(core.transfer_site_permission_once(&profile_id, &origin, feature, revision)?);
+
+    let snapshot = core.snapshot()?;
+    assert_eq!(snapshot.site_permissions.len(), 1);
+    assert_eq!(
+        snapshot.site_permission_audit_events.last().map(|event| event.action()),
+        Some(&SitePermissionAuditAction::Transferred),
+    );
+    assert!(!core.finish_site_permission_once(&profile_id, &origin, feature, revision + 1)?);
+    assert!(core.finish_site_permission_once(&profile_id, &origin, feature, revision)?);
+    let snapshot = core.snapshot()?;
+    assert!(snapshot.site_permissions.is_empty());
+    assert_eq!(
+        snapshot.site_permission_audit_events.last().map(|event| event.action()),
+        Some(&SitePermissionAuditAction::Consumed),
+    );
+    Ok(())
+}
+
+#[test]
+fn clear_site_permissions_revokes_transferred_allow_once() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let profile_id = core.snapshot()?.active_profile_id;
+    let origin = SiteOrigin::parse("https://example.com")?;
+    let feature = SitePermissionFeature::Camera;
+    core.set_site_permission(origin.clone(), feature, SitePermissionDecision::AllowOnce)?;
+    let revision = core.site_permission_revision(&profile_id, &origin, feature);
+    assert!(core.transfer_site_permission_once(&profile_id, &origin, feature, revision)?);
+
+    assert_eq!(core.clear_active_profile_site_permissions()?, 1);
+
+    let snapshot = core.snapshot()?;
+    assert!(snapshot.site_permissions.is_empty());
+    assert_eq!(
+        snapshot.site_permission_audit_events.last().map(|event| event.action()),
+        Some(&SitePermissionAuditAction::Revoked),
+    );
+    Ok(())
+}
+
+#[test]
+fn revoke_then_readd_advances_permission_revision() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let profile_id = core.snapshot()?.active_profile_id;
+    let origin = SiteOrigin::parse("https://example.com")?;
+    let feature = SitePermissionFeature::Location;
+    core.set_site_permission(origin.clone(), feature, SitePermissionDecision::AllowOnce)?;
+    let first_revision = core.site_permission_revision(&profile_id, &origin, feature);
+
+    core.revoke_site_permission(&origin, feature)?;
+    core.set_site_permission(origin.clone(), feature, SitePermissionDecision::AllowOnce)?;
+
+    assert!(core.site_permission_revision(&profile_id, &origin, feature) > first_revision);
+    Ok(())
+}
+
+#[test]
 fn site_settings_command_opens_active_origin() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     core.open_tab(UrlText::parse("https://example.com/path")?);

@@ -314,19 +314,41 @@ pub struct KeyboardTextRequest {
     pub text: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PermissionRequest {
-    pub webview_id: WebViewId,
-    pub profile_id: ProfileId,
-    pub origin: SiteOrigin,
-    pub feature: SitePermissionFeature,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PermissionDecision {
     AllowOnce,
     AllowAlways,
     DenyAlways,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PermissionSnapshotState {
+    Decision(PermissionDecision),
+    TransferredAllowOnce,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PermissionSnapshotEntry {
+    pub origin: SiteOrigin,
+    pub feature: SitePermissionFeature,
+    pub state: PermissionSnapshotState,
+    pub revision: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PermissionSnapshotRequest {
+    pub webview_id: WebViewId,
+    pub profile_id: ProfileId,
+    pub generation: u64,
+    pub entries: Vec<PermissionSnapshotEntry>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConsumedPermission {
+    pub profile_id: ProfileId,
+    pub origin: SiteOrigin,
+    pub feature: SitePermissionFeature,
+    pub grant_revision: u64,
 }
 
 impl From<SitePermissionDecision> for PermissionDecision {
@@ -366,11 +388,12 @@ pub trait ServoHost {
 
     fn type_text(&mut self, request: KeyboardTextRequest) -> Result<(), ServoHostError>;
 
-    fn set_permission(
+    fn replace_permissions(
         &mut self,
-        request: PermissionRequest,
-        decision: PermissionDecision,
+        request: PermissionSnapshotRequest,
     ) -> Result<(), ServoHostError>;
+
+    fn take_consumed_permissions(&mut self) -> Vec<ConsumedPermission>;
 
     fn state(&self, webview_id: &WebViewId) -> Result<WebViewState, ServoHostError>;
 

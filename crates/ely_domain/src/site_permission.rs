@@ -46,6 +46,8 @@ pub struct SitePermissionEntry {
 pub enum SitePermissionAuditAction {
     Set(SitePermissionDecision),
     Revoked,
+    Transferred,
+    Consumed,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

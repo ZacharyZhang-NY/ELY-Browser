@@ -15,6 +15,7 @@ impl BrowserCore {
         self.site_permissions
             .iter()
             .filter(|entry| self.profile_allows_cloud_sync(entry.profile_id()))
+            .filter(|entry| entry.decision() != SitePermissionDecision::AllowOnce)
             .collect()
     }
 
@@ -30,6 +31,15 @@ impl BrowserCore {
             SitePermissionFeature::parse(&record.feature).map_err(snapshot_schema_error)?;
         let decision =
             SitePermissionDecision::parse(&record.decision).map_err(snapshot_schema_error)?;
+        if decision == SitePermissionDecision::AllowOnce {
+            summary.record_skipped();
+            return Ok(());
+        }
+        self.transferred_site_permissions.retain(|permission| {
+            permission.entry.profile_id() != &profile_id
+                || permission.entry.origin() != &origin
+                || permission.entry.feature() != feature
+        });
         let existing_index = self.site_permissions.iter().position(|entry| {
             entry.profile_id() == &profile_id
                 && entry.origin() == &origin
@@ -48,6 +58,35 @@ impl BrowserCore {
                 summary.record_imported();
             }
         }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{InitialBrowserConfig, sync_engine::SyncSnapshotApplySummary};
+
+    #[test]
+    fn legacy_allow_once_sync_record_is_skipped() -> Result<(), Box<dyn std::error::Error>> {
+        let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+        let profile_id = core.snapshot()?.active_profile_id;
+        let record = SitePermissionSyncRecord {
+            profile_id: profile_id.as_str().to_string(),
+            origin: "https://example.com".to_string(),
+            feature: "camera".to_string(),
+            decision: "allow-once".to_string(),
+        };
+        let mut summary = SyncSnapshotApplySummary::default();
+
+        core.apply_site_permission_sync_record(
+            record,
+            &mut summary,
+            &SyncSnapshotApplyContext::default(),
+        )?;
+
+        assert_eq!(summary.skipped(), 1);
+        assert!(core.snapshot()?.site_permissions.is_empty());
         Ok(())
     }
 }

@@ -75,6 +75,15 @@ impl BrowserCore {
                 true
             }
         });
+        self.transferred_site_permissions.retain(|permission| {
+            if permission.entry.profile_id() == profile_id && permission.entry.origin() == origin {
+                revoked_permissions
+                    .push((permission.entry.origin().clone(), permission.entry.feature()));
+                false
+            } else {
+                true
+            }
+        });
 
         let revoked_count = revoked_permissions.len();
         for (origin, feature) in revoked_permissions {

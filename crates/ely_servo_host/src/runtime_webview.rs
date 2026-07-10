@@ -184,16 +184,13 @@ impl WebViewDelegate for HostWebViewDelegate {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, collections::HashMap, rc::Rc};
-
     use ely_domain::ProfileId;
 
-    use super::HostWebViewDelegate;
+    use super::{HostWebViewDelegate, PermissionStore};
 
     #[test]
     fn metadata_changes_are_separate_from_pending_frame() {
-        let delegate =
-            HostWebViewDelegate::new(ProfileId::new(), Rc::new(RefCell::new(HashMap::new())));
+        let delegate = HostWebViewDelegate::new(ProfileId::new(), PermissionStore::default());
 
         assert!(!delegate.has_pending_frame());
         assert!(!delegate.has_pending_metadata());

@@ -1,7 +1,8 @@
 use std::io;
 
 use ely_servo_host::{
-    IOSurfaceHandle, RenderedFrame, ServoHostError, WebViewSnapshot, WebViewState,
+    ConsumedPermission, IOSurfaceHandle, RenderedFrame, ServoHostError, WebViewSnapshot,
+    WebViewState,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -9,7 +10,7 @@ use thiserror::Error;
 #[cfg(all(feature = "hardware-render", target_os = "macos"))]
 use super::iosurface_mach::IOSurfaceMachError;
 
-pub(super) const LIVE_PROTOCOL_VERSION: u32 = 2;
+pub(super) const LIVE_PROTOCOL_VERSION: u32 = 3;
 pub(super) const MAX_FRAME_DIMENSION: u32 = 16_384;
 pub(super) const MAX_FRAME_BYTE_COUNT: usize = 256 * 1024 * 1024;
 
@@ -47,6 +48,7 @@ pub(super) enum LiveRequest {
         hover_y: Option<u32>,
         #[serde(default)]
         typed_text: Option<String>,
+        site_permission_generation: u64,
         #[serde(default)]
         site_permissions: Vec<LiveSitePermission>,
         #[serde(default)]
@@ -79,7 +81,8 @@ const fn default_device_pixel_ratio() -> f32 {
 pub(super) struct LiveSitePermission {
     pub(super) origin: String,
     pub(super) feature: String,
-    pub(super) decision: String,
+    pub(super) state: String,
+    pub(super) revision: u64,
 }
 
 pub(super) struct LiveOutcome {
@@ -100,6 +103,15 @@ impl LiveOutcome {
         Self { response: LiveResponse::frame(report), frame: Some(frame) }
     }
 
+    pub(super) fn with_permission_consumptions(
+        mut self,
+        consumptions: Vec<ConsumedPermission>,
+    ) -> Self {
+        self.response.permission_consumptions =
+            consumptions.into_iter().map(LivePermissionConsumption::from).collect();
+        self
+    }
+
     #[cfg(all(feature = "hardware-render", target_os = "macos"))]
     pub(super) fn surface(report: LiveFrameReport) -> Self {
         Self { response: LiveResponse::frame(report), frame: None }
@@ -115,6 +127,27 @@ pub(super) struct LiveResponse {
     pub(super) surface_handle: Option<IOSurfaceHandle>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) current_surface_id: Option<u64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) permission_consumptions: Vec<LivePermissionConsumption>,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct LivePermissionConsumption {
+    pub(super) profile_id: String,
+    pub(super) origin: String,
+    pub(super) feature: String,
+    pub(super) grant_revision: u64,
+}
+
+impl From<ConsumedPermission> for LivePermissionConsumption {
+    fn from(consumed: ConsumedPermission) -> Self {
+        Self {
+            profile_id: consumed.profile_id.as_str().to_string(),
+            origin: consumed.origin.as_str().to_string(),
+            feature: consumed.feature.as_str().to_string(),
+            grant_revision: consumed.grant_revision,
+        }
+    }
 }
 
 impl LiveResponse {
@@ -125,6 +158,7 @@ impl LiveResponse {
             frame: None,
             surface_handle: None,
             current_surface_id: None,
+            permission_consumptions: Vec::new(),
         }
     }
 
@@ -135,6 +169,7 @@ impl LiveResponse {
             frame: None,
             surface_handle: None,
             current_surface_id: None,
+            permission_consumptions: Vec::new(),
         }
     }
 
@@ -145,6 +180,7 @@ impl LiveResponse {
             frame: Some(frame),
             surface_handle: None,
             current_surface_id: None,
+            permission_consumptions: Vec::new(),
         }
     }
 }
@@ -332,7 +368,7 @@ mod tests {
     #[test]
     fn ensure_defaults_optional_input_fields() -> Result<(), serde_json::Error> {
         let request = serde_json::from_str::<LiveRequest>(
-            r#"{"type":"ensure","tab_id":"tab","profile_id":"profile","url":"https://example.com","width":800,"height":600}"#,
+            r#"{"type":"ensure","tab_id":"tab","profile_id":"profile","url":"https://example.com","width":800,"height":600,"site_permission_generation":0}"#,
         )?;
 
         assert!(matches!(
@@ -353,10 +389,19 @@ mod tests {
     #[test]
     fn handshake_deserializes_protocol_version() -> Result<(), serde_json::Error> {
         let request =
-            serde_json::from_str::<LiveRequest>(r#"{"type":"handshake","protocol_version":2}"#)?;
+            serde_json::from_str::<LiveRequest>(r#"{"type":"handshake","protocol_version":3}"#)?;
 
-        assert!(matches!(request, LiveRequest::Handshake { protocol_version: 2 }));
+        assert!(matches!(request, LiveRequest::Handshake { protocol_version: 3 }));
         Ok(())
+    }
+
+    #[test]
+    fn site_permission_requires_revision() {
+        let request = serde_json::from_str::<LiveRequest>(
+            r#"{"type":"ensure","tab_id":"tab","profile_id":"profile","url":"https://example.com","width":800,"height":600,"site_permission_generation":0,"site_permissions":[{"origin":"https://example.com","feature":"camera","state":"allow-once"}]}"#,
+        );
+
+        assert!(request.is_err());
     }
 
     #[test]

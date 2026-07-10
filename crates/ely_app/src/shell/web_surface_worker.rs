@@ -7,6 +7,14 @@ use std::{
 
 use crate::services::servo_live::{
     ServoLiveClient, ServoLiveEnsureRequest, ServoLiveError, ServoLiveFrame,
+    ServoLivePermissionGrant,
+};
+
+#[path = "web_surface_worker_dispatch.rs"]
+mod dispatch;
+use dispatch::{
+    dispatch_result, forward_permission_consumptions, preserve_latest_hover,
+    request_has_ordered_input,
 };
 
 /// Blocking transport for one profile-scoped Servo sidecar.
@@ -22,6 +30,10 @@ pub(super) trait LiveRuntimeClient {
     fn poll(&mut self, tab_id: String) -> Result<Option<ServoLiveFrame>, LiveRuntimeClientError>;
 
     fn close(&mut self, tab_id: String) -> Result<(), LiveRuntimeClientError>;
+
+    fn take_permission_consumptions(&mut self) -> Vec<ServoLivePermissionGrant> {
+        Vec::new()
+    }
 }
 
 impl LiveRuntimeClient for ServoLiveClient {
@@ -38,6 +50,10 @@ impl LiveRuntimeClient for ServoLiveClient {
 
     fn close(&mut self, tab_id: String) -> Result<(), LiveRuntimeClientError> {
         ServoLiveClient::close(self, tab_id).map_err(LiveRuntimeClientError::from)
+    }
+
+    fn take_permission_consumptions(&mut self) -> Vec<ServoLivePermissionGrant> {
+        ServoLiveClient::take_permission_consumptions(self)
     }
 }
 
@@ -88,6 +104,8 @@ pub(super) enum WorkerResponse {
     Frame { generation: RequestGeneration, tab_id: String, frame: ServoLiveFrame },
     Failed { generation: RequestGeneration, tab_id: String, message: String },
     RuntimeUnavailable,
+    PermissionSnapshotAccepted(ServoLivePermissionGrant),
+    PermissionConsumed(ServoLivePermissionGrant),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -97,10 +115,14 @@ impl RequestGeneration {
     pub(super) const fn new(value: u64) -> Self {
         Self(value)
     }
+
+    pub(super) const fn value(self) -> u64 {
+        self.0
+    }
 }
 
 enum WorkerRequest {
-    Ensure { generation: RequestGeneration, request: ServoLiveEnsureRequest },
+    Ensure { generation: RequestGeneration, request: Box<ServoLiveEnsureRequest> },
     Poll { generation: RequestGeneration, tab_id: String },
 }
 
@@ -190,7 +212,7 @@ impl LiveRuntimeWorker {
             let _ = self.response_tx.send(WorkerResponse::Failed { generation, tab_id, message });
             return;
         }
-        let mut request = WorkerRequest::Ensure { generation, request };
+        let mut request = WorkerRequest::Ensure { generation, request: Box::new(request) };
         if let Some(pending) = q.pending.get_mut(&tab_id) {
             let replace_tail = pending.back().is_some_and(|tail| {
                 matches!(tail, WorkerRequest::Poll { .. })
@@ -394,15 +416,26 @@ fn run_worker(
         let exit_after_dispatch = match work {
             Work::Close(tab_id) => {
                 let _ = client.close(tab_id);
+                forward_permission_consumptions(&mut *client, &response_tx);
                 false
             }
-            Work::Request(WorkerRequest::Ensure { generation, request }) => {
+            Work::Request(WorkerRequest::Ensure { generation, mut request }) => {
                 let tab_id = request.tab_id.clone();
-                dispatch_result(&response_tx, generation, tab_id, client.ensure(request))
+                let allow_once_grants = std::mem::take(&mut request.allow_once_grants);
+                let result = client.ensure(*request);
+                if result.is_ok() {
+                    for grant in allow_once_grants {
+                        let _ = response_tx.send(WorkerResponse::PermissionSnapshotAccepted(grant));
+                    }
+                }
+                forward_permission_consumptions(&mut *client, &response_tx);
+                dispatch_result(&response_tx, generation, tab_id, result)
             }
             Work::Request(WorkerRequest::Poll { generation, tab_id }) => {
                 let request_tab_id = tab_id.clone();
-                dispatch_result(&response_tx, generation, request_tab_id, client.poll(tab_id))
+                let result = client.poll(tab_id);
+                forward_permission_consumptions(&mut *client, &response_tx);
+                dispatch_result(&response_tx, generation, request_tab_id, result)
             }
         };
 
@@ -422,60 +455,6 @@ fn run_worker(
 enum Work {
     Close(String),
     Request(WorkerRequest),
-}
-
-/// Forward a single client result to the response channel. Returns
-/// `true` when the worker should exit.
-fn dispatch_result(
-    response_tx: &mpsc::Sender<WorkerResponse>,
-    generation: RequestGeneration,
-    tab_id: String,
-    result: Result<Option<ServoLiveFrame>, LiveRuntimeClientError>,
-) -> bool {
-    match result {
-        Ok(Some(frame)) => {
-            let _ = response_tx.send(WorkerResponse::Frame { generation, tab_id, frame });
-            false
-        }
-        Ok(None) => false,
-        Err(error) => {
-            let unavailable = error.is_runtime_unavailable();
-            let message = error.to_string();
-            let _ = response_tx.send(WorkerResponse::Failed { generation, tab_id, message });
-            if unavailable {
-                let _ = response_tx.send(WorkerResponse::RuntimeUnavailable);
-                return true;
-            }
-            false
-        }
-    }
-}
-
-fn request_has_ordered_input(request: &WorkerRequest) -> bool {
-    let WorkerRequest::Ensure { request, .. } = request else {
-        return false;
-    };
-    request.scroll_delta_x != 0
-        || request.scroll_delta_y != 0
-        || request.scroll_point_x.is_some()
-        || request.scroll_point_y.is_some()
-        || request.click_x.is_some()
-        || request.click_y.is_some()
-        || request.typed_text.is_some()
-}
-
-fn preserve_latest_hover(latest: &mut WorkerRequest, previous: &WorkerRequest) {
-    let (
-        WorkerRequest::Ensure { request: latest, .. },
-        WorkerRequest::Ensure { request: previous, .. },
-    ) = (latest, previous)
-    else {
-        return;
-    };
-    if latest.hover_x.is_none() && latest.hover_y.is_none() {
-        latest.hover_x = previous.hover_x;
-        latest.hover_y = previous.hover_y;
-    }
 }
 
 #[cfg(test)]

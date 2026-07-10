@@ -2,11 +2,10 @@
 use std::sync::Arc;
 use std::{collections::TryReserveError, io, path::PathBuf};
 
-use ely_domain::SitePermissionDecision;
 use serde::Serialize;
 use thiserror::Error;
 
-use super::wire::LiveFrameReport;
+use super::{ServoLivePermissionGrant, wire::LiveFrameReport};
 use crate::services::servo_sidecar_command::SidecarCommandError;
 
 #[cfg(target_os = "macos")]
@@ -34,23 +33,27 @@ pub(crate) struct ServoLiveEnsureRequest {
     pub(crate) hover_x: Option<u32>,
     pub(crate) hover_y: Option<u32>,
     pub(crate) typed_text: Option<String>,
+    pub(crate) site_permission_generation: u64,
     pub(crate) site_permissions: Vec<ServoLiveSitePermission>,
+    pub(crate) allow_once_grants: Vec<ServoLivePermissionGrant>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct ServoLiveSitePermission {
     pub(crate) origin: String,
     pub(crate) feature: String,
-    pub(crate) decision: String,
+    pub(crate) state: String,
+    pub(crate) revision: u64,
 }
 
 impl ServoLiveSitePermission {
     pub fn new(
         origin: impl Into<String>,
         feature: impl Into<String>,
-        decision: SitePermissionDecision,
+        state: impl Into<String>,
+        revision: u64,
     ) -> Self {
-        Self { origin: origin.into(), feature: feature.into(), decision: decision.as_str().into() }
+        Self { origin: origin.into(), feature: feature.into(), state: state.into(), revision }
     }
 }
 
@@ -365,6 +368,9 @@ pub(crate) enum ServoLiveError {
     Json(#[from] serde_json::Error),
 
     #[error(transparent)]
+    Domain(#[from] ely_domain::DomainError),
+
+    #[error(transparent)]
     SidecarCommand(#[from] SidecarCommandError),
 }
 
@@ -380,7 +386,8 @@ impl ServoLiveError {
             | Self::InvalidFrameByteCount { .. }
             | Self::FrameAllocation { .. }
             | Self::InvalidResponse { .. }
-            | Self::Json(_) => true,
+            | Self::Json(_)
+            | Self::Domain(_) => true,
             #[cfg(target_os = "macos")]
             Self::IOSurfaceImportFailed { .. }
             | Self::IOSurfaceBackingFailed { .. }

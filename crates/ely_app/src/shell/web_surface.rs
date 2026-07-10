@@ -97,14 +97,11 @@ impl WebSurfaceStore {
         // which destroys and reallocates the framebuffer — the source of
         // the per-frame blank flash. The first ensure (when no prior
         // `last_ensure_key` is set) always fires so the page can load.
-        let already_ensured =
-            self.surfaces.get(tab.id()).is_some_and(|surface| surface.last_ensure_key.is_some());
-        if already_ensured
-            && self
-                .surfaces
-                .get(tab.id())
-                .is_some_and(|surface| surface.viewport_size_is_settling(Instant::now()))
-        {
+        let defer_resize = self
+            .surfaces
+            .get(tab.id())
+            .is_some_and(|surface| surface.should_defer_resize(&ensure_key, Instant::now()));
+        if defer_resize {
             return false;
         }
         let previous_frame =
@@ -205,6 +202,7 @@ impl WebSurfaceStore {
                     }
                 }
                 WebSurfaceRuntimeFrame::Failed { tab_id, message } => {
+                    self.surface_mut(&tab_id).last_ensure_key = None;
                     let had_ready = matches!(
                         self.surfaces.get(&tab_id).and_then(|surface| surface.state.as_ref()),
                         Some(WebSurfaceState::Ready(_))
@@ -220,6 +218,12 @@ impl WebSurfaceStore {
                     }
                     self.surface_mut(&tab_id).state = Some(WebSurfaceState::Failed { message });
                     result.changed = true;
+                }
+                WebSurfaceRuntimeFrame::PermissionSnapshotAccepted(grant) => {
+                    result.permission_transfers.push(grant);
+                }
+                WebSurfaceRuntimeFrame::PermissionConsumed(consumed) => {
+                    result.permission_consumptions.push(consumed);
                 }
             }
         }
@@ -381,3 +385,7 @@ mod web_surface_hardware_import_tests;
 #[cfg(test)]
 #[path = "web_surface_scope_tests.rs"]
 mod web_surface_scope_tests;
+
+#[cfg(test)]
+#[path = "web_surface_permission_lifecycle_tests.rs"]
+mod web_surface_permission_lifecycle_tests;

@@ -3,7 +3,10 @@ use std::{
     time::Duration,
 };
 
-use crate::services::servo_live::{ServoLiveEnsureRequest, ServoLiveFrame};
+use crate::services::servo_live::{
+    ServoLiveEnsureRequest, ServoLiveFrame, ServoLivePermissionGrant, ServoLiveSitePermission,
+};
+use ely_domain::{ProfileId, SiteOrigin, SitePermissionFeature};
 
 use super::{
     LiveRuntimeClient, LiveRuntimeClientError, LiveRuntimeWorker, RequestGeneration, WorkerResponse,
@@ -16,6 +19,7 @@ enum RecordedInput {
     Click(String),
     Text(String),
     Hover(String),
+    Permission(String),
 }
 
 struct SlowRecordingClient {
@@ -26,6 +30,31 @@ struct SlowRecordingClient {
 }
 
 struct GenerationClient;
+
+struct ConsumptionClient {
+    pending: Vec<ServoLivePermissionGrant>,
+}
+
+impl LiveRuntimeClient for ConsumptionClient {
+    fn ensure(
+        &mut self,
+        _request: ServoLiveEnsureRequest,
+    ) -> Result<Option<ServoLiveFrame>, LiveRuntimeClientError> {
+        Err(LiveRuntimeClientError::Message("ensure failed".to_string()))
+    }
+
+    fn poll(&mut self, _tab_id: String) -> Result<Option<ServoLiveFrame>, LiveRuntimeClientError> {
+        Ok(None)
+    }
+
+    fn close(&mut self, _tab_id: String) -> Result<(), LiveRuntimeClientError> {
+        Ok(())
+    }
+
+    fn take_permission_consumptions(&mut self) -> Vec<ServoLivePermissionGrant> {
+        std::mem::take(&mut self.pending)
+    }
+}
 
 impl LiveRuntimeClient for GenerationClient {
     fn ensure(
@@ -118,6 +147,52 @@ fn queued_edge_inputs_for_one_tab_are_preserved() -> Result<(), String> {
 }
 
 #[test]
+fn allow_once_transfer_is_preserved_ahead_of_idle_updates() -> Result<(), String> {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let (first_started_tx, first_started_rx) = mpsc::channel();
+    let (release_first_tx, release_first_rx) = mpsc::channel();
+    let client_calls = calls.clone();
+    let worker = LiveRuntimeWorker::new(move || {
+        Ok(Box::new(SlowRecordingClient {
+            calls: client_calls,
+            first_started_tx: Some(first_started_tx),
+            release_first_rx,
+            return_frame: false,
+        }))
+    })?;
+
+    worker.submit_ensure(
+        RequestGeneration::new(1),
+        ensure_request("tab-a", RecordedInput::Idle("tab-a".to_string())),
+    );
+    first_started_rx.recv_timeout(Duration::from_secs(1)).map_err(|error| error.to_string())?;
+    let mut transfer = ensure_request("tab-a", RecordedInput::Idle("tab-a".to_string()));
+    transfer.site_permissions.push(ServoLiveSitePermission::new(
+        "https://example.com",
+        "camera",
+        "allow-once",
+        7,
+    ));
+    worker.submit_ensure(RequestGeneration::new(2), transfer);
+    worker.submit_ensure(
+        RequestGeneration::new(3),
+        ensure_request("tab-a", RecordedInput::Idle("tab-a".to_string())),
+    );
+    release_first_tx.send(()).map_err(|error| error.to_string())?;
+    worker.wait_until_idle();
+
+    assert_eq!(
+        *calls.lock().map_err(|_| "call recorder lock was poisoned".to_string())?,
+        vec![
+            RecordedInput::Idle("tab-a".to_string()),
+            RecordedInput::Permission("tab-a".to_string()),
+            RecordedInput::Idle("tab-a".to_string()),
+        ],
+    );
+    Ok(())
+}
+
+#[test]
 fn queued_tabs_are_dispatched_round_robin() -> Result<(), String> {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let (first_started_tx, first_started_rx) = mpsc::channel();
@@ -187,6 +262,32 @@ fn responses_keep_their_request_generation() -> Result<(), String> {
         worker.drain_responses().as_slice(),
         [WorkerResponse::Failed { generation, tab_id, message }]
             if *generation == poll_generation && tab_id == "tab-a" && message == "poll failed"
+    ));
+    Ok(())
+}
+
+#[test]
+fn permission_consumption_is_forwarded_after_ensure_error() -> Result<(), String> {
+    let profile_id = ProfileId::new();
+    let origin = SiteOrigin::parse("https://example.com").map_err(|error| error.to_string())?;
+    let grant = ServoLivePermissionGrant::new(profile_id, origin, SitePermissionFeature::Camera, 7);
+    let expected = grant.clone();
+    let consumed = grant.clone();
+    let worker = LiveRuntimeWorker::new(move || {
+        Ok(Box::new(ConsumptionClient { pending: vec![consumed] }))
+    })?;
+
+    let mut request = ensure_request("tab-a", RecordedInput::Idle("tab-a".to_string()));
+    request.allow_once_grants.push(grant);
+    worker.submit_ensure(RequestGeneration::new(1), request);
+    worker.wait_until_idle();
+
+    assert!(matches!(
+        worker.drain_responses().as_slice(),
+        [
+            WorkerResponse::PermissionConsumed(consumed),
+            WorkerResponse::Failed { message, .. },
+        ] if consumed == &expected && message == "ensure failed"
     ));
     Ok(())
 }
@@ -321,7 +422,9 @@ fn poisoned_queue_still_shuts_down_worker() -> Result<(), String> {
 
 fn recorded_input(request: &ServoLiveEnsureRequest) -> RecordedInput {
     let tab_id = request.tab_id.clone();
-    if request.scroll_delta_x != 0 || request.scroll_delta_y != 0 {
+    if request.site_permissions.iter().any(|permission| permission.state == "allow-once") {
+        RecordedInput::Permission(tab_id)
+    } else if request.scroll_delta_x != 0 || request.scroll_delta_y != 0 {
         RecordedInput::Scroll(tab_id)
     } else if request.click_x.is_some() {
         RecordedInput::Click(tab_id)
@@ -356,6 +459,8 @@ fn ensure_request(tab_id: &str, input: RecordedInput) -> ServoLiveEnsureRequest 
         hover_x: hover.then_some(1),
         hover_y: hover.then_some(1),
         typed_text: text.then(|| "text".to_string()),
+        site_permission_generation: 1,
         site_permissions: Vec::new(),
+        allow_once_grants: Vec::new(),
     }
 }

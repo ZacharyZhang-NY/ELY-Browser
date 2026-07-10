@@ -1,8 +1,10 @@
+use std::{collections::HashMap, sync::Arc};
+
 use ely_browser_core::{BrowserCore, BrowserSnapshot};
 use ely_domain::{BrowserTab, ProfileKind, TabId, UrlText};
 use gpui::{AnyElement, Bounds, Context, Pixels, Point};
 
-use crate::services::ProfileDataMode;
+use crate::services::{ProfileDataMode, servo_live::ServoLivePermissionGrant};
 
 use super::{
     ElyShell,
@@ -65,11 +67,27 @@ impl ElyShell {
         for metadata in result.page_metadata {
             metadata_changed |= self.apply_web_surface_page_metadata(metadata);
         }
+        let mut permission_changed = false;
+        if let super::ShellState::Ready(core) = &mut self.state {
+            for grant in result.permission_transfers {
+                permission_changed |= core
+                    .transfer_site_permission_once(
+                        grant.profile_id(),
+                        grant.origin(),
+                        grant.feature(),
+                        grant.grant_revision(),
+                    )
+                    .unwrap_or(false);
+            }
+            for consumed in result.permission_consumptions {
+                permission_changed |= apply_permission_consumption(core, &consumed);
+            }
+        }
         let sync_changed = self.drain_sync_updates();
         if url_changed || metadata_changed {
             self.schedule_cloud_sync_upload(cx);
         }
-        result.changed || url_changed || metadata_changed || sync_changed
+        result.changed || url_changed || metadata_changed || permission_changed || sync_changed
     }
 
     pub(super) fn external_web_surface_tick_delay(&self) -> std::time::Duration {
@@ -191,7 +209,7 @@ impl ElyShell {
             changed |= self.web_surfaces.ensure_surface(
                 &visible.tab,
                 visible.profile_data_mode,
-                &visible.permissions,
+                visible.permissions.as_ref(),
             );
         }
         changed
@@ -237,22 +255,37 @@ impl ElyShell {
 struct VisibleWebSurfaceTab {
     tab: BrowserTab,
     profile_data_mode: ProfileDataMode,
-    permissions: Vec<WebSurfaceSitePermission>,
+    permissions: Arc<[WebSurfaceSitePermission]>,
 }
 
 fn visible_web_surface_tabs(
     core: &BrowserCore,
     tabs: Vec<BrowserTab>,
 ) -> Vec<VisibleWebSurfaceTab> {
-    tabs.into_iter()
-        .filter(|tab| super::web_surface::is_external_web_url(tab.url().as_str()))
-        .filter_map(|tab| {
-            let profile_data_mode =
-                core.profile_kind_for(tab.profile_id()).ok().map(profile_data_mode_from_kind)?;
-            let permissions = web_surface_site_permissions_for_core_tab(core, &tab);
-            Some(VisibleWebSurfaceTab { tab, profile_data_mode, permissions })
-        })
-        .collect()
+    let mut permission_cache = HashMap::new();
+    let mut visible = Vec::new();
+    for tab in tabs {
+        if !super::web_surface::is_external_web_url(tab.url().as_str()) {
+            continue;
+        }
+        let Ok(kind) = core.profile_kind_for(tab.profile_id()) else {
+            continue;
+        };
+        let permissions = permission_cache
+            .entry(tab.profile_id().clone())
+            .or_insert_with(|| {
+                Arc::<[WebSurfaceSitePermission]>::from(web_surface_site_permissions_for_core_tab(
+                    core, &tab,
+                ))
+            })
+            .clone();
+        visible.push(VisibleWebSurfaceTab {
+            tab,
+            profile_data_mode: profile_data_mode_from_kind(kind),
+            permissions,
+        });
+    }
+    visible
 }
 
 fn profile_data_mode_for(tab: &BrowserTab, snapshot: &BrowserSnapshot) -> Option<ProfileDataMode> {
@@ -267,5 +300,61 @@ fn profile_data_mode_from_kind(kind: ProfileKind) -> ProfileDataMode {
     match kind {
         ProfileKind::Standard => ProfileDataMode::Persistent,
         ProfileKind::Private => ProfileDataMode::Transient,
+    }
+}
+
+fn apply_permission_consumption(
+    core: &mut BrowserCore,
+    consumed: &ServoLivePermissionGrant,
+) -> bool {
+    let transferred = core
+        .transfer_site_permission_once(
+            consumed.profile_id(),
+            consumed.origin(),
+            consumed.feature(),
+            consumed.grant_revision(),
+        )
+        .unwrap_or(false);
+    let finished = core
+        .finish_site_permission_once(
+            consumed.profile_id(),
+            consumed.origin(),
+            consumed.feature(),
+            consumed.grant_revision(),
+        )
+        .unwrap_or(false);
+    transferred || finished
+}
+
+#[cfg(test)]
+mod tests {
+    use ely_browser_core::{BrowserCore, InitialBrowserConfig};
+    use ely_domain::{SiteOrigin, SitePermissionDecision, SitePermissionFeature};
+
+    use super::{ServoLivePermissionGrant, apply_permission_consumption};
+
+    #[test]
+    fn consumption_receipt_finishes_a_pending_allow_once_grant()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+        let profile_id = core.snapshot()?.active_profile_id;
+        let origin = SiteOrigin::parse("https://example.com")?;
+        core.set_site_permission(
+            origin.clone(),
+            SitePermissionFeature::Camera,
+            SitePermissionDecision::AllowOnce,
+        )?;
+        let revision =
+            core.site_permission_revision(&profile_id, &origin, SitePermissionFeature::Camera);
+        let consumed = ServoLivePermissionGrant::new(
+            profile_id,
+            origin,
+            SitePermissionFeature::Camera,
+            revision,
+        );
+
+        assert!(apply_permission_consumption(&mut core, &consumed));
+        assert!(core.snapshot()?.site_permissions.is_empty());
+        Ok(())
     }
 }

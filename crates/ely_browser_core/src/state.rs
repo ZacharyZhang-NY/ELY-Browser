@@ -144,6 +144,12 @@ pub struct BrowserSnapshot {
 }
 
 #[derive(Debug)]
+struct TransferredSitePermission {
+    entry: SitePermissionEntry,
+    grant_revision: u64,
+}
+
+#[derive(Debug)]
 pub struct BrowserCore {
     spaces: Vec<Space>,
     profiles: Vec<Profile>,
@@ -153,6 +159,7 @@ pub struct BrowserCore {
     notes: Vec<NoteEntry>,
     reading_list: Vec<ReadingListEntry>,
     site_permissions: Vec<SitePermissionEntry>,
+    transferred_site_permissions: Vec<TransferredSitePermission>,
     site_permission_audit_events: Vec<SitePermissionAuditEvent>,
     download_entries: Vec<DownloadEntry>,
     history_entries: Vec<HistoryEntry>,
@@ -238,6 +245,7 @@ impl BrowserCore {
             notes: Vec::new(),
             reading_list: Vec::new(),
             site_permissions: Vec::new(),
+            transferred_site_permissions: Vec::new(),
             site_permission_audit_events: Vec::new(),
             download_entries: Vec::new(),
             history_entries: Vec::new(),

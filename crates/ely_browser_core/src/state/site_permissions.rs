@@ -7,7 +7,7 @@ use ely_domain::{
 
 use crate::CoreError;
 
-use super::BrowserCore;
+use super::{BrowserCore, TransferredSitePermission};
 
 impl BrowserCore {
     pub fn set_site_permission(
@@ -45,21 +45,112 @@ impl BrowserCore {
     pub(super) fn visible_site_permissions(&self) -> Vec<SitePermissionEntry> {
         self.site_permissions
             .iter()
+            .chain(self.transferred_site_permissions.iter().map(|permission| &permission.entry))
             .filter(|entry| entry.profile_id() == &self.active_profile_id)
             .cloned()
             .collect()
     }
 
-    pub fn site_permissions_for_profile_origin(
+    pub fn site_permissions_for_profile(&self, profile_id: &ProfileId) -> Vec<SitePermissionEntry> {
+        self.site_permissions
+            .iter()
+            .filter(|entry| entry.profile_id() == profile_id)
+            .cloned()
+            .collect()
+    }
+
+    pub fn transferred_site_permissions_for_profile(
+        &self,
+        profile_id: &ProfileId,
+    ) -> Vec<(SitePermissionEntry, u64)> {
+        self.transferred_site_permissions
+            .iter()
+            .filter(|permission| permission.entry.profile_id() == profile_id)
+            .map(|permission| (permission.entry.clone(), permission.grant_revision))
+            .collect()
+    }
+
+    pub fn site_permission_audit_events_for_profile(
+        &self,
+        profile_id: &ProfileId,
+    ) -> Vec<SitePermissionAuditEvent> {
+        self.site_permission_audit_events
+            .iter()
+            .filter(|event| event.profile_id() == profile_id)
+            .cloned()
+            .collect()
+    }
+
+    pub fn site_permission_revision(
         &self,
         profile_id: &ProfileId,
         origin: &SiteOrigin,
-    ) -> Vec<SitePermissionEntry> {
-        self.site_permissions
+        feature: SitePermissionFeature,
+    ) -> u64 {
+        self.site_permission_audit_events
             .iter()
-            .filter(|entry| entry.profile_id() == profile_id && entry.origin() == origin)
-            .cloned()
-            .collect()
+            .filter(|event| {
+                event.profile_id() == profile_id
+                    && event.origin() == origin
+                    && event.feature() == feature
+            })
+            .fold(0_u64, |revision, _| revision.saturating_add(1))
+    }
+
+    pub fn transfer_site_permission_once(
+        &mut self,
+        profile_id: &ProfileId,
+        origin: &SiteOrigin,
+        feature: SitePermissionFeature,
+        revision: u64,
+    ) -> Result<bool, CoreError> {
+        self.require_profile(profile_id)?;
+        if self.site_permission_revision(profile_id, origin, feature) != revision {
+            return Ok(false);
+        }
+        let Some(index) = self.site_permission_entry_index(profile_id, origin, feature) else {
+            return Ok(false);
+        };
+        if self.site_permissions[index].decision() != SitePermissionDecision::AllowOnce {
+            return Ok(false);
+        }
+
+        let entry = self.site_permissions.remove(index);
+        self.record_site_permission_audit_event(
+            profile_id.clone(),
+            entry.origin().clone(),
+            feature,
+            SitePermissionAuditAction::Transferred,
+        );
+        self.transferred_site_permissions
+            .push(TransferredSitePermission { entry, grant_revision: revision });
+        Ok(true)
+    }
+
+    pub fn finish_site_permission_once(
+        &mut self,
+        profile_id: &ProfileId,
+        origin: &SiteOrigin,
+        feature: SitePermissionFeature,
+        grant_revision: u64,
+    ) -> Result<bool, CoreError> {
+        self.require_profile(profile_id)?;
+        let Some(index) = self.transferred_site_permissions.iter().position(|permission| {
+            permission.entry.profile_id() == profile_id
+                && permission.entry.origin() == origin
+                && permission.entry.feature() == feature
+                && permission.grant_revision == grant_revision
+        }) else {
+            return Ok(false);
+        };
+        let permission = self.transferred_site_permissions.remove(index);
+        self.record_site_permission_audit_event(
+            profile_id.clone(),
+            permission.entry.origin().clone(),
+            feature,
+            SitePermissionAuditAction::Consumed,
+        );
+        Ok(true)
     }
 
     pub(super) fn visible_site_permission_audit_events(&self) -> Vec<SitePermissionAuditEvent> {
@@ -78,6 +169,12 @@ impl BrowserCore {
         decision: SitePermissionDecision,
     ) -> Result<(), CoreError> {
         self.require_profile(profile_id)?;
+
+        self.transferred_site_permissions.retain(|permission| {
+            permission.entry.profile_id() != profile_id
+                || permission.entry.origin() != &origin
+                || permission.entry.feature() != feature
+        });
 
         if let Some(entry) = self.site_permission_entry_mut(profile_id, &origin, feature) {
             if entry.decision() == decision {
@@ -109,11 +206,20 @@ impl BrowserCore {
         feature: SitePermissionFeature,
     ) -> Result<(), CoreError> {
         self.require_profile(profile_id)?;
-        let Some(index) = self.site_permission_entry_index(profile_id, origin, feature) else {
-            return Ok(());
-        };
-
-        let entry = self.site_permissions.remove(index);
+        let entry =
+            if let Some(index) = self.site_permission_entry_index(profile_id, origin, feature) {
+                self.site_permissions.remove(index)
+            } else if let Some(index) =
+                self.transferred_site_permissions.iter().position(|permission| {
+                    permission.entry.profile_id() == profile_id
+                        && permission.entry.origin() == origin
+                        && permission.entry.feature() == feature
+                })
+            {
+                self.transferred_site_permissions.remove(index).entry
+            } else {
+                return Ok(());
+            };
         self.record_site_permission_audit_event(
             profile_id.clone(),
             entry.origin().clone(),
@@ -133,6 +239,15 @@ impl BrowserCore {
         self.site_permissions.retain(|entry| {
             if entry.profile_id() == profile_id {
                 revoked_permissions.push((entry.origin().clone(), entry.feature()));
+                false
+            } else {
+                true
+            }
+        });
+        self.transferred_site_permissions.retain(|permission| {
+            if permission.entry.profile_id() == profile_id {
+                revoked_permissions
+                    .push((permission.entry.origin().clone(), permission.entry.feature()));
                 false
             } else {
                 true

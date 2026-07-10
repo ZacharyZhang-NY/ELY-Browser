@@ -91,8 +91,17 @@ fn clear_active_profile_site_data_reports_removed_counts() -> Result<(), Box<dyn
     core.set_site_permission(
         origin.clone(),
         SitePermissionFeature::Camera,
-        SitePermissionDecision::AllowAlways,
+        SitePermissionDecision::AllowOnce,
     )?;
+    let profile_id = core.snapshot()?.active_profile_id;
+    let revision =
+        core.site_permission_revision(&profile_id, &origin, SitePermissionFeature::Camera);
+    assert!(core.transfer_site_permission_once(
+        &profile_id,
+        &origin,
+        SitePermissionFeature::Camera,
+        revision,
+    )?);
     core.set_site_permission(
         origin,
         SitePermissionFeature::Notifications,

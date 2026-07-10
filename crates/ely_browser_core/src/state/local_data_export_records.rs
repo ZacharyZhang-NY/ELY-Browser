@@ -224,6 +224,8 @@ pub(super) struct ElyLocalSitePermissionAuditRecord {
 enum ElyLocalSitePermissionAuditActionRecord {
     Set { decision: String },
     Revoked,
+    Transferred,
+    Consumed,
 }
 
 impl ElyLocalProfileRecord {
@@ -436,6 +438,8 @@ impl ElyLocalSitePermissionAuditActionRecord {
                 Self::Set { decision: decision.as_str().to_string() }
             }
             SitePermissionAuditAction::Revoked => Self::Revoked,
+            SitePermissionAuditAction::Transferred => Self::Transferred,
+            SitePermissionAuditAction::Consumed => Self::Consumed,
         }
     }
 }

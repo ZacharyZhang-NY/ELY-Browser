@@ -4,6 +4,7 @@ use ely_domain::{ProfileId, TabId};
 use gpui::{Bounds, Pixels};
 
 use crate::services::ProfileDataMode;
+use crate::services::servo_live::ServoLivePermissionGrant;
 
 use super::{
     web_surface_cadence::ACTIVE_POLL_INTERVAL,
@@ -110,6 +111,8 @@ pub(super) struct WebSurfaceTickResult {
     pub(super) changed: bool,
     pub(super) url_changes: Vec<WebSurfaceUrlChange>,
     pub(super) page_metadata: Vec<WebSurfacePageMetadata>,
+    pub(super) permission_transfers: Vec<ServoLivePermissionGrant>,
+    pub(super) permission_consumptions: Vec<ServoLivePermissionGrant>,
 }
 
 /// All per-tab surface invariants in one owner.
@@ -194,6 +197,11 @@ impl PerTabSurface {
 
     pub(super) fn should_ensure(&self, key: &WebSurfaceEnsureKey) -> bool {
         self.last_ensure_key.as_ref() != Some(key) || self.has_pending_input()
+    }
+
+    pub(super) fn should_defer_resize(&self, key: &WebSurfaceEnsureKey, now: Instant) -> bool {
+        self.last_ensure_key.as_ref().is_some_and(|last| last.permissions == key.permissions)
+            && self.viewport_size_is_settling(now)
     }
 
     pub(super) fn has_scope(
@@ -366,6 +374,31 @@ mod tests {
         surface.mark_ensured(old_key);
 
         assert!(surface.should_ensure(&new_key));
+    }
+
+    #[test]
+    fn permission_change_bypasses_viewport_resize_debounce()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let now = Instant::now();
+        let profile_id = ProfileId::new();
+        let old_key = ensure_key("https://example.com/", 800, 600, &profile_id);
+        let resized_key = ensure_key("https://example.com/", 1024, 768, &profile_id);
+        let mut new_key = ensure_key("https://example.com/", 1024, 768, &profile_id);
+        new_key.permissions.push(WebSurfaceSitePermission::new(
+            ely_domain::SiteOrigin::parse("https://example.com")?,
+            ely_domain::SitePermissionFeature::Camera,
+            crate::shell::web_surface_permissions::WebSurfaceSitePermissionState::Decision(
+                ely_domain::SitePermissionDecision::DenyAlways,
+            ),
+            1,
+        ));
+        let mut surface = PerTabSurface::new();
+        surface.mark_ensured(old_key);
+        surface.mark_viewport_size_changed(now);
+
+        assert!(surface.should_defer_resize(&resized_key, now));
+        assert!(!surface.should_defer_resize(&new_key, now));
+        Ok(())
     }
 
     #[test]

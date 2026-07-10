@@ -156,6 +156,74 @@ fn live_sidecar_rejects_oversized_frame_dimensions() -> Result<(), Box<dyn Error
     Ok(())
 }
 
+#[test]
+fn live_sidecar_rejects_duplicate_permission_snapshot_entries() -> Result<(), Box<dyn Error>> {
+    let root = TestDirectory::new()?;
+    let profile_id = ProfileId::new();
+    let tab_id = TabId::new();
+    let mut sidecar = Sidecar::spawn(root.path())?;
+    let mut ensure = ensure_request(&tab_id, &profile_id, "about:blank");
+    ensure["site_permissions"] = json!([
+        {
+            "origin": "https://example.com",
+            "feature": "camera",
+            "state": "allow-always",
+            "revision": 1,
+        },
+        {
+            "origin": "https://example.com",
+            "feature": "camera",
+            "state": "deny-always",
+            "revision": 2,
+        },
+    ]);
+
+    let response = sidecar.exchange(&ensure)?;
+
+    assert!(response.error.as_deref().is_some_and(|error| error.contains("duplicate permission")));
+    sidecar.shutdown()?;
+    Ok(())
+}
+
+#[test]
+fn live_sidecar_accepts_permission_snapshot_lifecycle() -> Result<(), Box<dyn Error>> {
+    let root = TestDirectory::new()?;
+    let profile_id = ProfileId::new();
+    let tab_id = TabId::new();
+    let mut sidecar = Sidecar::spawn(root.path())?;
+    let mut ensure = ensure_request(&tab_id, &profile_id, "about:blank");
+
+    for (generation, state, revision) in [(1, "allow-once", 1), (2, "transferred-allow-once", 2)] {
+        ensure["site_permission_generation"] = json!(generation);
+        ensure["site_permissions"] = json!([{
+            "origin": "https://example.com",
+            "feature": "camera",
+            "state": state,
+            "revision": revision,
+        }]);
+        let response = sidecar.exchange(&ensure)?;
+        assert!(response.error.is_none(), "state={state} error={:?}", response.error);
+    }
+
+    ensure["site_permission_generation"] = json!(3);
+    ensure["site_permissions"] = json!([]);
+    let response = sidecar.exchange(&ensure)?;
+    assert!(response.error.is_none(), "empty snapshot error={:?}", response.error);
+
+    ensure["site_permission_generation"] = json!(1);
+    ensure["site_permissions"] = json!([{
+        "origin": "https://example.com",
+        "feature": "camera",
+        "state": "allow-once",
+        "revision": 1,
+    }]);
+    let response = sidecar.exchange(&ensure)?;
+    assert!(response.error.is_none(), "stale snapshot error={:?}", response.error);
+
+    sidecar.shutdown()?;
+    Ok(())
+}
+
 #[cfg(all(feature = "hardware-render", target_os = "macos"))]
 #[test]
 fn hardware_sidecar_transfers_a_real_iosurface_mach_descriptor() -> Result<(), Box<dyn Error>> {

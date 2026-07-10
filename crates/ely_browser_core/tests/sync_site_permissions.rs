@@ -98,3 +98,25 @@ fn sync_snapshot_omits_paused_site_permissions() -> Result<(), Box<dyn Error>> {
     assert!(snapshot.site_permissions.is_empty());
     Ok(())
 }
+
+#[test]
+fn sync_snapshot_omits_allow_once_permissions() -> Result<(), Box<dyn Error>> {
+    let mut source = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let source_home_tab_id = source.snapshot()?.active_tab_id;
+    source.set_tab_sync_enabled(&source_home_tab_id, false)?;
+    source.set_site_permission(
+        SiteOrigin::parse("https://example.com")?,
+        SitePermissionFeature::Camera,
+        SitePermissionDecision::AllowOnce,
+    )?;
+    let bytes = source.build_sync_snapshot_bytes()?;
+
+    let mut target = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let summary = target.apply_sync_snapshot_bytes(&bytes)?;
+
+    assert_eq!(summary.imported(), 0);
+    assert_eq!(summary.updated(), 0);
+    assert_eq!(summary.skipped(), 0);
+    assert!(target.snapshot()?.site_permissions.is_empty());
+    Ok(())
+}
