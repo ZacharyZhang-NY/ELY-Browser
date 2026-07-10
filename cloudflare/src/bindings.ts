@@ -93,6 +93,7 @@ export interface Env {
   ELY_KV: ElyKvNamespace;
   ELY_STORAGE: ElyR2Bucket;
   ELY_RATE_LIMITER: ElyRateLimit;
+  ELY_AUTH_EMAIL_RATE_LIMITER: ElyRateLimit;
   ELY_API_AUDIT: ElyAnalyticsDataset;
   ELY_DIAGNOSTICS: ElyAnalyticsDataset;
   ELY_ENVIRONMENT: string;

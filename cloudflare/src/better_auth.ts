@@ -40,7 +40,7 @@ export async function handleBetterAuthRoute(request: Request, env: Env): Promise
   }
 }
 
-function requiresEmailDelivery(request: Request): boolean {
+export function requiresEmailDelivery(request: Request): boolean {
   if (request.method !== "POST") {
     return false;
   }

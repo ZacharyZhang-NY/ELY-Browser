@@ -74,6 +74,11 @@ function testEnv(sentEmails: ElyEmailMessageBuilder[] | null): Env {
         return Promise.resolve({ success: true });
       },
     },
+    ELY_AUTH_EMAIL_RATE_LIMITER: {
+      limit() {
+        return Promise.resolve({ success: true });
+      },
+    },
     ELY_API_AUDIT: {
       writeDataPoint(): void {},
     },

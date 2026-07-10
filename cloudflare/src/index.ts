@@ -4,6 +4,7 @@ import {
   deleteAuthenticatedSession,
 } from "./auth.js";
 import {
+  withAuthRouteControls,
   withAuthenticatedApiControls,
   withPublicApiControls,
 } from "./api_controls.js";
@@ -61,7 +62,7 @@ export default {
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === "/api/auth" || url.pathname.startsWith("/api/auth/")) {
-    return handleBetterAuthRoute(request, env);
+    return withAuthRouteControls(request, env, () => handleBetterAuthRoute(request, env));
   }
   if (url.pathname === "/api/session/logout") {
     return withAuthenticatedApiControls(

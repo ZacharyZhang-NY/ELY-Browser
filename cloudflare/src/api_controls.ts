@@ -6,6 +6,7 @@ import {
   authenticatedRateLimitKey,
   readAuthContext,
 } from "./auth.js";
+import { requiresEmailDelivery } from "./better_auth.js";
 import { jsonResponse } from "./responses.js";
 
 const RATE_LIMIT_WINDOW_SECONDS = 60;
@@ -46,6 +47,43 @@ export async function withPublicApiControls(
       "Cache-Control": "no-store",
       "Retry-After": RATE_LIMIT_WINDOW_SECONDS.toString(),
     });
+    recordApiAuditEvent(request, env, route, response, "rate_limited");
+    return response;
+  }
+
+  try {
+    const response = await handler();
+    recordApiAuditEvent(request, env, route, response, "handled");
+    return response;
+  } catch (error) {
+    recordApiAuditEvent(request, env, route, internalErrorResponse(), "exception");
+    throw error;
+  }
+}
+
+/// Better Auth routes are unauthenticated, so they limit per client
+/// address. Email-delivery routes consume the tight email limiter; every
+/// other auth route shares the standard limiter.
+export async function withAuthRouteControls(
+  request: Request,
+  env: Env,
+  handler: ApiHandler,
+): Promise<Response> {
+  const emailDelivery = requiresEmailDelivery(request);
+  const route = emailDelivery ? "auth.email" : "auth.route";
+  const allowedMethods = ["GET", "POST"];
+  if (!allowedMethods.includes(request.method)) {
+    const response = methodNotAllowedResponse(allowedMethods);
+    recordApiAuditEvent(request, env, route, response, "method_not_allowed");
+    return response;
+  }
+
+  const limiter = emailDelivery ? env.ELY_AUTH_EMAIL_RATE_LIMITER : env.ELY_RATE_LIMITER;
+  const limit = await limiter.limit({
+    key: clientRateLimitKey(env.ELY_ENVIRONMENT, route, request),
+  });
+  if (!limit.success) {
+    const response = rateLimitedResponse();
     recordApiAuditEvent(request, env, route, response, "rate_limited");
     return response;
   }
@@ -146,6 +184,11 @@ interface ApprovedDeviceRow {
 
 function rateLimitKey(environment: string, route: string): string {
   return `${environment}:${route}`;
+}
+
+function clientRateLimitKey(environment: string, route: string, request: Request): string {
+  const client = request.headers.get("cf-connecting-ip") ?? "unknown";
+  return `${environment}:${route}:${client}`;
 }
 
 function recordApiAuditEvent(

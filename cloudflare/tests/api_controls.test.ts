@@ -383,6 +383,11 @@ function testEnv(options: TestEnvOptions = {}): Env {
         return Promise.resolve({ success: options.rateLimitSuccess ?? true });
       },
     },
+    ELY_AUTH_EMAIL_RATE_LIMITER: {
+      limit(): Promise<{ success: boolean }> {
+        return Promise.resolve({ success: true });
+      },
+    },
     ELY_API_AUDIT: {
       writeDataPoint(event?: ElyAnalyticsDataPoint): void {
         if (event !== undefined) {
