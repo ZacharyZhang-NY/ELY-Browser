@@ -113,7 +113,7 @@ pub(crate) struct ProfileSyncRecord {
 }
 
 impl ProfileSyncRecord {
-    fn from_profile(profile: &Profile) -> Self {
+    pub(crate) fn from_profile(profile: &Profile) -> Self {
         Self {
             id: profile.id().as_str().to_string(),
             name: profile.name().to_string(),
@@ -189,7 +189,7 @@ pub(crate) struct SpaceSyncRecord {
 }
 
 impl SpaceSyncRecord {
-    fn from_space(space: &Space) -> Self {
+    pub(crate) fn from_space(space: &Space) -> Self {
         Self {
             id: space.id().as_str().to_string(),
             name: space.name().to_string(),
@@ -246,7 +246,7 @@ pub(crate) struct BookmarkSyncRecord {
 }
 
 impl BookmarkSyncRecord {
-    fn from_entry(entry: &BookmarkEntry, space_name: Option<String>) -> Self {
+    pub(crate) fn from_entry(entry: &BookmarkEntry, space_name: Option<String>) -> Self {
         Self {
             id: entry.id().as_str().to_string(),
             title: entry.title().to_string(),
@@ -285,7 +285,7 @@ pub(crate) struct TabSyncRecord {
 }
 
 impl TabSyncRecord {
-    fn from_entry(entry: &BrowserTab, space_name: Option<String>) -> Self {
+    pub(crate) fn from_entry(entry: &BrowserTab, space_name: Option<String>) -> Self {
         Self {
             id: entry.id().as_str().to_string(),
             title: entry.title().to_string(),
@@ -320,7 +320,7 @@ pub(crate) struct NoteSyncRecord {
 }
 
 impl NoteSyncRecord {
-    fn from_entry(entry: &NoteEntry, space_name: Option<String>) -> Self {
+    pub(crate) fn from_entry(entry: &NoteEntry, space_name: Option<String>) -> Self {
         Self {
             id: entry.id().as_str().to_string(),
             profile_id: entry.profile_id().as_str().to_string(),
@@ -366,7 +366,7 @@ pub(crate) struct ReadingListSyncRecord {
 }
 
 impl ReadingListSyncRecord {
-    fn from_entry(entry: &ReadingListEntry, space_name: Option<String>) -> Self {
+    pub(crate) fn from_entry(entry: &ReadingListEntry, space_name: Option<String>) -> Self {
         Self {
             id: entry.id().as_str().to_string(),
             profile_id: entry.profile_id().as_str().to_string(),
@@ -407,7 +407,7 @@ pub(crate) struct SitePermissionSyncRecord {
 }
 
 impl SitePermissionSyncRecord {
-    fn from_entry(entry: &SitePermissionEntry) -> Self {
+    pub(crate) fn from_entry(entry: &SitePermissionEntry) -> Self {
         Self {
             profile_id: entry.profile_id().as_str().to_string(),
             origin: entry.origin().as_str().to_string(),
@@ -433,7 +433,7 @@ pub(crate) struct HistorySyncRecord {
 }
 
 impl HistorySyncRecord {
-    fn from_entry(entry: &HistoryEntry, space_name: Option<String>) -> Self {
+    pub(crate) fn from_entry(entry: &HistoryEntry, space_name: Option<String>) -> Self {
         Self {
             profile_id: entry.profile_id().as_str().to_string(),
             space_id: entry.space_id().as_str().to_string(),
@@ -457,7 +457,7 @@ pub(crate) struct PluginSettingsSyncRecord {
 }
 
 impl PluginSettingsSyncRecord {
-    fn from_plugin(plugin: &InstalledPlugin) -> Self {
+    pub(crate) fn from_plugin(plugin: &InstalledPlugin) -> Self {
         Self {
             plugin_id: plugin.id().as_str().to_string(),
             checksum: plugin.manifest().checksum().to_string(),

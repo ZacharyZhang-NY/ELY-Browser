@@ -12,6 +12,7 @@ mod focus;
 mod history;
 mod internal_pages;
 mod local_data_files;
+mod local_persistence;
 mod navigation;
 mod notes;
 mod plugins;
@@ -130,8 +131,11 @@ pub struct ElyShell {
     pub(crate) auth_email_input: Entity<InputState>,
     pub(crate) auth_otp_input: Entity<InputState>,
     pub(crate) auth_flow_phase: auth::AuthFlowPhase,
+    pub(crate) local_state_path: Option<std::path::PathBuf>,
+    pub(crate) local_state_save_scheduled: bool,
     _command_subscription: Subscription,
     _translucency_subscription: Subscription,
+    _quit_save_subscription: Option<Subscription>,
 }
 
 impl ElyShell {
@@ -225,10 +229,17 @@ impl ElyShell {
             },
         );
 
+        let local_state_path =
+            local_persistence::resolve_local_state_path(default_profile_id.as_ref());
         let state = match config
             .and_then(|config| BrowserCore::new(config).map_err(|error| error.to_string()))
         {
-            Ok(core) => ShellState::Ready(Box::new(core)),
+            Ok(mut core) => {
+                if let Some(path) = &local_state_path {
+                    local_persistence::restore_local_state(&mut core, path);
+                }
+                ShellState::Ready(Box::new(core))
+            }
             Err(error) => ShellState::StartupError(error),
         };
 
@@ -280,6 +291,8 @@ impl ElyShell {
             authenticated_operation_gate: AuthenticatedOperationGate::open(),
             auth_flow_barrier: None,
             sign_out_phases: std::collections::HashMap::new(),
+            local_state_path,
+            local_state_save_scheduled: false,
             sync_upload_scheduled: false,
             sync_upload_in_flight: false,
             sync_upload_pending: false,
@@ -293,7 +306,9 @@ impl ElyShell {
             auth_flow_phase: auth::AuthFlowPhase::Idle,
             _command_subscription: command_subscription,
             _translucency_subscription: translucency_subscription,
+            _quit_save_subscription: None,
         };
+        shell._quit_save_subscription = Some(local_persistence::register_quit_save(cx));
         let should_run_initial_sync = shell.probe_initial_sync_state();
         if should_run_initial_sync {
             shell.trigger_cloud_sync_upload();

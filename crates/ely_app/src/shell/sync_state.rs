@@ -65,6 +65,7 @@ pub(crate) const fn sync_platform_label() -> &'static str {
 
 impl ElyShell {
     pub(crate) fn schedule_cloud_sync_upload(&mut self, cx: &mut Context<Self>) {
+        self.schedule_local_state_save(cx);
         self.reconcile_active_sync_profile();
         if !self.can_schedule_cloud_sync_upload() {
             return;

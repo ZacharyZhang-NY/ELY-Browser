@@ -1,4 +1,5 @@
 mod error;
+mod local_state;
 mod navigation;
 mod state;
 mod sync_engine;

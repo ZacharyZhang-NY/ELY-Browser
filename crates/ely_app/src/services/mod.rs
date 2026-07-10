@@ -5,6 +5,7 @@ pub mod http_downloads;
 pub(crate) mod iosurface_mach;
 #[cfg(target_os = "macos")]
 pub(crate) mod iosurface_metal;
+pub(crate) mod local_state;
 pub mod plugin_package_store;
 pub mod plugin_packages;
 pub mod plugin_signatures;

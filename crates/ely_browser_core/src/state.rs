@@ -18,6 +18,7 @@ mod downloads;
 mod history;
 mod local_data_export_records;
 mod local_data_exports;
+mod local_visibility;
 mod notes;
 mod plugins;
 mod privacy;

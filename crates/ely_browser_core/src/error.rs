@@ -27,6 +27,9 @@ pub enum CoreError {
     #[error("invalid .elydata package: {reason}")]
     InvalidLocalDataPackage { reason: String },
 
+    #[error("local state persistence failed: {reason}")]
+    LocalState { reason: String },
+
     #[error("trashed space not found: {id}")]
     TrashedSpaceNotFound { id: SpaceId },
 
