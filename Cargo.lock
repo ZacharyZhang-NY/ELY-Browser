@@ -3558,7 +3558,7 @@ dependencies = [
  "smol",
  "stacksafe",
  "strum 0.27.2",
- "taffy 0.9.0",
+ "taffy 0.9.2",
  "thiserror 2.0.18",
  "usvg 0.45.1",
  "uuid",
@@ -3801,12 +3801,6 @@ dependencies = [
  "quote",
  "syn 2.0.117",
 ]
-
-[[package]]
-name = "grid"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12101ecc8225ea6d675bc70263074eab6169079621c2186fe0c66590b2df9681"
 
 [[package]]
 name = "grid"
@@ -10502,12 +10496,12 @@ dependencies = [
 
 [[package]]
 name = "taffy"
-version = "0.9.0"
+version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a13e5d13f79d558b5d353a98072ca8ca0e99da429467804de959aa8c83c9a004"
+checksum = "41ba83ebaf2954d31d05d67340fd46cebe99da2b7133b0dd68d70c65473a437b"
 dependencies = [
  "arrayvec",
- "grid 0.18.0",
+ "grid",
  "serde",
  "slotmap",
 ]
@@ -10519,7 +10513,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73afc801dd6bd47529eaa7c7e90557f107527d1b7c9c7ed7d7803c7b8d0c357f"
 dependencies = [
  "arrayvec",
- "grid 1.0.1",
+ "grid",
  "serde",
  "slotmap",
 ]
