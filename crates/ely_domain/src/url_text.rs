@@ -45,6 +45,14 @@ impl UrlText {
     }
 
     #[must_use]
+    pub fn has_any_scheme(&self, schemes: &[&str]) -> bool {
+        let Some((scheme, _)) = self.value.split_once(':') else {
+            return false;
+        };
+        schemes.iter().any(|candidate| scheme.eq_ignore_ascii_case(candidate))
+    }
+
+    #[must_use]
     pub fn display_host(&self) -> String {
         Url::parse(&self.value)
             .ok()
@@ -89,5 +97,20 @@ impl UrlText {
 impl fmt::Display for UrlText {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::UrlText;
+
+    #[test]
+    fn parsed_scheme_matching_preserves_original_text() -> Result<(), Box<dyn std::error::Error>> {
+        let url = UrlText::parse("HTTPS://Example.com/Path")?;
+
+        assert!(url.has_any_scheme(&["http", "https"]));
+        assert!(!url.has_any_scheme(&["custom"]));
+        assert_eq!(url.as_str(), "HTTPS://Example.com/Path");
+        Ok(())
     }
 }

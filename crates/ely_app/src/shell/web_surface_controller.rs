@@ -283,7 +283,7 @@ fn visible_web_surface_tabs(
     let mut permission_cache = HashMap::new();
     let mut visible = Vec::new();
     for tab in tabs {
-        if !super::web_surface::is_external_web_url(tab.url().as_str()) {
+        if !super::web_surface::is_external_web_url(tab.url()) {
             continue;
         }
         let Ok(kind) = core.profile_kind_for(tab.profile_id()) else {
@@ -308,7 +308,7 @@ fn visible_web_surface_tabs(
 
 fn external_web_surface_tab_ids(tabs: &[BrowserTab]) -> Vec<TabId> {
     tabs.iter()
-        .filter(|tab| super::web_surface::is_external_web_url(tab.url().as_str()))
+        .filter(|tab| super::web_surface::is_external_web_url(tab.url()))
         .map(|tab| tab.id().clone())
         .collect()
 }
@@ -316,7 +316,7 @@ fn external_web_surface_tab_ids(tabs: &[BrowserTab]) -> Vec<TabId> {
 fn external_web_surface_scopes(core: &BrowserCore) -> Vec<(TabId, ProfileId, ProfileDataMode)> {
     core.open_tabs()
         .iter()
-        .filter(|tab| super::web_surface::is_external_web_url(tab.url().as_str()))
+        .filter(|tab| super::web_surface::is_external_web_url(tab.url()))
         .filter_map(|tab| {
             core.profile_kind_for(tab.profile_id()).ok().map(|kind| {
                 (tab.id().clone(), tab.profile_id().clone(), profile_data_mode_from_kind(kind))

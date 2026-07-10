@@ -96,8 +96,7 @@ pub(crate) fn pane_host_label(tab: &BrowserTab) -> String {
 }
 
 pub(crate) fn pane_url_is_secure(tab: &BrowserTab) -> bool {
-    let url = tab.url().as_str();
-    url.starts_with("https://") || url.starts_with("ely://")
+    tab.url().has_any_scheme(&["https"]) || tab.url().as_str().starts_with("ely://")
 }
 
 pub(crate) fn split_canvas_status(tab: &BrowserTab) -> String {
@@ -143,4 +142,35 @@ pub(crate) fn render_compact_split_canvas(tab: &BrowserTab) -> AnyElement {
                 ),
         )
         .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use ely_domain::{BrowserTab, ProfileId, SpaceId, TabId, UrlText};
+
+    use super::pane_url_is_secure;
+
+    #[test]
+    fn secure_indicator_preserves_web_and_internal_scheme_semantics()
+    -> Result<(), Box<dyn std::error::Error>> {
+        for (url, expected) in [
+            ("https://example.com", true),
+            ("HTTPS://Example.com", true),
+            ("http://example.com", false),
+            ("HTTP://Example.com", false),
+            ("custom://example.com", false),
+            ("ely://settings", true),
+            ("ELY://settings", false),
+        ] {
+            let tab = BrowserTab::new(
+                TabId::new(),
+                SpaceId::new(),
+                ProfileId::new(),
+                "Web",
+                UrlText::parse(url)?,
+            );
+            assert_eq!(pane_url_is_secure(&tab), expected, "{url}");
+        }
+        Ok(())
+    }
 }

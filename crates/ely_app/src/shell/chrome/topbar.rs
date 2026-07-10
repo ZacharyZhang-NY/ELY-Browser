@@ -81,7 +81,7 @@ fn render_omnibar(
     let active_url = active_tab.url().as_str().to_string();
     let command_focused = shell.command_input.read(cx).focus_handle(cx).is_focused(window);
     let show_styled = !command_focused && active_url != "ely://new-tab";
-    let secure = active_url.starts_with("https://") || active_url.starts_with("ely://");
+    let secure = super::pane_url_is_secure(active_tab);
     let omnibar_motion_target = "omnibar-content";
     let omnibar_press_id = shell.chrome_motion_animation_id(omnibar_motion_target);
 

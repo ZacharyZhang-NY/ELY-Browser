@@ -46,10 +46,10 @@ impl ElyShell {
             return None;
         };
         let tab = core.active_tab().ok()?;
-        let requested_url = tab.url().as_str();
-        if !is_external_web_url(requested_url) {
+        if !is_external_web_url(tab.url()) {
             return None;
         }
+        let requested_url = tab.url().as_str();
 
         Some((tab.id().clone(), requested_url.to_string()))
     }

@@ -145,7 +145,7 @@ impl ElyShell {
                 let content = self.render_sync_page(snapshot, cx);
                 render_settings_shell(snapshot, "ely://settings/sync", content, cx)
             }
-            url if super::web_surface::is_external_web_url(url) => {
+            _ if super::web_surface::is_external_web_url(tab.url()) => {
                 self.render_external_web_canvas(tab, snapshot, bottom_corner_radius, cx)
             }
             _ => render_default_page(tab),

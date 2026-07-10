@@ -124,6 +124,20 @@ fn external_tab_ids_exclude_internal_routes() -> Result<(), Box<dyn std::error::
 }
 
 #[test]
+fn external_tab_ids_include_uppercase_http_schemes() -> Result<(), Box<dyn std::error::Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let https_tab_id = core.snapshot()?.active_tab_id;
+    core.navigate_active_tab(UrlText::parse("HTTPS://Example.com/Path")?)?;
+    assert_eq!(core.active_tab()?.url().as_str(), "HTTPS://Example.com/Path");
+
+    let http_tab_id = core.open_tab(UrlText::parse("HTTP://Example.com/Plain")?);
+
+    assert_eq!(core.active_tab()?.url().as_str(), "HTTP://Example.com/Plain");
+    assert_eq!(external_web_surface_tab_ids(core.open_tabs()), vec![https_tab_id, http_tab_id]);
+    Ok(())
+}
+
+#[test]
 fn external_tab_ids_include_inactive_spaces() -> Result<(), Box<dyn std::error::Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let profile_id = core.snapshot()?.active_profile_id;

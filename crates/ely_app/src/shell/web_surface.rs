@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-use ely_domain::{BrowserTab, ProfileId, TabId};
+use ely_domain::{BrowserTab, ProfileId, TabId, UrlText};
 
 use crate::services::{ProfileDataMode, servo_live::ServoLivePermissionGrant};
 
@@ -58,7 +58,7 @@ impl WebSurfaceStore {
         profile_data_mode: ProfileDataMode,
         permissions: &[WebSurfaceSitePermission],
     ) -> bool {
-        if !is_external_web_url(tab.url().as_str()) {
+        if !is_external_web_url(tab.url()) {
             return false;
         }
         let requested_url = tab.url().as_str().to_string();
@@ -372,8 +372,8 @@ impl WebSurfaceStore {
     }
 }
 
-pub(super) fn is_external_web_url(url: &str) -> bool {
-    url.starts_with("https://") || url.starts_with("http://")
+pub(super) fn is_external_web_url(url: &UrlText) -> bool {
+    url.has_any_scheme(&["http", "https"])
 }
 
 #[cfg(test)]
