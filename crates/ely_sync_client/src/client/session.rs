@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 use super::{SyncApiClient, read_json_from_response};
-use crate::error::SyncClientError;
+use crate::{device_api::is_subject_id, error::SyncClientError};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -17,6 +17,16 @@ struct AuthErrorDocument {
 }
 
 impl SyncApiClient {
+    pub fn authenticated_user_id(&self) -> Result<String, SyncClientError> {
+        let document = self.list_devices()?;
+        if document.version != 1 || !is_subject_id(&document.user_id) {
+            return Err(SyncClientError::DeviceTrust {
+                reason: "authenticated user identity is invalid",
+            });
+        }
+        Ok(document.user_id)
+    }
+
     pub fn sign_out(&self) -> Result<(), SyncClientError> {
         let endpoint = self.endpoint("/api/session/logout");
         let response = self

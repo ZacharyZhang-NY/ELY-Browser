@@ -13,6 +13,40 @@ use crate::{
 type TestServer = JoinHandle<std::io::Result<()>>;
 
 #[test]
+fn authenticated_user_id_uses_the_read_only_device_list() -> Result<(), Box<dyn Error>> {
+    let (base_url, server) = spawn_authenticated_server(
+        "GET /api/devices HTTP/1.1\r\n",
+        "200 OK",
+        r#"{"version":1,"user_id":"user-01","devices":[]}"#,
+    )?;
+    let client = SyncApiClient::new(
+        ApiClientConfig::custom(base_url, "auto"),
+        BearerToken::new("a".repeat(64))?,
+    )?;
+
+    assert_eq!(client.authenticated_user_id()?, "user-01");
+    join_server(server)?;
+
+    for body in [
+        r#"{"version":2,"user_id":"user-01","devices":[]}"#,
+        r#"{"version":1,"user_id":"x","devices":[]}"#,
+    ] {
+        let (base_url, server) =
+            spawn_authenticated_server("GET /api/devices HTTP/1.1\r\n", "200 OK", body)?;
+        let client = SyncApiClient::new(
+            ApiClientConfig::custom(base_url, "auto"),
+            BearerToken::new("a".repeat(64))?,
+        )?;
+        assert!(matches!(
+            client.authenticated_user_id(),
+            Err(crate::SyncClientError::DeviceTrust { .. })
+        ));
+        join_server(server)?;
+    }
+    Ok(())
+}
+
+#[test]
 fn sign_out_posts_the_bearer_and_validates_success() -> Result<(), Box<dyn Error>> {
     let (base_url, server) = spawn_logout_server("200 OK", r#"{"version":1,"signed_out":true}"#)?;
     let client = SyncApiClient::new(

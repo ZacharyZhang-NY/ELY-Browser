@@ -107,10 +107,86 @@ fn reconcile_authenticated_result<T>(
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
+    use std::{
+        cell::Cell,
+        io::{Read, Write},
+        net::TcpListener,
+        thread::{self, JoinHandle},
+        time::Duration,
+    };
 
-    use super::reconcile_authenticated_result;
-    use ely_sync_client::SyncClientError;
+    use super::{SyncEngine, reconcile_authenticated_result};
+    use crate::sync_engine::browser_data_root;
+    use ely_domain::ProfileId;
+    use ely_sync_client::{
+        ApiClientConfig, BearerToken, BearerTokenStore, DeviceIdentity, SyncApiClient,
+        SyncClientError, SyncOwnerStore,
+    };
+
+    type IdentityServer = JoinHandle<std::io::Result<String>>;
+
+    #[test]
+    fn owner_mismatch_stops_before_device_registration() -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let profile_id = ProfileId::new();
+        let profile_data_dir = directory.path().join(profile_id.as_str()).join("servo");
+        std::fs::create_dir_all(&profile_data_dir)?;
+        let owner_store = SyncOwnerStore::new(directory.path());
+        owner_store.claim("user-A")?;
+        let (base_url, server) = spawn_identity_server("user-B")?;
+        let engine = SyncEngine {
+            api_config: ApiClientConfig::custom(base_url.clone(), "auto"),
+            bearer_store: BearerTokenStore::new(&profile_id, &profile_data_dir),
+            account_key_lock_dir: directory.path().join(".sync-key-locks"),
+            owner_store,
+            identity: DeviceIdentity {
+                device_id: "device-01".to_string(),
+                public_key: "a".repeat(64),
+                wrapping_public_key: "b".repeat(64),
+                device_name: "Test".to_string(),
+                platform: "test".to_string(),
+            },
+            last_outcome: None,
+        };
+        let client = SyncApiClient::new(
+            ApiClientConfig::custom(base_url, "auto"),
+            BearerToken::new("a".repeat(64))?,
+        )?;
+
+        let result = engine.registered_client(client);
+        assert!(matches!(result, Err(SyncClientError::SyncOwnerMismatch)));
+        let request = join_identity_server(server)?;
+        assert!(request.starts_with("GET /api/devices HTTP/1.1\r\n"));
+        Ok(())
+    }
+
+    #[test]
+    fn profile_data_path_must_resolve_to_the_global_root() {
+        let profile_id = ProfileId::new();
+        let valid = std::path::PathBuf::from("/profiles").join(profile_id.as_str()).join("servo");
+
+        assert!(matches!(
+            browser_data_root(&profile_id, &valid),
+            Ok(root) if root == std::path::Path::new("/profiles")
+        ));
+        assert!(browser_data_root(&profile_id, std::path::Path::new("/servo")).is_err());
+        assert!(
+            browser_data_root(
+                &profile_id,
+                &std::path::PathBuf::from("/profiles")
+                    .join(ProfileId::new().as_str())
+                    .join("servo")
+            )
+            .is_err()
+        );
+        assert!(
+            browser_data_root(
+                &profile_id,
+                &std::path::PathBuf::from("/profiles").join(profile_id.as_str()).join("other")
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn terminal_session_clears_the_captured_credential() -> Result<(), SyncClientError> {
@@ -155,5 +231,49 @@ mod tests {
 
         assert!(matches!(result, Err(SyncClientError::SnapshotBusy)));
         assert!(!clear_called.get());
+    }
+
+    fn spawn_identity_server(user_id: &str) -> Result<(String, IdentityServer), std::io::Error> {
+        let listener = TcpListener::bind("127.0.0.1:0")?;
+        listener.set_nonblocking(true)?;
+        let address = listener.local_addr()?;
+        let body = format!(r#"{{"version":1,"user_id":"{user_id}","devices":[]}}"#);
+        let server = thread::spawn(move || {
+            let (mut stream, _) = (0..100)
+                .find_map(|_| match listener.accept() {
+                    Ok(connection) => Some(Ok(connection)),
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(10));
+                        None
+                    }
+                    Err(error) => Some(Err(error)),
+                })
+                .ok_or_else(|| std::io::Error::other("identity request was not received"))??;
+            let mut request = Vec::new();
+            let mut chunk = [0_u8; 1024];
+            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                let read = stream.read(&mut chunk)?;
+                if read == 0 || request.len() + read > 8192 {
+                    return Err(std::io::Error::other("identity request headers are incomplete"));
+                }
+                request.extend_from_slice(&chunk[..read]);
+            }
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes())?;
+            stream.flush()?;
+            String::from_utf8(request)
+                .map_err(|_| std::io::Error::other("identity request encoding is invalid"))
+        });
+        Ok((format!("http://{address}"), server))
+    }
+
+    fn join_identity_server(server: IdentityServer) -> Result<String, Box<dyn std::error::Error>> {
+        match server.join() {
+            Ok(result) => result.map_err(Into::into),
+            Err(_) => Err("identity server thread panicked".into()),
+        }
     }
 }

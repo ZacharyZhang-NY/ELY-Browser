@@ -20,6 +20,15 @@ pub enum SyncClientError {
     #[error("Authenticated session changed during reconciliation")]
     SessionChanged,
 
+    #[error("Cloud Sync owner is unclaimed; sign in again to bind this browser data")]
+    SyncOwnerUnclaimed,
+
+    #[error("This browser data belongs to a different Ely account")]
+    SyncOwnerMismatch,
+
+    #[error("Cloud Sync owner storage is unavailable: {0}")]
+    SyncOwnerStorage(String),
+
     #[error("HTTP request failed for {endpoint}: {source}")]
     Http {
         endpoint: String,

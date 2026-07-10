@@ -102,6 +102,30 @@ describe("device routes", () => {
     ]);
   });
 
+  it("returns identity for an unbound session before device registration", async () => {
+    const d1 = testD1Database({
+      sessionRow: {
+        id: "session-01",
+        userId: "user-01",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        deviceId: null,
+      },
+      allRows: [],
+    });
+    const response = await handleRequest(
+      new Request("https://elydora.test/api/devices", {
+        headers: { authorization: `Bearer ${ACCESS_TOKEN}` },
+      }),
+      testEnv({ d1 }),
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { version: 1, user_id: "user-01", devices: [] });
+    assert.deepEqual(d1.binds, [["user-01"]]);
+    assert.deepEqual(d1.batches, []);
+  });
+
   it("rejects unauthenticated device list requests before D1 reads", async () => {
     const d1 = testD1Database([]);
     const response = await handleRequest(

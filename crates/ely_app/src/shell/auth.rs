@@ -11,8 +11,8 @@ use std::path::Path;
 
 use ely_domain::ProfileId;
 use ely_sync_client::{
-    ApiClientConfig, BearerToken, BearerTokenStore, SyncApiClient, SyncClientError, send_email_otp,
-    verify_email_otp,
+    ApiClientConfig, BearerToken, BearerTokenStore, SyncApiClient, SyncClientError, SyncOwnerStore,
+    send_email_otp, verify_email_otp,
 };
 use gpui::Context;
 
@@ -386,7 +386,21 @@ fn spawn_verify_otp(profile_id: ProfileId, email: String, otp: String, tx: SyncS
                     return;
                 }
             };
-            let update = SyncStateUpdate::AuthVerified { profile_id, email, token };
+            let user_id = match SyncApiClient::new(config, token.clone())
+                .and_then(|client| client.authenticated_user_id())
+            {
+                Ok(user_id) => user_id,
+                Err(error) => {
+                    retire_bearer(token);
+                    let _ = tx.send(SyncStateUpdate::AuthError {
+                        profile_id,
+                        email,
+                        message: error.to_string(),
+                    });
+                    return;
+                }
+            };
+            let update = SyncStateUpdate::AuthVerified { profile_id, email, user_id, token };
             if let Err(error) = tx.send(update) {
                 retire_stale_auth_update(error.0.update);
             }
@@ -407,16 +421,18 @@ pub(super) fn retire_stale_auth_update(update: SyncStateUpdate) {
     };
     std::thread::Builder::new()
         .name("ely-sync-auth-retire".to_string())
-        .spawn(move || {
-            let client = SyncApiClient::new(ApiClientConfig::production(), token);
-            if let Ok(client) = client {
-                let _ = client.sign_out();
-            }
-        })
+        .spawn(move || retire_bearer(token))
         .map(|_| ())
         .unwrap_or_else(|error| {
             tracing::warn!(target: "ely::sync", error = %error, "spawn auth retire failed");
         });
+}
+
+fn retire_bearer(token: BearerToken) {
+    let client = SyncApiClient::new(ApiClientConfig::production(), token);
+    if let Ok(client) = client {
+        let _ = client.sign_out();
+    }
 }
 
 fn verified_bearer_from(update: SyncStateUpdate) -> Option<BearerToken> {
@@ -428,15 +444,26 @@ fn verified_bearer_from(update: SyncStateUpdate) -> Option<BearerToken> {
 
 pub(super) fn save_verified_bearer(
     profile_id: &ProfileId,
+    user_id: &str,
     token: &BearerToken,
     default_profile_id: Option<&ProfileId>,
 ) -> Result<(), SyncClientError> {
     let profile_root = default_profile_data_root().ok_or_else(|| {
         SyncClientError::BearerCredentialStorage("profile data root is unavailable".to_string())
     })?;
+    SyncOwnerStore::new(&profile_root).claim(user_id)?;
     let profile_dir = sync_profile_data_dir(&profile_root, profile_id);
     bearer_store_for_profile(profile_id, &profile_dir, &profile_root, default_profile_id)
         .save(token)
+}
+
+pub(super) fn verified_session_persistence_message(error: &SyncClientError) -> String {
+    match error {
+        SyncClientError::SyncOwnerMismatch
+        | SyncClientError::SyncOwnerUnclaimed
+        | SyncClientError::SyncOwnerStorage(_) => error.to_string(),
+        _ => "System credential access failed.".to_string(),
+    }
 }
 
 #[cfg(test)]

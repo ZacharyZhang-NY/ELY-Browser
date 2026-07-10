@@ -8,7 +8,7 @@ use ely_sync_client::{
     AccountKey, ApiClientConfig, AuthenticatedSnapshotHead, BearerToken, BearerTokenStore,
     DeviceIdentity, SNAPSHOT_ENCRYPTION_VERSION, SnapshotCryptoContext, SnapshotDownloadResult,
     SnapshotPayload, SnapshotUploadRequest, SnapshotUploadResult, SyncApiClient, SyncClientError,
-    SyncLatestSnapshotDocument,
+    SyncLatestSnapshotDocument, SyncOwnerStore,
 };
 
 use crate::state::BrowserCore;
@@ -27,6 +27,7 @@ pub struct SyncEngine {
     api_config: ApiClientConfig,
     bearer_store: BearerTokenStore,
     account_key_lock_dir: PathBuf,
+    owner_store: SyncOwnerStore,
     identity: DeviceIdentity,
     last_outcome: Option<SyncOutcome>,
 }
@@ -41,12 +42,10 @@ impl SyncEngine {
         device_name: impl Into<String>,
         platform: impl Into<String>,
     ) -> Result<Self, SyncClientError> {
+        let browser_data_root = browser_data_root(profile_id, profile_data_dir)?;
         let sync_dir = profile_data_dir.join("sync");
-        let account_key_lock_dir = profile_data_dir
-            .parent()
-            .and_then(Path::parent)
-            .unwrap_or(profile_data_dir)
-            .join(".sync-key-locks");
+        let account_key_lock_dir = browser_data_root.join(".sync-key-locks");
+        let owner_store = SyncOwnerStore::new(browser_data_root);
         let identity =
             DeviceIdentity::load_or_create(&sync_dir.join("device.json"), device_name, platform)?;
         let bearer_store = BearerTokenStore::new(profile_id, profile_data_dir);
@@ -54,6 +53,7 @@ impl SyncEngine {
             api_config: ApiClientConfig::production(),
             bearer_store,
             account_key_lock_dir,
+            owner_store,
             identity,
             last_outcome: None,
         })
@@ -107,6 +107,8 @@ impl SyncEngine {
         client: SyncApiClient,
     ) -> Result<(SyncApiClient, ely_sync_client::client::DeviceRecordDocument), SyncClientError>
     {
+        let authenticated_user_id = client.authenticated_user_id()?;
+        self.owner_store.verify(&authenticated_user_id)?;
         let idempotency_key = device_registration_idempotency_key(&self.identity);
         let registration = match client.register_device(&self.identity, &idempotency_key) {
             Ok(registration) => registration,
@@ -122,6 +124,11 @@ impl SyncEngine {
             }
             Err(error) => return Err(error),
         };
+        if registration.version != 2 || registration.user_id != authenticated_user_id {
+            return Err(SyncClientError::DeviceTrust {
+                reason: "device registration account does not match authenticated session",
+            });
+        }
         Ok((client, registration))
     }
 
@@ -364,6 +371,22 @@ fn snapshot_id_for_user(identity: &DeviceIdentity) -> String {
 
 fn device_registration_idempotency_key(identity: &DeviceIdentity) -> String {
     format!("device-register:{}", identity.device_id)
+}
+
+fn browser_data_root<'a>(
+    profile_id: &ProfileId,
+    profile_data_dir: &'a Path,
+) -> Result<&'a Path, SyncClientError> {
+    let profile_directory = profile_data_dir
+        .parent()
+        .filter(|_| profile_data_dir.file_name().is_some_and(|name| name == "servo"))
+        .filter(|directory| directory.file_name().is_some_and(|name| name == profile_id.as_str()))
+        .ok_or_else(|| {
+            SyncClientError::SyncOwnerStorage("sync profile data path is invalid".to_string())
+        })?;
+    profile_directory.parent().ok_or_else(|| {
+        SyncClientError::SyncOwnerStorage("browser data root is unavailable".to_string())
+    })
 }
 
 #[derive(Debug)]

@@ -963,6 +963,7 @@ Better Auth 在 Cloudflare Workers 中初始化，D1 binding 作为 database 传
 - Desktop bearer 以 stable `ProfileId` 作为系统凭据 account，Windows 使用 Local persistence；旧明文文件在 credential read-back 与 durable marker 提交后清理，系统凭据不可用时阻断设备加载与 Sync upload。
 - Desktop sign-out closes the authenticated-operation gate, drains active leases, revokes the exact server session, and conditionally clears the captured native credential; generation-stamped async results cannot restore stale auth or Sync state.
 - Runtime `session_not_found` and `session_expired` responses conditionally clear the exact captured bearer inside `SyncEngine`; replacement credentials survive, stale Profile work converges through credential reprobe, and active Cloud Sync/device work resets before session-state reconciliation.
+- One immutable Ely `user_id` owns the complete browser data root and its multi-Profile encrypted snapshot. Interactive OTP sign-in claims an unowned root after generation validation; every background device or Sync operation verifies the owner through `GET /api/devices` before device registration or cloud data access.
 - 设备注册、rebind、批准、撤销与 Vault rotation。
 - Signed Sync reset 和 signed account deletion。
 - 管理所有 `/api/auth/*` 路由。

@@ -4,7 +4,7 @@ use ely_domain::ProfileId;
 use super::super::{ShellState, sync_state::SyncStateUpdate};
 use super::{
     AuthFlowPhase, active_profile_sync_context_for, bearer_store_for_profile, normalize_email,
-    verified_bearer_from,
+    verified_bearer_from, verified_session_persistence_message,
 };
 
 #[test]
@@ -47,11 +47,20 @@ fn stale_verified_updates_retain_the_token_for_server_retirement()
     let update = SyncStateUpdate::AuthVerified {
         profile_id,
         email: "user@example.com".to_string(),
+        user_id: "user-01".to_string(),
         token: token.clone(),
     };
 
     assert_eq!(verified_bearer_from(update), Some(token));
     Ok(())
+}
+
+#[test]
+fn owner_mismatch_is_actionable_in_the_account_form() {
+    assert_eq!(
+        verified_session_persistence_message(&ely_sync_client::SyncClientError::SyncOwnerMismatch),
+        "This browser data belongs to a different Ely account"
+    );
 }
 
 #[test]

@@ -30,6 +30,7 @@ pub mod encryption;
 pub mod error;
 pub mod key_store;
 pub mod snapshot;
+mod sync_owner;
 pub mod vault;
 mod vault_bootstrap;
 
@@ -53,6 +54,7 @@ pub use snapshot::{
     AuthenticatedSnapshot, AuthenticatedSnapshotHead, SnapshotDownload, SnapshotPayload,
     SnapshotUploadRequest,
 };
+pub use sync_owner::SyncOwnerStore;
 pub use vault::{
     ACCOUNT_KEY_WRAP_SUITE, ACCOUNT_KEY_WRAP_VERSION, SyncVaultDocument, VaultContext,
     WrappedAccountKey,

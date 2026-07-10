@@ -241,7 +241,7 @@ fn challenge_value<'a>(line: &'a str, name: &'static str) -> Result<&'a str, Syn
     Ok(value)
 }
 
-fn is_subject_id(value: &str) -> bool {
+pub(crate) fn is_subject_id(value: &str) -> bool {
     (3..=128).contains(&value.len())
         && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
 }

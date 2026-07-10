@@ -45,7 +45,7 @@ pub(crate) enum SyncStateUpdate {
     SignOutSucceeded { profile_id: ProfileId },
     SignOutFailed { profile_id: ProfileId, message: String },
     AuthOtpSent { profile_id: ProfileId, email: String },
-    AuthVerified { profile_id: ProfileId, email: String, token: BearerToken },
+    AuthVerified { profile_id: ProfileId, email: String, user_id: String, token: BearerToken },
     AuthError { profile_id: ProfileId, email: String, message: String },
 }
 
@@ -321,7 +321,7 @@ impl ElyShell {
                         self.release_auth_flow_barrier();
                     }
                 }
-                SyncStateUpdate::AuthVerified { profile_id, email, token } => {
+                SyncStateUpdate::AuthVerified { profile_id, email, user_id, token } => {
                     let attempt_matches = active_profile_id(&self.state).as_ref()
                         == Some(&profile_id)
                         && matches!(
@@ -336,12 +336,14 @@ impl ElyShell {
                         auth::retire_stale_auth_update(SyncStateUpdate::AuthVerified {
                             profile_id,
                             email,
+                            user_id,
                             token,
                         });
                         continue;
                     }
                     match auth::save_verified_bearer(
                         &profile_id,
+                        &user_id,
                         &token,
                         self.default_profile_id.as_ref(),
                     ) {
@@ -357,9 +359,10 @@ impl ElyShell {
                             auth::retire_stale_auth_update(SyncStateUpdate::AuthVerified {
                                 profile_id: profile_id.clone(),
                                 email: email.clone(),
+                                user_id,
                                 token,
                             });
-                            let message = "System credential access failed.".to_string();
+                            let message = auth::verified_session_persistence_message(&error);
                             self.auth_flow_phase = auth::AuthFlowPhase::Error {
                                 profile_id,
                                 email,
