@@ -71,15 +71,14 @@ fn successful_worker_ensure_confirms_allow_once_transfer() -> Result<(), String>
     store.flush_runtime_for_test();
     let result = store.tick(std::slice::from_ref(tab.id()));
 
-    assert_eq!(
-        result.permission_transfers,
-        vec![crate::services::servo_live::ServoLivePermissionGrant::new(
-            profile_id,
-            permission.origin().clone(),
-            permission.feature(),
-            permission.revision(),
-        )],
-    );
+    let transferred = vec![crate::services::servo_live::ServoLivePermissionGrant::new(
+        profile_id,
+        permission.origin().clone(),
+        permission.feature(),
+        permission.revision(),
+    )];
+    assert_eq!(result.permission_transfers, transferred);
+    assert_eq!(store.retain_tabs(&[]), transferred);
     Ok(())
 }
 
@@ -105,6 +104,42 @@ fn rejected_worker_ensure_keeps_allow_once_untransferred() -> Result<(), String>
     store.flush_runtime_for_test();
     let _ = store.tick(std::slice::from_ref(tab.id()));
     assert_eq!(REJECTED_ENSURE_COUNT.load(Ordering::SeqCst), 2);
+    Ok(())
+}
+
+#[test]
+fn retiring_transient_worker_returns_only_submitted_allow_once_grants() -> Result<(), String> {
+    let runtime = WebSurfaceRuntime::new_with_client_factory(|_| Ok(Box::new(AcceptingClient)));
+    let mut store = WebSurfaceStore::new_with_runtime(runtime);
+    let (tab, permission) = tab_and_permission()?;
+    let second = BrowserTab::new(
+        TabId::new(),
+        SpaceId::new(),
+        tab.profile_id().clone(),
+        "Second",
+        UrlText::parse("https://example.com/second").map_err(|error| error.to_string())?,
+    );
+    let submitted = crate::services::servo_live::ServoLivePermissionGrant::new(
+        tab.profile_id().clone(),
+        permission.origin().clone(),
+        permission.feature(),
+        permission.revision(),
+    );
+    record_viewport(&mut store, &tab);
+    assert!(store.ensure_surface(
+        &tab,
+        ProfileDataMode::Transient,
+        std::slice::from_ref(&permission),
+    ));
+    record_viewport(&mut store, &second);
+    assert!(store.ensure_surface(
+        &second,
+        ProfileDataMode::Transient,
+        std::slice::from_ref(&permission),
+    ));
+
+    assert!(store.retain_tabs(std::slice::from_ref(second.id())).is_empty());
+    assert_eq!(store.retain_tabs(&[]), vec![submitted]);
     Ok(())
 }
 

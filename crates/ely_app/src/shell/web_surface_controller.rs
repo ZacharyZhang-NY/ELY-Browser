@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use ely_browser_core::{BrowserCore, BrowserSnapshot};
-use ely_domain::{BrowserTab, ProfileKind, TabId, UrlText};
+use ely_domain::{BrowserTab, ProfileId, ProfileKind, TabId, UrlText};
 use gpui::{AnyElement, Bounds, Context, Pixels, Point};
 
 use crate::services::{ProfileDataMode, servo_live::ServoLivePermissionGrant};
@@ -49,15 +49,34 @@ impl ElyShell {
     }
 
     pub(super) fn tick_external_web_surfaces(&mut self, cx: &mut Context<Self>) -> bool {
-        let (visible_tab_ids, open_tab_ids, visible_tabs) = match &self.state {
+        let (visible_tab_ids, external_tab_ids, external_scopes, visible_tabs) = match &self.state {
             super::ShellState::Ready(core) => {
                 let visible_tabs = core.visible_content_tabs().unwrap_or_else(|_| Vec::new());
-                let visible_tab_ids = visible_tabs.iter().map(|tab| tab.id().clone()).collect();
-                (visible_tab_ids, core.open_tab_ids(), visible_web_surface_tabs(core, visible_tabs))
+                let visible_tab_ids = external_web_surface_tab_ids(&visible_tabs);
+                let external_tab_ids = external_web_surface_tab_ids(core.open_tabs());
+                let external_scopes = external_web_surface_scopes(core);
+                (visible_tab_ids, external_tab_ids, external_scopes, visible_tabs)
             }
-            super::ShellState::StartupError(_) => (Vec::new(), Vec::new(), Vec::new()),
+            super::ShellState::StartupError(_) => (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
         };
-        self.web_surfaces.retain_tabs(&open_tab_ids);
+        let mut retired_permissions = self.web_surfaces.retain_tabs(&external_tab_ids);
+        for (tab_id, profile_id, profile_data_mode) in external_scopes {
+            retired_permissions.extend(self.web_surfaces.reconcile_tab_scope(
+                &tab_id,
+                &profile_id,
+                profile_data_mode,
+            ));
+        }
+        let mut permission_changed = false;
+        if let super::ShellState::Ready(core) = &mut self.state {
+            for consumed in retired_permissions {
+                permission_changed |= apply_permission_consumption(core, &consumed);
+            }
+        }
+        let visible_tabs = match &self.state {
+            super::ShellState::Ready(core) => visible_web_surface_tabs(core, visible_tabs),
+            super::ShellState::StartupError(_) => Vec::new(),
+        };
         let mut url_changed = self.ensure_visible_web_surfaces(visible_tabs);
         let result = self.web_surfaces.tick(&visible_tab_ids);
         for url_change in result.url_changes {
@@ -67,7 +86,6 @@ impl ElyShell {
         for metadata in result.page_metadata {
             metadata_changed |= self.apply_web_surface_page_metadata(metadata);
         }
-        let mut permission_changed = false;
         if let super::ShellState::Ready(core) = &mut self.state {
             for grant in result.permission_transfers {
                 permission_changed |= core
@@ -288,6 +306,25 @@ fn visible_web_surface_tabs(
     visible
 }
 
+fn external_web_surface_tab_ids(tabs: &[BrowserTab]) -> Vec<TabId> {
+    tabs.iter()
+        .filter(|tab| super::web_surface::is_external_web_url(tab.url().as_str()))
+        .map(|tab| tab.id().clone())
+        .collect()
+}
+
+fn external_web_surface_scopes(core: &BrowserCore) -> Vec<(TabId, ProfileId, ProfileDataMode)> {
+    core.open_tabs()
+        .iter()
+        .filter(|tab| super::web_surface::is_external_web_url(tab.url().as_str()))
+        .filter_map(|tab| {
+            core.profile_kind_for(tab.profile_id()).ok().map(|kind| {
+                (tab.id().clone(), tab.profile_id().clone(), profile_data_mode_from_kind(kind))
+            })
+        })
+        .collect()
+}
+
 fn profile_data_mode_for(tab: &BrowserTab, snapshot: &BrowserSnapshot) -> Option<ProfileDataMode> {
     snapshot
         .profiles
@@ -327,34 +364,5 @@ fn apply_permission_consumption(
 }
 
 #[cfg(test)]
-mod tests {
-    use ely_browser_core::{BrowserCore, InitialBrowserConfig};
-    use ely_domain::{SiteOrigin, SitePermissionDecision, SitePermissionFeature};
-
-    use super::{ServoLivePermissionGrant, apply_permission_consumption};
-
-    #[test]
-    fn consumption_receipt_finishes_a_pending_allow_once_grant()
-    -> Result<(), Box<dyn std::error::Error>> {
-        let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
-        let profile_id = core.snapshot()?.active_profile_id;
-        let origin = SiteOrigin::parse("https://example.com")?;
-        core.set_site_permission(
-            origin.clone(),
-            SitePermissionFeature::Camera,
-            SitePermissionDecision::AllowOnce,
-        )?;
-        let revision =
-            core.site_permission_revision(&profile_id, &origin, SitePermissionFeature::Camera);
-        let consumed = ServoLivePermissionGrant::new(
-            profile_id,
-            origin,
-            SitePermissionFeature::Camera,
-            revision,
-        );
-
-        assert!(apply_permission_consumption(&mut core, &consumed));
-        assert!(core.snapshot()?.site_permissions.is_empty());
-        Ok(())
-    }
-}
+#[path = "web_surface_controller_tests.rs"]
+mod tests;

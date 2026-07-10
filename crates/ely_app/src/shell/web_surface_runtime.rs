@@ -8,7 +8,7 @@ use ely_domain::{BrowserTab, TabId};
 
 use crate::services::{
     ProfileDataMode,
-    servo_live::{ServoLiveEnsureRequest, ServoLiveSitePermission},
+    servo_live::{ServoLiveEnsureRequest, ServoLivePermissionGrant, ServoLiveSitePermission},
     servo_profile_data::cleanup_stale_transient_profile_data_dirs,
 };
 
@@ -39,6 +39,7 @@ pub(super) struct WebSurfaceRuntime {
     sessions: BTreeMap<TabId, WebSurfaceSession>,
     retry_state: BTreeMap<WebSurfaceRuntimeScope, ScopeRetryState>,
     retired_workers: Vec<JoinHandle<Result<(), String>>>,
+    retired_permission_consumptions: Vec<ServoLivePermissionGrant>,
     transient_cleanup_error: Option<String>,
     client_factory: LiveRuntimeClientFactory,
     last_generation: u64,
@@ -55,6 +56,7 @@ impl WebSurfaceRuntime {
             sessions: BTreeMap::new(),
             retry_state: BTreeMap::new(),
             retired_workers: Vec::new(),
+            retired_permission_consumptions: Vec::new(),
             transient_cleanup_error,
             client_factory: new_servo_live_client,
             last_generation: 0,
@@ -68,6 +70,7 @@ impl WebSurfaceRuntime {
             sessions: BTreeMap::new(),
             retry_state: BTreeMap::new(),
             retired_workers: Vec::new(),
+            retired_permission_consumptions: Vec::new(),
             transient_cleanup_error: None,
             client_factory,
             last_generation: 0,
@@ -136,9 +139,10 @@ impl WebSurfaceRuntime {
             allow_once_grants: allow_once_grants(tab.profile_id(), permissions),
         };
 
-        let Some(scoped) = self.workers.get(&scope) else {
+        let Some(scoped) = self.workers.get_mut(&scope) else {
             return Err("Servo sidecar worker was created but is no longer registered".to_string());
         };
+        scoped.track_allow_once_grants(&request.allow_once_grants);
         scoped.worker.submit_ensure(generation, request);
         if let Some(session) = self.sessions.get_mut(tab.id()) {
             session.cadence.note_poll_submitted(submitted_at);
@@ -150,7 +154,7 @@ impl WebSurfaceRuntime {
 
     pub(super) fn tick(&mut self, visible_tab_ids: &[TabId]) -> Vec<WebSurfaceRuntimeFrame> {
         self.reap_retired_workers(false);
-        let mut frames = Vec::new();
+        let mut frames = self.take_retired_permission_frames();
         let now = Instant::now();
         let scopes = self.workers.keys().cloned().collect::<Vec<_>>();
         let mut unavailable_scopes = Vec::new();
@@ -168,6 +172,7 @@ impl WebSurfaceRuntime {
         for scope in unavailable_scopes {
             self.invalidate_scope(&scope, now);
         }
+        frames.extend(self.take_retired_permission_frames());
 
         let poll_now = Instant::now();
         for tab_id in visible_tab_ids {
@@ -207,19 +212,6 @@ impl WebSurfaceRuntime {
             .filter(|session| self.workers.contains_key(&session.scope))
             .map(|session| session.cadence.next_poll_delay(now))
             .min()
-    }
-
-    pub(super) fn close_tab(&mut self, tab_id: &TabId) {
-        let Some(session) = self.sessions.remove(tab_id) else {
-            return;
-        };
-        let has_remaining_session =
-            self.sessions.values().any(|candidate| candidate.scope == session.scope);
-        if session.scope.is_transient() && !has_remaining_session {
-            self.remove_worker(&session.scope);
-        } else if let Some(scoped) = self.workers.get(&session.scope) {
-            scoped.worker.submit_close(tab_id.as_str().to_string());
-        }
     }
 
     pub(super) fn has_session(
@@ -277,26 +269,8 @@ impl WebSurfaceRuntime {
                 return Err(error);
             }
         };
-        self.workers.insert(scope, ScopedWorker { worker, transient_profile_data_dir });
+        self.workers.insert(scope, ScopedWorker::new(worker, transient_profile_data_dir));
         Ok(())
-    }
-
-    fn detach_tab_from_previous_scope(&mut self, tab_id: &TabId, scope: &WebSurfaceRuntimeScope) {
-        let Some(previous_scope) = self.sessions.get(tab_id).map(|session| session.scope.clone())
-        else {
-            return;
-        };
-        if &previous_scope == scope {
-            return;
-        }
-        self.sessions.remove(tab_id);
-        let has_remaining_session =
-            self.sessions.values().any(|candidate| candidate.scope == previous_scope);
-        if previous_scope.is_transient() && !has_remaining_session {
-            self.remove_worker(&previous_scope);
-        } else if let Some(scoped) = self.workers.get(&previous_scope) {
-            scoped.worker.submit_close(tab_id.as_str().to_string());
-        }
     }
 
     fn collect_responses(
@@ -362,6 +336,9 @@ impl WebSurfaceRuntime {
                     frames.push(WebSurfaceRuntimeFrame::PermissionSnapshotAccepted(grant));
                 }
                 WorkerResponse::PermissionConsumed(consumed) => {
+                    if let Some(scoped) = self.workers.get_mut(scope) {
+                        scoped.mark_permission_consumed(&consumed);
+                    }
                     frames.push(WebSurfaceRuntimeFrame::PermissionConsumed(consumed));
                 }
             }
@@ -398,9 +375,10 @@ impl WebSurfaceRuntime {
     }
 
     fn remove_worker(&mut self, scope: &WebSurfaceRuntimeScope) {
-        let Some(scoped) = self.workers.remove(scope) else {
+        let Some(mut scoped) = self.workers.remove(scope) else {
             return;
         };
+        self.retire_scoped_worker_permissions(&mut scoped);
         if scoped.transient_profile_data_dir.is_some() {
             match std::thread::Builder::new()
                 .name("ely-servo-profile-cleanup".to_string())

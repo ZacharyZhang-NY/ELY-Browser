@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-use ely_domain::{BrowserTab, TabId};
+use ely_domain::{BrowserTab, ProfileId, TabId};
 
-use crate::services::ProfileDataMode;
+use crate::services::{ProfileDataMode, servo_live::ServoLivePermissionGrant};
 
 use super::{
     web_surface_cadence::{ACTIVE_POLL_INTERVAL, IDLE_POLL_INTERVAL},
@@ -250,7 +250,7 @@ impl WebSurfaceStore {
             .min(IDLE_POLL_INTERVAL)
     }
 
-    pub(super) fn retain_tabs(&mut self, open_tab_ids: &[TabId]) {
+    pub(super) fn retain_tabs(&mut self, open_tab_ids: &[TabId]) -> Vec<ServoLivePermissionGrant> {
         let stale_tab_ids = self
             .surfaces
             .keys()
@@ -260,6 +260,16 @@ impl WebSurfaceStore {
         for tab_id in stale_tab_ids {
             self.close_surface(&tab_id);
         }
+        self.runtime.take_retired_permission_consumptions()
+    }
+
+    pub(super) fn reconcile_tab_scope(
+        &mut self,
+        tab_id: &TabId,
+        profile_id: &ProfileId,
+        profile_data_mode: ProfileDataMode,
+    ) -> Vec<ServoLivePermissionGrant> {
+        self.runtime.reconcile_tab_scope(tab_id, profile_id, profile_data_mode)
     }
 
     fn take_pending_input(

@@ -20,6 +20,7 @@ use super::super::{
 use super::WebSurfaceStore;
 
 static ENSURES: Mutex<Vec<RecordedEnsure>> = Mutex::new(Vec::new());
+static CLOSES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 #[derive(Debug)]
 struct RecordedEnsure {
@@ -28,6 +29,7 @@ struct RecordedEnsure {
 }
 
 struct RecordingClient;
+struct ClosingClient;
 
 impl LiveRuntimeClient for RecordingClient {
     fn ensure(
@@ -58,10 +60,34 @@ impl LiveRuntimeClient for RecordingClient {
     }
 }
 
+impl LiveRuntimeClient for ClosingClient {
+    fn ensure(
+        &mut self,
+        _request: ServoLiveEnsureRequest,
+    ) -> Result<Option<ServoLiveFrame>, LiveRuntimeClientError> {
+        Ok(None)
+    }
+
+    fn poll(&mut self, _tab_id: String) -> Result<Option<ServoLiveFrame>, LiveRuntimeClientError> {
+        Ok(None)
+    }
+
+    fn close(&mut self, tab_id: String) -> Result<(), LiveRuntimeClientError> {
+        CLOSES.lock().map_err(|_| "close recorder lock was poisoned".to_string())?.push(tab_id);
+        Ok(())
+    }
+}
+
 fn recording_client_factory(
     _config_dir: std::path::PathBuf,
 ) -> Result<Box<dyn LiveRuntimeClient>, String> {
     Ok(Box::new(RecordingClient))
+}
+
+fn closing_client_factory(
+    _config_dir: std::path::PathBuf,
+) -> Result<Box<dyn LiveRuntimeClient>, String> {
+    Ok(Box::new(ClosingClient))
 }
 
 #[test]
@@ -118,6 +144,44 @@ fn profile_scope_change_clears_pixels_input_and_focus_before_ensure() -> Result<
     assert_eq!(ensures[0].profile_id, profile_a.as_str());
     assert_eq!(ensures[1].profile_id, profile_b.as_str());
     assert!(!ensures[1].had_input);
+    Ok(())
+}
+
+#[test]
+fn retaining_only_external_tabs_closes_an_internal_navigation_surface() -> Result<(), Box<dyn Error>>
+{
+    CLOSES.lock().map_err(|_| "close recorder lock was poisoned")?.clear();
+    let runtime = WebSurfaceRuntime::new_with_client_factory(closing_client_factory);
+    let mut store = WebSurfaceStore::new_with_runtime(runtime);
+    let tab = BrowserTab::new(
+        TabId::new(),
+        SpaceId::new(),
+        ProfileId::new(),
+        "Web",
+        UrlText::parse("https://example.com")?,
+    );
+
+    assert_eq!(
+        store.record_viewport_size(tab.id(), viewport_bounds(), 1.0),
+        WebSurfaceInputOutcome::Applied,
+    );
+    assert!(store.ensure_surface(&tab, ProfileDataMode::Persistent, &[]));
+    store.flush_runtime_for_test();
+    assert_eq!(
+        store.record_click_point(tab.id(), tab.url().as_str(), point(px(20.0), px(20.0)), 1.0,),
+        WebSurfaceInputOutcome::Applied,
+    );
+
+    store.retain_tabs(&[]);
+    store.flush_runtime_for_test();
+
+    assert!(store.surface_for_test(tab.id()).is_none());
+    assert!(store.runtime.session_scope_for_test(tab.id()).is_none());
+    assert!(store.keyboard_focus.is_none());
+    assert_eq!(
+        CLOSES.lock().map_err(|_| "close recorder lock was poisoned")?.as_slice(),
+        [tab.id().as_str()],
+    );
     Ok(())
 }
 

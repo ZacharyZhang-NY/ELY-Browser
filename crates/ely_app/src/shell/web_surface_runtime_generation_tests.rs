@@ -4,16 +4,20 @@ use std::{
     time::Instant,
 };
 
-use ely_domain::{BrowserTab, ProfileId, SpaceId, TabId, UrlText};
+use ely_domain::{
+    BrowserTab, ProfileId, SiteOrigin, SitePermissionDecision, SitePermissionFeature, SpaceId,
+    TabId, UrlText,
+};
 
 use crate::services::{
     ProfileDataMode,
-    servo_live::{ServoLiveEnsureRequest, ServoLiveFrame},
+    servo_live::{ServoLiveEnsureRequest, ServoLiveFrame, ServoLivePermissionGrant},
 };
 
 use super::{
     super::{
         web_surface_geometry::{WebSurfaceScrollOffset, WebSurfaceSize},
+        web_surface_permissions::{WebSurfaceSitePermission, WebSurfaceSitePermissionState},
         web_surface_state::WebSurfacePendingInput,
         web_surface_worker::{LiveRuntimeClient, LiveRuntimeClientError, WorkerResponse},
     },
@@ -104,6 +108,123 @@ fn late_frame_from_a_is_discarded_after_a_to_b() -> Result<(), String> {
 
     assert!(generation_a < generation_b);
     assert!(frames.is_empty());
+    Ok(())
+}
+
+#[test]
+fn late_frame_is_discarded_after_tab_session_closes() -> Result<(), String> {
+    let mut runtime = WebSurfaceRuntime::new_with_client_factory(empty_client_factory);
+    let tab_id = TabId::new();
+    let profile_id = ProfileId::new();
+    let tab = web_tab(tab_id.clone(), profile_id.clone(), "https://example.com/external")?;
+    runtime.ensure_tab(&tab, surface_size(), ProfileDataMode::Transient, &[], pending_input())?;
+    let generation = current_generation(&runtime, &tab_id)?;
+
+    runtime.close_tab(&tab_id);
+    let mut frames = Vec::new();
+    runtime.collect_responses(
+        &scope(&profile_id),
+        vec![
+            WorkerResponse::Frame {
+                generation,
+                tab_id: tab_id.as_str().to_string(),
+                frame: live_frame(),
+            },
+            WorkerResponse::Failed {
+                generation,
+                tab_id: tab_id.as_str().to_string(),
+                message: "late failure".to_string(),
+            },
+        ],
+        Instant::now(),
+        &mut frames,
+    );
+
+    assert!(!runtime.sessions.contains_key(&tab_id));
+    assert!(frames.is_empty());
+    Ok(())
+}
+
+#[test]
+fn scope_change_returns_submitted_permission_grants_on_the_next_tick() -> Result<(), String> {
+    let mut runtime = WebSurfaceRuntime::new_with_client_factory(empty_client_factory);
+    let tab_id = TabId::new();
+    let profile_a = ProfileId::new();
+    let (permission, grant) = allow_once_permission(&profile_a)?;
+    let tab_a = web_tab(tab_id.clone(), profile_a, "https://example.com/a")?;
+    let tab_b = web_tab(tab_id, ProfileId::new(), "https://example.com/b")?;
+    runtime.ensure_tab(
+        &tab_a,
+        surface_size(),
+        ProfileDataMode::Transient,
+        std::slice::from_ref(&permission),
+        pending_input(),
+    )?;
+    runtime.ensure_tab(&tab_b, surface_size(), ProfileDataMode::Transient, &[], pending_input())?;
+
+    let frames = runtime.tick(&[]);
+    assert!(matches!(
+        frames.as_slice(),
+        [WebSurfaceRuntimeFrame::PermissionConsumed(consumed)] if consumed == &grant
+    ));
+    Ok(())
+}
+
+#[test]
+fn reconciliation_retires_same_profile_mode_before_replacement_ensure() -> Result<(), String> {
+    let mut runtime = WebSurfaceRuntime::new_with_client_factory(empty_client_factory);
+    let tab_id = TabId::new();
+    let profile_id = ProfileId::new();
+    let (permission, grant) = allow_once_permission(&profile_id)?;
+    let transient = web_tab(tab_id.clone(), profile_id.clone(), "https://example.com/private")?;
+    let persistent = web_tab(tab_id.clone(), profile_id.clone(), "https://example.com/standard")?;
+    runtime.ensure_tab(
+        &transient,
+        surface_size(),
+        ProfileDataMode::Transient,
+        std::slice::from_ref(&permission),
+        pending_input(),
+    )?;
+
+    let retired = runtime.reconcile_tab_scope(&tab_id, &profile_id, ProfileDataMode::Persistent);
+    assert_eq!(retired, vec![grant]);
+    runtime.ensure_tab(
+        &persistent,
+        surface_size(),
+        ProfileDataMode::Persistent,
+        &[],
+        pending_input(),
+    )?;
+    assert!(runtime.has_session(&tab_id, &profile_id, ProfileDataMode::Persistent));
+    Ok(())
+}
+
+#[test]
+fn consumed_permission_is_removed_from_worker_tracking() -> Result<(), String> {
+    let mut runtime = WebSurfaceRuntime::new_with_client_factory(empty_client_factory);
+    let tab_id = TabId::new();
+    let profile_id = ProfileId::new();
+    let scope = scope(&profile_id);
+    let (permission, grant) = allow_once_permission(&profile_id)?;
+    let tab = web_tab(tab_id.clone(), profile_id, "https://example.com")?;
+    runtime.ensure_tab(
+        &tab,
+        surface_size(),
+        ProfileDataMode::Transient,
+        std::slice::from_ref(&permission),
+        pending_input(),
+    )?;
+    let mut frames = Vec::new();
+    runtime.collect_responses(
+        &scope,
+        vec![WorkerResponse::PermissionConsumed(grant)],
+        Instant::now(),
+        &mut frames,
+    );
+
+    runtime.close_tab(&tab_id);
+    assert!(runtime.take_retired_permission_consumptions().is_empty());
+    assert!(matches!(frames.as_slice(), [WebSurfaceRuntimeFrame::PermissionConsumed(_)]));
     Ok(())
 }
 
@@ -320,4 +441,21 @@ fn pending_input() -> WebSurfacePendingInput {
 
 fn live_frame() -> ServoLiveFrame {
     ServoLiveFrame::for_test(1, 1, vec![16, 32, 64, 255])
+}
+
+fn allow_once_permission(
+    profile_id: &ProfileId,
+) -> Result<(WebSurfaceSitePermission, ServoLivePermissionGrant), String> {
+    let origin = SiteOrigin::parse("https://example.com").map_err(|error| error.to_string())?;
+    let feature = SitePermissionFeature::Camera;
+    let revision = 7;
+    Ok((
+        WebSurfaceSitePermission::new(
+            origin.clone(),
+            feature,
+            WebSurfaceSitePermissionState::Decision(SitePermissionDecision::AllowOnce),
+            revision,
+        ),
+        ServoLivePermissionGrant::new(profile_id.clone(), origin, feature, revision),
+    ))
 }
