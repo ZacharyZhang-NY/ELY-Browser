@@ -420,13 +420,18 @@ impl BrowserCore {
     }
 
     fn favorites(&self) -> Vec<BrowserTab> {
-        self.tabs.iter().filter(|tab| tab.flags().favorite).cloned().collect()
+        self.tabs
+            .iter()
+            .filter(|tab| tab.profile_id() == &self.active_profile_id)
+            .filter(|tab| tab.flags().favorite)
+            .cloned()
+            .collect()
     }
 
     fn visible_tabs(&self) -> Vec<BrowserTab> {
-        tab_order::sorted_tabs(
-            self.tabs.iter().filter(|tab| tab.space_id() == &self.active_space_id),
-        )
+        tab_order::sorted_tabs(self.tabs.iter().filter(|tab| {
+            tab.space_id() == &self.active_space_id && tab.profile_id() == &self.active_profile_id
+        }))
     }
 
     fn record_tab_activity(&mut self, tab_id: &TabId, active_at: SystemTime) {
