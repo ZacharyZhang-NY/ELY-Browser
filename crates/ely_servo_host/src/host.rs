@@ -372,6 +372,11 @@ pub trait ServoHost {
 
     fn navigate(&mut self, request: NavigationRequest) -> Result<(), ServoHostError>;
 
+    /// Reload the current document in place (the URL is unchanged). Servo's
+    /// load-status transitions drive the loading indicator, so no navigation
+    /// hold is armed.
+    fn reload(&mut self, webview_id: &WebViewId) -> Result<(), ServoHostError>;
+
     fn scroll(&mut self, request: ScrollRequest) -> Result<(), ServoHostError>;
 
     fn resize(&mut self, request: ResizeRequest) -> Result<(), ServoHostError>;

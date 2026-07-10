@@ -20,6 +20,21 @@ impl ElyShell {
         }
     }
 
+    /// Reload the active tab: recover it to the ready state in `BrowserCore`
+    /// and, when it hosts a live web surface, tell that surface's Servo
+    /// sidecar to refetch the page.
+    pub(super) fn reload_active_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let ShellState::Ready(core) = &mut self.state else {
+            return;
+        };
+        let Ok(tab_id) = core.reload_active_tab() else {
+            return;
+        };
+        self.web_surfaces.reload_tab(&tab_id);
+        self.sync_address_input(window, cx);
+        cx.notify();
+    }
+
     pub(super) fn wake_discarded_tab(
         &mut self,
         tab_id: &TabId,

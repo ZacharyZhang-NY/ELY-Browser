@@ -50,6 +50,14 @@ impl BrowserCore {
         self.mark_tab_ready(tab_id)
     }
 
+    /// Reload the active tab in place: recover a crashed or sleeping tab to
+    /// the ready state and stamp fresh activity. The shell pairs this with a
+    /// Servo reload so the page is actually refetched.
+    pub fn reload_active_tab(&mut self) -> Result<TabId, CoreError> {
+        let tab_id = self.active_tab_id.clone();
+        self.refresh_tab(&tab_id)
+    }
+
     pub fn archive_idle_tabs(&mut self, now: SystemTime) -> Result<usize, CoreError> {
         let ArchivePolicy::IdleDays(idle_days) = self.active_space()?.archive_policy() else {
             return Ok(0);

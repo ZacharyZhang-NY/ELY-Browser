@@ -29,6 +29,11 @@ pub(super) trait LiveRuntimeClient {
 
     fn poll(&mut self, tab_id: String) -> Result<Option<ServoLiveFrame>, LiveRuntimeClientError>;
 
+    fn reload(&mut self, tab_id: String) -> Result<(), LiveRuntimeClientError> {
+        let _ = tab_id;
+        Ok(())
+    }
+
     fn close(&mut self, tab_id: String) -> Result<(), LiveRuntimeClientError>;
 
     fn take_permission_consumptions(&mut self) -> Vec<ServoLivePermissionGrant> {
@@ -46,6 +51,10 @@ impl LiveRuntimeClient for ServoLiveClient {
 
     fn poll(&mut self, tab_id: String) -> Result<Option<ServoLiveFrame>, LiveRuntimeClientError> {
         ServoLiveClient::poll(self, tab_id).map_err(LiveRuntimeClientError::from)
+    }
+
+    fn reload(&mut self, tab_id: String) -> Result<(), LiveRuntimeClientError> {
+        ServoLiveClient::reload(self, tab_id).map_err(LiveRuntimeClientError::from)
     }
 
     fn close(&mut self, tab_id: String) -> Result<(), LiveRuntimeClientError> {
@@ -147,6 +156,7 @@ struct WorkerQueue {
     pending: BTreeMap<String, VecDeque<WorkerRequest>>,
     /// Round-robin tab order, with each pending tab represented once.
     ready_tabs: VecDeque<String>,
+    reloads: VecDeque<String>,
     closes: VecDeque<String>,
     in_flight: bool,
     in_flight_tab: Option<String>,
@@ -170,6 +180,7 @@ impl LiveRuntimeWorker {
             Mutex::new(WorkerQueue {
                 pending: BTreeMap::new(),
                 ready_tabs: VecDeque::new(),
+                reloads: VecDeque::new(),
                 closes: VecDeque::new(),
                 in_flight: false,
                 in_flight_tab: None,
@@ -264,6 +275,21 @@ impl LiveRuntimeWorker {
         inserted
     }
 
+    pub(super) fn submit_reload(&self, tab_id: String) {
+        let (lock, cvar) = &*self.queue;
+        let mut q = match lock.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if q.shutdown || q.initialization_failure.is_some() {
+            return;
+        }
+        if !q.reloads.contains(&tab_id) {
+            q.reloads.push_back(tab_id);
+        }
+        cvar.notify_one();
+    }
+
     pub(super) fn submit_close(&self, tab_id: String) {
         let (lock, cvar) = &*self.queue;
         let mut q = match lock.lock() {
@@ -278,6 +304,7 @@ impl LiveRuntimeWorker {
         }
         q.pending.remove(&tab_id);
         q.ready_tabs.retain(|ready_tab_id| ready_tab_id != &tab_id);
+        q.reloads.retain(|reload_tab_id| reload_tab_id != &tab_id);
         q.closes.push_back(tab_id);
         cvar.notify_one();
     }
@@ -298,7 +325,8 @@ impl LiveRuntimeWorker {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
-        while !q.pending.is_empty() || !q.closes.is_empty() || q.in_flight {
+        while !q.pending.is_empty() || !q.reloads.is_empty() || !q.closes.is_empty() || q.in_flight
+        {
             q = match cvar.wait(q) {
                 Ok(guard) => guard,
                 Err(poisoned) => poisoned.into_inner(),
@@ -336,6 +364,7 @@ fn fail_worker_initialization(
     };
     q.initialization_failure = Some(message.clone());
     q.ready_tabs.clear();
+    q.reloads.clear();
     q.closes.clear();
     q.in_flight = false;
     q.in_flight_tab = None;
@@ -368,7 +397,8 @@ fn run_worker(
             q.in_flight = false;
             q.in_flight_tab = None;
             cvar.notify_all();
-            while q.pending.is_empty() && q.closes.is_empty() && !q.shutdown {
+            while q.pending.is_empty() && q.reloads.is_empty() && q.closes.is_empty() && !q.shutdown
+            {
                 q = match cvar.wait(q) {
                     Ok(guard) => guard,
                     Err(poisoned) => poisoned.into_inner(),
@@ -379,6 +409,8 @@ fn run_worker(
             }
             let next = if let Some(close_id) = q.closes.pop_front() {
                 Work::Close(close_id)
+            } else if let Some(reload_id) = q.reloads.pop_front() {
+                Work::Reload(reload_id)
             } else {
                 if q.ready_tabs.len() > 1
                     && q.ready_tabs.front() == last_dispatched_tab.as_ref()
@@ -407,7 +439,7 @@ fn run_worker(
             };
             q.in_flight = true;
             q.in_flight_tab = match &next {
-                Work::Close(_) => None,
+                Work::Close(_) | Work::Reload(_) => None,
                 Work::Request(request) => Some(request.tab_id().to_string()),
             };
             next
@@ -416,6 +448,11 @@ fn run_worker(
         let exit_after_dispatch = match work {
             Work::Close(tab_id) => {
                 let _ = client.close(tab_id);
+                forward_permission_consumptions(&mut *client, &response_tx);
+                false
+            }
+            Work::Reload(tab_id) => {
+                let _ = client.reload(tab_id);
                 forward_permission_consumptions(&mut *client, &response_tx);
                 false
             }
@@ -454,6 +491,7 @@ fn run_worker(
 
 enum Work {
     Close(String),
+    Reload(String),
     Request(WorkerRequest),
 }
 

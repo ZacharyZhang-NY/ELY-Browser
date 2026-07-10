@@ -78,6 +78,15 @@ impl WebSurfaceRuntime {
         self.take_retired_permission_consumptions()
     }
 
+    pub(in crate::shell) fn reload_tab(&mut self, tab_id: &TabId) {
+        let Some(session) = self.sessions.get(tab_id) else {
+            return;
+        };
+        if let Some(scoped) = self.workers.get(&session.scope) {
+            scoped.worker.submit_reload(tab_id.as_str().to_string());
+        }
+    }
+
     pub(in crate::shell) fn close_tab(&mut self, tab_id: &TabId) {
         let Some(session) = self.sessions.remove(tab_id) else {
             return;

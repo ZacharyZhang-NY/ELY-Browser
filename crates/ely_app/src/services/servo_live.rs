@@ -177,6 +177,10 @@ impl ServoLiveClient {
         })
     }
 
+    pub fn reload(&mut self, tab_id: String) -> Result<(), ServoLiveError> {
+        self.request(LiveRequest::Reload { tab_id }).map(|_| ())
+    }
+
     pub fn close(&mut self, tab_id: String) -> Result<(), ServoLiveError> {
         self.request(LiveRequest::Close { tab_id }).map(|_| ())
     }

@@ -10,7 +10,7 @@ pub(crate) use profile::{
 
 use crate::{
     CloseCurrentTab, FocusAddressBar, FocusCommandMode, OpenDownloads, OpenHistory, OpenNewTab,
-    OpenPrivateWindow, OpenSettings, OpenTaskManager, Quit, ResetZoom, RestoreClosedTab,
+    OpenPrivateWindow, OpenSettings, OpenTaskManager, Quit, ReloadTab, ResetZoom, RestoreClosedTab,
     SelectNextSpace, SelectNextTab, SelectPreviousSpace, SelectPreviousTab, SplitRight,
     ToggleFavoriteTab, ToggleSidebar, ZoomIn, ZoomOut,
 };
@@ -39,6 +39,7 @@ pub(crate) enum ShortcutAction {
     OpenNewTab,
     OpenPrivateWindow,
     CloseCurrentTab,
+    ReloadTab,
     RestoreClosedTab,
     SelectNextSpace,
     SelectPreviousSpace,
@@ -65,6 +66,7 @@ impl ShortcutAction {
             Self::OpenNewTab => "New Tab",
             Self::OpenPrivateWindow => "New Private Window",
             Self::CloseCurrentTab => "Close Tab",
+            Self::ReloadTab => "Reload Tab",
             Self::RestoreClosedTab => "Restore Closed Tab",
             Self::SelectNextSpace => "Next Space",
             Self::SelectPreviousSpace => "Previous Space",
@@ -90,6 +92,7 @@ impl ShortcutAction {
             Self::OpenNewTab
             | Self::OpenPrivateWindow
             | Self::CloseCurrentTab
+            | Self::ReloadTab
             | Self::RestoreClosedTab
             | Self::SelectNextSpace
             | Self::SelectPreviousSpace
@@ -114,6 +117,7 @@ impl ShortcutAction {
             Self::OpenNewTab => Some(">new-tab"),
             Self::OpenPrivateWindow => None,
             Self::CloseCurrentTab => Some(">close-tab"),
+            Self::ReloadTab => None,
             Self::RestoreClosedTab => Some(">restore-tab"),
             Self::SelectNextSpace => None,
             Self::SelectPreviousSpace => None,
@@ -168,6 +172,7 @@ pub(crate) const SHORTCUT_ACTIONS: &[ShortcutAction] = &[
     ShortcutAction::OpenNewTab,
     ShortcutAction::OpenPrivateWindow,
     ShortcutAction::CloseCurrentTab,
+    ShortcutAction::ReloadTab,
     ShortcutAction::RestoreClosedTab,
     ShortcutAction::SelectNextSpace,
     ShortcutAction::SelectPreviousSpace,
@@ -189,6 +194,8 @@ pub(crate) const SHORTCUT_ACTIONS: &[ShortcutAction] = &[
 pub(crate) const SHORTCUT_BINDINGS: &[ShortcutBinding] = &[
     shortcut(ShortcutAction::OpenNewTab, ShortcutPlatform::Macos, "cmd-t"),
     shortcut(ShortcutAction::OpenNewTab, ShortcutPlatform::WindowsLinux, "ctrl-t"),
+    shortcut(ShortcutAction::ReloadTab, ShortcutPlatform::Macos, "cmd-r"),
+    shortcut(ShortcutAction::ReloadTab, ShortcutPlatform::WindowsLinux, "ctrl-r"),
     shortcut(ShortcutAction::OpenPrivateWindow, ShortcutPlatform::Macos, "cmd-shift-n"),
     shortcut(ShortcutAction::OpenPrivateWindow, ShortcutPlatform::WindowsLinux, "ctrl-shift-n"),
     shortcut(ShortcutAction::SplitRight, ShortcutPlatform::Macos, "cmd-\\"),
@@ -278,6 +285,7 @@ pub(crate) fn key_binding_for_action(action: ShortcutAction, keystroke: &str) ->
         ShortcutAction::OpenSettings => KeyBinding::new(keystroke, OpenSettings, None),
         ShortcutAction::OpenTaskManager => KeyBinding::new(keystroke, OpenTaskManager, None),
         ShortcutAction::Quit => KeyBinding::new(keystroke, Quit, None),
+        ShortcutAction::ReloadTab => KeyBinding::new(keystroke, ReloadTab, None),
         ShortcutAction::ResetZoom => KeyBinding::new(keystroke, ResetZoom, None),
         ShortcutAction::RestoreClosedTab => KeyBinding::new(keystroke, RestoreClosedTab, None),
         ShortcutAction::SelectNextSpace => KeyBinding::new(keystroke, SelectNextSpace, None),

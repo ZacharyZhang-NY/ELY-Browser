@@ -54,6 +54,21 @@ fn recover_crashed_tab_marks_tab_ready() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn reload_active_tab_recovers_a_crashed_tab() -> Result<(), Box<dyn Error>> {
+    let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
+    let tab_id = core.open_tab(UrlText::parse("https://example.com/reload")?);
+    core.crash_active_tab()?;
+    assert_eq!(core.active_tab()?.state(), &TabState::Crashed);
+
+    let reloaded = core.reload_active_tab()?;
+
+    assert_eq!(reloaded, tab_id);
+    assert_eq!(core.active_tab()?.state(), &TabState::Ready);
+    assert_eq!(core.active_tab()?.url().as_str(), "https://example.com/reload");
+    Ok(())
+}
+
+#[test]
 fn crash_tab_command_marks_active_tab_crashed() -> Result<(), Box<dyn Error>> {
     let mut core = BrowserCore::new(InitialBrowserConfig::ely_defaults()?)?;
     let tab_id = core.open_tab(UrlText::parse("https://example.com/crash-loop")?);

@@ -297,6 +297,13 @@ fn handle_request(
             drop((webview_id, ready_surface_ids, pending_surface_ids));
             Ok(outcome)
         }
+        LiveRequest::Reload { tab_id } => {
+            if let Some(session) = sessions.get_mut(&tab_id) {
+                session.clear_presented_frame();
+                host.reload(&session.webview_id)?;
+            }
+            Ok(LiveOutcome::empty())
+        }
         LiveRequest::Close { tab_id } => {
             if let Some(session) = sessions.remove(&tab_id) {
                 host.close_webview(&session.webview_id);

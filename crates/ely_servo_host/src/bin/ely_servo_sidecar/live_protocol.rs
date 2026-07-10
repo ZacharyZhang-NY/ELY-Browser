@@ -68,6 +68,9 @@ pub(super) enum LiveRequest {
         #[serde(default)]
         pending_surface_ids: Vec<u64>,
     },
+    Reload {
+        tab_id: String,
+    },
     Close {
         tab_id: String,
     },

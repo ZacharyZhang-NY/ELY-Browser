@@ -227,6 +227,17 @@ impl ServoHost for SoftwareServoHost {
         Ok(())
     }
 
+    fn reload(&mut self, webview_id: &WebViewId) -> Result<(), ServoHostError> {
+        self.servo.spin_event_loop();
+        let webview = self
+            .webviews
+            .get_mut(webview_id)
+            .ok_or_else(|| ServoHostError::WebViewNotFound { id: webview_id.clone() })?;
+        webview.delegate.set_state(WebViewState::Loading);
+        webview.webview.reload();
+        Ok(())
+    }
+
     fn scroll(&mut self, request: ScrollRequest) -> Result<(), ServoHostError> {
         if request.delta_x == 0 && request.delta_y == 0 {
             return Ok(());

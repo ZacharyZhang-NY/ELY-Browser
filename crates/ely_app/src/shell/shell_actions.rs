@@ -2,7 +2,7 @@ use gpui::{Context, Window};
 
 use crate::{
     CloseCurrentTab, DownloadCurrentPage, FocusAddressBar, FocusCommandMode, OpenDownloads,
-    OpenHistory, OpenNewTab, OpenSettings, OpenTaskManager, ResetZoom, RestoreClosedTab,
+    OpenHistory, OpenNewTab, OpenSettings, OpenTaskManager, ReloadTab, ResetZoom, RestoreClosedTab,
     SelectNextTab, SelectPreviousTab, ToggleFavoriteTab, TogglePinnedTab, ZoomIn, ZoomOut,
 };
 
@@ -43,6 +43,15 @@ impl ElyShell {
         cx: &mut Context<Self>,
     ) {
         self.open_new_tab(window, cx);
+    }
+
+    pub(super) fn on_reload_tab(
+        &mut self,
+        _: &ReloadTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.reload_active_tab(window, cx);
     }
 
     pub(super) fn on_open_downloads(

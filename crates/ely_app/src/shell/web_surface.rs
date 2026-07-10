@@ -353,6 +353,10 @@ impl WebSurfaceStore {
         self.surfaces.entry(tab_id.clone()).or_insert_with(PerTabSurface::new)
     }
 
+    pub(super) fn reload_tab(&mut self, tab_id: &TabId) {
+        self.runtime.reload_tab(tab_id);
+    }
+
     pub(super) fn close_surface(&mut self, tab_id: &TabId) {
         self.runtime.close_tab(tab_id);
         self.surfaces.remove(tab_id);

@@ -41,6 +41,9 @@ pub(super) enum LiveRequest {
         ready_surface_ids: Vec<u64>,
         pending_surface_ids: Vec<u64>,
     },
+    Reload {
+        tab_id: String,
+    },
     Close {
         tab_id: String,
     },
