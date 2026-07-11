@@ -93,6 +93,11 @@ Real and verified:
   frames from the active render epoch remain presentable while newer input is
   queued. Clicks, text, and allow-once permission transfers retain strict
   ordering. Verified by generation, blocked-worker burst, and live-site tests.
+- macOS font fallback: CoreText selects a style- and language-compatible system
+  font before Servo's static fallback list, preserving sans-serif CJK and
+  Devanagari typography while retaining serif Chinese. Verified against
+  PingFang SC, Hiragino Sans, Apple SD Gothic Neo, Kohinoor Devanagari, and
+  Songti SC with real Servo canvas pixels.
 - Website color scheme: resolved System/Light/Dark state crosses sidecar
   protocol v4 and reaches `WebView::notify_theme_change`; GPUI appearance
   events trigger a shell repaint, and first-navigation WebView replacement

@@ -109,8 +109,10 @@ The integration gates prove these invariants with real Servo networking:
 
 ## Upstream Servo Route
 
-ELY pins Servo upstream commit `a87625150758fe91a29e7f6553ff2f798b87027e`, workspace version
-`0.4.0`, in `Cargo.toml` and `Cargo.lock`.
+ELY pins fork commit `8f6850ceb0bd92aea4127d8078ebb2c0485e7f39`, based on Servo upstream
+commit `a87625150758fe91a29e7f6553ff2f798b87027e`, workspace version `0.4.0`, in
+`Cargo.toml` and `Cargo.lock`. The fork moves macOS CoreText fallback ahead of Servo's static
+fallback-family list so the first CSS font preserves its serif or sans-serif cascade and language.
 
 Servo's rendering lifecycle remains authoritative inside each sidecar:
 
@@ -129,6 +131,8 @@ Relevant upstream evidence at the pinned revision:
 - `ports/servoshell/window.rs` repaints with `webview.paint()` and presents the context.
 - `ports/servoshell/running_app_state.rs` maps `notify_new_frame_ready` to repaint scheduling.
 - `components/paint/paint.rs` owns one WebRender painter per rendering context.
+- `components/fonts/font.rs` asks CoreText for a style- and language-compatible macOS fallback
+  before consulting the cross-platform fallback-family list.
 
 ## Ownership
 
