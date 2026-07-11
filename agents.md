@@ -159,5 +159,7 @@ the trigger to ungate clipboard/geolocation/notification/webrtc prefs.
 - Red-green: reproduce with a failing test before fixing.
 - Files stay under 500 lines (CI-enforced); split like
   `runtime.rs`/`runtime_paint.rs` or `state/local_visibility.rs`.
+- GPUI color encoding is explicit: pass 24-bit `RRGGBB` tokens to `rgb()` and
+  32-bit `RRGGBBAA` tokens to `rgba()`.
 - Tracing targets: `ely::sync`, `ely::local_state` — add spans/fields on
   every new failure path so field issues are diagnosable.

@@ -11,9 +11,10 @@ use gpui_component::{input::Input, scroll::ScrollableElement};
 use crate::shell::auth::AuthFlowPhase;
 
 use super::sync_controls::{
-    button_bg, render_card_heading, render_dual_button_row, render_field_label,
-    render_inline_error, render_input, render_policy_toggle, render_primary_button,
-    render_reset_button, render_secondary_button, render_sign_out_button, render_sync_now_button,
+    button_bg, primary_control_background, render_card_heading, render_dual_button_row,
+    render_field_label, render_inline_error, render_input, render_policy_toggle,
+    render_primary_button, render_reset_button, render_secondary_button, render_sign_out_button,
+    render_sync_now_button,
 };
 use super::{ElyShell, render_canvas_surface};
 impl ElyShell {
@@ -291,7 +292,7 @@ fn render_device_approve_button(
         .px(px(12.0))
         .py(px(8.0))
         .rounded(px(8.0))
-        .bg(rgba(colors::accent()))
+        .bg(primary_control_background())
         .text_size(px(12.0))
         .font_weight(FontWeight(500.0))
         .text_color(rgb(0xfff5e6))

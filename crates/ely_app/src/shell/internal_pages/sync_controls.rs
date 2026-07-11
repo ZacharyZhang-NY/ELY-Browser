@@ -1,8 +1,8 @@
 use ely_design_system::colors;
 use ely_domain::{SyncObjectPolicy, SyncObjectStatus};
 use gpui::{
-    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, div, prelude::FluentBuilder, px, rgb, rgba,
+    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Rgba,
+    SharedString, StatefulInteractiveElement, Styled, div, prelude::FluentBuilder, px, rgb, rgba,
 };
 use gpui_component::{
     Disableable, IconName, Sizable,
@@ -12,6 +12,10 @@ use gpui_component::{
 
 use crate::shell::ElyShell;
 use crate::shell::chrome::animations::{chrome_motion_feedback, toggle_thumb_motion};
+
+pub(super) fn primary_control_background() -> Rgba {
+    rgb(colors::accent())
+}
 
 pub(super) fn render_primary_button<F>(
     shell: &ElyShell,
@@ -30,7 +34,7 @@ where
         .px(px(14.0))
         .py(px(8.0))
         .rounded(px(8.0))
-        .bg(rgba(colors::accent()))
+        .bg(primary_control_background())
         .text_size(px(12.5))
         .font_weight(FontWeight(500.0))
         .text_color(rgb(0xfff5e6))
@@ -155,7 +159,7 @@ pub(super) fn render_policy_toggle(
     let enabled = status.policy() == SyncObjectPolicy::Enabled;
     let next_policy = if enabled { SyncObjectPolicy::Paused } else { SyncObjectPolicy::Enabled };
     let kind = status.kind();
-    let track_color = if enabled { colors::accent() } else { 0x281e1426 };
+    let track_color = if enabled { primary_control_background() } else { rgba(0x281e1426) };
     let id = SharedString::from(format!("sync-policy-{index}"));
     let press_id = shell.chrome_motion_animation_id(id.as_str());
     let thumb_press_id = press_id.clone();
@@ -166,7 +170,7 @@ pub(super) fn render_policy_toggle(
         .w(px(34.0))
         .h(px(20.0))
         .rounded_full()
-        .bg(rgba(track_color))
+        .bg(track_color)
         .p(px(2.0))
         .cursor_pointer()
         .hover(|style| style.opacity(0.9))
@@ -226,4 +230,14 @@ pub(super) fn button_bg() -> u32 {
 
 fn button_bg_hover() -> u32 {
     colors::pick(0xffffffeb, 0x1f1d1beb)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::primary_control_background;
+
+    #[test]
+    fn primary_control_background_is_opaque_brand_accent() {
+        assert_eq!(u32::from(primary_control_background()), 0xc96442ff);
+    }
 }
