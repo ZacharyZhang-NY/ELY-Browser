@@ -57,7 +57,9 @@ fn successful_frame_resets_scope_retry_state() {
     let scope = WebSurfaceRuntimeScope::new(ProfileId::new(), ProfileDataMode::Transient);
     let tab_id = TabId::new();
     let generation = RequestGeneration::new(1);
-    session_for_scope(&mut runtime.sessions, &tab_id, scope.clone()).generation = Some(generation);
+    let session = session_for_scope(&mut runtime.sessions, &tab_id, scope.clone());
+    session.generation = Some(generation);
+    session.frame_generation_floor = Some(generation);
     runtime.note_scope_failure(&scope, Instant::now());
     let mut frames = Vec::new();
 

@@ -104,9 +104,11 @@ impl WebSurfaceRuntime {
         let submitted_at = Instant::now();
         let started_loading = {
             let session = session_for_scope(&mut self.sessions, tab.id(), scope.clone());
-            let started_loading = session.started_loading(&requested_url, size, zoom_percent);
+            let started_loading =
+                session.started_loading(&requested_url, size, zoom_percent, self.color_scheme);
             if started_loading {
                 session.pending_user_navigation = false;
+                session.frame_generation_floor = Some(generation);
             }
             if user_navigation_input {
                 session.pending_user_navigation = true;
@@ -114,6 +116,7 @@ impl WebSurfaceRuntime {
             session.requested_url = requested_url.clone();
             session.size = size;
             session.zoom_percent = zoom_percent;
+            session.color_scheme = Some(self.color_scheme);
             session.scroll_offset = next_scroll_offset;
             session.generation = Some(generation);
             session.cadence.note_ensure(input_kind, started_loading, submitted_at);
@@ -296,7 +299,7 @@ impl WebSurfaceRuntime {
                         continue;
                     };
                     if !self.sessions.get(&tab_id_obj).is_some_and(|session| {
-                        &session.scope == scope && session.generation == Some(generation)
+                        &session.scope == scope && session.accepts_frame_generation(generation)
                     }) {
                         continue;
                     }

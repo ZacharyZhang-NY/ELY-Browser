@@ -146,6 +146,35 @@ fn late_frame_is_discarded_after_tab_session_closes() -> Result<(), String> {
 }
 
 #[test]
+fn earlier_frame_from_same_render_epoch_remains_presentable() -> Result<(), String> {
+    let mut runtime = WebSurfaceRuntime::new_with_client_factory(empty_client_factory);
+    let tab_id = TabId::new();
+    let profile_id = ProfileId::new();
+    let tab = web_tab(tab_id.clone(), profile_id.clone(), "https://example.com/page")?;
+
+    runtime.ensure_tab(&tab, surface_size(), ProfileDataMode::Transient, &[], pending_input())?;
+    let earlier = current_generation(&runtime, &tab_id)?;
+    runtime.ensure_tab(&tab, surface_size(), ProfileDataMode::Transient, &[], pending_input())?;
+    let latest = current_generation(&runtime, &tab_id)?;
+
+    let mut frames = Vec::new();
+    runtime.collect_responses(
+        &scope(&profile_id),
+        vec![WorkerResponse::Frame {
+            generation: earlier,
+            tab_id: tab_id.as_str().to_string(),
+            frame: live_frame(),
+        }],
+        Instant::now(),
+        &mut frames,
+    );
+
+    assert!(earlier < latest);
+    assert!(matches!(frames.as_slice(), [WebSurfaceRuntimeFrame::Ready { .. }]));
+    Ok(())
+}
+
+#[test]
 fn scope_change_returns_submitted_permission_grants_on_the_next_tick() -> Result<(), String> {
     let mut runtime = WebSurfaceRuntime::new_with_client_factory(empty_client_factory);
     let tab_id = TabId::new();

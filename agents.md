@@ -90,8 +90,9 @@ Real and verified:
   macOS Metal toolchain so `cargo run`'s shader-build failure is fixed.
 - Scroll input: consecutive same-document wheel requests coalesce at the
   profile worker boundary while preserving total device-pixel distance;
-  clicks, text, and allow-once permission transfers retain strict ordering.
-  Verified by a blocked-worker burst regression and the live-site scroll e2e.
+  frames from the active render epoch remain presentable while newer input is
+  queued. Clicks, text, and allow-once permission transfers retain strict
+  ordering. Verified by generation, blocked-worker burst, and live-site tests.
 - Website color scheme: resolved System/Light/Dark state crosses sidecar
   protocol v4 and reaches `WebView::notify_theme_change`; GPUI appearance
   events trigger a shell repaint, and first-navigation WebView replacement

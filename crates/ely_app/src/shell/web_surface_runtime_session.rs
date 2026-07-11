@@ -8,7 +8,7 @@ use crate::services::{
         transient_profile_data_dir,
     },
 };
-use ely_domain::{ProfileId, TabId};
+use ely_domain::{ColorScheme, ProfileId, TabId};
 
 use super::{
     web_surface_cadence::WebSurfacePollCadence,
@@ -42,6 +42,8 @@ pub(super) struct WebSurfaceSession {
     pub(super) scroll_offset: WebSurfaceScrollOffset,
     pub(super) pending_user_navigation: bool,
     pub(super) generation: Option<RequestGeneration>,
+    pub(super) frame_generation_floor: Option<RequestGeneration>,
+    pub(super) color_scheme: Option<ColorScheme>,
     pub(super) cadence: WebSurfacePollCadence,
 }
 
@@ -55,6 +57,8 @@ impl WebSurfaceSession {
             scroll_offset: WebSurfaceScrollOffset::default(),
             pending_user_navigation: false,
             generation: None,
+            frame_generation_floor: None,
+            color_scheme: None,
             cadence: WebSurfacePollCadence::default(),
         }
     }
@@ -64,10 +68,17 @@ impl WebSurfaceSession {
         requested_url: &str,
         size: WebSurfaceSize,
         zoom_percent: u16,
+        color_scheme: ColorScheme,
     ) -> bool {
         self.requested_url != requested_url
             || self.size != size
             || self.zoom_percent != zoom_percent
+            || self.color_scheme != Some(color_scheme)
+    }
+
+    pub(super) fn accepts_frame_generation(&self, generation: RequestGeneration) -> bool {
+        self.frame_generation_floor.is_some_and(|floor| generation >= floor)
+            && self.generation.is_some_and(|latest| generation <= latest)
     }
 
     pub(super) fn url_change_for(
