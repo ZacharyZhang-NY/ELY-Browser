@@ -11,6 +11,13 @@ ely_append_encoded_rustflag() {
     export CARGO_ENCODED_RUSTFLAGS
 }
 
+ely_append_c_family_flag() {
+    local flag="$1"
+    CFLAGS="${CFLAGS:+${CFLAGS} }${flag}"
+    CXXFLAGS="${CXXFLAGS:+${CXXFLAGS} }${flag}"
+    export CFLAGS CXXFLAGS
+}
+
 ely_path_variants() {
     local path="$1"
     local canonical_path=""
@@ -34,6 +41,14 @@ ely_add_release_path_remap() {
     while IFS= read -r variant; do
         [[ -n "${variant}" ]] || continue
         ely_append_encoded_rustflag "--remap-path-prefix=${variant}=${replacement}"
+        case "$(uname -s)" in
+            MINGW*|MSYS*|CYGWIN*)
+                ely_append_c_family_flag "/pathmap:${variant}=${replacement}"
+                ;;
+            *)
+                ely_append_c_family_flag "-ffile-prefix-map=${variant}=${replacement}"
+                ;;
+        esac
     done < <(ely_path_variants "${path}")
 }
 
