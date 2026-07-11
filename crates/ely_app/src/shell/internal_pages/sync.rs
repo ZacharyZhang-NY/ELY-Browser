@@ -13,7 +13,7 @@ use crate::shell::auth::AuthFlowPhase;
 use super::sync_controls::{
     button_bg, render_card_heading, render_dual_button_row, render_field_label,
     render_inline_error, render_input, render_policy_toggle, render_primary_button,
-    render_reset_button, render_secondary_button, render_sign_out_button,
+    render_reset_button, render_secondary_button, render_sign_out_button, render_sync_now_button,
 };
 use super::{ElyShell, render_canvas_surface};
 impl ElyShell {
@@ -36,9 +36,10 @@ impl ElyShell {
         render_canvas_surface(
             div()
                 .size_full()
-                .p(px(40.0))
-                .flex()
-                .justify_center()
+                .overflow_y_scrollbar()
+                .pt(px(28.0))
+                .px(px(40.0))
+                .pb(px(32.0))
                 .child(render_sync_body(self, snapshot, cx)),
         )
     }
@@ -48,7 +49,7 @@ fn render_sync_body(
     snapshot: &BrowserSnapshot,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
-    let body = div().max_w(px(860.0)).flex().flex_col().gap(px(18.0)).child(
+    let body = div().w_full().max_w(px(780.0)).mx_auto().flex().flex_col().gap(px(20.0)).child(
         div()
             .text_size(px(26.0))
             .font_weight(FontWeight(500.0))
@@ -58,15 +59,9 @@ fn render_sync_body(
     if !profile_allows_sync_controls(&snapshot.active_profile_kind) {
         return body.child(render_private_profile_card()).into_any_element();
     }
-    body.child(
-        div()
-            .grid()
-            .grid_cols(2)
-            .gap(px(18.0))
-            .child(render_account_card(shell, snapshot, cx))
-            .child(render_data_card(shell, snapshot, cx)),
-    )
-    .into_any_element()
+    body.child(render_account_card(shell, snapshot, cx))
+        .child(render_data_section(shell, snapshot, cx))
+        .into_any_element()
 }
 fn profile_allows_sync_controls(profile_kind: &ProfileKind) -> bool {
     profile_kind == &ProfileKind::Standard
@@ -101,13 +96,13 @@ fn render_account_card(
 
     match snapshot.sync_status.connection() {
         SyncConnectionState::SignedOut => card
-            .child(render_card_heading("Account"))
-            .children(account_form(shell, &snapshot.active_profile_id, cx))
+            .child(render_card_heading("Sign in to sync"))
+            .child(render_account_form(shell, &snapshot.active_profile_id, cx))
             .into_any_element(),
         SyncConnectionState::CredentialUnavailable { message } => card
-            .child(render_card_heading("Account"))
+            .child(render_card_heading("Sign in to sync"))
             .child(render_inline_error(message))
-            .children(account_form(shell, &snapshot.active_profile_id, cx))
+            .child(render_account_form(shell, &snapshot.active_profile_id, cx))
             .into_any_element(),
         SyncConnectionState::SigningOut => card
             .child(
@@ -354,24 +349,23 @@ fn render_device_note(message: &'static str) -> AnyElement {
     div().text_size(px(11.5)).text_color(rgb(colors::ink_4())).child(message).into_any_element()
 }
 
-fn account_form(
+fn render_account_form(
     shell: &ElyShell,
     profile_id: &ProfileId,
     cx: &mut Context<ElyShell>,
-) -> Vec<AnyElement> {
-    let mut elements: Vec<AnyElement> = Vec::new();
+) -> AnyElement {
     let phase = if shell.auth_flow_phase.belongs_to(profile_id) {
         shell.auth_flow_phase.clone()
     } else {
         AuthFlowPhase::Idle
     };
+    let mut form = div().max_w(px(440.0)).flex().flex_col().gap(px(10.0));
 
-    elements.push(render_field_label("Email"));
-    elements.push(render_input(&shell.auth_email_input));
+    form = form.child(render_field_label("Email")).child(render_input(&shell.auth_email_input));
 
     match &phase {
         AuthFlowPhase::Idle | AuthFlowPhase::Error { .. } => {
-            elements.push(render_primary_button(
+            form = form.child(render_primary_button(
                 shell,
                 "send-otp",
                 "Send code",
@@ -383,53 +377,63 @@ fn account_form(
             ));
         }
         AuthFlowPhase::SendingCode { .. } => {
-            elements.push(render_primary_button(shell, "send-otp", "Sending", true, cx, |_, _| {}));
+            form = form.child(render_primary_button(
+                shell,
+                "send-otp",
+                "Sending",
+                true,
+                cx,
+                |_, _| {},
+            ));
         }
         AuthFlowPhase::AwaitingOtp { .. } | AuthFlowPhase::Verifying { .. } => {
-            elements.push(render_field_label("Code"));
-            elements.push(render_input(&shell.auth_otp_input));
-            elements.push(render_dual_button_row(
-                shell,
-                phase.is_busy(),
-                cx,
-                |shell, cx| shell.submit_email_otp_verify(cx),
-                |shell, cx| shell.submit_email_otp_request(cx),
-            ));
+            form = form
+                .child(render_field_label("Code"))
+                .child(render_input(&shell.auth_otp_input))
+                .child(render_dual_button_row(
+                    shell,
+                    phase.is_busy(),
+                    cx,
+                    |shell, cx| shell.submit_email_otp_verify(cx),
+                    |shell, cx| shell.submit_email_otp_request(cx),
+                ));
         }
     }
 
     if let Some(message) = phase.error_message() {
-        elements.push(render_inline_error(message));
+        form = form.child(render_inline_error(message));
     }
 
-    elements
+    form.into_any_element()
 }
 
-fn render_data_card(
+fn render_data_section(
     shell: &ElyShell,
     snapshot: &BrowserSnapshot,
     cx: &mut Context<ElyShell>,
 ) -> AnyElement {
+    let can_sync_now = matches!(
+        snapshot.sync_status.connection(),
+        SyncConnectionState::SignedIn
+            | SyncConnectionState::AwaitingDeviceApproval
+            | SyncConnectionState::SyncReady { .. }
+            | SyncConnectionState::SyncError { .. }
+    );
     div()
-        .p(px(18.0))
-        .rounded(px(12.0))
-        .bg(rgba(card_bg()))
         .flex()
         .flex_col()
         .gap(px(12.0))
-        .max_h(px(640.0))
-        .overflow_y_scrollbar()
         .child(
             div()
                 .flex()
                 .items_center()
                 .justify_between()
                 .gap(px(10.0))
-                .child(render_card_heading("Data"))
-                .child(render_reset_button(shell, cx)),
+                .child(render_card_heading("Choose what to sync"))
+                .when(can_sync_now, |header| header.child(render_sync_now_button(shell, cx))),
         )
         .child(
-            div().flex().flex_col().gap(px(2.0)).children(
+            div().border_t_1().border_color(rgba(colors::divider())).flex().flex_col().children(
                 snapshot
                     .sync_status
                     .objects()
@@ -438,6 +442,7 @@ fn render_data_card(
                     .map(|(index, status)| render_sync_object_row(shell, index, status, cx)),
             ),
         )
+        .child(div().pt(px(2.0)).flex().child(render_reset_button(cx)))
         .into_any_element()
 }
 
@@ -452,7 +457,7 @@ fn render_sync_object_row(
         .items_center()
         .justify_between()
         .gap(px(12.0))
-        .py(px(9.0))
+        .py(px(11.0))
         .border_b_1()
         .border_color(rgba(colors::divider()))
         .child(

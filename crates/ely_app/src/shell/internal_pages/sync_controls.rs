@@ -5,7 +5,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, div, prelude::FluentBuilder, px, rgb, rgba,
 };
 use gpui_component::{
-    Disableable, Sizable,
+    Disableable, IconName, Sizable,
     button::{Button, ButtonVariants},
     input::{Input, InputState},
 };
@@ -128,21 +128,21 @@ pub(super) fn render_inline_error(message: &str) -> AnyElement {
         .into_any_element()
 }
 
-pub(super) fn render_reset_button(shell: &ElyShell, cx: &mut Context<ElyShell>) -> AnyElement {
-    div()
-        .flex()
-        .gap(px(8.0))
-        .child(render_primary_button(shell, "sync-upload", "Sync now", false, cx, |shell, _| {
-            shell.trigger_cloud_sync_upload();
+pub(super) fn render_sync_now_button(shell: &ElyShell, cx: &mut Context<ElyShell>) -> AnyElement {
+    render_primary_button(shell, "sync-upload", "Sync now", false, cx, |shell, _| {
+        shell.trigger_cloud_sync_upload();
+    })
+}
+
+pub(super) fn render_reset_button(cx: &mut Context<ElyShell>) -> AnyElement {
+    Button::new("sync-reset")
+        .ghost()
+        .xsmall()
+        .icon(IconName::Undo2)
+        .label("Reset sync preferences")
+        .on_click(cx.listener(|shell, _, _, cx| {
+            shell.reset_sync_settings(cx);
         }))
-        .child(render_secondary_button(
-            shell,
-            "sync-reset",
-            "Reset to defaults",
-            false,
-            cx,
-            |shell, cx| shell.reset_sync_settings(cx),
-        ))
         .into_any_element()
 }
 
