@@ -104,7 +104,8 @@ Real and verified:
   preserves the selected scheme. Verified with real Servo media-query pixels.
 - Cross-platform: download Open/Reveal use per-OS launchers (macOS `open`,
   Windows `cmd start`/`explorer /select`, Linux `xdg-open`); the command
-  overlay closes on Escape.
+  overlay closes on Escape. The Windows app binary uses the GUI PE subsystem,
+  so release launches do not open a companion console window.
 
 Deferred deliberately (do NOT fake; ship with their subsystem):
 - Updates settings page — returns with a real updater.
